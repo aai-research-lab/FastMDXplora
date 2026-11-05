@@ -1237,9 +1237,9 @@ def _production_of_each(study: Path, names: list[str]) -> dict[str, float | None
 
 def _its_process_is_gone(study: Path) -> bool:
     """Whether the process that ran the study's rounds has ended, by the
-    record it keeps while it runs: no process has its number here. Never
-    where that record was written on another machine (not asked here),
-    names this process or one above it (the study judging its own rounds);
+    record it keeps while it runs: no process has its number here, or the
+    record was written on another machine, in another container or before
+    this machine's last boot. Never where it names this process or one above it (the study judging its own rounds);
     nor where a process other than its run has its number now, which the
     card says as not finished when written. Gone where a study has no
     record: every process that runs its rounds holds it while it runs (a
@@ -1264,11 +1264,14 @@ def _its_process_is_gone(study: Path) -> bool:
     except (OSError, ValueError):
         return False
     pid = process.get("pid") if isinstance(process, dict) else None
-    if not isinstance(pid, int) or pid <= 0 or _from_another_host(process):
+    if not isinstance(pid, int) or pid <= 0:
         return False
-    if record_is_from_elsewhere(process):
-        # This machine, before its last boot: every process of that boot
-        # is gone (a study killed and then the machine restarted).
+    if record_is_from_elsewhere(process) or _from_another_host(process):
+        # This machine before its last boot (every process of that boot is
+        # gone), or another machine or container, whose process is not
+        # alive here as no process this one cannot see is: read as its
+        # records say it ended, its sentence saying where the record was
+        # written (`_where_its_process_was`).
         return True
     if pid in _this_process_and_its_parents():
         return False
@@ -1298,24 +1301,29 @@ def _from_another_host(record: dict[str, Any]) -> bool:
                 and space != here["pidns"])
 
 
-def going_on_another_host(study: str | Path) -> bool:
-    """Whether the study's record of its rounds says its rule goes on, and
-    the record of the process running it was written on another machine
-    (`_from_another_host`): it cannot be asked here, so the study is said
-    going, as its rule's card says it, never completed from its runs."""
+def _where_its_process_was(study: Path) -> str:
+    """Where the study's process record was written, where that is another
+    machine or container, said after its round's sentence: its process
+    cannot be seen from here, so the study is read as its records say it
+    ended. Empty otherwise."""
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
 
     from fastmdxplora import record_access
 
-    study = Path(study)
     try:
-        record = json.loads(record_access.read_text(study / RECORD, encoding="utf-8"))
         process = json.loads(record_access.read_text(study / RUN_PROCESS_FILE,
                                                      encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    return (isinstance(record, dict) and str(record.get("outcome") or "") == "running"
-            and isinstance(process, dict) and _from_another_host(process))
+        return ""
+    if not isinstance(process, dict) or not _from_another_host(process):
+        return ""
+    from fastmdxplora.orchestrator import this_machine
+
+    host = process.get("host")
+    where = (f"on {host}" if isinstance(host, str) and host and host != this_machine()["host"]
+             else "in another container of this machine")
+    return (f" Its process record was written {where}; if it is still running there, "
+            "resume it from there.")
 
 
 def _carried_on_elsewhere(study: Path) -> bool:
@@ -1338,18 +1346,18 @@ def _carried_on_elsewhere(study: Path) -> bool:
 def _ceiling_a_resume_uses(study: Path, record: dict[str, Any]) -> float | None:
     """The ceiling `fastmdx resume` applies: the study's config's, which
     it reads (lowered or raised since the round), else the record's. A
-    run's page, held to the run and its study's record of rounds, takes
-    the record's: the study's config is not its to read."""
+    run's page shows its study's card, read in the study's held read
+    (`server.stopping_card`), so it reads the same config."""
     import yaml
 
     from fastmdxplora import record_access
 
-    value = record.get("max_duration_ns")
     try:
-        if record_access.can_read(study / "resolved_config.yml"):
-            config = yaml.safe_load(record_access.read_text(study / "resolved_config.yml",
-                                                            encoding="utf-8"))
-            value = config["simulation"]["stop_when"]["max_duration_ns"]
+        # A config linked out of the study is not read, and named so where
+        # the read is held (`record_access`): the record's ceiling is said.
+        config = yaml.safe_load(record_access.read_text(study / "resolved_config.yml",
+                                                        encoding="utf-8"))
+        value = config["simulation"]["stop_when"]["max_duration_ns"]
     except (OSError, ValueError, KeyError, TypeError, yaml.YAMLError):
         value = record.get("max_duration_ns")
     return (float(value) if isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -1548,7 +1556,8 @@ def rule_owed(study: str | Path, *, resuming: bool = False) -> RoundEnded | None
                if state == "stopped" else
                "the resume carrying it on ended before the rule was applied" + again + "."
                if died else
-               "the study's process ended before its first round was judged."))
+               "the study's process ended before its first round was judged."
+               + _where_its_process_was(study)))
     return RoundEnded(state=state, said=said,
                       carry_on=f"{command} judges the runs as they stand and extends them "
                                "until what was asked is determined.",
@@ -1663,7 +1672,8 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
         else:
             what = them + (f" by {length_said(more)}" if more is not None else "")
         said = (f"Its stopping rule's round {number} did not finish: the study's process "
-                f"ended while it extended {what}, with no record of how the round ended.")
+                f"ended while it extended {what}, with no record of how the round ended."
+                + _where_its_process_was(study))
     else:
         if study_ended(record):
             return None

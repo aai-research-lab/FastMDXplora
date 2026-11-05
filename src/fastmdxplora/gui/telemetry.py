@@ -644,7 +644,11 @@ def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
     if failed:
         # Its production whole, its join failed: the status bar says the
         # join failed ("Joining failed"), not its production.
+        # Counted at its production's end, where its join is.
+        states = status.get("stage_states") if isinstance(status.get("stage_states"),
+                                                          dict) else {}
         return {**status, "status": "failed", "join_owed": True, "stage": "joining",
+                "stage_states": {**states, "production": "failed"},
                 "latest_error": (f"{failed} Its piece {piece.name} ran to its end and was not "
                                  f"joined: {_resume_said(piece.parent)} joins it again and "
                                  "runs its analyses and report.")}
@@ -676,8 +680,20 @@ def _an_extension_s_piece(piece: Path) -> bool:
 
 def _study_of(run: Path) -> Path:
     """The study a run belongs to: its own folder, or the study of runs it
-    is one of (``runs/<name>``)."""
-    return run.parent.parent if run.parent.name == "runs" else run
+    is one of (``runs/<name>``, named in that study's record of its runs,
+    `batch_manifest.json`). A study of its own saved in a folder named
+    ``runs`` is its own."""
+    if run.parent.name != "runs":
+        return run
+    study = run.parent.parent
+    try:
+        batch = json.loads(_records.read_text(study / "batch_manifest.json", encoding="utf-8"))
+    except (OSError, ValueError):
+        return run
+    named = {str(entry.get("run_id")) for key in ("planned", "runs")
+             for entry in ((batch.get(key) if isinstance(batch, dict) else None) or [])
+             if isinstance(entry, dict)}
+    return study if run.name in named else run
 
 
 def _its_round_was_stopped(run: Path, piece: Path) -> bool:

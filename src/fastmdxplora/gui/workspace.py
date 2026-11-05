@@ -1050,12 +1050,6 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
         # process record is written): never completed meanwhile.
         if _still_running(base) or being_carried_on(base):
             return "running"
-        from fastmdxplora.simulation.stopping import going_on_another_host
-
-        # Its rule going on, by a process on another machine that cannot be
-        # asked here: going, as its card says, never completed.
-        if going_on_another_host(base):
-            return "running"
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
     from fastmdxplora.simulation.stopping import round_ended

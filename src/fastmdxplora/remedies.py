@@ -454,6 +454,8 @@ def _stopped_unrecorded(root: Path) -> list[Remedy]:
 
 #: The refusal said of a run that ended without recording its end.
 INTERRUPTED_CODE = "simulation.run.interrupted"
+#: A round's piece whose join failed (`telemetry._its_join_owed`).
+JOIN_FAILED_CODE = "simulation.round.join_failed"
 #: And of one asked to stop (`simulation.runner.STOPPED_CODE`).
 STOPPED_REFUSAL = "simulation.run.stopped"
 
@@ -511,9 +513,10 @@ def _interrupted(root: Path) -> Remedy | None:
         why = str(stands.get("latest_error") or "Its last piece was not joined.")
         # The study's own resume (`_resume` gives a run of several's), as
         # the health card gives it.
-        again = " again" if stands.get("status") == "failed" else ""
-        return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root,
-                               price=False),
+        failed = stands.get("status") == "failed"
+        again = " again" if failed else ""
+        return replace(_resume(JOIN_FAILED_CODE if failed else INTERRUPTED_CODE, why,
+                               "the study", [root], root, price=False),
                        fix=f"Join its last piece{again}, then run its analyses and report.")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "

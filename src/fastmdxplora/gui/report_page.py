@@ -102,6 +102,20 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
     }
 
 
+def _another_folder(written: str, base: Path) -> bool:
+    """Whether a folder a saved report names is not the study at ``base``:
+    both resolved (a study named through a link, as macOS's /tmp is, is
+    the same folder). A relative name, given from wherever the study was
+    run, is not known to be another folder."""
+    path = Path(written)
+    if not path.is_absolute():
+        return False
+    try:
+        return path.resolve() != base.resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
 def _round_lead(base: Path, *, said_only: bool = False) -> str:
     """How the study's rule's round ended, where it ended short or the rule
     was never applied (`stopping.round_ended`), with what carries it on;
@@ -274,7 +288,7 @@ def _study_of_runs_payload(base: Path, *, trace: bool = True) -> dict[str, Any]:
     if _records.is_file(comparison):
         text = _records.read_text(comparison, encoding="utf-8", errors="replace")
         elsewhere = sorted({found for found in re.findall(r"`fastmdx resume ([^`]+)`", text)
-                            if found != str(base)})
+                            if _another_folder(found, base)})
         if elsewhere:
             # Written in the folder this study was copied from: the command
             # it gives carries that folder on, not this one.

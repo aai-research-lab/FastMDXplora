@@ -620,6 +620,13 @@ def stopping_card(root: Path) -> Any:
     from fastmdxplora.gui.stopping_view import stopping_payload
 
     in_its_study = _a_run_in_its_study(root.resolve()) if root.is_dir() else None
+    if in_its_study is not None:
+        from fastmdxplora.gui.telemetry import _study_of
+
+        # Only a run its study names (`telemetry._study_of`): a study of
+        # its own saved in a folder named ``runs`` has its own card.
+        if _confined(root, lambda inside: _study_of(inside) == inside):
+            in_its_study = None
     if in_its_study is None:
         return _said_not_read(_confined(root, stopping_payload))
     study, inside = in_its_study[0], root.resolve()

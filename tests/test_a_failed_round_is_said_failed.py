@@ -3436,6 +3436,17 @@ def test_a_round_that_failed_in_its_join_is_said_failed_by_every_reader(join_fai
         (study / "runs").glob("*"))]
     assert any(p.get("join_owed") for p in pieces), pieces
     assert all(p.get("stage") == "joining" for p in pieces if p.get("join_owed")), pieces
+    # Counted where its join is, at its production's end (it read "Joining
+    # failed" beside "Stage 7 of 7").
+    assert all(p["stage_states"]["production"] == "failed" for p in pieces
+               if p.get("join_owed")), pieces
+    # Its fix has a code of its own, not a run's interruption.
+    from fastmdxplora.remedies import remedies_of
+
+    codes = {r.code for page in [study] + sorted((study / "runs").glob("*"))
+             for r in remedies_of(page)}
+    assert "simulation.round.join_failed" in codes and "simulation.run.interrupted" not in codes, \
+        codes
 
     said = json.dumps(fixes_payload(study)["fixes"])
     assert "process ended before" not in said, said[:800]
@@ -3545,17 +3556,35 @@ def test_a_run_page_s_rule_card_is_its_study_s_after_its_ceiling_changes(
             assert page[key] == card[key], (run, key, page[key], card[key])
     # What the card says a resume does is what the study's config allows.
     assert ("carries no run on" in card["said"]) == (ceiling < 0.0018), card["said"]
+    # One ceiling on the card: its strip and chart line are the sentence's.
+    assert card["ceiling_ns"] == pytest.approx(ceiling), card["ceiling_said"]
 
 
-@pytest.mark.parametrize("changed", ["boot", "host"])
+def test_a_linked_out_config_is_named_on_the_rule_s_card(sequential_stopped, tmp_path):
+    """A resolved_config.yml linked out of the study was read silently as
+    the record's ceiling on the card, a linked-out stopping.json named."""
+    study = tmp_path / "study"
+    shutil.copytree(sequential_stopped, study, symlinks=True)
+    outside = tmp_path / "elsewhere.yml"
+    (study / "resolved_config.yml").rename(outside)
+    (study / "resolved_config.yml").symlink_to(outside)
+    assert "resolved_config.yml" in (stopping_card(study).get("unavailable") or []), \
+        stopping_card(study)
+    page = stopping_card(study / "runs" / SECOND)
+    assert "../../resolved_config.yml" in (page.get("unavailable") or []), page
+
+
+@pytest.mark.parametrize("changed", ["boot", "host", "pidns"])
 def test_a_study_killed_before_a_reboot_is_not_said_completed(killed_before_its_rule,
                                                                tmp_path, changed):
     """After a reboot (its run record of another boot of this machine), a
     study killed before its rule read completed on every reader and was
-    shared: its process was "not asked here". A record of another machine,
-    which cannot be asked, is going there, never completed."""
-    from fastmdxplora.gui.workspace import study_state
+    shared: its process was "not asked here". A record of another machine
+    or container read running on its header and completed elsewhere: its
+    process, not seen from here, is read as ended, the sentence saying
+    where its record was written."""
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.simulation.stopping import round_ended
 
     study = tmp_path / "study"
     shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
@@ -3565,11 +3594,11 @@ def test_a_study_killed_before_a_reboot_is_not_said_completed(killed_before_its_
         record = json.loads(path.read_text())
         record[changed] = "another-" + changed
         path.write_text(json.dumps(record))
-    if changed == "boot":
-        _every_reader_agrees(study, "interrupted")
-    else:
-        assert study_state(study) == "running"
-        assert _shared(study) != "finished"
+    _every_reader_agrees(study, "interrupted")
+    there = "if it is still running there, resume it from there"
+    assert (there in round_ended(study).said) == (changed != "boot"), round_ended(study).said
+    if changed == "host":
+        assert "written on another-host" in round_ended(study).said
 
 
 def test_a_failed_round_carried_on_by_a_resume_that_died_reads_cut(join_failed, tmp_path):
@@ -3620,6 +3649,54 @@ def test_a_copied_study_s_comparison_says_the_folder_it_was_written_in(failed, t
     shown = _shown(report_payload(study))
     assert f"fastmdx resume {study}" in shown, shown[:1500]
     assert "the folder this study was copied from" in shown, shown[:1500]
+
+
+def test_a_study_read_where_it_was_written_says_nothing_of_a_copy(failed, tmp_path):
+    """A study written with a relative output, or read through a link (as
+    macOS's /tmp is), said "the folder this study was copied from" on its
+    own Report page."""
+    from fastmdxplora.gui.report_page import report_payload
+
+    study = tmp_path / "real" / "study"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    report = study / "comparison" / "comparison_report.md"
+    written = report.read_text().replace(str(failed["study"]), str(study))
+    report.write_text(written)
+    # Read in place, and through a link to its folder.
+    (tmp_path / "link").symlink_to(tmp_path / "real")
+    for read in (study, tmp_path / "link" / "study"):
+        shown = _shown(report_payload(read))
+        assert "copied from" not in shown, (read, shown[:800])
+    # Its output given relative to where it was run.
+    report.write_text(written.replace(f"fastmdx resume {study}", "fastmdx resume real/study"))
+    shown = _shown(report_payload(study))
+    assert "copied from" not in shown, shown[:800]
+
+
+@pytest.mark.parametrize("built", ["one", "stopped_at_its_end"])
+def test_a_study_in_a_folder_named_runs_has_its_own_card(request, tmp_path, built):
+    """A study of its own saved in a folder named `runs` was read as a run
+    of the folder above it: its rule card "this study runs for a fixed
+    length", its status bar the wrong study's."""
+    from fastmdxplora.gui.server import _status_records
+    from fastmdxplora.gui.workspace import study_state
+
+    value = request.getfixturevalue(built)
+    alone = tmp_path / "alone" / "study"
+    inside = tmp_path / "w" / "runs" / "study"
+    for where in (alone, inside):
+        shutil.copytree(value["study"] if isinstance(value, dict) else value, where,
+                        symlinks=True)
+    if built == "stopped_at_its_end":
+        for where in (alone, inside):
+            assert _resume_by_the_cli(where)[0] == 0
+    for key in ("ok", "outcome_label", "outcome"):
+        assert stopping_card(inside).get(key) == stopping_card(alone).get(key), (
+            key, stopping_card(inside), stopping_card(alone))
+    assert stopping_card(inside)["ok"], stopping_card(inside)
+    assert study_state(inside) == study_state(alone)
+    assert (_status_records(inside)["health"]["state"]
+            == _status_records(alone)["health"]["state"])
 
 
 def test_every_reader_says_a_refused_resume_and_a_completed_study_alike(

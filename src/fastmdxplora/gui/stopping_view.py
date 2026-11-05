@@ -290,7 +290,11 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         said += (f"; {ended['how']}" if ended["how"] else "") + "."
     production = _finite(rounds[-1].get("production_ns")) if rounds else 0.0
     production_said = _said(production)
-    ceiling = _finite(record.get("max_duration_ns"))
+    from fastmdxplora.simulation.stopping import _ceiling_a_resume_uses
+
+    # The ceiling a resume uses (the study's config's, else the record's),
+    # one number on the strip, the chart's line and the sentence.
+    ceiling = _finite(_ceiling_a_resume_uses(where, record))
     # Said running only where its process is known to be (`_known_live`):
     # otherwise as the record stood when it was written.
     live = ended is None and _known_live(record, where)
