@@ -1293,12 +1293,16 @@ def _carried_on_elsewhere(study: Path) -> bool:
 
 def _ceiling_a_resume_uses(study: Path, record: dict[str, Any]) -> float | None:
     """The ceiling `fastmdx resume` applies: the study's config's, which
-    it reads (lowered or raised since the round), else the record's."""
+    it reads (lowered or raised since the round), else the record's. A
+    run's page, held to the run and its study's record of rounds, takes
+    the record's: the study's config is not its to read."""
     import yaml
 
     from fastmdxplora import record_access
 
     try:
+        if not record_access.can_read(study / "resolved_config.yml"):
+            raise KeyError("resolved_config.yml")
         config = yaml.safe_load(record_access.read_text(study / "resolved_config.yml",
                                                         encoding="utf-8"))
         value = config["simulation"]["stop_when"]["max_duration_ns"]
@@ -1341,8 +1345,6 @@ def carried_on_marked(study: str | Path) -> Iterator[None]:
     """The study's record of its rounds says a resume of this process
     carries it on, while it does: written before its work, taken away
     after however it ended. Nothing where the study keeps no such record."""
-    import os
-
     where = Path(study) / RECORD
 
     def rewrite(change: Any) -> None:
@@ -1357,12 +1359,11 @@ def carried_on_marked(study: str | Path) -> Iterator[None]:
                 pass
 
     def mark(record: dict[str, Any]) -> bool:
-        record[CARRIED_ON_BY] = {"pid": os.getpid()}
+        record[CARRIED_ON_BY] = _this_resume()
         return True
 
     def unmark(record: dict[str, Any]) -> bool:
-        marked = record.get(CARRIED_ON_BY)
-        if isinstance(marked, dict) and marked.get("pid") == os.getpid():
+        if _is_this_resume(record.get(CARRIED_ON_BY)):
             record.pop(CARRIED_ON_BY)
             return True
         return False
@@ -1374,19 +1375,63 @@ def carried_on_marked(study: str | Path) -> Iterator[None]:
         rewrite(unmark)
 
 
+def _this_resume() -> dict[str, Any]:
+    """This process, told apart as the study's lock tells it: its number,
+    when it began, and the machine, boot and process namespace that gave
+    the number out."""
+    import os
+
+    from fastmdxplora.orchestrator import process_start_ticks, this_machine
+
+    return {"pid": os.getpid(), "started": process_start_ticks(os.getpid()), **this_machine()}
+
+
+def _is_this_resume(marked: Any) -> bool:
+    """Whether a marker names this very process, never another given its
+    number since (a reboot, a copy, another machine)."""
+    return isinstance(marked, dict) and all(marked.get(key) == value
+                                            for key, value in _this_resume().items())
+
+
 def _a_resume_died(record: dict[str, Any]) -> bool:
     """Whether the record says a resume carried the study on, and that
-    resume's process is gone (killed, out of memory)."""
+    resume has ended without taking its marker away (killed, out of
+    memory). Asked once nothing carries the study on
+    (`_carried_on_elsewhere`: a live resume holds the study's lock), so a
+    marker left is a resume that died, whatever process has its number
+    now; this process's own marker excepted. The one reading of the marker,
+    for the study and its runs' pages alike."""
     marked = record.get(CARRIED_ON_BY)
-    pid = marked.get("pid") if isinstance(marked, dict) else None
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    from fastmdxplora.gui.exploration import _process_alive
+    return bool(marked) and not _is_this_resume(marked)
+
+
+def _failed_said(record: dict[str, Any], number: int) -> str:
+    """The sentence of a round that failed (an extension's error)."""
+    body = study_said(record).removeprefix("Stopped: ").rstrip(".") or "no reason recorded"
+    return f"Its stopping rule's round {number} failed: {body}."
+
+
+def round_failed(study: str | Path) -> str | None:
+    """The sentence of the study's last round where it failed (an
+    extension's error: its join, its piece), by its record of its rounds
+    alone, as `round_ended` says it; None otherwise. Read held to the
+    study, its record only, so a run's page reads it as its study's page
+    does: a piece left unjoined by a join that failed is not a process
+    that ended."""
+    from fastmdxplora import record_access
 
     try:
-        return not _process_alive(pid)
-    except Exception:  # noqa: BLE001 - not known gone
-        return False
+        record = json.loads(record_access.read_text(Path(study) / RECORD, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or str(record.get("outcome") or "") != "stopped":
+        return None
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    if not rounds or study_ended(record):
+        return None
+    if round_decided(rounds[-1], last=True, record=record)["stopped_by"] != "error":
+        return None
+    return _failed_said(record, rounds_judged(rounds))
 
 
 def round_stopped_when_asked(study: str | Path) -> bool:
@@ -1401,7 +1446,7 @@ def round_stopped_when_asked(study: str | Path) -> bool:
         record = json.loads(record_access.read_text(Path(study) / RECORD, encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    if not isinstance(record, dict) or record.get(CARRIED_ON_BY):
+    if not isinstance(record, dict) or _a_resume_died(record):
         return False
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
     if str(record.get("outcome") or "") != "stopped":
@@ -1584,8 +1629,7 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
         state = "failed" if decided["stopped_by"] == "error" else "stopped"
         sentence = study_said(record)
         if state == "failed":
-            body = sentence.removeprefix("Stopped: ").rstrip(".") or "no reason recorded"
-            said = f"Its stopping rule's round {number} failed: {body}."
+            said = _failed_said(record, number)
         else:
             # Its own "Resuming the study ..." is said below, with the command.
             first = sentence.split(". ")[0].rstrip(".")

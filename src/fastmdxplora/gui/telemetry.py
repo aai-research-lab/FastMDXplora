@@ -633,15 +633,25 @@ def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
             taken = set()
         if index in taken or being_carried_on(piece.parent):
             return status
-        stopped = _its_round_was_stopped(piece.parent, piece)
+        from fastmdxplora.simulation.stopping import round_failed
+
+        # The study's round first: a join that failed left the piece, and
+        # the study's process ended on that error, not before the join.
+        failed = round_failed(_study_of(piece.parent))
+        stopped = not failed and _its_round_was_stopped(piece.parent, piece)
     except Exception:  # noqa: BLE001 - a record, not a verdict
         return status
+    if failed:
+        return {**status, "status": "failed", "join_owed": True,
+                "latest_error": (f"{failed} Its piece {piece.name} ran to its end and was not "
+                                 f"joined: {_resume_said(piece.parent)} joins it again and "
+                                 "runs its analyses and report.")}
     how = ("the study was stopped when asked" if stopped
            else "the study's process ended")
     return {**status, "status": "stopped" if stopped else "interrupted",
             "join_owed": True,
             "latest_error": (f"Its piece {piece.name} ran to its end, and {how} before the "
-                             f"piece was joined: {_resume_said(_study_of(piece.parent))} "
+                             f"piece was joined: {_resume_said(piece.parent)} "
                              "joins it and runs its analyses and report.")}
 
 
@@ -880,7 +890,8 @@ def _resume_said(root: str | Path | None) -> str:
     on this computer. The fix card gives the whole command."""
     if root is None:
         return "fastmdx resume"
-    return f"fastmdx resume, given this study ({Path(root).name}),"
+    # A run of a study of several is carried on by its study's resume.
+    return f"fastmdx resume, given this study ({_study_of(Path(root)).name}),"
 
 
 def _as_far_as_it_wrote(root: Path, status: dict[str, Any]) -> dict[str, Any]:
@@ -1847,7 +1858,7 @@ def analyze_health(
         return {
             "state": "interrupted",
             "headline": "Its analysis is owed",
-            "message": ("The study stopped after its pieces were joined, before their "
+            "message": ("The study's process ended after its pieces were joined, before their "
                         "analyses and report had run: any shown are of less than its whole "
                         "production. " + _resume_said(root) + " runs them."),
             "explanation": ANALYSIS_OWED_EXPLANATION,

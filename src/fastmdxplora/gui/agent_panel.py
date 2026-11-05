@@ -892,12 +892,20 @@ def _asked_going(target: Path, runtime: Any) -> bool:
         record.get("pid"), target, record.get("argv"), record)
 
 
+#: The head of the run-ended note of a study whose rule's round ended
+#: short, or whose rule was never applied.
+_ROUND_HEAD = {"failed": "Its stopping rule's round failed",
+               "stopped": "Its stopping rule's round was stopped",
+               "interrupted": "Its stopping rule's round did not finish",
+               "not applied": "Its stopping rule was not applied"}
+
+
 def _as_the_study_reads(root: Path, status: str, head: str, *,
                         stopped: bool, counted: bool = False) -> tuple[str, str]:
     """How a run the Agent started ended, as every page reads the study
     (`workspace.study_state`, its rule's round first, `stopping.round_ended`):
-    the round's sentence where it ended short or its rule was never applied,
-    and its state where its runs and records said another. A head that
+    headed by how its round ended where it ended short or its rule was
+    never applied, and its state where its runs and records said another. A head that
     counts a study's runs stands with that state; "ended", said where its
     records do not say how, stands. Stopped here and said so stands."""
     try:
@@ -910,9 +918,12 @@ def _as_the_study_reads(root: Path, status: str, head: str, *,
         return status, head
     if ended is not None:
         # The study's state (a run that refused its resume fails a round
-        # stopped), said with the round's sentence.
-        return (state if state in ("stopped", "failed", "interrupted") else ended.state,
-                ended.said)
+        # stopped), headed briefly: what it found says the round's
+        # sentence (`records_answer`), once.
+        word = state if state in ("stopped", "failed", "interrupted") else ended.state
+        return word, _ROUND_HEAD.get(
+            "not applied" if ended.said.startswith("Its stopping rule was not applied")
+            else ended.state, head)
     if stopped and status == "stopped" or state not in _ENDED_AS:
         return status, head
     if counted:
@@ -1125,11 +1136,15 @@ def _run_status(runtime: Any, *, first: str | None = None,
         # time it had left is not said, as the page does not say it.
         ended = status.get("status") == "interrupted"
         if ended:
-            why = (str(health.get("message") or "") if health.get("state") == "interrupted"
-                   else "")
-            lines.append("state: interrupted: "
-                         + (why or "the run ended without recording why") + "; its "
-                         f"last update was {status.get('last_update_timestamp') or 'not recorded'}")
+            # The study's round first: a round that failed or was stopped
+            # is said so, never cut beside it.
+            word = str(health.get("state") or "")
+            word = word if word in ("interrupted", "failed", "stopped") else "interrupted"
+            why = str(health.get("message") or "") if health.get("state") == word else ""
+            lines.append(f"state: {word}: "
+                         + (why or "the run ended without recording why").rstrip(".")
+                         + "; its last update was "
+                         f"{status.get('last_update_timestamp') or 'not recorded'}")
         # The numbers the sidebar shows, so "how far along?" is answered
         # with a step and a time rather than "I have only the stage". The
         # Agent said exactly that while the sidebar read 334,000 of

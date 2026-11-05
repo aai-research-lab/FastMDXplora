@@ -186,14 +186,7 @@ def finished_manifest(root: Path) -> dict[str, Any]:
     short = [str(p.get("name")) for p in manifest["phases"]
              if isinstance(p, dict) and str(p.get("status")) not in ("ok", "skipped")]
     if status in ("stopped", "failed", "interrupted"):
-        from fastmdxplora.simulation.stopping import round_ended
-
-        ended = round_ended(root)
-        raise ShareRefused(
-            f"The study in {root} did not finish ("
-            + (ended.said if ended is not None else status) + "); share it once it has, "
-            "after `fastmdx resume` where it stopped.",
-            code="environment.share.not_finished")
+        _refuse_short(root, status)
     if short:
         raise ShareRefused(
             f"The study in {root} did not finish ({', '.join(short)}); share it "
@@ -204,6 +197,25 @@ def finished_manifest(root: Path) -> dict[str, Any]:
                            "ran, which a shared study is opened by.",
                            code="environment.share.not_finished")
     return manifest
+
+
+def _refuse_short(root: Path, state: str, *, unless_unsaid: bool = False) -> None:
+    """Refused, a study that did not finish, as every page reads it: its
+    rule's round's sentence (`stopping.round_ended`) and the study's
+    command. ``unless_unsaid``: where no round says how it ended, its runs
+    say it instead."""
+    try:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(root)
+    except Exception:  # noqa: BLE001 - its state still says it did not finish
+        ended = None
+    if ended is None and unless_unsaid:
+        return
+    said = ended.said if ended is not None else f"It is {state}."
+    raise ShareRefused(
+        f"The study in {root} did not finish: {said} Share it once it has, after "
+        f"`fastmdx resume {root}`.", code="environment.share.not_finished")
 
 
 def _finished_runs(root: Path) -> dict[str, Any]:
@@ -238,6 +250,10 @@ def _finished_runs(root: Path) -> dict[str, Any]:
                  else f"Runs of the study in {root} are still going")
         raise ShareRefused(f"{which}; share the study once every run has finished.",
                            code="environment.share.not_finished")
+    if state in ("stopped", "failed", "interrupted"):
+        # As every page reads it, before its runs: each run's record alone
+        # shared a round that failed, or a rule never applied, as finished.
+        _refuse_short(root, state, unless_unsaid=True)
     results = {str(r.get("run_id")): r for r in (batch.get("runs") if isinstance(
         batch.get("runs"), list) else []) if isinstance(r, dict)}
     named = {str(e.get("run_id")): _system_named(e.get("system"))
@@ -277,6 +293,8 @@ def _finished_runs(root: Path) -> dict[str, Any]:
         named[run_id] = named.get(run_id) or _system_named(member.get("system"))
         if named[run_id]:
             systems.append(named[run_id])
+    if state in ("stopped", "failed", "interrupted"):
+        _refuse_short(root, state)
     if not (root / "resolved_config.yml").is_file():
         raise ShareRefused(f"The study in {root} has no resolved_config.yml, the Config of "
                            "all its runs, which a shared study is opened by.",

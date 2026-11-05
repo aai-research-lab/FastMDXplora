@@ -38,12 +38,17 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
         # not a study with no report yet. Named in the answer's unavailable.
         return {"ok": False, "reason": "not read",
                 "html": "", "not_produced": [], "downloads": {}}
+    lead = _round_lead(base)
     if not _records.is_file(source):
-        return {"ok": False, "reason": "no report yet",
+        return {"ok": False, "reason": "no report yet" + (f": {lead}" if lead else ""),
                 "html": "", "not_produced": [], "downloads": {}}
 
     text = _links_from_the_report(_records.read_text(source, encoding="utf-8", errors="replace"),
                                   report_dir, base)
+    if lead:
+        # Its rule's round ended short, or its rule was never applied: said
+        # above the report written before it, as every page says it.
+        text = f"{lead}\n\n{text}"
     # The markdown library lives in the `pdf` extra, not the base
     # install, and a base install still has a report to show. With it,
     # the report is rendered; without it, the same text is shown as it
@@ -94,6 +99,21 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
         "figure_provenance": provenance,
         **_traced(html, rendered, base, source, trace=trace),
     }
+
+
+def _round_lead(base: Path) -> str:
+    """How the study's rule's round ended, where it ended short or the rule
+    was never applied (`stopping.round_ended`), with what carries it on;
+    empty otherwise."""
+    try:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(base)
+    except Exception:  # noqa: BLE001 - the report stands as written
+        return ""
+    if ended is None:
+        return ""
+    return f"**{ended.label}.** {ended.said} {ended.carry_on_on_a_page}"
 
 
 def _withheld_since(base: Path, report_dir: Path) -> str:

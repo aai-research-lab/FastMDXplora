@@ -336,6 +336,9 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         "production_ns": production,
         "production_said": production_said,
         "carry_on": " ".join(cut.argv) if cut is not None else "",
+        # Its rule never applied (`stopping.rule_owed`): no measure judged.
+        "not_applied": cut is not None and cut.said.startswith(
+            "Its stopping rule was not applied"),
         "measures": _measures(record),
         # Numbered as the rule judged them (`round_numbers`): a catch-up is
         # shown as part of the round it carries on.

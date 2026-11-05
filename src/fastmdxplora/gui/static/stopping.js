@@ -278,7 +278,8 @@
     var now = m.points.length ? m.points[m.points.length - 1] : null;
     var line = el("p", "stopping-now");
     if (!now) {
-      line.textContent = stopped ? "Not judged: the study stopped without finishing its first piece."
+      line.textContent = data.not_applied ? "Not judged: the rule was not applied to it."
+        : stopped ? "Not judged: the study stopped without finishing its first piece."
         : "Judged when the first piece's analyses are done.";
     } else if (now.measured) {
       line.textContent = (stopped ? "Last judged " : "Now ") + withError(now.value, now.error) +

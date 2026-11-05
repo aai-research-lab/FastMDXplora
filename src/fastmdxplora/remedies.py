@@ -360,17 +360,18 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         # (`record_access`): not read, and nothing of it said. Not a study
         # with no such record either, which reads as stopped another way.
         return [_unread(refusal, root, "the study")]
-    if not found:
-        from fastmdxplora.simulation.stopping import rule_owed
+    from fastmdxplora.simulation.stopping import rule_owed
 
-        # Its runs ended well and its stopping rule was never applied to
-        # them: `fastmdx resume` applies it (`stopping.rule_owed`).
-        owed = rule_owed(root)
-        if owed is not None:
-            found = [Remedy(code=STOPPED_REFUSAL if owed.state == "stopped"
-                            else INTERRUPTED_CODE, where="the study", why=owed.said,
-                            fix=owed.carry_on_on_a_page, command=" ".join(owed.argv),
-                            argv=owed.argv[1:])]
+    # Its runs ended well and its stopping rule was never applied to them:
+    # `fastmdx resume` applies it (`stopping.rule_owed`). Where a resume
+    # carried it on since an earlier stop and ended, the rule's sentence is
+    # the reason, not the stop that resume carried on from.
+    owed = rule_owed(root)
+    if owed is not None and (not found or owed.state == "interrupted"):
+        found = [Remedy(code=STOPPED_REFUSAL if owed.state == "stopped"
+                        else INTERRUPTED_CODE, where="the study", why=owed.said,
+                        fix=owed.carry_on_on_a_page, command=" ".join(owed.argv),
+                        argv=owed.argv[1:])]
     return found
 
 
@@ -472,7 +473,10 @@ def _interrupted(root: Path) -> Remedy | None:
     # A run that had taken every step it planned before its record went
     # quiet finished (the Python API writes no end of its own): it was
     # offered `fastmdx resume` beside a report of the whole run.
-    if stands.get("status") != "interrupted":
+    if stands.get("status") != "interrupted" and not (
+            stands.get("status") == "failed" and stands.get("join_owed")):
+        # A piece whose join failed in its study's round is carried on as
+        # one cut before its join is: said with the round's failure.
         return None
     ended = stands.get("ended_by")
     from fastmdxplora.gui.telemetry import ANALYSIS_OWED
@@ -481,7 +485,8 @@ def _interrupted(root: Path) -> Remedy | None:
         # Its simulation ended and was joined; what is owed runs here, and
         # nothing is carried on from a checkpoint. The card names its
         # subject ("The study:") before the reason.
-        why = "Stopped after its pieces were joined, before their analyses and report had run."
+        why = ("Its process ended after its pieces were joined, before their analyses and "
+               "report had run.")
         remedy = _resume(INTERRUPTED_CODE, why, "the study", [root], root)
         from fastmdxplora.simulation.resume import how_a_resume_finds
 
@@ -506,9 +511,10 @@ def _interrupted(root: Path) -> Remedy | None:
         why = str(stands.get("latest_error") or "Its last piece was not joined.")
         # The study's own resume (`_resume` gives a run of several's), as
         # the health card gives it.
+        again = " again" if stands.get("status") == "failed" else ""
         return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root,
                                price=False),
-                       fix="Join its last piece, then run its analyses and report.")
+                       fix=f"Join its last piece{again}, then run its analyses and report.")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")
