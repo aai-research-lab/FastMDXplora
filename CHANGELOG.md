@@ -748,6 +748,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   reads cut. `fastmdx share` names the phases that did not finish where no
   round says; the Report page says a round once, and a copied study's saved
   comparison says the folder it was written in.
+- A study saved in a folder named `runs` has its own rule card again; only a
+  run its study names reads its study's. A study whose process record was
+  written on another machine or container reads as its records say it ended,
+  saying where the record was written, not running on one page and completed
+  on another. A study read where it was written (a relative output, a linked
+  folder) is not said copied. The rule's card gives one ceiling, the one a
+  resume uses, and names a linked-out config as not read. A failed join's fix
+  has its own code, `simulation.round.join_failed`, and is counted at its
+  production's end.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

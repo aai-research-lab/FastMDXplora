@@ -386,9 +386,12 @@ words. The study's readers read a marker only once no process holds the
 study's lock; a run's page reads any marker as its study's round carried on
 (neither stopped when asked nor failed), going or ended, and its rule's card
 is the study's, read in the study's own held read. A run record from this
-machine before its last boot names a process that is gone; one from another
-machine, which cannot be asked here, leaves a study whose rule goes on read
-running. A fix for a run
+machine before its last boot names a process that is gone, and so, as any
+process not seen from here, does one from another machine or container: the
+study reads as its records say it ended, its sentence saying where the
+record was written, to be resumed there if it still runs there. A folder
+under `runs/` is read as a run of the study above only where that study's
+`batch_manifest.json` names it. A fix for a run
 of a study of several gives the study's `fastmdx resume`. The round's test
 file walks every reader, each run's page and its rule's card in its held
 read, over each state it builds (a rule never applied, a piece not joined,
