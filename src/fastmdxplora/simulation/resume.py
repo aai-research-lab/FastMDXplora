@@ -2282,10 +2282,14 @@ def being_carried_on(root: str | Path) -> bool:
 
 
 def _its_runs(root: Path) -> list[Path]:
-    """The folders of a study's runs (``runs/<run>``), where it has any."""
+    """The folders of a study's runs (``runs/<run>``), where it has any;
+    none through a link (a ``runs`` linked out of the study is not walked)."""
+    runs = root / "runs"
     try:
-        return sorted(folder for folder in (root / "runs").iterdir()
-                      if folder.is_dir() and not folder.is_symlink())
+        if runs.is_symlink() or not runs.is_dir():
+            return []
+        return sorted(folder for folder in runs.iterdir()
+                      if not folder.is_symlink() and folder.is_dir())
     except OSError:
         return []
 
