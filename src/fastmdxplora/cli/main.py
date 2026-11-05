@@ -3339,16 +3339,17 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
     from fastmdxplora.simulation.resume import resume_study
 
+    # Asked for only where the person gave it (`--taken-over`).
+    taken = {"taken_over": True} if getattr(args, "taken_over", False) else {}
     try:
         if getattr(args, "json", False):
             # What the runs print goes to stderr, so the answer on stdout is
             # the one line of JSON a program reads; it followed every phase's
             # progress there, and no JSON reader read it.
             with _stdout_on_stderr():
-                answer = resume_study(args.study,
-                                      taken_over=getattr(args, "taken_over", False))
+                answer = resume_study(args.study, **taken)
         else:
-            answer = resume_study(args.study, taken_over=getattr(args, "taken_over", False))
+            answer = resume_study(args.study, **taken)
     except KeyboardInterrupt:
         # A Ctrl+C obeyed at once: said as the study then stands, never a
         # traceback; one heard after its last record was written leaves it
