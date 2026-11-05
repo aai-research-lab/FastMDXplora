@@ -180,10 +180,12 @@ class TestWhetherItEnded:
         # Another machine's or container's process: an hour of nothing
         # written (the user's decision of 11-05); none recorded: a day.
         span = SILENT_RUN_ENDED_AFTER_SECONDS if "none" in where else ANOTHER_HOST_QUIET_SECONDS
+        # Said as the span it read: an hour's quiet is not a day's.
+        silence = "silence" if "none" in where else "silence_elsewhere"
         assert not run_ended_unsaid(study("recent", _ago(60)))
         assert not run_ended_unsaid(study("slow", _ago(span - 60)))
-        assert how_the_run_ended(study("quiet", _ago(span + 60))) == "silence"
-        assert how_the_run_ended(study("weeks", _ago(21 * 86400))) == "silence"
+        assert how_the_run_ended(study("quiet", _ago(span + 60))) == silence
+        assert how_the_run_ended(study("weeks", _ago(21 * 86400))) == silence
 
     @pytest.mark.parametrize("arguments", [False, True])
     def test_never_for_the_run_reading_its_own_record(self, tmp_path, arguments):
