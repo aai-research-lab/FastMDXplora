@@ -620,8 +620,19 @@ def stopping_card(root: Path) -> Any:
     from fastmdxplora.gui.stopping_view import stopping_payload
 
     in_its_study = _a_run_in_its_study(root.resolve()) if root.is_dir() else None
-    return _said_not_read(_confined(in_its_study[0] if in_its_study else root,
-                                    stopping_payload))
+    if in_its_study is None:
+        return _said_not_read(_confined(root, stopping_payload))
+    study, inside = in_its_study[0], root.resolve()
+    answer = _confined(study, stopping_payload)
+    if isinstance(answer, dict) and answer.get("unavailable"):
+        # Each record it did not read named from the run's page, as a
+        # read of that page names it (`_named_from`).
+        why = answer.get("unavailable_why") or {}
+        named = {name: _named_from(inside, study, name) for name in answer["unavailable"]}
+        answer = {**answer, "unavailable": sorted(named.values()),
+                  "unavailable_why": {named[name]: said for name, said in why.items()
+                                      if name in named}}
+    return _said_not_read(answer)
 
 
 def _said_not_read(answer: Any) -> Any:

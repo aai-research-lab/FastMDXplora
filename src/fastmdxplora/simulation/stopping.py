@@ -1280,9 +1280,10 @@ def _its_process_is_gone(study: Path) -> bool:
 
 def _from_another_host(record: dict[str, Any]) -> bool:
     """Whether a run record was written on another machine, or in a process
-    namespace of this boot not ours (a container beside this one), so the
-    process it names cannot be asked here and may still be going. A record
-    of this machine before its last boot is not (`_its_process_is_gone`)."""
+    namespace of this boot other than this process's (a container beside
+    it), so the process it names cannot be asked here and may still be
+    going. A record of this machine before its last boot is not
+    (`_its_process_is_gone`)."""
     from fastmdxplora.orchestrator import this_machine
 
     here = this_machine()
