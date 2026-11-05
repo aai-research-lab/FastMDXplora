@@ -682,12 +682,18 @@ def _study_of(run: Path) -> Path:
     """The study a run belongs to: its own folder, or the study of runs it
     is one of (``runs/<name>``, named in that study's record of its runs,
     `batch_manifest.json`). A study of its own saved in a folder named
-    ``runs`` is its own."""
+    ``runs`` (no such record above it, or one not naming it) is its own."""
     if run.parent.name != "runs":
         return run
     study = run.parent.parent
+    from fastmdxplora.refusals import OutsideWorkspace
+
     try:
         batch = json.loads(_records.read_text(study / "batch_manifest.json", encoding="utf-8"))
+    except OutsideWorkspace:
+        # Its record of runs there and not read (linked out of the study):
+        # a run of it, by its place, as before the record was asked.
+        return study
     except (OSError, ValueError):
         return run
     named = {str(entry.get("run_id")) for key in ("planned", "runs")
