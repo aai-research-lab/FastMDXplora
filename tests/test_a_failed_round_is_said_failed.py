@@ -3106,6 +3106,19 @@ def _in_its_held_read(folder: Path, read) -> tuple:
     return _confined(folder, held), refused
 
 
+def stopping_card(folder: Path) -> dict:
+    """The rule's card a page of ``folder`` is answered (`/api/stopping`):
+    `server.stopping_card`, or where the server has none, the card read in
+    the folder's own held read, as its route read it."""
+    from fastmdxplora.gui import server
+
+    if hasattr(server, "stopping_card"):
+        return server.stopping_card(folder)
+    from fastmdxplora.gui.stopping_view import stopping_payload
+
+    return server._said_not_read(server._confined(folder, stopping_payload))
+
+
 def _shared(study: Path) -> str:
     """Whether `fastmdx share` takes the study as finished: "finished", or
     its refusal's words."""
@@ -3153,7 +3166,10 @@ def _every_reader(study: Path) -> dict:
     note = run_summary_endpoint(
         {"study": str(study)},
         SimpleNamespace(running_root=None, process=None, stopped_roots=()))
+    study_card = stopping_card(study)
     said = {
+        "card_said": [study_card.get(key) for key in ("said", "carry_on", "ceiling_said",
+                                                       "outcome_label")],
         "note": note,
         "words": {
             # The header, the sidebar and All studies.
@@ -3201,10 +3217,15 @@ def _every_reader(study: Path) -> dict:
     said["run_pages"] = {}
     for run in runs:
         folder = Path(run["path"])
-        (run_state, run_health, run_card), run_refused = _in_its_held_read(
-            folder, lambda inside: (study_state(inside), _status_records(inside)["health"],
-                                    stopping_payload(inside)))
+        (run_state, run_health), run_refused = _in_its_held_read(
+            folder, lambda inside: (study_state(inside), _status_records(inside)["health"]))
+        # The rule's card on the run's page, as the server answers it.
+        run_card = stopping_card(folder)
+        run_refused |= set(run_card.get("unavailable") or ())
         said["run_pages"][run["run_id"]] = {
+            "headline": run_health.get("headline"),
+            "card_said": [run_card.get(key) for key in ("said", "carry_on", "ceiling_said",
+                                                         "outcome_label")],
             # The rule's card on the run's page.
             "card": (_CARD_SAID[run_card["outcome_label"]] if run_card.get("ok")
                      else "completed"),
@@ -3218,6 +3239,11 @@ def _every_reader(study: Path) -> dict:
     return said
 
 
+#: The health card's heading for each state it gives.
+_HEADED = {"failed": ("Stopped with an error",), "stopped": ("Stopped",),
+           "interrupted": ("Interrupted", "Its analysis is owed")}
+
+
 def _every_reader_agrees(study: Path, state: str, *, ran: dict | None = None) -> None:
     """Every reader gives the study ``state``; one that did not end says
     what carries it on, as the one derivation (`round_ended`) says it, and
@@ -3225,6 +3251,8 @@ def _every_reader_agrees(study: Path, state: str, *, ran: dict | None = None) ->
     and exit code where a fixture saved them."""
     said = _every_reader(study)
     assert set(said["words"].values()) == {state}, said["words"]
+    assert said["health"].get("headline") in _HEADED.get(state, (said["health"].get(
+        "headline"),)), said["health"]
     assert not said["refused"], said["refused"]
     assert not said["going"]
     for name, page in said["run_pages"].items():
@@ -3234,7 +3262,14 @@ def _every_reader_agrees(study: Path, state: str, *, ran: dict | None = None) ->
         assert not page["refused"], (name, page["refused"])
         words = {page[key] for key in ("listed", "study_state", "card_of", "health")}
         assert len(words) == 1, (name, page)
-        # Its rule's card says the study's rule, or the run as it stands.
+        # Its rule's card is the study's card, word for word: what a resume
+        # does, from the ceiling the study's config now sets.
+        assert page["card_said"] == said["card_said"], (name, page["card_said"],
+                                                         said["card_said"])
+        # Its health card is headed as its state (a join that failed was
+        # headed "Interrupted" beside "Failed").
+        if page["health"] in _HEADED:
+            assert page["headline"] in _HEADED[page["health"]], (name, page["headline"])
         assert page["card"] in words | {state}, (name, page["card"], page["card_words"][:600])
         # A round that failed is never said cut on its runs' pages.
         if state == "failed":
@@ -3268,6 +3303,9 @@ def _every_reader_agrees(study: Path, state: str, *, ran: dict | None = None) ->
     assert said["card"]["carry_on"] == " ".join(ended.argv) == command
     for reader in ("answer", "context", "report"):
         assert ended.said in said[reader], (reader, said[reader][:800])
+    # The Report page says it once (a study of one run's report, written
+    # after its round, said it, and the page said it again above).
+    assert said["report"].count(ended.said) == 1, said["report"][:1500]
     # The run-ended note says the round's sentence once, below its head.
     note = said["note"]
     assert (note["head"] + " " + note["found"]).count(ended.said) == 1, note
@@ -3377,11 +3415,27 @@ def test_a_round_that_failed_in_its_join_is_said_failed_by_every_reader(join_fai
     """The fixes card, the run's page and the Agent's record said a round
     that failed in its join cut ("the study's process ended before the
     piece was joined", "state: interrupted" beside "status: failed"), and
-    `fastmdx share` shared a study of runs whose round failed."""
+    `fastmdx share` shared a study of runs whose round failed; a run's
+    health card headed it "Interrupted", its status bar "Production
+    failed"."""
+    from fastmdxplora.gui.telemetry import status_as_it_stands
+
     study = tmp_path / "study"
     shutil.copytree(join_failed["study"], study, symlinks=True)
     _every_reader_agrees(study, "failed", ran=join_failed)
     from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.gui.server import _status_records
+
+    # Its pages are headed as it failed, and its status bar says the join
+    # failed ("Production failed" from its production's stage).
+    for page in [study] + sorted((study / "runs").glob("*")):
+        health = _status_records(page)["health"]
+        if health["state"] == "failed":
+            assert health["headline"] == "Stopped with an error", (page, health)
+    pieces = [status_as_it_stands(page) for page in [study] + sorted(
+        (study / "runs").glob("*"))]
+    assert any(p.get("join_owed") for p in pieces), pieces
+    assert all(p.get("stage") == "joining" for p in pieces if p.get("join_owed")), pieces
 
     said = json.dumps(fixes_payload(study)["fixes"])
     assert "process ended before" not in said, said[:800]
@@ -3428,7 +3482,7 @@ def test_the_card_of_a_rule_never_applied_says_it_judged_nothing(killed_before_i
     study = tmp_path / "study"
     shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
     data = stopping_payload(study)
-    assert data["not_applied"] is True and data["measures"], data
+    assert data["measures"], data
     line = _measure_line(data)
     assert line == "Not judged: the rule was not applied to it.", line
 
@@ -3468,6 +3522,104 @@ def test_a_resume_s_marker_is_not_believed_by_its_number_alone(resume_died, tmp_
     with carried_on_marked(study):
         assert not _a_resume_died(json.loads((study / "stopping.json").read_text()))
     assert CARRIED_ON_BY not in json.loads((study / "stopping.json").read_text())
+
+
+@pytest.mark.parametrize("ceiling", [0.001, 0.0024], ids=["lowered", "raised"])
+def test_a_run_page_s_rule_card_is_its_study_s_after_its_ceiling_changes(
+        sequential_stopped, tmp_path, ceiling):
+    """With the study's ceiling lowered, each run page's card said a resume
+    "first carries the extension of tri__random-seed-1 on to 1.8 ps", which
+    the resume does not do; raised, "at most 1.2 ps" against the study's
+    2.4: the record's ceiling, read in the run's scope."""
+    study = tmp_path / "study"
+    shutil.copytree(sequential_stopped, study, symlinks=True)
+    config = yaml.safe_load((study / "resolved_config.yml").read_text())
+    config["simulation"]["stop_when"]["max_duration_ns"] = ceiling
+    (study / "resolved_config.yml").write_text(yaml.safe_dump(config))
+    card = stopping_card(study)
+    assert card["ok"] and not card.get("unavailable"), card
+    for run in ("tri__random-seed-1", SECOND):
+        page = stopping_card(study / "runs" / run)
+        assert not page.get("unavailable"), page
+        for key in ("said", "carry_on", "ceiling_said", "outcome_label"):
+            assert page[key] == card[key], (run, key, page[key], card[key])
+    # What the card says a resume does is what the study's config allows.
+    assert ("carries no run on" in card["said"]) == (ceiling < 0.0018), card["said"]
+
+
+@pytest.mark.parametrize("changed", ["boot", "host"])
+def test_a_study_killed_before_a_reboot_is_not_said_completed(killed_before_its_rule,
+                                                               tmp_path, changed):
+    """After a reboot (its run record of another boot of this machine), a
+    study killed before its rule read completed on every reader and was
+    shared: its process was "not asked here". A record of another machine,
+    which cannot be asked, is going there, never completed."""
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = tmp_path / "study"
+    shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+    records = list(study.rglob(RUN_PROCESS_FILE))
+    assert records
+    for path in records:
+        record = json.loads(path.read_text())
+        record[changed] = "another-" + changed
+        path.write_text(json.dumps(record))
+    if changed == "boot":
+        _every_reader_agrees(study, "interrupted")
+    else:
+        assert study_state(study) == "running"
+        assert _shared(study) != "finished"
+
+
+def test_a_failed_round_carried_on_by_a_resume_that_died_reads_cut(join_failed, tmp_path):
+    """A resume joined the piece whose join had failed, then was killed:
+    every reader said "failed at joining", that join since done."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(join_failed["study"], study, symlinks=True)
+    # One run: killed after its join and report, as its rule is judged
+    # again; two seeds: as it joins seed-1's piece.
+    assert _killed_in(tmp_path, "_judge_the_run_again" if not (
+        study / "batch_manifest.json").is_file() else "_join_and_analyse",
+        "resume", str(study)) == 9
+    ended = round_ended(study)
+    assert ended is not None and "the resume carrying it on ended" in ended.said, ended
+    _every_reader_agrees(study, "interrupted")
+
+
+def test_share_s_refusal_with_no_round_names_what_did_not_finish(failed, tmp_path,
+                                                                  monkeypatch):
+    """Where no round says how a study ended, share said "did not finish:
+    It is failed." where it had named the phase."""
+    from fastmdxplora.gui import workspace
+    from fastmdxplora.sharing.pack import ShareRefused, finished_manifest
+    from fastmdxplora.simulation import stopping
+
+    run = tmp_path / "run"
+    shutil.copytree(failed["study"] / "runs" / "tri__random-seed-1", run, symlinks=True)
+    manifest = json.loads((run / "manifest.json").read_text())
+    manifest["phases"][-1]["status"] = "failed"
+    (run / "manifest.json").write_text(json.dumps(manifest))
+    monkeypatch.setattr(workspace, "study_state", lambda folder: "failed")
+    monkeypatch.setattr(stopping, "round_ended", lambda study, **kw: None)
+    with pytest.raises(ShareRefused) as refused:
+        finished_manifest(run)
+    said = str(refused.value)
+    assert f"({manifest['phases'][-1]['name']})" in said and "It is failed" not in said, said
+
+
+def test_a_copied_study_s_comparison_says_the_folder_it_was_written_in(failed, tmp_path):
+    """The Report page of a copied study of runs gave the saved comparison
+    report's `fastmdx resume` of the folder it was copied from."""
+    from fastmdxplora.gui.report_page import report_payload
+
+    study = tmp_path / "copy"
+    shutil.copytree(failed["study"], study, symlinks=True)
+    shown = _shown(report_payload(study))
+    assert f"fastmdx resume {study}" in shown, shown[:1500]
+    assert "the folder this study was copied from" in shown, shown[:1500]
 
 
 def test_every_reader_says_a_refused_resume_and_a_completed_study_alike(

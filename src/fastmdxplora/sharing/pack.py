@@ -186,7 +186,7 @@ def finished_manifest(root: Path) -> dict[str, Any]:
     short = [str(p.get("name")) for p in manifest["phases"]
              if isinstance(p, dict) and str(p.get("status")) not in ("ok", "skipped")]
     if status in ("stopped", "failed", "interrupted"):
-        _refuse_short(root, status)
+        _refuse_short(root, status, short=short)
     if short:
         raise ShareRefused(
             f"The study in {root} did not finish ({', '.join(short)}); share it "
@@ -199,11 +199,18 @@ def finished_manifest(root: Path) -> dict[str, Any]:
     return manifest
 
 
-def _refuse_short(root: Path, state: str, *, unless_unsaid: bool = False) -> None:
+#: How a study that did not finish ended, where no round of its rule says.
+_ENDED_SAID = {"stopped": "It was stopped.", "failed": "It ended with an error.",
+               "interrupted": "It ended without recording why."}
+
+
+def _refuse_short(root: Path, state: str, *, unless_unsaid: bool = False,
+                  short: list[str] | None = None) -> None:
     """Refused, a study that did not finish, as every page reads it: its
     rule's round's sentence (`stopping.round_ended`) and the study's
-    command. ``unless_unsaid``: where no round says how it ended, its runs
-    say it instead."""
+    command; where no round says, the phases it did not finish (``short``).
+    ``unless_unsaid``: where no round says how it ended, its runs say it
+    instead."""
     try:
         from fastmdxplora.simulation.stopping import round_ended
 
@@ -212,7 +219,11 @@ def _refuse_short(root: Path, state: str, *, unless_unsaid: bool = False) -> Non
         ended = None
     if ended is None and unless_unsaid:
         return
-    said = ended.said if ended is not None else f"It is {state}."
+    if ended is None and short:
+        raise ShareRefused(
+            f"The study in {root} did not finish ({', '.join(short)}); share it once it has, "
+            f"after `fastmdx resume {root}`.", code="environment.share.not_finished")
+    said = ended.said if ended is not None else _ENDED_SAID.get(state, "It did not finish.")
     raise ShareRefused(
         f"The study in {root} did not finish: {said} Share it once it has, after "
         f"`fastmdx resume {root}`.", code="environment.share.not_finished")

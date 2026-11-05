@@ -1264,14 +1264,57 @@ def _its_process_is_gone(study: Path) -> bool:
     except (OSError, ValueError):
         return False
     pid = process.get("pid") if isinstance(process, dict) else None
-    if not isinstance(pid, int) or pid <= 0 or record_is_from_elsewhere(process):
+    if not isinstance(pid, int) or pid <= 0 or _from_another_host(process):
         return False
+    if record_is_from_elsewhere(process):
+        # This machine, before its last boot: every process of that boot
+        # is gone (a study killed and then the machine restarted).
+        return True
     if pid in _this_process_and_its_parents():
         return False
     try:
         return not _process_alive(pid)
     except Exception:  # noqa: BLE001 - not known gone
         return False
+
+
+def _from_another_host(record: dict[str, Any]) -> bool:
+    """Whether a run record was written on another machine, or in a process
+    namespace of this boot not ours (a container beside this one), so the
+    process it names cannot be asked here and may still be going. A record
+    of this machine before its last boot is not (`_its_process_is_gone`)."""
+    from fastmdxplora.orchestrator import this_machine
+
+    here = this_machine()
+    there = record.get("host")
+    if isinstance(there, str) and there and here.get("host") and there != here["host"]:
+        return True
+    boot = record.get("boot")
+    if isinstance(boot, str) and boot and here.get("boot") and boot != here["boot"]:
+        return False
+    space = record.get("pidns")
+    return bool(isinstance(space, str) and space and here.get("pidns")
+                and space != here["pidns"])
+
+
+def going_on_another_host(study: str | Path) -> bool:
+    """Whether the study's record of its rounds says its rule goes on, and
+    the record of the process running it was written on another machine
+    (`_from_another_host`): it cannot be asked here, so the study is said
+    going, as its rule's card says it, never completed from its runs."""
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    from fastmdxplora import record_access
+
+    study = Path(study)
+    try:
+        record = json.loads(record_access.read_text(study / RECORD, encoding="utf-8"))
+        process = json.loads(record_access.read_text(study / RUN_PROCESS_FILE,
+                                                     encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (isinstance(record, dict) and str(record.get("outcome") or "") == "running"
+            and isinstance(process, dict) and _from_another_host(process))
 
 
 def _carried_on_elsewhere(study: Path) -> bool:
@@ -1427,7 +1470,7 @@ def round_failed(study: str | Path) -> str | None:
     if not isinstance(record, dict) or str(record.get("outcome") or "") != "stopped":
         return None
     rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
-    if not rounds or study_ended(record):
+    if not rounds or study_ended(record) or _a_resume_died(record):
         return None
     if round_decided(rounds[-1], last=True, record=record)["stopped_by"] != "error":
         return None
@@ -1637,10 +1680,10 @@ def round_ended(study: str | Path, *, resuming: bool = False) -> RoundEnded | No
                     f"{first.removeprefix(_STOPPED_WHEN_ASKED)}."
                     if first.startswith(_STOPPED_WHEN_ASKED)
                     else f"Its stopping rule's round {number} was stopped: {first}.")
-        if state == "stopped" and not resuming and _a_resume_died(record):
+        if not resuming and _a_resume_died(record):
             # A resume carried the round on and its process ended (killed,
             # out of memory) with no record of how: cut, never said stopped
-            # when asked by the earlier stop's sentence.
+            # when asked, nor failed, by the earlier round's sentence.
             state = "interrupted"
             said = (f"Its stopping rule's round {number} did not finish: the resume carrying "
                     "it on ended with no record of how the round ended.")

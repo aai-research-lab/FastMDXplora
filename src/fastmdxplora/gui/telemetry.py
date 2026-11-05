@@ -642,7 +642,9 @@ def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - a record, not a verdict
         return status
     if failed:
-        return {**status, "status": "failed", "join_owed": True,
+        # Its production whole, its join failed: the status bar says the
+        # join failed ("Joining failed"), not its production.
+        return {**status, "status": "failed", "join_owed": True, "stage": "joining",
                 "latest_error": (f"{failed} Its piece {piece.name} ran to its end and was not "
                                  f"joined: {_resume_said(piece.parent)} joins it again and "
                                  "runs its analyses and report.")}
@@ -708,8 +710,9 @@ def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
         # The piece is the newest word: the study is where it is.
         stage = str(last.get("stage") or "").lower()
         whole["status"] = last.get("status")
-        # A piece only produces, whatever stage it was first marked in.
-        whole["stage"] = stage if stage in {"analysis", "report"} else "production"
+        # A piece only produces, whatever stage it was first marked in; one
+        # whose join failed is said at its join (`_its_join_owed`).
+        whole["stage"] = stage if stage in {"analysis", "report", "joining"} else "production"
         whole["last_update_timestamp"] = last.get("last_update_timestamp")
         states = dict(first.get("stage_states") or {}) if isinstance(
             first.get("stage_states"), dict) else {}
@@ -1830,11 +1833,13 @@ def analyze_health(
     if status.get("join_owed"):
         # Its last piece ran to its end and was never joined
         # (`_its_join_owed`): cut or stopped as its study is, in its own
-        # words, never "Stopped with an error".
+        # words; "Stopped with an error" only where its join failed in its
+        # study's round.
         said = str(status.get("status") or "interrupted").lower()
         return {
             "state": said,
-            "headline": "Stopped" if said == "stopped" else "Interrupted",
+            "headline": {"stopped": "Stopped", "failed": "Stopped with an error"}.get(
+                said, "Interrupted"),
             "message": str(latest_error or ""),
             "explanation": ("Its piece's production is whole; joining it, then its analyses "
                             "and report, is what remains."),

@@ -611,6 +611,19 @@ def _refusals_said(answer: dict[str, Any]) -> str:
     return "; ".join(parts) + "."
 
 
+def stopping_card(root: Path) -> Any:
+    """The rule's card of the study open, or of the study a run of several
+    belongs to: the study's card, read in the study's own held read
+    (`_confined`: its record, config, batch manifest and process records),
+    so a run's page says what a resume of the study does, from the ceiling
+    its config now sets, as the study's page does."""
+    from fastmdxplora.gui.stopping_view import stopping_payload
+
+    in_its_study = _a_run_in_its_study(root.resolve()) if root.is_dir() else None
+    return _said_not_read(_confined(in_its_study[0] if in_its_study else root,
+                                    stopping_payload))
+
+
 def _said_not_read(answer: Any) -> Any:
     """A `_confined` answer with its refused records said as not read, in
     its ``not_read`` sentence, for a page to show (`_refusals_said`)."""
@@ -1925,11 +1938,7 @@ def make_handler(
                         root, lambda inside: secondary_structure(inside, of))))
                 return
             if path == "/api/stopping":
-                from fastmdxplora.gui.stopping_view import stopping_payload
-
-                # Read from the study's own records only (`_confined`): its
-                # record, batch manifest and process records.
-                self._send_json(_said_not_read(_confined(root, stopping_payload)))
+                self._send_json(stopping_card(root))
                 return
             if path == "/api/again":
                 # What can be run again on the study on screen, and why not,

@@ -13,6 +13,7 @@ rather than opening a file to find out what it said.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,7 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
 
     text = _links_from_the_report(_records.read_text(source, encoding="utf-8", errors="replace"),
                                   report_dir, base)
-    if lead:
+    if lead and _round_lead(base, said_only=True) not in text:
         # Its rule's round ended short, or its rule was never applied: said
         # above the report written before it, as every page says it.
         text = f"{lead}\n\n{text}"
@@ -101,10 +102,11 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
     }
 
 
-def _round_lead(base: Path) -> str:
+def _round_lead(base: Path, *, said_only: bool = False) -> str:
     """How the study's rule's round ended, where it ended short or the rule
     was never applied (`stopping.round_ended`), with what carries it on;
-    empty otherwise."""
+    empty otherwise. ``said_only``: its sentence alone, which a report
+    written after the round's end says itself, so it is not said again."""
     try:
         from fastmdxplora.simulation.stopping import round_ended
 
@@ -113,6 +115,8 @@ def _round_lead(base: Path) -> str:
         return ""
     if ended is None:
         return ""
+    if said_only:
+        return ended.said
     return f"**{ended.label}.** {ended.said} {ended.carry_on_on_a_page}"
 
 
@@ -269,6 +273,19 @@ def _study_of_runs_payload(base: Path, *, trace: bool = True) -> dict[str, Any]:
     comparison = base / "comparison" / "comparison_report.md"
     if _records.is_file(comparison):
         text = _records.read_text(comparison, encoding="utf-8", errors="replace")
+        elsewhere = sorted({found for found in re.findall(r"`fastmdx resume ([^`]+)`", text)
+                            if found != str(base)})
+        if elsewhere:
+            # Written in the folder this study was copied from: the command
+            # it gives carries that folder on, not this one.
+            text = (f"_Written in {', '.join(elsewhere)}, the folder this study was copied "
+                    f"from: here, `fastmdx resume {base}` carries it on._\n\n{text}")
+        said = _round_lead(base, said_only=True)
+        if said and said not in text:
+            # Written as its round then ended; it has ended otherwise since
+            # (a resume that carried it on and died): said first, as every
+            # page says it.
+            text = f"{_round_lead(base)}\n\n{text}"
         html, rendered = render_markdown(text)
         downloads = {}
         for key, name in (("markdown", "comparison_report.md"),
