@@ -553,6 +553,12 @@ def _interrupted(root: Path) -> Remedy | None:
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")
+    elif ended == "silence_elsewhere":
+        # Said of its own span: an hour, its process on another machine or
+        # container (`telemetry.SILENT_ELSEWHERE`); where is said after it.
+        why = ("Nothing has been written for an hour, and its process was recorded on "
+               "another machine or container: look there first, two runs must not write "
+               "to one study.")
     else:
         why = ("Nothing has been written for a day, and no process on this machine "
                "runs it. If it runs on another machine or under a scheduler, look "

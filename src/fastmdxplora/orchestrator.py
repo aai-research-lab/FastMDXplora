@@ -1949,6 +1949,70 @@ def _holds() -> dict[Path, int]:
     return _HOLDS
 
 
+#: How often a running process stamps its own process records
+#: (``alive_at``), in every phase, from a thread of its own (`_heartbeat`):
+#: the study's readers on another machine count an hour of quiet from it
+#: (`resume.ANOTHER_HOST_QUIET_SECONDS`, twelve of these), never from the
+#: phase's own writes, which a long setup, analysis or join does not make.
+HEARTBEAT_SECONDS = 300.0
+#: Set for a test's study only, to stamp more often than every 5 minutes.
+HEARTBEAT_ENV = "FASTMDX_HEARTBEAT_SECONDS"
+_HEARTBEAT: list[threading.Thread] = []
+
+
+def _heartbeat_every() -> float:
+    try:
+        return max(0.05, float(os.environ.get(HEARTBEAT_ENV) or HEARTBEAT_SECONDS))
+    except ValueError:
+        return HEARTBEAT_SECONDS
+
+
+def stamp_alive(path: Path) -> None:
+    """``alive_at`` written into a process record of this process, every
+    other field as it stands; nothing where the record names another
+    process (its number, and its start where this machine says)."""
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(record, dict) or record.get("pid") != os.getpid():
+        return
+    ticks = process_start_ticks(os.getpid())
+    if "start_ticks" in record and ticks is not None and record["start_ticks"] != ticks:
+        return
+    record["alive_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        path.write_text(json.dumps(record), encoding="utf-8")
+        stat = path.stat()
+        _RECORDS_WRITTEN_HERE[_key(path)] = (stat.st_ino, stat.st_mtime_ns)
+    except OSError:
+        pass
+
+
+def _heartbeat() -> None:
+    """Stamp every process record this process holds, for as long as it
+    lives: a daemon thread, so it ends with the process."""
+    import time
+
+    while True:
+        time.sleep(_heartbeat_every())
+        with _HOLDS_LOCK:
+            held = [key for key, count in _holds().items() if count > 0]
+            for folder in held:
+                stamp_alive(Path(folder) / RUN_PROCESS_FILE)
+
+
+def _start_heartbeat() -> None:
+    """The heartbeat thread, started once in each process that writes a
+    process record (a study's, a resume's, a worker's)."""
+    if _HEARTBEAT and _HEARTBEAT[0].is_alive() and _HEARTBEAT[0].ident is not None:
+        return
+    _HEARTBEAT.clear()
+    thread = threading.Thread(target=_heartbeat, name="fastmdx-heartbeat", daemon=True)
+    _HEARTBEAT.append(thread)
+    thread.start()
+
+
 def _record_run_process(output_dir: Path) -> None:
     import atexit
     import sys
@@ -1962,6 +2026,7 @@ def _record_run_process(output_dir: Path) -> None:
             "pid": os.getpid(),
             "argv": list(sys.argv),
             "started_at": datetime.now(timezone.utc).isoformat(),
+            "alive_at": datetime.now(timezone.utc).isoformat(),
             **this_machine(),
             **({"start_ticks": ticks} if ticks is not None else {}),
         }), encoding="utf-8")
@@ -1982,6 +2047,7 @@ def _record_run_process(output_dir: Path) -> None:
         # For a run that raised past its end, and an orchestrator made and
         # never run: removed at exit, where it is still this process's.
         atexit.register(_remove_if_written_here, key.parent)
+    _start_heartbeat()
 
 
 def _written_by_this_process(record: Any) -> bool:

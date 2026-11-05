@@ -337,6 +337,15 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
                 ended.add(run_id)
     # The study's rounds, read once for all its runs.
     rounds = rounds_of_a_study(Path(root))
+    # Going on another machine or container (`resume.going_elsewhere`): its
+    # runs are going as the study is (`workspace.study_state`), whatever
+    # their own records last said (between its pieces, in its join).
+    from fastmdxplora.simulation.resume import going_elsewhere
+
+    try:
+        elsewhere = bool(going_elsewhere(Path(root)))
+    except Exception:  # noqa: BLE001 - as each run's records say
+        elsewhere = False
     out = []
     for entry in entries:
         run_id = str(entry["run_id"])
@@ -415,6 +424,8 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
                 owed = "completed"
             if owed in ("interrupted", "failed", "running"):
                 state = owed
+        if elsewhere and state in ("completed", "interrupted"):
+            state = "running"
         out.append({"run_id": run_id, "path": str(folder), "system": entry.get("system"),
                     "values": entry.get("sweep_values") or {}, "state": state,
                     "fraction": fraction, "so_far": so_far,

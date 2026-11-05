@@ -3701,8 +3701,7 @@ def _every_reader_says_going(study: Path, *, elsewhere: bool) -> None:
 
 
 @pytest.mark.parametrize("where,changed", [
-    *[(where, changed) for where in _HELD_AT for changed in ("host", "pidns")],
-    ("mid piece", None)])
+    *[(where, "host") for where in _HELD_AT], ("mid piece", "pidns"), ("mid piece", None)])
 def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, where, changed,
                                                                      monkeypatch):
     """A study really going (not killed) whose records name another machine
@@ -3749,7 +3748,7 @@ def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, w
         # Gone quiet: what its records say, where, and the person's to run.
         _quiet(monkeypatch)
         state = study_state(study)
-        assert state in ("interrupted", "stopped", "failed"), state
+        assert state == "interrupted", state
         ended = round_ended(study)
         if ended is not None:
             assert "which cannot be asked from here" in ended.said
@@ -3757,6 +3756,204 @@ def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, w
                  for fix in remedies_of(page)]
         assert fixes and all(fix.decision for fix in fixes), fixes
         assert all("which cannot be asked from here" in fix.why for fix in fixes), fixes
+
+
+def _going(root: Path, *, minutes: float, host: str = "nodeB") -> Path:
+    """A study of one run whose live record says it is going, and whose
+    process record (another machine's) was last stamped ``minutes`` ago:
+    its files written now, as a copy (`cp -r`) leaves them."""
+    from datetime import datetime, timedelta, timezone
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    then = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    (root / "simulation").mkdir(parents=True)
+    (root / "resolved_config.yml").write_text("simulation: {}\n")
+    (root / "simulation" / "live_status.json").write_text(json.dumps({
+        "status": "running", "stage": "production", "last_update_timestamp": then,
+        "current_step": 100, "total_planned_steps": 1000}))
+    (root / RUN_PROCESS_FILE).write_text(json.dumps({
+        "pid": 999999, "started_at": then, "alive_at": then, "host": host, "boot": "b",
+        "pidns": ""}))
+    return root
+
+
+@pytest.mark.parametrize("minutes", [59, 61])
+def test_another_host_s_quiet_hour_is_read_on_one_clock_and_said_so(tmp_path, minutes):
+    """The hour was read on two clocks (file times against the records'
+    stamps), and an hour's quiet was said as a day's: the card, the health,
+    the fix's why and the timeline."""
+    from fastmdxplora.gui.study_timeline import ENDED_HOW
+    from fastmdxplora.gui.telemetry import analyze_health, status_as_it_stands
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation.resume import going_elsewhere
+
+    root = _going(tmp_path / "copy", minutes=minutes)
+    status = status_as_it_stands(root)
+    if minutes < 60:
+        assert going_elsewhere(root) and status.get("ended_by") is None, status
+        return
+    assert not going_elsewhere(root)
+    assert status["status"] == "interrupted" and status["ended_by"] == "silence_elsewhere"
+    health = analyze_health(status, [], root=root)
+    assert "over an hour" in health["message"] and "a day" not in health["message"], health
+    assert "an hour" in ENDED_HOW[status["ended_by"]]
+    why = " ".join(remedy.why for remedy in remedies_of(root))
+    assert "for an hour" in why and "for a day" not in why, why
+
+
+def test_the_time_left_names_its_zone_and_quotes_the_folder(tmp_path, monkeypatch):
+    """The time left was this machine's local time with no zone named, and
+    a folder with a space in it broke the command pasted."""
+    import time
+
+    from fastmdxplora.simulation import resume
+
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    try:
+        assert resume._clock(0) == "1970-01-01 00:00 UTC+00:00"
+        root = _going(tmp_path / "a study", minutes=5)
+        said = resume.going_elsewhere(root)
+        assert "UTC+00:00" in said and f"--taken-over '{root}'" in said, said
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()
+
+
+def test_a_piece_set_aside_is_not_read_as_going(stopped_at_its_end, tmp_path):
+    """A piece set aside (stopped before its first checkpoint) left its
+    process record, another machine's, read as going: a finished study read
+    running for the hour."""
+    from datetime import datetime, timezone
+
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    study = tmp_path / "study"
+    shutil.copytree(stopped_at_its_end, study, symlinks=True)
+    assert _resume_by_the_cli(study)[0] == 0
+    aside = study / "segment-001-stopped-before-its-checkpoint"
+    aside.mkdir()
+    now = datetime.now(timezone.utc).isoformat()
+    (aside / RUN_PROCESS_FILE).write_text(json.dumps({
+        "pid": 999999, "started_at": now, "alive_at": now, "host": "nodeB"}))
+    assert study_state(study) == "completed"
+
+
+def test_taken_over_refuses_a_lock_held_now(killed_before_its_rule, tmp_path):
+    """--taken-over overrode a run's lock really held (a flock taken on
+    another node of a shared file system), and wrote the study's records
+    before it was refused."""
+    import fcntl
+    import os
+
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE, resume_study
+
+    if not killed_before_its_rule["seeds"]:
+        pytest.skip("a run's lock: two seeds")
+    study = tmp_path / "study"
+    shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+    _written_on(study, "host")
+    lock = study / "runs" / SECOND / CARRYING_ON_FILE
+    lock.write_text(json.dumps({"pid": 4242, "host": "another-host"}))
+    held = os.open(lock, os.O_RDWR)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        before = _snapshot(study)
+        answer = resume_study(study, taken_over=True)
+        assert not answer["ok"] and f"runs/{SECOND}/{CARRYING_ON_FILE}" in answer["error"], answer
+        assert _snapshot(study) == before
+    finally:
+        os.close(held)
+
+
+def test_a_study_held_in_a_long_phase_elsewhere_reads_going(tmp_path, monkeypatch):
+    """A study on another machine in a phase longer than the hour (its
+    analysis), its live record's stamp an hour old, read quiet, and a plain
+    resume from here rewrote it while it ran: its process now stamps its
+    record in every phase. Killed, it goes quiet after the span."""
+    import os
+    import signal
+    import time
+
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.simulation import resume
+
+    config = _study_of_seeds(tmp_path, seeds=False)
+    # Its heartbeat every half second (`orchestrator.HEARTBEAT_ENV`).
+    monkeypatch.setenv("FASTMDX_HEARTBEAT_SECONDS", "0.5")
+    hold = tmp_path / "hold"
+    process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)], tmp_path,
+                          hold, call="fastmdxplora.analysis.orchestrator:get_analysis_class")
+    study = tmp_path / "study"
+    # The hour, scaled to 4 s: eight heartbeats.
+    monkeypatch.setattr(resume, "ANOTHER_HOST_QUIET_SECONDS", 4)
+    try:
+        _until_held(process, hold, ["call"])
+        _written_on(study, "host")
+        status = json.loads((study / "simulation" / "live_status.json").read_text())
+        status["last_update_timestamp"] = "2000-01-01T00:00:00+00:00"
+        (study / "simulation" / "live_status.json").write_text(json.dumps(status))
+        time.sleep(6)
+        assert study_state(study) == "running"
+        before = {name: data for name, data in _snapshot(study).items()
+                  if not name.endswith(RUN_PROCESS_FILE)}
+        code, printed, said = _resume_by_the_cli(study)
+        assert code != 0 and "It is going on another-host" in printed + said, printed[-800:]
+        after = {name: data for name, data in _snapshot(study).items()
+                 if not name.endswith(RUN_PROCESS_FILE)}
+        assert after == before
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    time.sleep(6)
+    assert study_state(study) == "interrupted"
+
+
+def test_an_extension_of_a_one_run_study_held_is_refused(stopped_at_its_end, tmp_path,
+                                                          monkeypatch):
+    """`explore` with `resume_from` a one-run study running on this machine,
+    or going on another, ran a piece into the live run and joined a
+    trajectory that is not one run."""
+    import os
+    import signal
+    from datetime import datetime, timezone
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.simulation.resume import extend_study
+
+    # Going on another machine: a finished study whose process record is
+    # another's, stamped now.
+    study = tmp_path / "elsewhere" / "study"
+    shutil.copytree(stopped_at_its_end, study, symlinks=True)
+    now = datetime.now(timezone.utc).isoformat()
+    (study / RUN_PROCESS_FILE).write_text(json.dumps({
+        "pid": 4242, "started_at": now, "alive_at": now, "host": "nodeB"}))
+    before = _snapshot(study)
+    answer = extend_study(study, more_ns=0.0006)
+    assert not answer["ok"] and "It is going on nodeB" in answer["error"], answer
+    assert _snapshot(study) == before
+    # Running on this machine: held as its rule is to be judged.
+    (tmp_path / "here").mkdir()
+    config = _study_of_seeds(tmp_path / "here", seeds=False)
+    hold = tmp_path / "here" / "hold"
+    process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)],
+                          tmp_path / "here", hold,
+                          call="fastmdxplora.simulation.stopping:run_until_known")
+    try:
+        _until_held(process, hold, ["call"])
+        study = tmp_path / "here" / "study"
+        before = _snapshot(study)
+        answer = extend_study(study, more_ns=0.0006)
+        assert not answer["ok"] and "still going" in answer["error"], answer
+        assert _snapshot(study) == before
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
 
 
 def test_a_study_killed_elsewhere_is_taken_over_or_resumed_after_the_hour(

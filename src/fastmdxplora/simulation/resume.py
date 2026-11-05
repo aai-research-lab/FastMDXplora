@@ -885,9 +885,11 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     a discontinuity is worse than one that never ran.
     """
     root = Path(study).expanduser().resolve()
-    # A run of a study going elsewhere, or held by another process (its
-    # study's lock or another run's), is refused before anything is written.
-    held = _held_elsewhere(root) if root.parent.name == "runs" else ""
+    # A study, or a run of one, going elsewhere or run or held by another
+    # process here (its lock, its study's or another run's), is refused
+    # before anything is written: an extension run into a live run joined
+    # a trajectory that is not one run.
+    held = _held_elsewhere(root)
     if held:
         return {"ok": False, "stage": "planning",
                 "error": held.replace(_STILL_GOING, _STILL_GOING_TO_EXTEND)}
@@ -2342,15 +2344,12 @@ def _its_runs(root: Path) -> list[Path]:
         return []
 
 
-def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset(),
-                 elsewhere: bool = True) -> bool:
+def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset()) -> bool:
     """Whether another process holds the lock at ``path`` (a study's or a
     run's :data:`CARRYING_ON_FILE`): one on this machine, alive, holding
     it; one on another machine sharing the file system, holding it there.
     Not one of ``but`` (on this machine: this process's and those above
-    it, where a worker asks of the study its parent carries on).
-    ``elsewhere`` false: a lock another machine or container recorded is
-    not asked (`resume --taken-over`)."""
+    it, where a worker asks of the study its parent carries on)."""
     import json
 
     from fastmdxplora.orchestrator import record_is_from_elsewhere
@@ -2374,7 +2373,7 @@ def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset(),
     pid = record.get("pid") if isinstance(record, dict) else None
     if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
         if record_is_from_elsewhere(record) or _from_another_host(record):
-            return elsewhere and _lock_taken(path)
+            return _lock_taken(path)
         return pid not in but and _lock_held(path, pid)
     return False
 
@@ -2457,7 +2456,9 @@ def _process_records(root: Path) -> list[Path]:
                 try:
                     index = int(piece.name.split("-", 1)[1])
                 except ValueError:
-                    index = None
+                    # A piece set aside (``segment-001-stopped-before-its-
+                    # checkpoint``) has ended: not read as going.
+                    continue
                 if index not in taken:
                     found.append(piece / RUN_PROCESS_FILE)
         except OSError:
@@ -2499,10 +2500,12 @@ ANOTHER_HOST_QUIET_SECONDS = 3600
 
 def _last_written(root: Path) -> float | None:
     """When the study's records were last written, on one clock with
-    telemetry's (`telemetry.how_the_run_ended`): each live record's own
-    `last_update_timestamp` (of the study, its runs and their pieces), so a
-    copy that does not keep file times reads the same; where no live record
-    says one, when its process and round records were last written."""
+    telemetry's (`telemetry.how_the_run_ended`): the newest of each process
+    record's heartbeat (``alive_at``) and each live record's own
+    `last_update_timestamp` (of the study, its runs and their pieces), the
+    stamps the writing machine's clock gave, so a copy that does not keep
+    file times reads the same; where none says one, when its process and
+    round records were last written."""
     import json
     import os
     import time
@@ -2511,6 +2514,19 @@ def _last_written(root: Path) -> float | None:
 
     folders = {path.parent for path in _process_records(root)}
     stamps = []
+    # The heartbeat each live process stamps in its own record in every
+    # phase (`orchestrator.stamp_alive`, ``alive_at``), on the clock that
+    # wrote it: a long setup, analysis or join writes no live record.
+    for path in _process_records(root):
+        try:
+            record = json.loads(_the_lock_s_text(path) or "null")
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict):
+            for key in ("alive_at", "started_at"):
+                age = _timestamp_age_seconds(str(record.get(key) or ""))
+                if age is not None:
+                    stamps.append(time.time() - age)
     for folder in folders:
         try:
             record = json.loads(_the_lock_s_text(folder / "simulation" / STATUS_FILE) or "null")
@@ -2532,12 +2548,16 @@ def _last_written(root: Path) -> float | None:
 
 
 def _clock(when: float) -> str:
-    """A time of day as this machine says it (``14:05``), with its date
-    where it is not today."""
+    """A time of day as this machine says it, its zone named (``14:05
+    UTC+01:00``, as a page reached from another zone reads it), with its
+    date where it is not today."""
     import time
 
-    day = time.strftime("%Y-%m-%d", time.localtime(when))
-    said = time.strftime("%H:%M", time.localtime(when))
+    local = time.localtime(when)
+    day = time.strftime("%Y-%m-%d", local)
+    offset = time.strftime("%z", local)
+    zone = f"UTC{offset[:3]}:{offset[3:]}" if len(offset) == 5 else "UTC"
+    said = f"{time.strftime('%H:%M', local)} {zone}"
     return said if day == time.strftime("%Y-%m-%d") else f"{day} {said}"
 
 
@@ -2548,6 +2568,7 @@ def going_elsewhere(root: str | Path) -> str:
     `ANOTHER_HOST_QUIET_SECONDS` (`_last_written`), with when it can be
     resumed from here and how before then. Empty otherwise: once quiet it
     reads as its records say it ended."""
+    import shlex
     import time
 
     root = Path(root)
@@ -2558,7 +2579,7 @@ def going_elsewhere(root: str | Path) -> str:
     return (f"It is going {where}, which cannot be asked from here: its records were last "
             f"written at {_clock(last)}. It can be resumed from here after "
             f"{_clock(last + ANOTHER_HOST_QUIET_SECONDS)}, or now with `fastmdx resume "
-            f"--taken-over {root}` once it has ended there.")
+            f"--taken-over {shlex.quote(str(root))}` once it has ended there.")
 
 
 #: Why `fastmdx resume --taken-over` is refused: it overrides only a
@@ -2596,10 +2617,14 @@ def _held_elsewhere(root: Path, *, taken_over: bool = False) -> str:
             return refused
     except Exception:  # noqa: BLE001 - its locks still say
         pass
-    if _a_lock_held(study / CARRYING_ON_FILE, but=above, elsewhere=not taken_over) or any(
-            _a_lock_held(run / CARRYING_ON_FILE, but=above, elsewhere=not taken_over)
-            for run in _its_runs(study)):
-        return refused
+    # A lock held now proves its process has not ended, wherever it runs:
+    # refused, --taken-over too, naming the lock.
+    for lock in [study / CARRYING_ON_FILE, *(run / CARRYING_ON_FILE for run in _its_runs(study))]:
+        if _a_lock_held(lock, but=above):
+            held = lock.relative_to(study).as_posix()
+            return (f"{_STILL_GOING} Its lock {held} is held now." if not taken_over else
+                    f"Its lock {held} is held now, so the process holding it has not ended; "
+                    "--taken-over carries on only a study no process holds.")
     going = "" if taken_over else going_elsewhere(study)
     return f"{_STILL_GOING} {going}" if going else ""
 

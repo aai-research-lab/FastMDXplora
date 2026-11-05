@@ -989,6 +989,9 @@ _STEPPED_STAGES = frozenset({"minimization", "nvt", "npt", "production"})
 #: and end only, and an analysis of a long trajectory on a cluster node can
 #: be quiet for hours. A day says nothing wrong of any of them.
 SILENT_RUN_ENDED_AFTER_SECONDS = 24 * 3600
+#: ``ended_by`` of a run whose process was another machine's or
+#: container's, quiet past `resume.ANOTHER_HOST_QUIET_SECONDS` (an hour).
+SILENT_ELSEWHERE = "silence_elsewhere"
 
 #: What its process was found to be, kept a few seconds: the page asks
 #: every few seconds, and asking means starting `ps` (PowerShell on Windows).
@@ -1116,14 +1119,22 @@ def how_the_run_ended(project_root: str | Path,
         return None
     age = _timestamp_age_seconds(str(status.get("last_update_timestamp") or ""))
     span = SILENT_RUN_ENDED_AFTER_SECONDS
+    elsewhere = False
     if isinstance(record, dict):
         from fastmdxplora.simulation.resume import ANOTHER_HOST_QUIET_SECONDS, _from_another_host
 
-        if _from_another_host(record):
+        # Its process's heartbeat, stamped in every phase (`orchestrator.
+        # stamp_alive`): the newest word of it.
+        alive = _timestamp_age_seconds(str(record.get("alive_at") or ""))
+        if alive is not None:
+            age = alive if age is None else min(age, alive)
+        if _from_another_host(record) and ANOTHER_HOST_QUIET_SECONDS < span:
             # Another machine's or container's process: an hour, as the
             # study's readers take it (`resume.going_elsewhere`).
-            span = min(span, ANOTHER_HOST_QUIET_SECONDS)
-    return "silence" if age is not None and age > span else None
+            span, elsewhere = ANOTHER_HOST_QUIET_SECONDS, True
+    if age is None or age <= span:
+        return None
+    return SILENT_ELSEWHERE if elsewhere else "silence"
 
 
 def run_ended_unsaid(project_root: str | Path, status: dict[str, Any] | None = None) -> bool:
@@ -2006,11 +2017,14 @@ def _analyze_health(
 
     said = str(status.get("status", "")).lower()
     if said == "interrupted":
-        silent = status.get("ended_by") == "silence"
+        silent = status.get("ended_by") in ("silence", SILENT_ELSEWHERE)
         return {
             "state": "interrupted",
             "headline": "Interrupted",
-            "message": ("The run has not written a word for over a day."
+            "message": ("The run has not written a word for over an hour, and its process "
+                        "was on another machine or container."
+                        if status.get("ended_by") == SILENT_ELSEWHERE else
+                        "The run has not written a word for over a day."
                         if silent else "The run ended without recording why."),
             "explanation": SILENT_EXPLANATION if silent else INTERRUPTED_EXPLANATION,
         }

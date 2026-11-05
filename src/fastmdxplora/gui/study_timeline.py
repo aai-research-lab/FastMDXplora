@@ -326,6 +326,8 @@ _CARRYING = frozenset({
 #: (`telemetry.status_as_it_stands`'s ``ended_by``), as the pages say it.
 ENDED_HOW = {"process": "its process is gone, and it wrote no end",
              "silence": "nothing written for a day, and no end written",
+             "silence_elsewhere": "nothing written for an hour by its process on another "
+                                  "machine or container, and no end written",
              "analysis_owed": "ended after its pieces were joined; fastmdx resume runs "
                               "their analyses and report"}
 
