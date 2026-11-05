@@ -3574,31 +3574,200 @@ def test_a_linked_out_config_is_named_on_the_rule_s_card(sequential_stopped, tmp
     assert "../../resolved_config.yml" in (page.get("unavailable") or []), page
 
 
+def _quiet(monkeypatch) -> None:
+    """Every record read as written longer ago than a run may go unwritten
+    (`telemetry.SILENT_RUN_ENDED_AFTER_SECONDS`, a day): quiet."""
+    from fastmdxplora.gui import telemetry
+
+    monkeypatch.setattr(telemetry, "SILENT_RUN_ENDED_AFTER_SECONDS", -1)
+
+
+def _written_on(study: Path, changed: str) -> None:
+    """Every process record and lock of the study and its runs said written
+    on another boot, machine or container (``changed``)."""
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE
+
+    for name in (RUN_PROCESS_FILE, CARRYING_ON_FILE):
+        for path in study.rglob(name):
+            try:
+                record = json.loads(path.read_text())
+            except ValueError:
+                continue
+            record[changed] = "another-" + changed
+            path.write_text(json.dumps(record))
+
+
 @pytest.mark.parametrize("changed", ["boot", "host", "pidns"])
 def test_a_study_killed_before_a_reboot_is_not_said_completed(killed_before_its_rule,
-                                                               tmp_path, changed):
+                                                               tmp_path, changed,
+                                                               monkeypatch):
     """After a reboot (its run record of another boot of this machine), a
     study killed before its rule read completed on every reader and was
-    shared: its process was "not asked here". A record of another machine
-    or container read running on its header and completed elsewhere: its
-    process, not seen from here, is read as ended, the sentence saying
-    where its record was written."""
-    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    shared. A record of another machine or container is a process not seen,
+    not one seen gone: quiet for a day, it reads interrupted, saying where,
+    its fix the person's to run once it has ended there."""
+    from fastmdxplora.gui.fixes_view import runnable
     from fastmdxplora.simulation.stopping import round_ended
 
     study = tmp_path / "study"
     shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
-    records = list(study.rglob(RUN_PROCESS_FILE))
-    assert records
-    for path in records:
-        record = json.loads(path.read_text())
-        record[changed] = "another-" + changed
-        path.write_text(json.dumps(record))
+    _written_on(study, changed)
+    _quiet(monkeypatch)
     _every_reader_agrees(study, "interrupted")
-    there = "if it is still running there, resume it from there"
-    assert (there in round_ended(study).said) == (changed != "boot"), round_ended(study).said
-    if changed == "host":
-        assert "written on another-host" in round_ended(study).said
+    said = round_ended(study).said
+    assert ("resume it only once it has ended there" in said) == (changed != "boot"), said
+    assert "if it is still running there" not in said, said
+    fixes = _fixes_of_its_pages(study)
+    assert fixes and all(runnable(fix) == (changed == "boot") for fix in fixes), fixes
+
+
+def _fixes_of_its_pages(study: Path) -> list:
+    """What would fix the study and each of its runs (`remedies_of`)."""
+    from fastmdxplora.remedies import remedies_of
+
+    return [remedy for page in [study, *sorted((study / "runs").glob("*"))]
+            for remedy in remedies_of(page)]
+
+
+def _snapshot(study: Path) -> dict:
+    """What each file of the study holds, but the live records its held
+    process may write while it waits."""
+    return {str(path.relative_to(study)): path.read_bytes() for path in sorted(study.rglob("*"))
+            if path.is_file() and not path.is_symlink() and path.name != "live_status.json"}
+
+
+@pytest.mark.parametrize("where,changed", [
+    ("mid piece", "host"), ("mid piece", "pidns"), ("mid piece", None),
+    ("between pieces", "host")])
+def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, where, changed,
+                                                                     monkeypatch):
+    """A study really going (not killed) whose records name another machine
+    (a cluster node, read over a shared folder) read interrupted for its
+    whole round with a resume offered from here; a resume from here, while
+    a round extended one of its runs, rewrote another run's report before
+    it was refused at that run's lock."""
+    import os
+    import signal
+
+    from fastmdxplora.gui.fixes_view import fixes_payload, runnable
+    from fastmdxplora.gui.server import _status_records
+    from fastmdxplora.gui.workspace import card_of, study_state
+    from fastmdxplora.sharing.pack import ShareRefused, finished_manifest
+    from fastmdxplora.simulation.stopping import round_ended
+
+    config = _study_of_seeds(tmp_path, seeds=True)
+    hold = tmp_path / "hold"
+    at = ({"piece": "segment-001", "runs": "tri__random-seed-1", "after": "100",
+           "checkpoint": "1"} if where == "mid piece" else
+          {"call": "fastmdxplora.simulation.stopping:run_until_known"})
+    process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)],
+                          tmp_path, hold, **at)
+    study = tmp_path / "study"
+    try:
+        _until_held(process, hold, ["tri__random-seed-1" if where == "mid piece" else "call"])
+        if changed:
+            _written_on(study, changed)
+        assert study_state(study) == "running" and card_of(study)["state"] == "running"
+        assert round_ended(study) is None
+        health = _status_records(study)["health"]
+        assert health["state"] not in ("interrupted", "failed", "stopped"), health
+        if changed:
+            assert "It is going " in health["message"], health
+        assert fixes_payload(study)["fixes"] == []
+        with pytest.raises(ShareRefused):
+            finished_manifest(study)
+        before = _snapshot(study)
+        code, printed, said = _resume_by_the_cli(study)
+        assert code != 0 and "still going" in printed + said, (code, printed[-800:], said[-800:])
+        after = _snapshot(study)
+        assert [name for name in before if before[name] != after.get(name)] == [] \
+            and set(after) == set(before), sorted(set(after) ^ set(before))
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    if changed:
+        # Gone quiet: what its records say, where, and the person's to run.
+        _quiet(monkeypatch)
+        state = study_state(study)
+        assert state == "interrupted", state
+        assert "which cannot be asked from here" in round_ended(study).said
+        fixes = _fixes_of_its_pages(study)
+        assert fixes and not any(runnable(fix) for fix in fixes), fixes
+
+
+def _a_run_s_page_of_a_study_with_its_manifest(study: Path, manifest: str) -> Path:
+    """The study's batch_manifest.json linked out, removed or not JSON."""
+    path = study / "batch_manifest.json"
+    if manifest == "linked out":
+        outside = study.parent / "elsewhere.json"
+        path.rename(outside)
+        path.symlink_to(outside)
+    elif manifest == "missing":
+        path.unlink()
+    else:
+        path.write_text("{not json")
+    return study / "runs" / "tri__random-seed-1"
+
+
+@pytest.mark.parametrize("manifest", ["linked out", "missing", "not json"])
+def test_a_run_whose_study_s_record_of_runs_is_not_read_is_a_run_of_it(join_failed, tmp_path,
+                                                                       manifest):
+    """A run whose study's batch_manifest.json was linked out, missing or
+    broken was taken for a study of its own: its card named the study's
+    config as not read, its failed join read cut and named the run for the
+    resume."""
+    from fastmdxplora.gui.server import _status_records
+
+    if not (join_failed["study"] / "batch_manifest.json").is_file():
+        pytest.skip("a study of one run")
+    study = tmp_path / "study"
+    shutil.copytree(join_failed["study"], study, symlinks=True)
+    run = _a_run_s_page_of_a_study_with_its_manifest(study, manifest)
+    card = stopping_card(run)
+    assert card["ok"] and "../../resolved_config.yml" not in (card.get("unavailable") or []), \
+        card
+    health = _status_records(run)["health"]
+    assert health["state"] == "failed", health
+    assert "given this study (study)" in health["message"], health["message"]
+
+
+@pytest.mark.parametrize("folder", ["run page", "study under runs"])
+def test_problems_are_read_on_a_run_page_and_a_study_under_runs(sequential_stopped,
+                                                                one_killed_in_its_join,
+                                                                tmp_path, folder):
+    """Problems were withheld ("Records unavailable") on a run page of a
+    stopped round and on a study saved in a folder named runs: the study
+    above was read outside the held read."""
+    from fastmdxplora.gui.problems_view import problems_payload
+
+    if folder == "run page":
+        study = tmp_path / "study"
+        shutil.copytree(sequential_stopped, study, symlinks=True)
+        read = study / "runs" / "tri__random-seed-1"
+    else:
+        # Its piece not joined: its study asked of the folder above.
+        read = tmp_path / "w" / "runs" / "study"
+        shutil.copytree(one_killed_in_its_join, read, symlinks=True)
+    problems = problems_payload(read)
+    assert problems.get("available", True) and not problems.get("unavailable"), problems
+
+
+def test_the_join_s_code_is_of_its_kind_and_its_fix_waits(join_failed, tmp_path):
+    """`simulation.round.join_failed` was ENVIRONMENTAL, and its fix offered
+    the same join to run at once, which fails the same way."""
+    from fastmdxplora.gui.fixes_view import runnable
+    from fastmdxplora.refusals import Kind, code_for
+
+    code = code_for("simulation.round.join_failed")
+    assert code.kind == Kind.SEMANTIC and not code.retryable
+    study = tmp_path / "study"
+    shutil.copytree(join_failed["study"], study, symlinks=True)
+    fixes = [fix for fix in _fixes_of_its_pages(study)
+             if fix.code == "simulation.round.join_failed"]
+    assert fixes and not any(runnable(fix) for fix in fixes), fixes
+    assert all("Put right what failed the join" in fix.fix for fix in fixes), fixes
 
 
 def test_a_failed_round_carried_on_by_a_resume_that_died_reads_cut(join_failed, tmp_path):

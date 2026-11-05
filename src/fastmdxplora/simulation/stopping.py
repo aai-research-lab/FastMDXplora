@@ -1248,7 +1248,8 @@ def _its_process_is_gone(study: Path) -> bool:
     Asked after `_carried_on_elsewhere`, so no resume holds the study."""
     from fastmdxplora.gui.exploration import _process_alive
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
-    from fastmdxplora.simulation.resume import _this_process_and_its_parents
+    from fastmdxplora.simulation.resume import (_from_another_host,
+                                                _this_process_and_its_parents)
 
     from fastmdxplora import record_access
 
@@ -1267,11 +1268,12 @@ def _its_process_is_gone(study: Path) -> bool:
     if not isinstance(pid, int) or pid <= 0:
         return False
     if record_is_from_elsewhere(process) or _from_another_host(process):
-        # This machine before its last boot (every process of that boot is
-        # gone), or another machine or container, whose process is not
-        # alive here as no process this one cannot see is: read as its
-        # records say it ended, its sentence saying where the record was
-        # written (`_where_its_process_was`).
+        # This machine before its last boot: every process of that boot is
+        # gone. Another machine or container: asked after
+        # `_carried_on_elsewhere`, which reads it going while its records
+        # are written (`resume.going_elsewhere`); quiet for a day, it is
+        # read as its records say it ended, its sentence saying where
+        # (`_where_its_process_was`).
         return True
     if pid in _this_process_and_its_parents():
         return False
@@ -1281,49 +1283,20 @@ def _its_process_is_gone(study: Path) -> bool:
         return False
 
 
-def _from_another_host(record: dict[str, Any]) -> bool:
-    """Whether a run record was written on another machine, or in a process
-    namespace of this boot other than this process's (a container beside
-    it), so the process it names cannot be asked here and may still be
-    going. A record of this machine before its last boot is not
-    (`_its_process_is_gone`)."""
-    from fastmdxplora.orchestrator import this_machine
-
-    here = this_machine()
-    there = record.get("host")
-    if isinstance(there, str) and there and here.get("host") and there != here["host"]:
-        return True
-    boot = record.get("boot")
-    if isinstance(boot, str) and boot and here.get("boot") and boot != here["boot"]:
-        return False
-    space = record.get("pidns")
-    return bool(isinstance(space, str) and space and here.get("pidns")
-                and space != here["pidns"])
-
-
 def _where_its_process_was(study: Path) -> str:
     """Where the study's process record was written, where that is another
-    machine or container, said after its round's sentence: its process
-    cannot be seen from here, so the study is read as its records say it
-    ended. Empty otherwise."""
-    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
-
-    from fastmdxplora import record_access
+    machine or container (`resume.another_host_said`), said after its
+    round's sentence once its records have gone quiet: not known to have
+    ended there, so resumed only once it has. Empty otherwise."""
+    from fastmdxplora.simulation.resume import another_host_said
 
     try:
-        process = json.loads(record_access.read_text(study / RUN_PROCESS_FILE,
-                                                     encoding="utf-8"))
-    except (OSError, ValueError):
+        where = another_host_said(study)
+    except Exception:  # noqa: BLE001 - said without where
         return ""
-    if not isinstance(process, dict) or not _from_another_host(process):
-        return ""
-    from fastmdxplora.orchestrator import this_machine
-
-    host = process.get("host")
-    where = (f"on {host}" if isinstance(host, str) and host and host != this_machine()["host"]
-             else "in another container of this machine")
-    return (f" Its process record was written {where}; if it is still running there, "
-            "resume it from there.")
+    return (f" Its process record was written {where}, which cannot be asked from here, and "
+            "nothing has been written for a day: resume it only once it has ended there."
+            if where else "")
 
 
 def _carried_on_elsewhere(study: Path) -> bool:

@@ -976,11 +976,56 @@ ALREADY_HOLD_RESULTS = "These output directories already hold results:"
 
 
 def campaign_of(run: Path) -> Path | None:
-    """The study of several runs ``run`` is one of, or None."""
+    """The study of several runs ``run`` (``<study>/runs/<run>``) is one of,
+    or None: the one reading of "a run of a study". Its record of runs
+    (`batch_manifest.json`) names it; where that record is missing or not
+    readable as JSON, its record of rounds (`stopping.json`) names it; a
+    record of runs linked out of the study, and so not read, leaves it a run
+    of the study by its place. A study of its own saved in a folder named
+    ``runs`` is no run. Read in a hold of its own, the study's two records
+    only, never through a link, so a reader held to the run (Problems) has
+    nothing refused for it."""
+    import json
+
+    from fastmdxplora import record_access
+    from fastmdxplora.refusals import OutsideWorkspace
+
     run = Path(run)
-    if run.parent.name == "runs" and (run.parent.parent / "batch_manifest.json").is_file():
-        return run.parent.parent
-    return None
+    if run.parent.name != "runs":
+        return None
+    study = run.parent.parent
+    try:
+        held = study.resolve()
+    except OSError:
+        return None
+    names = ("batch_manifest.json", "stopping.json")
+
+    def admitted(path: Path) -> bool:
+        return path.parent == held and path.name in names
+
+    def named_in(name: str, key_of: tuple[str, ...]) -> bool | None:
+        try:
+            record = json.loads(record_access.read_text(study / name, encoding="utf-8"))
+        except OutsideWorkspace:
+            return True
+        except (OSError, ValueError):
+            return None
+        if not isinstance(record, dict):
+            return None
+        found = set()
+        for key in key_of:
+            for entry in record.get(key) or []:
+                found.add(str(entry.get("run_id")) if isinstance(entry, dict) else str(entry))
+        return run.name in found
+
+    try:
+        with record_access.confined_records(study, admitted):
+            said = named_in("batch_manifest.json", ("planned", "runs"))
+            if said is None:
+                said = named_in("stopping.json", ("runs",))
+    except OSError:
+        return None
+    return study if said else None
 
 
 def reported_before_the_shared_start(run: Path) -> bool:

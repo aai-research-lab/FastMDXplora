@@ -680,26 +680,10 @@ def _an_extension_s_piece(piece: Path) -> bool:
 
 def _study_of(run: Path) -> Path:
     """The study a run belongs to: its own folder, or the study of runs it
-    is one of (``runs/<name>``, named in that study's record of its runs,
-    `batch_manifest.json`). A study of its own saved in a folder named
-    ``runs`` (no such record above it, or one not naming it) is its own."""
-    if run.parent.name != "runs":
-        return run
-    study = run.parent.parent
-    from fastmdxplora.refusals import OutsideWorkspace
+    is one of (`explorer.campaign_of`, the one reading of it)."""
+    from fastmdxplora.batch.explorer import campaign_of
 
-    try:
-        batch = json.loads(_records.read_text(study / "batch_manifest.json", encoding="utf-8"))
-    except OutsideWorkspace:
-        # Its record of runs there and not read (linked out of the study):
-        # a run of it, by its place, as before the record was asked.
-        return study
-    except (OSError, ValueError):
-        return run
-    named = {str(entry.get("run_id")) for key in ("planned", "runs")
-             for entry in ((batch.get(key) if isinstance(batch, dict) else None) or [])
-             if isinstance(entry, dict)}
-    return study if run.name in named else run
+    return campaign_of(run) or run
 
 
 def _its_round_was_stopped(run: Path, piece: Path) -> bool:
@@ -1825,8 +1809,33 @@ def analyze_health(
     """Classify the latest telemetry into ok/warning/failed with plain text.
 
     With `root`, a folder with no telemetry is described by what it holds:
-    runs one level down, nothing at all, or a run that recorded none.
+    runs one level down, nothing at all, or a run that recorded none. A
+    study going on another machine or container says so
+    (`resume.going_elsewhere`), as nothing here can be asked of it.
     """
+    health = _analyze_health(status, metrics, stale_after_seconds=stale_after_seconds,
+                             root=root)
+    if root is None or health.get("state") in ("failed", "stopped", "interrupted"):
+        return health
+    try:
+        from fastmdxplora.simulation.resume import going_elsewhere
+
+        where = going_elsewhere(_study_of(Path(root)))
+    except Exception:  # noqa: BLE001 - its health as its records say it
+        where = ""
+    if where:
+        health = {**health, "message": f"{health.get('message') or ''} {where}".strip()}
+    return health
+
+
+def _analyze_health(
+    status: dict[str, Any],
+    metrics: list[dict[str, Any]],
+    *,
+    stale_after_seconds: float = 90.0,
+    root: str | Path | None = None,
+) -> dict[str, str]:
+    """`analyze_health` from its records alone."""
     latest_error = status.get("latest_error")
     stage = str(status.get("stage") or "").lower()
     waiting = status.get("between_rounds")

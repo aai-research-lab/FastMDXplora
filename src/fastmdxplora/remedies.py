@@ -342,17 +342,22 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     carries a whole study on at once.
     """
     root = Path(study).expanduser().resolve()
-    from fastmdxplora.simulation.resume import _still_running
+    from fastmdxplora.gui.telemetry import _study_of
+    from fastmdxplora.simulation.resume import (_still_running, another_host_said,
+                                                being_carried_on)
 
     try:
         # A study carried on keeps the record of its process in the piece
         # being run: it was offered to be carried on again while it was.
+        # Going too while it or a run of it is held, or goes on another
+        # machine (`being_carried_on`).
+        owner = _study_of(root)
         if _still_running(root) or any(_still_running(piece)
                                        for piece in sorted(root.glob("segment-*"))
-                                       if piece.is_dir()):
+                                       if piece.is_dir()) or being_carried_on(owner):
             return []
     except Exception:  # noqa: BLE001 - a record, not a verdict
-        pass
+        owner = root
     try:
         found = _from_its_records(root)
     except OutsideWorkspace as refusal:
@@ -372,6 +377,14 @@ def remedies_of(study: str | Path) -> list[Remedy]:
                         else INTERRUPTED_CODE, where="the study", why=owed.said,
                         fix=owed.carry_on_on_a_page, command=" ".join(owed.argv),
                         argv=owed.argv[1:])]
+    try:
+        elsewhere = another_host_said(owner)
+    except Exception:  # noqa: BLE001 - its fixes as they are
+        elsewhere = ""
+    if elsewhere:
+        # Its process was another machine's, not seen to end from here: the
+        # person's to run, once it has ended there, never run from here.
+        found = [replace(remedy, decision=True) for remedy in found]
     return found
 
 
@@ -513,11 +526,17 @@ def _interrupted(root: Path) -> Remedy | None:
         why = str(stands.get("latest_error") or "Its last piece was not joined.")
         # The study's own resume (`_resume` gives a run of several's), as
         # the health card gives it.
-        failed = stands.get("status") == "failed"
-        again = " again" if failed else ""
-        return replace(_resume(JOIN_FAILED_CODE if failed else INTERRUPTED_CODE, why,
-                               "the study", [root], root, price=False),
-                       fix=f"Join its last piece{again}, then run its analyses and report.")
+        if stands.get("status") == "failed":
+            # What failed the join (its own refusal, said above) is put right
+            # first: the same join run at once fails the same way, so it is
+            # the person's to run, not run from here at once.
+            return replace(_resume(JOIN_FAILED_CODE, why, "the study", [root], root,
+                                   price=False),
+                           fix="Put right what failed the join (above), then join it again "
+                               "and run its analyses and report.", decision=True)
+        return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root,
+                               price=False),
+                       fix="Join its last piece, then run its analyses and report.")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")
