@@ -3703,7 +3703,9 @@ def _every_reader_says_going(study: Path, *, elsewhere: bool) -> None:
         assert state == "running", run
         assert page["state"] == "running", (run, page)
         # No resume offered but the person's own, --taken-over.
-        assert "It is still going" in answer, answer[:600]
+        # Said once: where it goes says it is going.
+        assert answer.count("It is going") == 1 and "It is still going: It is" not in answer, \
+            answer[:600]
         assert not re.search(r"fastmdx resume(?! --taken-over)", answer), answer[:900]
         assert study_state(run) == "running", run
         assert stopping_card(run).get("outcome_label") == card.get("outcome_label")
@@ -3913,6 +3915,114 @@ def _holding(folder: Path, how: str, beat: str):
              "PYTHONPATH": _source()}, stdout=subprocess.PIPE, text=True)
 
 
+def _now_going_on_another_host(study: Path) -> None:
+    """Every process record of the study another machine's, stamped now."""
+    from datetime import datetime, timezone
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    _written_on(study, "host")
+    for path in study.rglob(RUN_PROCESS_FILE):
+        record = json.loads(path.read_text())
+        record["alive_at"] = datetime.now(timezone.utc).isoformat()
+        path.write_text(json.dumps(record))
+
+
+def test_a_study_going_elsewhere_is_not_analysed_again_from_here(killed_before_its_rule,
+                                                                 tmp_path):
+    """Analyze again and Write it again were offered on a study going on
+    another machine, and `fastmdx report --rerun` wrote into it and took its
+    process records: refused, as a resume is, before anything is written."""
+    from fastmdxplora import again
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.refusals import StudyError
+
+    study = tmp_path / "study"
+    shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+    _now_going_on_another_host(study)
+    before = _snapshot(study)
+    pages = [study, *sorted((study / "runs").glob("*"))]
+    for page in pages:
+        with pytest.raises(StudyError, match="It is going on another-host"):
+            again.plan(page, ["analysis"])
+        offered = again.offered(page)
+        assert not any(phase.get("can") for phase in offered.values()
+                       if isinstance(phase, dict)), offered
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        code = main(["report", "--output", str(study), "--rerun"])
+    assert code != 0 and "It is going on another-host" in out.getvalue(), out.getvalue()[-800:]
+    assert _snapshot(study) == before
+
+
+def test_a_cut_round_s_report_written_again_says_its_round(sequential_unjoined, tmp_path):
+    """`fastmdx report --rerun` of a study whose round was cut said "Batch
+    complete: 2 ok" and exited 1 with no word why: it read the round as
+    its own, going."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(sequential_unjoined, study, symlinks=True)
+    ended = round_ended(study)
+    assert ended is not None and ended.state == "interrupted"
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        code = main(["report", "--output", str(study), "--rerun"])
+    said = out.getvalue()
+    assert code == 1, said[-1500:]
+    assert "Batch complete" not in said and ended.said.split(":")[0] in said, said[-1500:]
+    assert f"fastmdx resume {study}" in said, said[-1500:]
+
+
+def test_a_run_s_held_read_admits_only_its_study_s_records(killed_before_its_rule, tmp_path):
+    """The run's held read admits its study's folder for its process record:
+    a folder named runs of a folder that is no study is not read as one, and
+    a study's process record linked out of it is not read on a run's page."""
+    from fastmdxplora.gui.server import _a_run_in_its_study, _confined
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    if not killed_before_its_rule["seeds"]:
+        pytest.skip("runs of a study: two seeds")
+    plain = tmp_path / "w" / "runs" / "a"
+    plain.mkdir(parents=True)
+    (tmp_path / "w" / RUN_PROCESS_FILE).write_text(json.dumps({"pid": 1, "host": "nodeB"}))
+    assert _a_run_in_its_study(plain.resolve()) is None
+    study = tmp_path / "study"
+    shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+    _now_going_on_another_host(study)
+    record = study / RUN_PROCESS_FILE
+    outside = tmp_path / "outside.json"
+    record.rename(outside)
+    record.symlink_to(outside)
+    for run in sorted((study / "runs").glob("*")):
+        for path in run.rglob(RUN_PROCESS_FILE):
+            path.unlink()
+        assert _confined(run, study_state) != "running", run
+
+
+def test_a_cut_stamp_s_temporary_is_cleared_and_not_fetched(tmp_path):
+    """A kill between a stamp's temporary and its rename left the temporary
+    beside the record for good, and a fetch from a remote machine carried
+    it back."""
+    from fastmdxplora import orchestrator
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.remote.send import _only_files_and_folders
+
+    record = tmp_path / "study" / RUN_PROCESS_FILE
+    record.parent.mkdir()
+    left = record.with_name(f"{RUN_PROCESS_FILE}.999999.abc.tmp")
+    left.write_text("{")
+    orchestrator._put_in_place(record, "{}")
+    assert sorted(path.name for path in record.parent.iterdir()) == [RUN_PROCESS_FILE]
+    arrived = tmp_path / "arrived"
+    arrived.mkdir()
+    (arrived / f"{RUN_PROCESS_FILE}.4242.xyz.tmp").write_text("{")
+    _only_files_and_folders(arrived)
+    assert list(arrived.iterdir()) == []
+
+
 def test_a_heartbeat_never_leaves_its_record_empty_or_cut(tmp_path):
     """The heartbeat wrote its record in place (truncate, then write): a
     reader looping found it empty thousands of times, and a stamp cut short
@@ -3991,7 +4101,8 @@ def test_a_study_held_in_a_long_phase_elsewhere_reads_going(tmp_path, monkeypatc
         # going refuses.
         for question in ("found", "long_enough", "strengthen"):
             answer = answer_from_the_records(study, question) or ""
-            assert "It is still going" in answer, (question, answer[:600])
+            assert answer.count("It is going on") == 1, (question, answer[:600])
+            assert "It is still going: It is" not in answer, (question, answer[:600])
             assert "--simulate-resume-from" not in answer, (question, answer[:600])
         before = {name: data for name, data in _snapshot(study).items()
                   if not name.endswith(RUN_PROCESS_FILE)}

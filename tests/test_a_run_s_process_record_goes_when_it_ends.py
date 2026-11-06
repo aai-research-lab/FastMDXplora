@@ -385,19 +385,19 @@ def test_a_record_that_cannot_be_read_keeps_no_gui_here_running(tmp_path, monkey
         _release_run_process,
     )
 
-    write = Path.write_text
+    replace = os.replace
 
-    def full(self, *args, **kwargs):
-        if self.name.startswith(RUN_PROCESS_FILE):
-            write(self, "", encoding="utf-8")
+    def full(source, target, *args, **kwargs):
+        # The disk full as the record is put in place.
+        if Path(target).name == RUN_PROCESS_FILE:
             raise OSError(28, "No space left on device")
-        return write(self, *args, **kwargs)
+        return replace(source, target, *args, **kwargs)
 
     mine, theirs = tmp_path / "mine", tmp_path / "theirs"
     mine.mkdir()
     theirs.mkdir()
     with pytest.MonkeyPatch.context() as patched:
-        patched.setattr(Path, "write_text", full)
+        patched.setattr(os, "replace", full)
         _record_run_process(mine)
     (theirs / RUN_PROCESS_FILE).write_text("", encoding="utf-8")
     # Written beside it first and put in place whole: a full disk leaves no

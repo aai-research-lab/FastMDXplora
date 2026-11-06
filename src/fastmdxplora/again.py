@@ -244,6 +244,16 @@ def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | Non
         raise StudyError(f"{', '.join(going)} {'is' if len(going) == 1 else 'are'} still "
                          "running. Run it again once it has stopped.",
                          code="environment.workspace.run_going")
+    from fastmdxplora.simulation.resume import _held_elsewhere
+
+    # Its study held by another process, or going on another machine
+    # (`resume._held_elsewhere`): its phases run again would write into it
+    # and take its process records, as a resume would; refused the same.
+    held = _held_elsewhere(campaign or root)
+    if held:
+        raise StudyError(held.replace("Resume it once it has stopped.",
+                                      "Run it again once it has stopped."),
+                         code="environment.workspace.run_going")
 
     left_out: list[tuple[str, str]] = []
     if "analysis" in asked:

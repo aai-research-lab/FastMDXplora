@@ -179,7 +179,8 @@ def _still_going(base: Path) -> str:
         where = going_elsewhere(study)
     except Exception:  # noqa: BLE001 - its records as they stand
         return ""
-    return ("It is still going" + (f": {where}" if where else ".")
+    # Where it goes says it is going (`going_elsewhere`): said once.
+    return ((where or "It is still going.")
             + " What follows is its records as they stand now.")
 
 

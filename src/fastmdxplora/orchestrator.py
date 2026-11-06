@@ -1968,20 +1968,49 @@ def _heartbeat_every() -> float:
 
 
 def _put_in_place(path: Path, text: str) -> None:
-    """``text`` written whole to ``path``: to a file beside it first, then
-    put in its place in one step (`os.replace`), so a reader never finds
-    it empty or cut short, and a write cut (a kill, a full disk) leaves
-    the record as it was. Raises OSError where it could not be written."""
-    temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    """``text`` written whole to ``path``: to a file beside it first, made
+    new with a name no other writer has (`tempfile.mkstemp`, never through
+    a link), then put in its place in one step (`os.replace`), so a reader
+    never finds it empty or cut short, and a write cut (a kill, a full
+    disk) leaves the record as it was. A temporary such a cut left beside
+    it, of a process no longer alive, is removed. Raises OSError where it
+    could not be written."""
+    import tempfile
+
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.{os.getpid()}.",
+                                        suffix=".tmp")
     try:
-        temporary.write_text(text, encoding="utf-8")
-        os.replace(temporary, path)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        os.replace(name, path)
     except OSError:
         try:
-            temporary.unlink()
+            os.unlink(name)
         except OSError:
             pass
         raise
+    _clear_cut_temporaries(path)
+
+
+def _clear_cut_temporaries(path: Path) -> None:
+    """Temporaries beside ``path`` (``<record>.<pid>.<...>.tmp``) of a
+    process on this machine no longer alive: a stamp cut by a kill."""
+    from fastmdxplora.gui.exploration import _process_alive
+
+    try:
+        beside = list(path.parent.glob(f"{path.name}.*.tmp"))
+    except OSError:
+        return
+    for left in beside:
+        try:
+            pid = int(left.name[len(path.name) + 1:].split(".", 1)[0])
+        except ValueError:
+            continue
+        try:
+            if pid != os.getpid() and not left.is_symlink() and not _process_alive(pid):
+                left.unlink()
+        except Exception:  # noqa: BLE001 - left as it is
+            pass
 
 
 def _mark_written_here(path: Path) -> None:
@@ -2014,7 +2043,13 @@ def stamp_alive(path: Path) -> None:
         except OSError:
             ours = False
         if ours:
-            _write_run_process(path)
+            # A record of this process cut in place (before records were put
+            # in place whole): written again; a full disk leaves it so.
+            try:
+                _write_run_process(path)
+            except OSError:
+                return
+            _mark_written_here(path)
         return
     if not isinstance(record, dict) or record.get("pid") != os.getpid():
         return
@@ -2039,7 +2074,10 @@ def _heartbeat() -> None:
         with _HOLDS_LOCK:
             held = [key for key, count in _holds().items() if count > 0]
             for folder in held:
-                stamp_alive(Path(folder) / RUN_PROCESS_FILE)
+                try:
+                    stamp_alive(Path(folder) / RUN_PROCESS_FILE)
+                except Exception:  # noqa: BLE001 - the heartbeat lives on
+                    pass
 
 
 def _start_heartbeat() -> None:

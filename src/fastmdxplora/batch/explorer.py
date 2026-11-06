@@ -3408,9 +3408,15 @@ class BatchExplorer:
         failed, as its report and pages say it."""
         from fastmdxplora.simulation.stopping import round_ended
 
+        from fastmdxplora.orchestrator import run_process_held_here
+
         # A resume reads its own record "running" (a cut round not carried
-        # on) as cut: the process it names is this one.
-        return round_ended(self.output_dir, resuming=bool(getattr(self, "resume", False)))
+        # on) as cut: the process it names is this one. So does a study's
+        # phases run again (`fastmdx report --rerun`), which holds the study
+        # as a resume does and carries no round on: its round as it stood.
+        resuming = bool(getattr(self, "resume", False)) or run_process_held_here(
+            self.output_dir)
+        return round_ended(self.output_dir, resuming=resuming)
 
     # ------------------------------------------------------------------
     def _print_summary(self) -> None:

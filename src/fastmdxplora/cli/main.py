@@ -2068,6 +2068,21 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             return 1
         return 0
 
+    if (getattr(args, "force", False) or getattr(args, "rerun", False)) and not getattr(
+            args, "dry_run", False):
+        # Its phases run again over a study held by another process, or
+        # going on another machine, would write into it and take its process
+        # records: refused before anything is written, as a resume is.
+        from fastmdxplora.batch.explorer import campaign_of
+        from fastmdxplora.simulation.resume import _held_elsewhere
+
+        where = config.get("output") or args.output_dir
+        if where and Path(where).expanduser().is_dir():
+            root = Path(where).expanduser().resolve()
+            held = _held_elsewhere(campaign_of(root) or root)
+            if held:
+                print(f"\n  \u2717 {held.replace('Resume it once', 'Run it again once')}")
+                return 1
     fmdx = FastMDXplora(
         config_data=config,
         output_dir=args.output_dir,
