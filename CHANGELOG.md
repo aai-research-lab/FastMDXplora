@@ -810,9 +810,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   records are written with the umask's mode, as files written in place
   are, so the group reads them. A rerun of a study whose resume died says
   its round as every page does. Analyze again and Write it again of a study
-  whose round is unfinished say it was done, then the round's sentence and
-  its command, not a failure. A refusal for another machine says the rerun
-  can be asked after the time it names, its command set as code.
+  whose round is unfinished say it was done where no run of it ended in
+  error, then the round's sentence and what carries it on. A refusal for
+  another machine says the rerun can be asked after the time it names, its
+  command set as code.
+- A rerun over an unfinished round is done only where no run of it ended
+  in error, read from the statuses it wrote, never from its exit code: the
+  GUI otherwise says the error with its run and reason, then the round; the
+  CLI counts such a run an error and says what would fix it, and exits 1.
+  After a clean rerun the GUI's state is completed. A study's own records
+  answer says it is going on another machine, as a run's does, and the
+  refusal for a run of a study going here names the study.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
