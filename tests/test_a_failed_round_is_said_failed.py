@@ -61,6 +61,29 @@ _CONFIG = {
 
 SECOND = "tri__random-seed-2"
 
+@pytest.fixture(scope="module", autouse=True)
+def _the_logger_as_the_module_found_it():
+    """The package logger put back as it was once this module's studies
+    are done: its module fixtures call the CLI (`main`), which sets
+    `propagate = False`, before the suite's per-test restore
+    (`conftest._logging_state_is_restored`) reads it, so that restore put
+    back the CLI's state and every later `caplog` read nothing."""
+    import logging
+
+    from fastmdxplora.utils import logging as fastmdx_logging
+
+    base = logging.getLogger("fastmdx")
+    propagate, level, handlers = base.propagate, base.level, list(base.handlers)
+    console = fastmdx_logging._console_handler
+    try:
+        yield
+    finally:
+        base.propagate = propagate
+        base.setLevel(level)
+        base.handlers[:] = handlers
+        fastmdx_logging._console_handler = console
+
+
 #: The longest any wait here on a study's process (or for it to be held)
 #: lasts: less than pytest-timeout's 600 s, so a study that never ends fails
 #: its test, not the whole session.
@@ -3607,8 +3630,11 @@ def test_a_resume_s_marker_is_not_believed_by_its_number_alone(resume_died, tmp_
         assert "the resume carrying it on ended" in round_ended(study).said
         assert round_stopped_when_asked(study) is False
         # Its number this process's, begun at another time: not this one.
-        record[CARRIED_ON_BY] = {**record[CARRIED_ON_BY], "pid": os.getpid()}
-        assert _a_resume_died(record)
+        # Told only where the system says when a process began (Linux):
+        # elsewhere a marker names a process by its number and host alone.
+        if process_start_ticks(os.getpid()) is not None:
+            record[CARRIED_ON_BY] = {**record[CARRIED_ON_BY], "pid": os.getpid()}
+            assert _a_resume_died(record)
     finally:
         other.kill()
         other.wait()
@@ -3685,6 +3711,16 @@ def _written_on(study: Path, changed: str) -> None:
             path.write_text(json.dumps(record))
 
 
+def _a_namespace_is_said() -> None:
+    """Skipped where this system does not say a process's namespace (macOS,
+    Windows: no `/proc/self/ns/pid`): another container on the same host is
+    not told apart there, as the docs say."""
+    from fastmdxplora.orchestrator import this_machine
+
+    if not this_machine()["pidns"]:
+        pytest.skip("this system does not say which process namespace")
+
+
 @pytest.mark.parametrize("changed", ["boot", "host", "pidns"])
 def test_a_study_killed_before_a_reboot_is_not_said_completed(killed_before_its_rule,
                                                                tmp_path, changed,
@@ -3697,6 +3733,8 @@ def test_a_study_killed_before_a_reboot_is_not_said_completed(killed_before_its_
     from fastmdxplora.gui.fixes_view import runnable
     from fastmdxplora.simulation.stopping import round_ended
 
+    if changed == "pidns":
+        _a_namespace_is_said()
     study = tmp_path / "study"
     shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
     _written_on(study, changed)
@@ -3813,6 +3851,8 @@ def test_a_study_going_elsewhere_reads_going_and_is_not_resumed_here(tmp_path, w
     from fastmdxplora.remedies import remedies_of
     from fastmdxplora.simulation.stopping import round_ended
 
+    if changed == "pidns":
+        _a_namespace_is_said()
     config = _study_of_seeds(tmp_path, seeds=True)
     hold = tmp_path / "hold"
     process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)],

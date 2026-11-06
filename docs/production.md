@@ -387,7 +387,9 @@ study's lock; a run's page reads any marker as its study's round carried on
 (neither stopped when asked nor failed), going or ended, and its rule's card
 is the study's, read in the study's own held read. A run record from this
 machine before its last boot names a process that is gone. One from a
-different host or container names a process that cannot be asked from here:
+different host or container names a process that cannot be asked from here
+(a container is told apart only on Linux, where a process's namespace can be
+read; on macOS and Windows a container on the same host is not):
 while the study's records were written within the last hour, the study
 reads going on every
 reader, "It is going on <host>, which cannot be asked from here", with the
