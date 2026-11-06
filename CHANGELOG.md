@@ -814,13 +814,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   error, then the round's sentence and what carries it on. A refusal for
   another machine says the rerun can be asked after the time it names, its
   command set as code.
-- A rerun over an unfinished round is done only where no run of it ended
-  in error, read from the statuses it wrote, never from its exit code: the
-  GUI otherwise says the error with its run and reason, then the round; the
-  CLI counts such a run an error and says what would fix it, and exits 1.
-  After a clean rerun the GUI's state is completed. A study's own records
-  answer says it is going on another machine, as a run's does, and the
-  refusal for a run of a study going here names the study.
+- A rerun over an unfinished round that failed is said failed: the GUI says
+  the error with its run and reason, then the round; the CLI counts such a
+  run an error and says what would fix it. After a clean rerun the GUI's
+  state is completed. A study's own records answer says it is going on
+  another machine, as a run's does, and the refusal for a run of a study
+  going here names the study.
+- A rerun's exit code says what it did, whatever round its study was left
+  in: 0 where each phase it ran ended well, 1 where one failed, 130 where
+  it was stopped (a run it stopped is counted stopped). The round is still
+  said after the tally, read again at the end where a run failed. The GUI
+  reads the rerun as done by its exit code alone, and words a failure from
+  the phases it recorded (on a run's own page, and of a study of one, too)
+  or else from the log, with the command that carries the round on set as
+  code; a rerun stopped by Ctrl+C reads stopped. Write it again's question
+  says the report is saved in previous/.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
