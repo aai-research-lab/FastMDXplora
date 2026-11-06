@@ -829,6 +829,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   or else from the log, with the command that carries the round on set as
   code; a rerun stopped by Ctrl+C reads stopped. Write it again's question
   says the report is saved in previous/.
+- A study whose worker was killed (out of memory, a kill) never ended on
+  Python 3.12 and later: the broken pool sends its other workers SIGTERM
+  alone and waits on them, and a worker takes SIGTERM as a request to stop,
+  so one waiting for work waited for ever. Each is now given the stop grace
+  and 10 s to end where its run can be carried on, then killed. Another
+  container on the same host is told apart only on Linux, as the docs now
+  say.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
