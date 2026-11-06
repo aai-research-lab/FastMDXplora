@@ -1518,47 +1518,36 @@ def _a_broken_pool(tmp_path: Path, method: str, *, grace: str = "1"):
 
 
 def _ended(ran, seconds: float, what: str) -> tuple[str, str]:
-    """``ran``'s output once it has ended within ``seconds``; fails, its
-    group killed, where it has not."""
+    """``ran``'s output once it has ended within ``seconds``; fails where it
+    has not. Whether any process of its group outlived it is noted as
+    ``ran.left_behind`` (a worker it left waiting for ever), and its group
+    is then killed whatever happened, so none is left for the next test."""
     import os
     import signal
+    import time
 
     try:
         return ran.communicate(timeout=seconds)
     except subprocess.TimeoutExpired:
         raise AssertionError(f"{what} did not end within {seconds:.0f} s") from None
     finally:
-        if ran.poll() is None:
-            # Its workers with it.
-            os.killpg(ran.pid, signal.SIGKILL)
-            ran.communicate()
-
-
-def _none_alive(pids: list[int], seconds: float = 5.0) -> list[int]:
-    """Which of ``pids`` still run ``seconds`` on (a zombie is not)."""
-    import os
-    import time
-
-    def running(pid: int) -> bool:
+        ran.left_behind = True
+        until = time.monotonic() + 5
+        while ran.poll() is not None and time.monotonic() < until:
+            try:
+                os.killpg(ran.pid, 0)
+            except ProcessLookupError:
+                ran.left_behind = False
+                break
+            time.sleep(0.1)
         try:
-            stat = Path(f"/proc/{pid}/stat").read_text()
-            return stat.rsplit(")", 1)[1].split()[0] != "Z"
-        except OSError:
+            os.killpg(ran.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
             pass
         try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
-
-    until = time.monotonic() + seconds
-    while True:
-        left = [pid for pid in pids if running(pid)]
-        if not left or time.monotonic() > until:
-            return left
-        time.sleep(0.1)
+            ran.communicate(timeout=10)
+        except (subprocess.TimeoutExpired, ValueError):
+            pass
 
 
 @pytest.mark.parametrize("method", ["spawn", "fork"])
@@ -1579,7 +1568,7 @@ def test_a_pool_whose_worker_is_killed_ends(method, tmp_path):
     assert ran.returncode == 0, said[-2000:]
     assert printed.split() == ["BrokenProcessPool", "ended", "not", "asked"], said[-2000:]
     assert "ImportError" not in said, said[-2000:]
-    assert _none_alive(workers) == []
+    assert not ran.left_behind, f"a worker of {workers} outlived it"
 
 
 @pytest.mark.parametrize("number", ["SIGINT", "SIGTERM"])
@@ -1603,10 +1592,296 @@ def test_a_stop_to_the_study_alone_while_it_waits_on_its_workers_ends_them(numbe
     assert ran.poll() is None
     os.kill(ran.pid, getattr(signal, number))
     printed, said = _ended(ran, 30, f"the study, given {number},")
-    left = _none_alive(workers)
-    assert left == [], f"workers {left} outlived the study"
+    assert not ran.left_behind, f"a worker of {workers} outlived the study"
     assert ran.returncode == 0, said[-2000:]
     assert printed.split() == ["ended", "asked"], said[-2000:]
+
+
+_STAND_IN = """
+import json, os, signal, subprocess, time
+from pathlib import Path
+
+
+def _ended(pid):
+    seen = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
+                          text=True).stdout.strip()
+    return not seen or seen.startswith("Z")
+
+
+def _until(condition):
+    while not condition():
+        time.sleep(0.02)
+
+
+def run(spec, run_out, *_args, **_kwargs):
+    # A run of the study, as `explorer._execute_run` is called, doing what
+    # its role says (ROLES, by seed).
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.orchestrator import RunResult, _hold_run_process, _release_run_process
+    from fastmdxplora.refusals import RunStopped
+
+    here = Path(os.environ["STAND_IN"])
+    seed = str(spec["sweep_values"]["simulation.random_seed"])
+    role = json.loads(os.environ["ROLES"]).get(seed, "ok")
+    out = Path(run_out)
+    out.mkdir(parents=True, exist_ok=True)
+    (here / f"started-{seed}").write_text(str(os.getpid()))
+    status, message = "ok", ""
+    if role == "die":
+        # Once each other run given a role has begun.
+        _until(lambda: all((here / f"started-{other}").exists() or other == seed
+                           for other in json.loads(os.environ["ROLES"])))
+        os.kill(os.getpid(), signal.SIGKILL)
+    elif role == "after":
+        # Returns once the worker that dies has ended: the death is then
+        # in the window before this result reaches the study.
+        dying = next(other for other, what in json.loads(os.environ["ROLES"]).items()
+                     if what == "die")
+        _until(lambda: (here / f"started-{dying}").exists())
+        dead = int((here / f"started-{dying}").read_text())
+        _until(lambda: _ended(dead))
+    elif role in ("save", "hold"):
+        # Running, its run's record held: asked to stop, "save" saves (for
+        # SAVE seconds) and gives the record back; "hold" never stops.
+        _hold_run_process(out)
+        explorer._running_a_run = role == "save"
+        try:
+            while True:
+                time.sleep(0.05)
+        except RunStopped:
+            (here / f"saving-{seed}").write_text("")
+            time.sleep(float(os.environ.get("SAVE") or 1))
+            (here / f"saved-{seed}").write_text("")
+            status, message = "error", "stopped"
+        finally:
+            explorer._running_a_run = False
+            _release_run_process(out)
+    return RunResult(run_id=spec["run_id"], system=spec["system"], status=status,
+                     output_dir=out, sweep_values=spec["sweep_values"], phases=[],
+                     message=message)
+"""
+
+_A_STUDY_OF_STAND_INS = """
+import json, logging, os, sys
+from pathlib import Path
+
+sys.path.insert(0, os.environ["STAND_IN"])
+import stand_in
+
+from fastmdxplora.batch import explorer
+
+logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+here = Path(os.environ["STAND_IN"])
+if __name__ == "__main__" and os.environ.get("DEATHS_SEEN_ON_WAKING"):
+    # The pool's own thread sees a worker end only when it is next woken (a
+    # run handed to it, a shutdown): CPython's misses a worker started after
+    # it last woke until then, and here it always does.
+    import multiprocessing.connection as connection
+    from concurrent.futures import process
+
+    def deaths_seen_on_waking(self):
+        results, woken = self.result_queue._reader, self.thread_wakeup._reader
+        ready = connection.wait([results, woken])
+        self.thread_wakeup.clear()
+        if results in ready:
+            try:
+                return results.recv(), False, None
+            except BaseException:
+                return None, True, None
+        if self.is_shutting_down():
+            return None, False, None
+        workers = [worker.sentinel for worker in list(self.processes.values())]
+        return None, bool(connection.wait(workers, timeout=0)), None
+
+    process._ExecutorManagerThread.wait_result_broken_or_wakeup = deaths_seen_on_waking
+
+explorer._execute_run = stand_in.run
+
+if __name__ == "__main__":
+    seeds = int(os.environ["SEEDS"])
+    config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
+              "sweep": {"simulation.random_seed": list(range(1, seeds + 1))},
+              "execution": {"mode": "parallel", "workers": 2}}
+    for repeat in range(int(os.environ.get("REPEATS") or 1)):
+        for name in os.listdir(here):
+            if name.split("-")[0] in ("started", "saving", "saved"):
+                (here / name).unlink()
+        study = explorer.BatchExplorer(config_data=config, output_dir=here / f"study-{repeat}")
+        results = study._run_parallel(None, None)
+        print(json.dumps({result.run_id: [result.status, result.message]
+                          for result in results}), flush=True)
+"""
+
+
+def _a_study_of_stand_ins(tmp_path: Path, roles: dict, *, seeds: int, grace: str = "60",
+                          **env: str):
+    """`_A_STUDY_OF_STAND_INS` started in a process group of its own: the
+    real `_run_parallel` of a study of ``seeds`` runs on two workers, each
+    run a stand-in (`_STAND_IN`) doing what ``roles`` gives its seed."""
+    import os
+    import sys
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    (tmp_path / "stand_in.py").write_text(_STAND_IN)
+    script = tmp_path / "study.py"
+    script.write_text(_A_STUDY_OF_STAND_INS)
+    environ = {**os.environ, "PYTHONPATH": _source(), "FASTMDX_STOP_GRACE_SECONDS": grace,
+               "STAND_IN": str(tmp_path), "ROLES": json.dumps(roles), "SEEDS": str(seeds),
+               **env}
+    return subprocess.Popen([sys.executable, str(script)], cwd=tmp_path, env=environ,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+
+
+def _its_workers(tmp_path: Path) -> list[int]:
+    """The workers its runs ran in, by the ids they wrote."""
+    return sorted({int(path.read_text()) for path in tmp_path.glob("started-*")})
+
+
+def test_a_run_is_not_handed_to_a_pool_whose_worker_has_ended(tmp_path):
+    """The second worker killed, and seen by the pool's own thread only at
+    the next result (as CPython's misses a worker started after it last
+    woke): that result reached the study first, and the next run queued was
+    handed to the pool and failed with `BrokenProcessPool` (on Python 3.12
+    and later it could wait for ever). The study sees the worker end
+    itself: no run is handed to the pool after it."""
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "after", "2": "die"}, seeds=4,
+                                DEATHS_SEEN_ON_WAKING="1")
+    printed, said = _ended(ran, 120, "the study")
+    assert ran.returncode == 0, said[-2000:]
+    results = json.loads(printed.splitlines()[-1])
+    assert results["tri__random-seed-2"][0] == "error", results
+    for seed in (3, 4):
+        status, message = results[f"tri__random-seed-{seed}"]
+        assert status == "skipped" and message.startswith(
+            "Not started: a worker of the study ended abruptly"), results
+    assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
+
+
+def test_no_run_is_handed_to_a_broken_pool_in_30_studies(tmp_path):
+    """The same study, thirty times, with the pool's thread as CPython
+    leaves it: R48 counted 3 in 30 with a run handed to the broken pool."""
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "after", "2": "die"}, seeds=4,
+                                REPEATS="30")
+    printed, said = _ended(ran, 480, "thirty studies")
+    assert ran.returncode == 0, said[-2000:]
+    studies = [json.loads(line) for line in printed.splitlines() if line.startswith("{")]
+    assert len(studies) == 30, said[-2000:]
+    handed = [results for results in studies
+              if any(results[f"tri__random-seed-{seed}"][0] != "skipped" for seed in (3, 4))]
+    assert handed == [], f"{len(handed)} of 30 handed a run to a broken pool: {handed[:2]}"
+
+
+@pytest.mark.parametrize("roles,said", [
+    ({"1": "ok", "2": "die"}, "1 carried no run"),
+    ({"1": "save", "2": "die"}, "1 had ended the run it carried"),
+    ({"1": "hold", "2": "die"}, "1 still held a run 11 s after being asked to stop"),
+], ids=["idle", "saving", "held"])
+def test_a_broken_study_ends_each_other_worker_as_it_frees_and_says_so(roles, said, tmp_path):
+    """Each other worker of a broken pool is ended once it holds no run: one
+    that carried none at once, one stopping its run once that is saved, one
+    still holding a run at the stop grace and 10 s. The warning says which;
+    every one read "had not ended ... and were killed", or "held no run (a
+    run each had carried stopped ...)" of a worker that carried none."""
+    import sys
+    import time
+
+    if sys.version_info < (3, 12):
+        pytest.skip("before Python 3.12 a broken pool's workers end by themselves")
+    began = time.monotonic()
+    ran = _a_study_of_stand_ins(tmp_path, roles, seeds=2, grace="1", SAVE="3")
+    printed, logged = _ended(ran, 120, "the study")
+    took = time.monotonic() - began
+    assert ran.returncode == 0, logged[-2000:]
+    assert said in logged, logged[-2000:]
+    assert "had not ended" not in logged and "held no run" not in logged
+    assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
+    if "save" in roles.values():
+        assert (tmp_path / "saved-1").exists()
+    if "hold" not in roles.values():
+        # Ended as each freed, well inside the grace and 10 s.
+        assert took < 11 + 8, took
+
+
+@pytest.mark.parametrize("number", ["SIGINT", "SIGTERM"])
+def test_a_stop_while_a_worker_saves_waits_for_its_save(number, tmp_path):
+    """A stop to the study's process alone while the other worker of its
+    broken pool saved the run it was stopping: that worker was killed at
+    once, before its frame, though the stop's own words promise the frame.
+    It is ended once saved; the run queued is said not started, as at a
+    stop, and none of its workers is left."""
+    import os
+    import signal
+    import sys
+
+    if sys.version_info < (3, 12):
+        pytest.skip("before Python 3.12 a broken pool's workers end by themselves")
+    import time
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "save", "2": "die"}, seeds=3, SAVE="6")
+    try:
+        _until(lambda: (tmp_path / "saving-1").exists() or ran.poll() is not None, 120)
+        # Its pool asked it to stop as its runs were failed: the study has
+        # gone on to wait on that worker by a second on.
+        time.sleep(1.5)
+        try:
+            os.kill(ran.pid, getattr(signal, number))
+        except ProcessLookupError:
+            pass  # Ended before the stop: its worker's save is read below.
+    finally:
+        printed, logged = _ended(ran, 120, f"the study, given {number},")
+    assert ran.returncode == 0, logged[-2000:]
+    assert (tmp_path / "saved-1").exists(), logged[-2000:]
+    results = json.loads(printed.splitlines()[-1])
+    status, message = results["tri__random-seed-3"]
+    assert status == "skipped" and message.startswith(
+        "Not started: the study was asked to stop"), results
+    assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
+
+
+def test_a_run_s_hold_writes_over_a_record_its_ended_process_left(tmp_path):
+    """A run folder holding the record of a process that has ended (a worker
+    killed, the study then run again with `--force-overwrite`): the run's
+    hold left it there, naming the ended process, so the worker running the
+    run was named by no record and read as holding none, and was ended
+    before its frame (R47 L3). The hold writes it over; a live process's
+    record is left as it is."""
+    import os
+    import subprocess as sp
+    import sys
+
+    from fastmdxplora.orchestrator import (RUN_PROCESS_FILE, _hold_run_process,
+                                           _release_run_process, this_machine)
+
+    ended = sp.Popen([sys.executable, "-c", "pass"])
+    ended.wait()
+    alive = sp.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        for pid, folder in ((ended.pid, tmp_path / "ended"), (alive.pid, tmp_path / "alive")):
+            folder.mkdir()
+            (folder / RUN_PROCESS_FILE).write_text(json.dumps({"pid": pid, **this_machine()}))
+        for folder in (tmp_path / "ended", tmp_path / "alive"):
+            _hold_run_process(folder)
+        try:
+            named = {folder.name: json.loads((folder / RUN_PROCESS_FILE).read_text())["pid"]
+                     for folder in (tmp_path / "ended", tmp_path / "alive")}
+            assert named == {"ended": os.getpid(), "alive": alive.pid}, named
+        finally:
+            for folder in (tmp_path / "ended", tmp_path / "alive"):
+                _release_run_process(folder)
+    finally:
+        alive.kill()
+        alive.wait()
+
+
+def _until(condition, seconds: float) -> None:
+    import time
+
+    until = time.monotonic() + seconds
+    while not condition():
+        if time.monotonic() > until:
+            raise AssertionError(f"not so within {seconds:.0f} s")
+        time.sleep(0.05)
 
 
 def test_a_study_with_runs_queued_ends_when_a_worker_is_killed(tmp_path):

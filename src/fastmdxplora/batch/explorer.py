@@ -380,6 +380,10 @@ class _StudyStop:
         # whole process group. SIGTERM is sent to one process.
         if number != signal.SIGTERM:
             return
+        if _broken(self.pool):
+            # Its workers were asked already, by the pool as it broke: a
+            # second SIGTERM would be taken as stop now, before the frame.
+            return
         # Private to the executor, and the only list of its workers there is.
         for pid in list(getattr(self.pool, "_processes", None) or {}):
             try:
@@ -457,11 +461,55 @@ BROKEN_POOL_MARGIN_SECONDS = 10.0
 
 
 def _broken(pool: Any) -> bool:
-    """Whether a worker of ``pool`` ended abruptly (killed, out of memory):
-    set before any of its runs' futures is given `BrokenProcessPool`. A
-    broken pool takes no more runs; on Python 3.12 and later a run handed
-    to it waits for ever on a lock its own thread holds (`_shut_down`)."""
+    """Whether the pool's own thread has found a worker ended abruptly
+    (killed, out of memory): set before any of its runs' futures is given
+    `BrokenProcessPool`, and only once that thread wakes and looks
+    (`_a_worker_ended`)."""
     return bool(getattr(pool, "_broken", False))
+
+
+def _a_worker_ended(pool: Any) -> bool:
+    """Whether a worker of ``pool`` has ended, seen from this thread: its
+    sentinel is ready the moment it ends. The pool's own thread sees it only
+    once it wakes, and it may not have been watching that worker (CPython's
+    reads its workers as it wakes, and a worker started since is missed
+    until the next result or wake), so a run handed to the pool meanwhile
+    was failed with `BrokenProcessPool`, or, on Python 3.12 and later, left
+    the study waiting for ever on a lock that thread holds. Workers end
+    only when the pool is shut down, after the study's last run."""
+    if _broken(pool):
+        return True
+    processes = getattr(pool, "_processes", None)
+    if not isinstance(processes, dict) or not processes:
+        return False
+    from multiprocessing.connection import wait
+
+    try:
+        sentinels = [worker.sentinel for worker in list(processes.values())]
+        return bool(wait(sentinels, timeout=0))
+    except (AttributeError, OSError, RuntimeError, ValueError):
+        return False
+
+
+def _wake_the_pool(pool: Any) -> None:
+    """The pool's own thread woken, so it reads its workers again and finds
+    the one that ended: it then fails that run's future and asks the others
+    to stop."""
+    wakeup = getattr(pool, "_executor_manager_thread_wakeup", None)
+    try:
+        wakeup.wakeup()
+    except (AttributeError, OSError, ValueError):
+        pass
+
+
+def _until_the_pool_has_seen_it(pool: Any, seconds: float = 10.0) -> None:
+    """A worker seen ended here: the pool's own thread woken until it has
+    found it too (`_broken`), so the other workers are asked to stop before
+    the study waits on them."""
+    until = time.monotonic() + seconds
+    while not _broken(pool) and time.monotonic() < until:
+        _wake_the_pool(pool)
+        time.sleep(0.05)
 
 
 def _shut_down(pool: Any, stop: Any = None, folder: Any = None) -> None:
@@ -474,20 +522,45 @@ def _shut_down(pool: Any, stop: Any = None, folder: Any = None) -> None:
     later that is all it sends before waiting for each to end, and a worker
     takes SIGTERM as a request to stop where its run can be carried on
     (`_listen_for_a_stop_in_this_worker`): an idle one goes on waiting for
-    work, so the study waited for ever. Each is given the stop grace and a
-    margin to end where it can be carried on, and is ended once it holds no
-    run (``folder``'s process records, `_end_the_other_workers`). Python
-    3.11 and earlier also sent each its end on the pool's queue, and they
-    ended."""
-    if _broken(pool):
+    work, so the study waited for ever. There each is ended once it holds
+    no run (``folder``'s process records), or once the stop grace and a
+    margin have passed (`_end_the_other_workers`); a worker ending while
+    the pool is shut down is ended the same way. Python 3.11 and earlier
+    also send each its end on the pool's queue, and they end by themselves:
+    nothing is done there."""
+    import sys
+    import threading
+
+    if sys.version_info < (3, 12):
+        pool.shutdown(wait=True, cancel_futures=True)
+        return
+    if _a_worker_ended(pool):
+        _until_the_pool_has_seen_it(pool)
         _end_the_other_workers(pool, stop=stop, folder=folder)
-    pool.shutdown(wait=True, cancel_futures=True)
+    # A worker that ends now, as the pool is shut down: its thread holds the
+    # pool's lock while it waits on the others, and `shutdown` waits on it.
+    finished = threading.Event()
+
+    def watch() -> None:
+        while not finished.wait(0.5):
+            if _broken(pool):
+                _end_the_other_workers(pool, stop=stop, folder=folder)
+                return
+
+    watcher = threading.Thread(target=watch, name="fastmdx-pool-end", daemon=True)
+    watcher.start()
+    try:
+        pool.shutdown(wait=True, cancel_futures=True)
+    finally:
+        finished.set()
 
 
 def _holding_a_run(folder: Any, pids: set[int]) -> set[int]:
     """Which of ``pids`` a process record of the study in ``folder`` names
     (`resume._process_records`): a worker holds its run's record while it
-    runs it, and gives it back as the run ends, saved or not."""
+    runs it, and gives it back as the run ends, saved or not. A record left
+    by a process that has ended is written over as a run takes its hold
+    (`orchestrator._hold_run_process`), so the run's worker is named."""
     from fastmdxplora.simulation.resume import _process_records
 
     held: set[int] = set()
@@ -506,11 +579,12 @@ def _holding_a_run(folder: Any, pids: set[int]) -> set[int]:
 
 
 def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -> None:
-    """The workers of a broken pool still alive, ended (`_shut_down`): once
-    none holds a run (with ``folder``), at a stop asked meanwhile (with
-    ``stop``), or once the stop grace and `BROKEN_POOL_MARGIN_SECONDS` have
-    passed; and on any other way out of the wait (a KeyboardInterrupt), so
-    none is left behind."""
+    """The workers of a broken pool still alive, each ended (`_shut_down`):
+    with ``folder``, once it holds no run, so a run it was stopping saves at
+    its frame first; without, at a stop asked meanwhile (``stop``); else once
+    the stop grace and `BROKEN_POOL_MARGIN_SECONDS` have passed; and on any
+    other way out of the wait (a KeyboardInterrupt), so none is left behind.
+    The warning says what each had done."""
     from multiprocessing.connection import wait
 
     from fastmdxplora.simulation.runner import stop_grace_seconds
@@ -532,48 +606,69 @@ def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -
             alive[worker.sentinel] = worker
         except (AttributeError, ValueError):
             continue
+    # The worker that ended (and any other already ended) is not waited on.
+    try:
+        for sentinel in wait(list(alive), timeout=0):
+            alive.pop(sentinel, None)
+    except (OSError, ValueError):
+        pass
+    if not alive:
+        return
     asked_before = stop is not None and stop.requested
-    why = "time"
+    # What each did: carried no run, ended the run it carried, still held
+    # one at the end of the wait, or was ended at a stop with none known.
+    carried = (_holding_a_run(folder, {worker.pid for worker in alive.values()})
+               if folder is not None else set())
+    done: dict[str, int] = {"none": 0, "ended": 0, "held": 0, "stop": 0}
     try:
         while alive:
+            if folder is not None:
+                holding = _holding_a_run(folder, {worker.pid for worker in alive.values()})
+                for sentinel, worker in list(alive.items()):
+                    if worker.pid not in holding:
+                        _kill(worker)
+                        alive.pop(sentinel)
+                        done["ended" if worker.pid in carried else "none"] += 1
+                if not alive:
+                    break
+            elif stop is not None and stop.requested and not asked_before:
+                # Which holds a run cannot be told here: ended at once.
+                done["stop"] += len(alive)
+                break
             left = deadline - time.monotonic()
             if left <= 0:
+                done["held"] += len(alive)
                 break
             for sentinel in wait(list(alive), timeout=min(left, 0.5)):
-                alive.pop(sentinel, None)
-            if not alive:
-                break
-            if stop is not None and stop.requested and not asked_before:
-                why = "stop"
-                break
-            if folder is not None and not _holding_a_run(
-                    folder, {worker.pid for worker in alive.values()}):
-                why = "idle"
-                break
+                worker = alive.pop(sentinel, None)
+                if worker is not None:
+                    done["ended" if worker.pid in carried else "none"] += 1
     finally:
         # However the wait ended: a worker left waiting for work outlives
         # the study, holding the pool's pipe it never reads the end of.
         for worker in alive.values():
-            try:
-                worker.kill()
-            except (OSError, ValueError, AttributeError):
-                continue
-    if not alive:
-        return
-    if why == "idle":
-        logger.warning(
-            "A worker of the study ended abruptly; its %d other worker(s) held no run "
-            "(a run each had carried stopped where it can be carried on) and were ended.",
-            len(alive))
-    elif why == "stop":
-        logger.warning(
-            "A worker of the study ended abruptly, and a stop was asked while the study "
-            "waited on its %d other worker(s): they were ended at once.", len(alive))
-    else:
-        logger.warning(
-            "A worker of the study ended abruptly; %d other worker(s) still held a run "
-            "%.0f s after being asked to stop and were ended: each such run carries on "
-            "from its last checkpoint.", len(alive), allowed)
+            _kill(worker)
+    said = []
+    if done["none"]:
+        said.append(f"{done['none']} carried no run")
+    if done["ended"]:
+        said.append(f"{done['ended']} had ended the run it carried (done, or stopped where "
+                    "it can be carried on)")
+    if done["stop"]:
+        said.append(f"{done['stop']} were ended at the stop asked meanwhile")
+    if done["held"]:
+        said.append(f"{done['held']} still held a run {allowed:.0f} s after being asked to "
+                    "stop, and carries it on from its last checkpoint")
+    if said:
+        logger.warning("A worker of the study ended abruptly; of its other workers, %s: "
+                       "each was ended.", "; ".join(said))
+
+
+def _kill(worker: Any) -> None:
+    try:
+        worker.kill()
+    except (OSError, ValueError, AttributeError):
+        pass
 
 
 def _threads_for_each(n_workers: int) -> int:
@@ -3315,15 +3410,26 @@ class BatchExplorer:
             nonlocal next_index
             if next_index >= n:
                 return False
+            if _a_worker_ended(pool):
+                # A worker ended: the pool takes no more runs, and its own
+                # thread is woken to find it (`_a_worker_ended`).
+                _wake_the_pool(pool)
+                return False
             spec = self.run_specs[next_index]
             run_out = self._run_output_dir(spec)
             device = self._least_used_device(held[f] for f in futures if f in held)
-            fut = pool.submit(
-                _execute_run,
-                spec.to_dict(), str(run_out), include, exclude,
-                self.verbose, device, force=self.force, **self._resuming(),
-                **self._keeping(),
-            )
+            from concurrent.futures.process import BrokenProcessPool
+
+            try:
+                fut = pool.submit(
+                    _execute_run,
+                    spec.to_dict(), str(run_out), include, exclude,
+                    self.verbose, device, force=self.force, **self._resuming(),
+                    **self._keeping(),
+                )
+            except (BrokenProcessPool, RuntimeError):
+                # Broken, or shut down, since the look above: not started.
+                return False
             futures[fut] = (next_index, spec)
             held[fut] = device
             next_index += 1
@@ -3340,12 +3446,22 @@ class BatchExplorer:
             completion and then nothing, and a study that is working looks
             exactly like one that has hung.
             """
+            said_at = time.monotonic()
+            woken = False
             while True:
+                # The workers watched too, in short waits: one that ends is
+                # seen here at once, and its pool woken to find it, as a run
+                # still going may not answer for hours.
                 finished, pending = wait_for_any(
-                    futures, timeout=HEARTBEAT_SECONDS,
-                    return_when=FIRST_COMPLETED)
+                    futures, timeout=0.25, return_when=FIRST_COMPLETED)
                 if finished:
                     return next(iter(finished))
+                if not woken and _a_worker_ended(pool):
+                    woken = True
+                    _wake_the_pool(pool)
+                if time.monotonic() - said_at < HEARTBEAT_SECONDS:
+                    continue
+                said_at = time.monotonic()
                 # Redrawn in place where there is a terminal to redraw on.
                 # Piped to a file, a carriage return makes one endless line,
                 # so there the heartbeat is written out as before -- a log is
@@ -3390,9 +3506,8 @@ class BatchExplorer:
         try:
             stop.__enter__()
             for _ in range(min(n_workers, n)):
-                if _broken(pool):
+                if not submit_next(pool):
                     break
-                submit_next(pool)
 
             while futures:
                 fut = await_one()
@@ -3428,9 +3543,9 @@ class BatchExplorer:
                         spec.run_id, _why_it_failed(result))
                     break
 
-                if stopped_after is None and not _broken(pool):
-                    # A broken pool takes no more runs: the ones queued are
-                    # said not started, after the pool has ended.
+                if stopped_after is None:
+                    # A pool a worker of which ended takes no more runs: the
+                    # ones queued are said not started, after it has ended.
                     submit_next(pool)
 
             if stop.requested:

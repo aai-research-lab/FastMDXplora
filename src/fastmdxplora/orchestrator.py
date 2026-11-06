@@ -2180,8 +2180,37 @@ def _hold_run_process(output_dir: Path, *, rewrite: bool = False) -> None:
         holds = _holds()
         key = _key(output_dir)
         holds[key] = holds.get(key, 0) + 1
-        if rewrite or not (Path(output_dir) / RUN_PROCESS_FILE).exists():
+        path = Path(output_dir) / RUN_PROCESS_FILE
+        if rewrite or not path.exists() or _names_an_ended_process(path):
             _record_run_process(Path(output_dir))
+
+
+def _names_an_ended_process(path: Path) -> bool:
+    """Whether the record at ``path`` names a process of this machine, its
+    boot and its process namespace that has ended (its number gone, or
+    given to a process begun since): one a killed process left (a worker
+    killed, a study run again with `--force-overwrite`). A run taking its
+    hold writes it over, so the folder names the process now running it; a
+    record of another machine or container, a live process's, or one that
+    cannot be read is left as it is."""
+    from fastmdxplora.gui.exploration import _process_alive
+
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or record_is_from_elsewhere(record):
+        return False
+    space, here = record.get("pidns"), this_machine().get("pidns")
+    if isinstance(space, str) and space and here and space != here:
+        return False
+    pid = record.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    if not _process_alive(pid):
+        return True
+    ticks, now = record.get("start_ticks"), process_start_ticks(pid)
+    return isinstance(ticks, int) and now is not None and ticks != now
 
 
 def _release_run_process(output_dir: Path) -> None:
