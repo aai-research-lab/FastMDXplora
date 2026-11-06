@@ -354,11 +354,12 @@ def _rerun(study: Path) -> tuple[int, list[str]]:
 
 def test_a_failed_study_analysed_again_is_said_failed(failed, tmp_path):
     """Analysed again, the rule is not applied, and the study said "Batch
-    complete" with exit 1, and its manifest dropped how the round ended."""
+    complete", and its manifest dropped how the round ended. Its rerun ended
+    well, and its exit code says so."""
     study = tmp_path / "study"
     shutil.copytree(failed["study"], study, symlinks=True)
     code, printed = _rerun(study)
-    assert code == 1
+    assert code == 0
     assert not any(line.startswith("Batch complete") for line in printed)
     assert any(line.startswith("Batch failed") for line in printed)
     assert printed[-2].startswith("Its stopping rule's round 1 failed")
@@ -367,7 +368,8 @@ def test_a_failed_study_analysed_again_is_said_failed(failed, tmp_path):
     assert (manifest.get("round_ended") or {}).get("state") == "failed"
 
 
-def test_a_round_stopped_when_asked_exits_as_interrupted(failed, tmp_path):
+def test_a_round_stopped_when_asked_is_said_after_its_rerun(failed, tmp_path):
+    """Its phases run again ended well: exit 0, the round said stopped last."""
     def asked(record):
         record["rounds"][-1]["stopped_by"] = "asked"
         record["said"] = record["rounds"][-1]["said"] = (
@@ -376,7 +378,7 @@ def test_a_round_stopped_when_asked_exits_as_interrupted(failed, tmp_path):
 
     study = _with_record(failed, tmp_path, asked)
     code, printed = _rerun(study)
-    assert code == 130
+    assert code == 0
     assert printed[-2].startswith("Its stopping rule's round 1 was stopped when asked")
 
 
@@ -3967,8 +3969,8 @@ def test_a_study_going_elsewhere_is_not_analysed_again_from_here(killed_before_i
 
 def test_a_cut_round_s_report_written_again_says_its_round(sequential_unjoined, tmp_path):
     """`fastmdx report --rerun` of a study whose round was cut said "Batch
-    complete: 2 ok" and exited 1 with no word why: it read the round as
-    its own, going."""
+    complete: 2 ok" with no word why: it read the round as its own, going.
+    Its report written again ended well: exit 0."""
     from fastmdxplora.cli.main import main
     from fastmdxplora.simulation.stopping import round_ended
 
@@ -3980,7 +3982,7 @@ def test_a_cut_round_s_report_written_again_says_its_round(sequential_unjoined, 
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
         code = main(["report", "--output", str(study), "--rerun"])
     said = out.getvalue()
-    assert code == 1, said[-1500:]
+    assert code == 0, said[-1500:]
     assert "Batch complete" not in said and ended.said.split(":")[0] in said, said[-1500:]
     assert f"fastmdx resume {study}" in said, said[-1500:]
 
@@ -4139,82 +4141,131 @@ def _unreadable(study: Path) -> None:
         path.write_bytes(b"not a trajectory")
 
 
-@pytest.fixture(params=["sequential_unjoined", "sequential_stopped"],
-                ids=["cut", "stopped"])
-def unfinished(request):
-    """A study of two seeds whose round was cut, or stopped when asked."""
-    return request.getfixturevalue(request.param)
+#: Each case of a rerun over an unfinished round: the study it copies, the
+#: page it is run from (the study, or a run of it), the phase run again,
+#: the runs whose failure is named and the reason said.
+_RERUN_CASES = {
+    "cut": ("sequential_unjoined", "", "analysis"),
+    "stopped": ("sequential_stopped", "", "analysis"),
+    "failed": ("failed", "", "analysis"),
+    "run page": ("sequential_unjoined", "runs/tri__random-seed-1", "analysis"),
+    "one run": ("one_killed_in_its_join", "", "report"),
+}
+
+
+def _rerun_case(request, case: str, broken: bool, where: Path) -> dict:
+    """A copy of the case's study, its trajectories written over (or, for a
+    report, its report/ a file) where ``broken``."""
+    built, page, phase = _RERUN_CASES[case]
+    source = request.getfixturevalue(built)
+    source = source["study"] if isinstance(source, dict) else source
+    study = where / "study"
+    shutil.copytree(source, study, symlinks=True)
+    page = study / page if page else study
+    names = ([page.name] if page != study
+             else sorted(path.name for path in (study / "runs").iterdir())
+             if (study / "runs").is_dir() else [])
+    if broken and phase == "analysis":
+        _unreadable(page)
+    elif broken:
+        shutil.rmtree(study / "report")
+        (study / "report").write_text("not a folder")
+    reason = "trajectory" if phase == "analysis" else "Not a directory"
+    return {"study": study, "page": page, "phase": phase, "names": names, "reason": reason}
 
 
 @pytest.mark.parametrize("broken", [False, True], ids=["clean", "failing"])
-def test_a_rerun_over_an_unfinished_round_says_what_it_did(unfinished, tmp_path, broken):
-    """A rerun that really failed, on a study whose round is unfinished,
-    read as done: the GUI said "Analyzed again." (it read the exit code, the
-    round's), and the CLI's tally counted no error ("0 ok, 0 error(s), 1
-    stopped in the rounds, 1 cut in the rounds")."""
+@pytest.mark.parametrize("case", list(_RERUN_CASES))
+def test_a_rerun_over_an_unfinished_round_says_what_it_did(request, tmp_path, monkeypatch,
+                                                           case, broken):
+    """A rerun's exit code says what it did (0 each phase ended well, 1 one
+    failed), whatever round its study was left in, and that round is said
+    after it. A rerun over a cut round that ended well exited 1, over a
+    stopped one 130; one that failed read "Analyzed again." in the GUI where
+    its failure was not in the study's batch manifest (a run's own page, a
+    report that could not be put aside), and the CLI's last line was the
+    round's carry-on read before it."""
     import time
 
+    from fastmdxplora.batch.explorer import campaign_of
     from fastmdxplora.cli.main import main
     from fastmdxplora.gui.exploration import DashboardRuntime
     from fastmdxplora.simulation.stopping import round_ended
 
-    study = tmp_path / "cli" / "study"
-    shutil.copytree(unfinished, study, symlinks=True)
-    if broken:
-        _unreadable(study)
-    ended = round_ended(study)
+    # The GUI's rerun is `python -m fastmdxplora` in the study's folder:
+    # this source, not an installed one.
+    monkeypatch.setenv("PYTHONPATH", _source())
+    made = _rerun_case(request, case, broken, tmp_path / "cli")
+    page, names = made["page"], made["names"]
+    assert round_ended(campaign_of(page) or page) is not None
     out = io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-        code = main(["analyze", "--output", str(study), "--rerun"])
+        code = main(["analyze" if made["phase"] == "analysis" else "report",
+                     "--output", str(page), "--rerun"])
     said = out.getvalue()
     tally = re.search(r"Batch \w+: (\d+) ok, (\d+) error", said)
-    assert tally, said[-1500:]
-    assert ended.said.split(":")[0] in said, said[-1500:]
+    assert code == (1 if broken else 0), said[-2000:]
     if broken:
-        assert code == 1 and int(tally.group(2)) >= 1, said[-1500:]
-        assert "What would fix it" in said and "trajectory" in said, said[-1500:]
-    else:
-        assert int(tally.group(2)) == 0 and code == (130 if ended.state == "stopped" else 1)
-    # Analyze again from the GUI's runtime: a real rerun, read as it ended.
-    study = tmp_path / "gui" / "study"
-    shutil.copytree(unfinished, study, symlinks=True)
-    if broken:
-        _unreadable(study)
+        assert made["reason"] in said, said[-2000:]
+    if page == made["study"] and names:
+        assert tally and int(tally.group(2)) == (len(names) if broken else 0), said[-2000:]
+        ended = round_ended(made["study"])
+        lines = [line for line in said.splitlines() if line.strip()]
+        assert ended.said in lines[-2:], said[-2000:]
+        if broken:
+            # Its round said last, as every page reads it after the rerun
+            # (what carries it on is not what did before it).
+            assert lines[-2:] == [ended.said, ended.carry_on], said[-2000:]
+            fixes = said.split("What would fix it", 1)[-1]
+            assert all(name in fixes for name in names), said[-2000:]
+    # Its phase run again from the GUI's runtime: a real rerun, read as it
+    # ended.
+    made = _rerun_case(request, case, broken, tmp_path / "gui")
+    page, study = made["page"], made["study"]
     runtime = DashboardRuntime(workspace_root=study.parent, exploration_root=study.parent)
-    runtime.active_root = study
-    started = runtime.run_again(["analysis"])
+    runtime.active_root = page
+    started = runtime.run_again([made["phase"]])
     assert started["ok"], started
     until = time.monotonic() + 600
     while time.monotonic() < until and runtime.snapshot()["process_running"]:
         time.sleep(1)
     state = runtime.snapshot()
+    ended = round_ended(campaign_of(page) or page)
     if broken:
         assert state["status"] == "failed" and state["again_round"] is None, state
-        assert "failed" in state["error"] and ended.said in state["error"], state["error"]
+        error = state["error"]
+        assert made["reason"] in error, error
+        for name in names:
+            assert f"{name} failed in its analysis: " in error, error
+        assert error.endswith(f"{ended.said} {ended.carry_on_on_a_page}"), error
+        assert state["error_terminal"] in error, state
     else:
         assert state["status"] == "completed" and state["error"] is None, state
-        assert state["again_round"]["said"].startswith(ended.said), state["again_round"]
+        assert state["again_round"] and state["again_round"]["said"] == (
+            f"{ended.said} {ended.carry_on_on_a_page}"), state
 
 
 @pytest.mark.parametrize("broken", [False, True], ids=["clean", "failing"])
-@pytest.mark.parametrize("where", ["analysis", "report"])
-def test_a_rerun_over_an_unfinished_round_is_said_in_a_browser(sequential_unjoined, tmp_path,
-                                                                where, broken):
-    """In the GUI (Light, 1440): Analyze again and Write it again of a cut
-    study, ending well, said done with the round after it; failing, said
-    failed with its run and reason, never "Analyzed again."."""
+@pytest.mark.parametrize("case", ["cut", "run page", "one run"])
+def test_a_rerun_over_an_unfinished_round_is_said_in_a_browser(request, tmp_path, monkeypatch,
+                                                                case, broken):
+    """In the GUI (Light, 1440): Analyze again of a cut study and of a run's
+    own page, and Write it again of a study of one run, ending well, said
+    done with the round after it; failing, said with its run and reason and
+    the round after it, its command set as code, never done."""
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 
+    from fastmdxplora.batch.explorer import campaign_of
     from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.simulation.stopping import round_ended
 
-    study = tmp_path / "study"
-    shutil.copytree(sequential_unjoined, study, symlinks=True)
-    if broken:
-        _unreadable(study)
+    monkeypatch.setenv("PYTHONPATH", _source())
+    made = _rerun_case(request, case, broken, tmp_path)
+    page_of, where = made["page"], made["phase"]
     done = "Analyzed again." if where == "analysis" else "Written again."
     box = "#analysis-again-ask" if where == "analysis" else "#report-write-ask"
-    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    session = start_dashboard_session(output=str(page_of), host="127.0.0.1", port=0)
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
@@ -4227,23 +4278,121 @@ def test_a_rerun_over_an_unfinished_round_is_said_in_a_browser(sequential_unjoin
             page.click(button)
             page.click(box + " .fix-confirm")
             page.wait_for_function(
-                "([box, done]) => { const t = (document.querySelector(box) || {}).textContent"
-                " || ''; return t.includes(done) || t.includes('failed'); }",
-                arg=[box, done], timeout=300000)
-            said = page.text_content(box)
+                "([box, done, reason]) => { const t = (document.querySelector(box) || {})"
+                ".textContent || ''; return t.includes(done) || t.includes(reason); }",
+                arg=[box, done, made["reason"]], timeout=300000)
+            line = box + (" .again-said" if where == "analysis" else " .fix-said")
+            said = page.text_content(line)
+            code = page.eval_on_selector_all(line + " code",
+                                             "nodes => nodes.map(n => n.textContent)")
             browser.close()
     finally:
         session.server.shutdown()
-    # Said as the statuses the rerun wrote: its analyses of an unreadable
-    # trajectory failed; its report, from the study's records, need not.
-    failed = broken and where == "analysis"
-    recorded = json.loads((study / "batch_manifest.json").read_text())["runs"]
-    assert any(run.get("status") == "error" and "trajectory" in str(run.get("message"))
-               for run in recorded) == failed, recorded
-    if failed:
-        assert done not in said and "failed" in said and "did not finish" in said, said
+    ended = round_ended(campaign_of(page_of) or page_of)
+    command = " ".join(ended.argv)
+    terminal = command if command in ended.carry_on_on_a_page else ""
+    if broken:
+        assert done not in said and made["reason"] in said, said
+        for name in made["names"]:
+            assert f"{name} failed in its analysis" in said, said
     else:
-        assert said.startswith(done) and "did not finish" in said, said
+        assert said.startswith(done), said
+    assert said.endswith(f"{ended.said} {ended.carry_on_on_a_page}"), said
+    assert code == ([terminal] if terminal else []), (code, said)
+
+
+_INTERRUPTED_IN = '''
+import importlib, os, signal, sys
+from fastmdxplora.cli.main import main
+
+# Ctrl-C as a terminal leaves it, whatever started the tests.
+signal.signal(signal.SIGINT, signal.default_int_handler)
+where, _, name = sys.argv[1].rpartition(":")
+module = importlib.import_module(where)
+real = getattr(module, name)
+done = []
+
+def interrupted(*args, **kwargs):
+    if not done:
+        done.append(1)
+        os.kill(os.getpid(), signal.SIGINT)
+    return real(*args, **kwargs)
+
+setattr(module, name, interrupted)
+sys.exit(main(sys.argv[2:]))
+'''
+
+
+@pytest.mark.parametrize("case", ["cut", "stopped", "failed"])
+def test_a_rerun_stopped_by_ctrl_c_is_counted_stopped(request, tmp_path, case):
+    """Ctrl-C in the first run's analysis of a rerun: over a cut round it
+    was tallied "1 cut in the rounds" and exited 1, the round's code; it is
+    stopped, and the rerun exits 130, on every round's ending."""
+    import os
+    import subprocess
+    import sys
+
+    made = _rerun_case(request, case, False, tmp_path)
+    driver = tmp_path / "interrupted_in.py"
+    driver.write_text(_INTERRUPTED_IN)
+    ran = subprocess.run([sys.executable, str(driver), "fastmdxplora.analysis.analyze:run",
+                          "analyze", "--output", str(made["study"]), "--rerun"],
+                         env={**os.environ, "PYTHONPATH": _source()}, cwd=tmp_path,
+                         capture_output=True, text=True, timeout=1200)
+    said = ran.stdout + ran.stderr
+    assert ran.returncode == 130, said[-2000:]
+    # Its headline is the study's round's ("Batch failed" for a failed one).
+    assert ": 0 ok, 0 error(s), 1 stopped, 1 skipped, 2 total" in said, said[-2000:]
+
+
+def test_the_gui_reads_a_rerun_by_its_exit_and_words_what_failed(tmp_path):
+    """Its rerun's exit says what it did: 130 is a stop, not a failure; 1 a
+    failure, worded from the phase this rerun recorded failed (with its
+    full stop), not one recorded before it began nor one stopped. A
+    completed study's failure said only "Manifest: ... (exit code 1 ...)",
+    and a rerun stopped by Ctrl+C read failed."""
+    import subprocess
+    import sys
+    from datetime import datetime, timedelta, timezone
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    study = tmp_path / "study"
+    study.mkdir()
+    began = datetime.now(timezone.utc)
+
+    def ended_with(code: int, *, at: datetime, refusal: dict | None = None) -> dict:
+        record = {"name": "analysis", "status": "error", "started_at": at.isoformat(),
+                  "message": "MDTraj failed to load trajectory: Could not open file: "
+                             "simulation/production.dcd"}
+        if refusal:
+            record["refusal"] = refusal
+        (study / "manifest.json").write_text(json.dumps({"phases": [record]}))
+        (study / "exploration.log").write_text("x - ERROR - What the log says\n")
+        runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=tmp_path)
+        runtime.active_root = runtime.running_root = study
+        runtime.process = subprocess.Popen([sys.executable, "-c",
+                                            f"import sys; sys.exit({code})"])
+        runtime.process.wait()
+        runtime.process_started_at = began.isoformat()
+        runtime.log_path = study / "exploration.log"
+        runtime.command = [sys.executable, "-m", "fastmdxplora", "explore"]
+        runtime.ran_again = True
+        return runtime.snapshot()
+
+    later = began + timedelta(seconds=5)
+    failed = ended_with(1, at=later)
+    assert failed["status"] == "failed", failed
+    assert failed["error"] == ("The analysis phase failed: MDTraj failed to load trajectory: "
+                               "Could not open file: simulation/production.dcd."), failed
+    stopped = ended_with(130, at=later)
+    assert stopped["status"] == "stopped" and stopped["error"] is None, stopped
+    for earlier in (ended_with(1, at=began - timedelta(hours=1)),
+                    ended_with(1, at=later, refusal={"code": STOPPED_CODE})):
+        assert earlier["status"] == "failed", earlier
+        assert "phase failed" not in earlier["error"], earlier
+        assert "What the log says" in earlier["error"], earlier
 
 
 def test_a_process_record_is_written_with_the_umask_s_mode(tmp_path, monkeypatch):

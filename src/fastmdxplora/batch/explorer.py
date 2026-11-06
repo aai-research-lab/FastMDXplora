@@ -3441,13 +3441,25 @@ class BatchExplorer:
         # phases run again (`fastmdx report --rerun`), which holds the study
         # as a resume does and carries no round on: its round as it stood.
         stood = getattr(self, "_round_as_it_stood", None)
-        if stood is not None and self._record_of_rounds() == stood[0]:
+        if (stood is not None and self._record_of_rounds() == stood[0]
+                and not self._own_errors()):
             # No round carried on since it was taken (phases run again): its
             # round as every page read it then, a resume that died included.
+            # A run of it that ended in an error of its own changes what
+            # carries the round on: read again, as every page reads it now.
             return stood[1]
         resuming = bool(getattr(self, "resume", False)) or run_process_held_here(
             self.output_dir)
         return round_ended(self.output_dir, resuming=resuming)
+
+    def _own_errors(self) -> set[str]:
+        """The runs that ended in an error of their own in this command (its
+        phases run again, its analysis that failed), whatever its round
+        left them as."""
+        return {r.run_id for r in getattr(self, "results", None) or []
+                if r.status == "error" and not _was_stopped(r)
+                and getattr(r, "error_type", None) not in (
+                    STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS, RESUME_REFUSED)}
 
     # ------------------------------------------------------------------
     def _print_summary(self) -> None:
@@ -3467,9 +3479,7 @@ class BatchExplorer:
         # A run that ended in an error of its own in this command (its phases
         # run again, its analysis that failed): an error, whatever its round
         # left it as, and said with what would fix it.
-        own = {r.run_id for r in self.results if r.status == "error" and not _was_stopped(r)
-               and getattr(r, "error_type", None) not in (
-                   STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS, RESUME_REFUSED)}
+        own = self._own_errors()
         if ended is not None:
             from fastmdxplora.gui.exploration import runs_of_a_study
 
@@ -3477,19 +3487,29 @@ class BatchExplorer:
             # the Agent count it: a run whose extension was stopped is not ok.
             runs = runs_of_a_study(self.output_dir) or []
             given = {getattr(r, "run_id", None): r.status for r in self.results}
+            # A run its phases run again stopped (Ctrl+C) is stopped by this
+            # command, whatever its round left it as, and one they did not
+            # reach is skipped (counted once).
+            here = ({r.run_id for r in self.results if _was_stopped(r)}
+                    if getattr(self, "keep_previous", False) else set())
             # A run "waiting" for the next round, read in this process while
             # it holds the study, has ended as its result says once it ends.
             states = [("failed" if run.get("run_id") in own
+                       else "stopped here" if run.get("run_id") in here
+                       else "skipped" if getattr(self, "keep_previous", False)
+                       and given.get(run.get("run_id")) == "skipped"
                        else "completed" if run.get("state") == "waiting"
                        and given.get(run.get("run_id")) == "ok" else run.get("state"))
                       for run in runs]
             if len(states) == len(self.results):
                 ok = states.count("completed")
                 err = states.count("failed")
-                left = len(states) - ok - err - skipped
+                halted = states.count("stopped here")
+                left = len(states) - ok - err - halted - skipped
                 # Cut (its process ended) is not stopped (asked to stop).
                 gone = min(left, states.count("interrupted"))
-                cut = (f", {left - gone} stopped in the rounds" if left - gone > 0 else "") + (
+                cut = (f", {halted} stopped" if halted else "") + (
+                    f", {left - gone} stopped in the rounds" if left - gone > 0 else "") + (
                     f", {gone} cut in the rounds" if gone else "")
         # Each run counted once: the refused are among the errors.
         among = (f" ({refused} of them refused by {'its' if refused == 1 else 'their'} resume)"

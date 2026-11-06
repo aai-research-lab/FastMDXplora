@@ -377,7 +377,7 @@
       "Write " + (several ? "each run's report" : "the report") + " again from " +
       "this study's records? The report, its slides, PDF, dashboard.html and " +
       "bundle are written again as the study's report settings ask. The report " +
-      "there now is kept in previous/, in place of what was kept there before. " +
+      "there now is saved in previous/, in place of what was saved there before. " +
       "Nothing is simulated or analysed."));
     var yes = node("button", "primary-btn fix-confirm", "Yes, write it");
     yes.type = "button";
@@ -416,7 +416,9 @@
       return;
     }
     if (app.returncode !== 0 || app.error) {
-      say(app.error || "It stopped before the report was written again; its log is in the side panel.");
+      // A failure's own command (its round's carry-on) set as code too.
+      say(app.error || "It stopped before the report was written again; its log is in the side panel.",
+          app.error ? app.error_terminal : "");
       return;
     }
     say("Written again.");

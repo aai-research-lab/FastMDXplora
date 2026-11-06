@@ -256,7 +256,9 @@
       return;
     }
     if (app.returncode !== 0 || app.error) {
-      say(app.error || "It stopped before the analyses were written again; its log is in the side panel.");
+      // A failure's own command (its round's carry-on) set as code too.
+      say(app.error || "It stopped before the analyses were written again; its log is in the side panel.",
+          app.error ? app.error_terminal : "");
       return;
     }
     say("Analyzed again. What it replaced is in " + ((offered && offered.previous) || "previous") + "/.");

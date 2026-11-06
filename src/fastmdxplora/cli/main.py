@@ -2156,14 +2156,22 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
                                                  STOPPED_IN_THE_ROUNDS, _was_stopped)
 
-        # The study's state decides, as every page reads it: a round stopped
-        # when asked exits 130, as a study stopped at the terminal does,
-        # whatever its runs stopped in the round are recorded as; 1 is for
-        # a run's own error or a failed round.
         erred = [r for r in results if r.status == "error" and not _was_stopped(r)
                  and getattr(r, "error_type", None) not in (
                      STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS)]
-        rc = 130 if ended.state == "stopped" and not erred else 1
+        if getattr(args, "rerun", False):
+            # Its phases run again carry no round on: its code is what they
+            # did (1 a run's own error, 130 stopped here, 0 each ended
+            # well), whatever its round left the study as; that round is
+            # said after it.
+            rc = 1 if erred else 130 if (rc == 130 or any(
+                _was_stopped(r) for r in results)) else 0
+        else:
+            # The study's state decides, as every page reads it: a round
+            # stopped when asked exits 130, as a study stopped at the
+            # terminal does, whatever its runs stopped in the round are
+            # recorded as; 1 is for a run's own error or a failed round.
+            rc = 130 if ended.state == "stopped" and not erred else 1
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
         # The analysis phase finishes when one of its analyses fails, and
