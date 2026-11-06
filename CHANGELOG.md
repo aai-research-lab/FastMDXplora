@@ -832,15 +832,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A study whose worker was killed (out of memory, a kill) never ended on
   Python 3.12 and later: the broken pool sends its other workers SIGTERM
   alone and waits on them, and a worker takes SIGTERM as a request to stop,
-  so one waiting for work waited for ever. Each is now given, while it
-  still holds a run, up to the stop grace and 10 s to end where its run can
-  be carried on, then ended; a stop asked meanwhile, to the study's process
-  alone too, ends them at once, and none is left behind. A broken pool is
-  given no more runs: the ones queued are said not started (3.12 and later
-  waited for ever handing it the next; 3.11 raised `BrokenProcessPool` out
-  of the study). A worker's stop listener imports nothing, so two quick
-  stops no longer end an idle worker. Another container on the same host is
-  told apart only on Linux, as the docs now say.
+  so one waiting for work waited for ever. Each is now ended once it holds
+  no run: at once where it carried none, once its run is saved where one
+  was stopping, at most after the stop grace and 10 s; a stop asked
+  meanwhile, to the study's process alone too, is waited out the same way,
+  and none is left behind. 3.11 and earlier end their workers themselves,
+  as before. The study sees a worker end from its own thread (the pool's
+  may see it only at the next result) and gives the pool no more runs: the
+  ones queued are said not started (3.12 and later waited for ever handing
+  it the next; 3.11 raised `BrokenProcessPool` out of the study). A run's
+  hold writes over a record its ended process left. A worker's stop
+  listener imports nothing, so two quick stops no longer end an idle
+  worker. Another container on the same host is told apart only on Linux,
+  as the docs now say.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
