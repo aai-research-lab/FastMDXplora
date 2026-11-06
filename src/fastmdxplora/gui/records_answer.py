@@ -142,7 +142,13 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
     if not base.is_dir():
         return None
     if (base / "batch_manifest.json").is_file():
-        return _several_runs(base)
+        several = _several_runs(base)
+        going = _still_going(base)
+        if going and several and several.startswith(MARK):
+            # Going, here or on another machine: said first, as a run's
+            # answer says it.
+            return f"{MARK}\n\n{going}{several[len(MARK):]}"
+        return several
     said = {"found": _found, "long_enough": _long_enough,
             "strengthen": _strengthen}[question](base)
     from fastmdxplora.simulation.stopping import round_ended

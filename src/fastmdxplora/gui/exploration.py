@@ -175,6 +175,37 @@ def _runs_that_failed(root: Path) -> list[str] | None:
             if isinstance(r, dict) and str(r.get("status") or "").lower() in FAILED_STATUSES]
 
 
+def _what_the_rerun_failed(root: Path) -> str:
+    """What a study's phases run again (`fastmdx analyze/report --rerun`)
+    failed of, from the statuses it wrote: each run of a study of several
+    that ended in an error of its own (not stopped or cut in the study's
+    rounds), or a phase of a study of one; with its reason. Empty where
+    every one ended well."""
+    from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                             STOPPED_IN_THE_ROUNDS, campaign_of)
+
+    study = campaign_of(root) or root
+    batch = _json_mapping(study / "batch_manifest.json")
+    if batch:
+        mine = None if study == root else root.name
+        failed = [r for r in (batch.get("runs") or []) if isinstance(r, dict)
+                  and (mine is None or str(r.get("run_id")) == mine)
+                  and str(r.get("status") or "").lower() in FAILED_STATUSES
+                  and r.get("error_type") not in (STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS,
+                                                  STOPPED_ERROR_TYPE)]
+        return " ".join(f"{r.get('run_id')} failed: "
+                        f"{str(r.get('message') or 'with an error').strip().splitlines()[0]}"
+                        + ("" if str(r.get("message") or "").rstrip().endswith(".") else ".")
+                        for r in failed)
+    phases = _phases_recorded(root)
+    for name in ("analysis", "report"):
+        phase = phases.get(name) or {}
+        if str(phase.get("status") or "").lower() in FAILED_STATUSES:
+            message = str(phase.get("message") or "").strip().splitlines()
+            return f"The {name} phase failed" + (f": {message[0]}" if message else ".")
+    return ""
+
+
 def _finished_cleanly(root: Path) -> bool:
     """Whether a study that is no longer running finished without a failed
     phase or run, from what it recorded."""
@@ -1188,9 +1219,23 @@ class DashboardRuntime:
                 ended = round_ended(campaign_of(Path(where)) or Path(where))
             except Exception:  # noqa: BLE001 - said as its exit is
                 ended = None
-            if ended is not None and self.process_returncode == (
-                    130 if ended.state == "stopped" else 1):
-                self.again_round = {"said": ended.said, "terminal": " ".join(ended.argv)}
+            if ended is not None and self.process_returncode in (1, 130):
+                # Done only where no run of the rerun ended in error, by the
+                # statuses it wrote, never by its exit code alone (a rerun
+                # over an unfinished round exits with the round's code
+                # whatever it did): else the error, its run and its reason,
+                # with the round after it.
+                failed = _what_the_rerun_failed(Path(where))
+                if failed:
+                    self.completion_error = f"{failed} {ended.said} {ended.carry_on_on_a_page}"
+                    return
+                command = " ".join(ended.argv)
+                self.again_round = {"said": f"{ended.said} {ended.carry_on_on_a_page}",
+                                    # Its command set as code where the round's
+                                    # carry-on gives one (none where the resume
+                                    # carries no run on).
+                                    "terminal": (command if command in ended.carry_on_on_a_page
+                                                 else "")}
                 return
         if (self.process_returncode != 0 and self.completion_error is None
                 and where is not None and Path(where).resolve() in self.stopped_roots):
@@ -1380,6 +1425,9 @@ class DashboardRuntime:
                 status = "stopped"
             elif self.completion_error and viewing_running:
                 status = "failed"
+            elif self.again_round and viewing_running:
+                # Its phases run again ended well over an unfinished round.
+                status = "completed"
             elif self.process is not None and self.process_returncode == 0 and viewing_running:
                 status = "completed"
             elif self.process is not None and self.process_returncode is not None and viewing_running:
@@ -1975,6 +2023,7 @@ class DashboardRuntime:
     def _hold(self, root: Path, record: Mapping[str, Any], pid: int) -> None:
         """Take a run this server did not start as the one it is watching."""
         self.process = _AdoptedProcess(pid, Path(root), dict(record))
+        self.ran_again, self.again_round = False, None
         self.running_root = Path(root)
         self.process_started_at = str(record.get("started_at") or _utc_now())
         self.process_finished_at = None

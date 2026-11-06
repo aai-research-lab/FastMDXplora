@@ -3464,6 +3464,12 @@ class BatchExplorer:
                     else "Batch failed" if err
                     else "Batch complete")
         cut = ""
+        # A run that ended in an error of its own in this command (its phases
+        # run again, its analysis that failed): an error, whatever its round
+        # left it as, and said with what would fix it.
+        own = {r.run_id for r in self.results if r.status == "error" and not _was_stopped(r)
+               and getattr(r, "error_type", None) not in (
+                   STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS, RESUME_REFUSED)}
         if ended is not None:
             from fastmdxplora.gui.exploration import runs_of_a_study
 
@@ -3473,7 +3479,8 @@ class BatchExplorer:
             given = {getattr(r, "run_id", None): r.status for r in self.results}
             # A run "waiting" for the next round, read in this process while
             # it holds the study, has ended as its result says once it ends.
-            states = [("completed" if run.get("state") == "waiting"
+            states = [("failed" if run.get("run_id") in own
+                       else "completed" if run.get("state") == "waiting"
                        and given.get(run.get("run_id")) == "ok" else run.get("state"))
                       for run in runs]
             if len(states) == len(self.results):
@@ -3495,7 +3502,8 @@ class BatchExplorer:
         # The round's own runs are fixed as its sentence, last, says: their
         # own remedies ("suggests nothing", a cost in production) said other.
         fixes = _what_would_fix_it(self.output_dir,
-                                   leave_out=self._the_rule_s_runs() if ended else ())
+                                   leave_out=[run for run in self._the_rule_s_runs()
+                                              if run not in own] if ended else ())
         if fixes:
             print("\n".join(fixes))
         elif stopped:

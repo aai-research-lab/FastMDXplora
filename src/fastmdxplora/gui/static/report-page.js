@@ -292,9 +292,13 @@
   /* A sentence, its command (``terminal``, its last words) set as code. */
   function withCommand(said, text, terminal) {
     text = String(text || "");
-    if (terminal && text.slice(-terminal.length) === terminal) {
-      said.textContent = text.slice(0, text.length - terminal.length);
+    var at = terminal ? text.lastIndexOf(terminal) : -1;
+    if (at >= 0) {
+      // Its command set as code where the sentence gives it, its last
+      // words or within it (a round's carry-on goes on after it).
+      said.textContent = text.slice(0, at);
       said.appendChild(commandNode(terminal));
+      said.appendChild(document.createTextNode(text.slice(at + terminal.length)));
     } else {
       said.textContent = text;
     }
@@ -407,8 +411,7 @@
     if (app.again_round) {
       // Done over a round left unfinished: said so, with that round and
       // the command that carries it on, as the terminal says it.
-      say("Written again. " + app.again_round.said + " To carry it on: " +
-          app.again_round.terminal, app.again_round.terminal);
+      say("Written again. " + app.again_round.said, app.again_round.terminal);
       load();
       return;
     }

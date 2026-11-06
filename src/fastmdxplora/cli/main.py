@@ -2085,7 +2085,9 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             # (`orchestrator`), a study held by another process here or
             # going on another machine as a resume's refusal says it.
             if _still_running(root) or _still_running(study):
-                print(f"fastmdx: {root} is still running. Run its phases again once it has "
+                # Its study named where the study is the one going.
+                going = root if _still_running(root) else study
+                print(f"fastmdx: {going} is still running. Run its phases again once it has "
                       "stopped.", file=sys.stderr)
                 return 1
             held = _held_elsewhere(study)

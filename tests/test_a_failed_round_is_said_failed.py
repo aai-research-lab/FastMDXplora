@@ -3688,6 +3688,10 @@ def _every_reader_says_going(study: Path, *, elsewhere: bool) -> None:
         finished_manifest(study)
     if not elsewhere:
         return
+    from fastmdxplora.gui.records_answer import answer_from_the_records as answered
+
+    # The study's own answer leads with it, as each run's does.
+    assert (answered(study, "found") or "").count("It is going") == 1
     assert health["message"].startswith("It is going on another-host") or \
         "another container" in health["message"], health
     assert "--taken-over" in health["message"], health
@@ -4058,6 +4062,8 @@ def test_phases_run_again_into_a_study_going_here_are_refused(tmp_path, seeds):
                 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
                     code = main([command, "--output", str(page), "--rerun"])
                 assert code == 1 and "is still running" in out.getvalue(), out.getvalue()[-800:]
+                # The study named, where it is the one going.
+                assert f"{study} is still running" in out.getvalue(), out.getvalue()[-800:]
             runtime = DashboardRuntime(workspace_root=study.parent, exploration_root=study.parent)
             runtime.active_root = page
             with mock.patch.object(DashboardRuntime, "_spawn") as spawned:
@@ -4127,32 +4133,122 @@ def test_a_rerun_of_a_study_whose_resume_died_says_its_round_as_every_page(resum
     assert recorded["state"] == "interrupted", recorded
 
 
-def test_the_gui_says_a_rerun_over_an_unfinished_round_was_done(sequential_unjoined, tmp_path):
-    """Analyze again of a study whose round was cut exited with the round's
-    code, and the GUI said it as a failure with the log's last line."""
-    import subprocess
-    import sys
+def _unreadable(study: Path) -> None:
+    """Every trajectory of the study's runs written over: its analyses fail."""
+    for path in study.rglob("*.dcd"):
+        path.write_bytes(b"not a trajectory")
 
+
+@pytest.fixture(params=["sequential_unjoined", "sequential_stopped"],
+                ids=["cut", "stopped"])
+def unfinished(request):
+    """A study of two seeds whose round was cut, or stopped when asked."""
+    return request.getfixturevalue(request.param)
+
+
+@pytest.mark.parametrize("broken", [False, True], ids=["clean", "failing"])
+def test_a_rerun_over_an_unfinished_round_says_what_it_did(unfinished, tmp_path, broken):
+    """A rerun that really failed, on a study whose round is unfinished,
+    read as done: the GUI said "Analyzed again." (it read the exit code, the
+    round's), and the CLI's tally counted no error ("0 ok, 0 error(s), 1
+    stopped in the rounds, 1 cut in the rounds")."""
+    import time
+
+    from fastmdxplora.cli.main import main
     from fastmdxplora.gui.exploration import DashboardRuntime
     from fastmdxplora.simulation.stopping import round_ended
 
-    study = tmp_path / "study"
-    shutil.copytree(sequential_unjoined, study, symlinks=True)
+    study = tmp_path / "cli" / "study"
+    shutil.copytree(unfinished, study, symlinks=True)
+    if broken:
+        _unreadable(study)
+    ended = round_ended(study)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        code = main(["analyze", "--output", str(study), "--rerun"])
+    said = out.getvalue()
+    tally = re.search(r"Batch \w+: (\d+) ok, (\d+) error", said)
+    assert tally, said[-1500:]
+    assert ended.said.split(":")[0] in said, said[-1500:]
+    if broken:
+        assert code == 1 and int(tally.group(2)) >= 1, said[-1500:]
+        assert "What would fix it" in said and "trajectory" in said, said[-1500:]
+    else:
+        assert int(tally.group(2)) == 0 and code == (130 if ended.state == "stopped" else 1)
+    # Analyze again from the GUI's runtime: a real rerun, read as it ended.
+    study = tmp_path / "gui" / "study"
+    shutil.copytree(unfinished, study, symlinks=True)
+    if broken:
+        _unreadable(study)
     runtime = DashboardRuntime(workspace_root=study.parent, exploration_root=study.parent)
     runtime.active_root = study
-    runtime.ran_again = True
-    runtime.process = subprocess.Popen([sys.executable, "-c", "raise SystemExit(1)"])
-    runtime.process.wait()
-    runtime._refresh_process()
-    assert runtime.completion_error is None
-    assert runtime.again_round == {"said": round_ended(study).said,
-                                   "terminal": f"fastmdx resume {study}"}
+    started = runtime.run_again(["analysis"])
+    assert started["ok"], started
+    until = time.monotonic() + 600
+    while time.monotonic() < until and runtime.snapshot()["process_running"]:
+        time.sleep(1)
+    state = runtime.snapshot()
+    if broken:
+        assert state["status"] == "failed" and state["again_round"] is None, state
+        assert "failed" in state["error"] and ended.said in state["error"], state["error"]
+    else:
+        assert state["status"] == "completed" and state["error"] is None, state
+        assert state["again_round"]["said"].startswith(ended.said), state["again_round"]
+
+
+@pytest.mark.parametrize("broken", [False, True], ids=["clean", "failing"])
+@pytest.mark.parametrize("where", ["analysis", "report"])
+def test_a_rerun_over_an_unfinished_round_is_said_in_a_browser(sequential_unjoined, tmp_path,
+                                                                where, broken):
+    """In the GUI (Light, 1440): Analyze again and Write it again of a cut
+    study, ending well, said done with the round after it; failing, said
+    failed with its run and reason, never "Analyzed again."."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    study = tmp_path / "study"
+    shutil.copytree(sequential_unjoined, study, symlinks=True)
+    if broken:
+        _unreadable(study)
+    done = "Analyzed again." if where == "analysis" else "Written again."
+    box = "#analysis-again-ask" if where == "analysis" else "#report-write-ask"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 1000},
+                                    color_scheme="light")
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#" + where, wait_until="domcontentloaded")
+            button = "#analysis-again" if where == "analysis" else "#report-write"
+            page.wait_for_selector(button + ":not([hidden])")
+            page.click(button)
+            page.click(box + " .fix-confirm")
+            page.wait_for_function(
+                "([box, done]) => { const t = (document.querySelector(box) || {}).textContent"
+                " || ''; return t.includes(done) || t.includes('failed'); }",
+                arg=[box, done], timeout=300000)
+            said = page.text_content(box)
+            browser.close()
+    finally:
+        session.server.shutdown()
+    # Said as the statuses the rerun wrote: its analyses of an unreadable
+    # trajectory failed; its report, from the study's records, need not.
+    failed = broken and where == "analysis"
+    recorded = json.loads((study / "batch_manifest.json").read_text())["runs"]
+    assert any(run.get("status") == "error" and "trajectory" in str(run.get("message"))
+               for run in recorded) == failed, recorded
+    if failed:
+        assert done not in said and "failed" in said and "did not finish" in said, said
+    else:
+        assert said.startswith(done) and "did not finish" in said, said
 
 
 def test_a_process_record_is_written_with_the_umask_s_mode(tmp_path, monkeypatch):
     """`mkstemp` made every process record owner-only: another member of
     the group read a study going on another machine as completed."""
-    import os
     import stat
 
     from fastmdxplora import orchestrator
@@ -4162,11 +4258,20 @@ def test_a_process_record_is_written_with_the_umask_s_mode(tmp_path, monkeypatch
     record = tmp_path / RUN_PROCESS_FILE
     orchestrator._put_in_place(record, "{}")
     assert stat.S_IMODE(record.stat().st_mode) == 0o666 & ~_umask()
-    # A live process's temporary beside it is its own, and left there.
-    mine = tmp_path / f"{RUN_PROCESS_FILE}.{os.getpid()}.x.tmp"
-    mine.write_text("{")
-    orchestrator._put_in_place(record, "{}")
-    assert mine.exists()
+    # A live process's temporary beside it (another's, writing it now) is
+    # left there.
+    import subprocess
+    import sys
+
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        theirs = tmp_path / f"{RUN_PROCESS_FILE}.{other.pid}.x.tmp"
+        theirs.write_text("{")
+        orchestrator._put_in_place(record, "{}")
+        assert theirs.exists()
+    finally:
+        other.kill()
+        other.wait()
     # A rewrite that fails (a full disk) is no error of the heartbeat's.
     record.write_text("{\"pid\": 4")
     orchestrator._mark_written_here(record)
