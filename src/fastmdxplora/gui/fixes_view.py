@@ -23,10 +23,10 @@ def study_of(root: Any) -> Path | None:
     unbuilt."""
     if not root:
         return None
+    from fastmdxplora.batch.explorer import campaign_of
+
     here = Path(root)
-    if here.parent.name == "runs" and (here.parent.parent / "batch_manifest.json").is_file():
-        return here.parent.parent
-    return here
+    return campaign_of(here) or here
 
 
 def runnable(remedy: Any) -> bool:

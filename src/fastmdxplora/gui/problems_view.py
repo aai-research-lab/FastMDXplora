@@ -398,9 +398,11 @@ def _read_problems(root: Path, *, artifacts: list[dict[str, Any]] | None,
         refusal = phase.get("refusal")
         code = str(refusal.get("code") or "") if isinstance(refusal, dict) else ""
         said = str(phase["status"]).lower()
-        carried = phase.get("carried_on_from")
+        carried = phase.get("carried_on_from") or phase.get("stopped_at_its_end")
         if isinstance(carried, dict):
-            # A stop that was carried on and joined (`resume._production_carried_on`).
+            # A stop that was carried on and joined (`resume._production_carried_on`),
+            # or one at its last step said whole by its resume
+            # (`resume._its_stop_at_its_end_said_whole`): its own words.
             earlier = carried.get("refusal")
             stop_said(carried.get("message"),
                       earlier.get("message") if isinstance(earlier, dict) else None)

@@ -468,6 +468,14 @@ def _write_markdown(
     lines: list[str] = []
     lines.append("# Cross-run comparison report")
     lines.append("")
+    if root is not None:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        # Its runs each ended well and its rule's round did not: said
+        # before the runs are compared as if the study had completed.
+        ended = round_ended(root)
+        if ended is not None:
+            lines += [f"**{ended.label}.** {ended.as_text()}", ""]
 
     # An umbrella study is one experiment sampled in pieces, not several
     # experiments. Its windows differ because each is held at a different
@@ -591,7 +599,7 @@ def _write_markdown(
         lines.extend(_across_the_replicas(root))
         from fastmdxplora.simulation.stopping import stopping_section
 
-        lines.extend(stopping_section(root))
+        lines.extend(stopping_section(root, ended_said_above=True))
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

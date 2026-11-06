@@ -1003,6 +1003,9 @@ class _StopRequests:
         self.signal: int | None = None
         #: Asked without a signal, by the GUI in this process.
         self.asked_here = False
+        #: Asked before this production began (the study's round noted it):
+        #: it takes no step.
+        self.before_it_began = False
         self.at_step: int | None = None
         self.on_frame = False
         self._previous: dict[int, Any] = {}
@@ -1035,6 +1038,16 @@ class _StopRequests:
                 self._previous[number] = _signal.signal(number, self._note)
             except (ValueError, OSError):  # pragma: no cover - a platform without it
                 continue
+        # A stop the study's round noted before this production began (a
+        # catch-up piece's start): it stops at its first frame.
+        pending = next((listener for listener in reversed(_LISTENING[:-1])
+                        if isinstance(listener, _StopInTheRounds)
+                        and listener.signal is not None), None)
+        if pending is not None and self.signal is None:
+            self.signal, self.asked_here = pending.signal, pending.asked_here
+            self.before_it_began = True
+            #: The study whose round noted it: its resume carries the round on.
+            self.study = pending.folder
         return self
 
     def _note(self, number: int, _frame: Any) -> None:
@@ -1074,6 +1087,58 @@ class _StopRequests:
 
     def ask_here(self) -> str:
         return _asked_here(self)
+
+
+class _StopInTheRounds(_StopRequests):
+    """SIGTERM and SIGINT while a study's stopping rule judges and extends
+    its runs, outside a run's production (a piece's join and analyses,
+    between runs, a catch-up piece's start), noted rather than obeyed at
+    once, as production notes them: the round ends stopped when asked once
+    the run it extends has answered, and a production begun after the stop
+    stops at its first frame. A KeyboardInterrupt raised there recorded the
+    round cut, or was lost where Python ignores it (in a weakref callback),
+    and the study ran on. A second is obeyed at once."""
+
+    def _note(self, number: int, _frame: Any) -> None:
+        import os as _os
+        import signal as _signal
+
+        heard = _a_stop_heard(number)
+        if heard == "again":
+            return
+        if self.signal is None:
+            self.signal = number
+            logger.warning(
+                "%s received: the study's round ends once the run it extends has "
+                "answered, where `fastmdx resume` carries it on. Send it again to stop "
+                "now.", self.name)
+            return
+        self._restore()
+        if number == _signal.SIGINT:
+            raise KeyboardInterrupt
+        _os.kill(_os.getpid(), number)
+
+
+    def ask_here(self) -> str:
+        """Asked to stop without a signal (the GUI in this process), as a
+        first SIGTERM asks, said as the rounds stop: no production need be
+        running (a join, between runs)."""
+        import signal as _signal
+
+        if self.signal is not None:
+            return "Stopping: asked already."
+        self.signal, self.asked_here = _signal.SIGTERM, True
+        logger.warning("Stop asked from the GUI: the study's round ends once the run it "
+                       "extends has answered, where `fastmdx resume` carries it on.")
+        return ("Stopping: the study's round ends once the run it extends has answered, "
+                "and `fastmdx resume` carries it on.")
+
+
+def a_stop_asked_in_the_rounds() -> bool:
+    """Whether a stop was asked while the study's rule extends its runs
+    (`_StopInTheRounds`): no further run's extension is begun."""
+    return any(isinstance(listener, _StopInTheRounds) and listener.signal is not None
+               for listener in list(_LISTENING))
 
 
 #: What in this process listens for a stop now, newest last: a production
@@ -1173,20 +1238,32 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                          timestep_fs: float) -> None:
     """Write the checkpoint a stopped run is carried on from, and end it.
 
-    Raises the retryable refusal a resume reads as an interruption.
+    Raises the retryable refusal a resume reads as an interruption. A stop
+    landing at or past the run's planned end (in its last frame interval)
+    ends a run whose production is whole: its sidecar says it finished, and
+    its live record says production completed, the run stopped (the
+    exception's ``finished``), so the join and every page read the piece
+    as whole. It still raises, so the study stops where it was asked to.
     """
     from fastmdxplora.refusals import StudyError
 
     step = int(stop.at_step or 0)
+    whole = bool(stop.on_frame) and 0 < int(planned_steps) <= step
     done_ns = step * float(timestep_fs) / 1e6
     planned_ns = int(planned_steps) * float(timestep_fs) / 1e6
     frame = step // int(trajectory_interval_steps) if trajectory_interval_steps else None
     where = checkpoint.parent.parent
-    if stop.on_frame and step > 0:
+    if step == 0 and getattr(stop, "before_it_began", False):
+        said = ("It was asked before its first step, so nothing of it is saved; `fastmdx "
+                f"resume {getattr(stop, 'study', None) or where}` carries the study's round "
+                "on, this run from the piece before it.")
+    elif stop.on_frame and step > 0:
         _write_checkpoint_pair(simulation, checkpoint)
-        write_checkpoint_sidecar(checkpoint, step=step, finished=False,
+        write_checkpoint_sidecar(checkpoint, step=step, finished=whole,
                                  time_ps=_time_ps(simulation), **sidecar)
-        said = (f"A checkpoint was written on frame {frame}, so `fastmdx resume "
+        said = (f"Its production had reached its end, so the run is whole; `fastmdx "
+                f"resume {where}` goes on from there." if whole else
+                f"A checkpoint was written on frame {frame}, so `fastmdx resume "
                 f"{where}` carries it on from there, and the joined trajectory "
                 "keeps its spacing.")
     else:
@@ -1197,12 +1274,17 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                 "after it.")
     from fastmdxplora.simulation.sampling_ask import length_said
 
-    raise StudyError(
+    error = StudyError(
         f"Production was stopped by {_who_asked(stop.name)} at step {step:,} "
         f"({length_said(done_ns)} of {length_said(planned_ns)}). {said}",
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
+    #: Production whole: said completed in its live record, with its frames
+    #: and its length (steps times the timestep, as a run that ended says it).
+    error.finished, error.frames = whole, frame
+    error.duration_ns = done_ns if whole else None
+    raise error
 
 
 def _who_asked(signal_name: str) -> str:
@@ -1669,6 +1751,12 @@ def _run_md_stage(
     chunk = min(max(total // 50, 1), 5000)
     done = 0
     started = _time.monotonic()
+    if stop is not None and getattr(stop, "before_it_began", False):
+        # A stop the study's round noted before this production began: it
+        # takes no step, nothing of it is owed, and none is run past the
+        # grace a frame further on would cost.
+        stop.at_step, stop.on_frame = 0, False
+        return 0
     while done < total:
         this = min(chunk, total - done)
         if stop is not None:
@@ -1737,6 +1825,13 @@ def _run_md_stage_with_live_metrics(
     remaining = int(n_steps)
     interval = max(1, int(telemetry_interval or DEFAULT_STATE_INTERVAL_STEPS))
     started = _time.monotonic()
+    if stop is not None and getattr(stop, "before_it_began", False):
+        # A stop the study's round noted before this production began: it
+        # takes no step (`_end_the_stopped_run` says so), where it ran a
+        # frame interval past the grace; a stop heard as a plain run's
+        # production begins is taken after its first chunk, as always.
+        stop.at_step, stop.on_frame = 0, False
+        return current_step
     while remaining > 0:
         chunk = min(interval, remaining)
         if stop is not None:
@@ -3472,7 +3567,21 @@ def run_simulation(
             )
 
     except Exception as exc:
-        if telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
+        if (telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE
+                and getattr(exc, "finished", False)):
+            # Stopped at its end: its production is whole, as its sidecar
+            # says, and the run stopped where it was asked to, its later
+            # phases still to run (a piece's run ends here: the join reads
+            # it whole, `joining.piece_finished`).
+            telemetry.event(str(exc), level="warning")
+            # The run's own step (its equilibration's and this), and every
+            # frame its production wrote: the pages count the whole run on.
+            telemetry.mark_stage("production", "completed", status="stopped",
+                                 latest_error=str(exc), current_step=current_step,
+                                 current_frame_count=exc.frames,
+                                 simulation_time_completed_ns=(
+                                     float(current_step) * float(timestep_fs) / 1_000_000.0))
+        elif telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
             # Asked to stop, and stopped where it can be carried on: the
             # stage it was in stays the one it was in, not a failed one.
             telemetry.event(str(exc), level="warning")

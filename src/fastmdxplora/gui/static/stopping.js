@@ -278,7 +278,8 @@
     var now = m.points.length ? m.points[m.points.length - 1] : null;
     var line = el("p", "stopping-now");
     if (!now) {
-      line.textContent = stopped ? "Not judged: the study stopped without finishing its first piece."
+      line.textContent = data.not_applied ? "Not judged: the rule was not applied to it."
+        : stopped ? "Not judged: the study stopped without finishing its first piece."
         : "Judged when the first piece's analyses are done.";
     } else if (now.measured) {
       line.textContent = (stopped ? "Last judged " : "Now ") + withError(now.value, now.error) +
@@ -346,7 +347,9 @@
       ? data.runs.length + " replicas" : "1 run",
       data.independent_starts === "required" ? "The replicas must agree before the rule is met"
         : "One run's own precision; not checked against independent starts");
-    add("Rounds judged", String(data.rounds.length));
+    // Rounds the rule judged: a catch-up is part of the round it carries on.
+    add("Rounds judged", String(data.rounds_judged != null ? data.rounds_judged
+                                                           : data.rounds.length));
     if (data.next) {
       // "Now running" only where the study's process is known to be.
       add(data.live ? "Now running" : "Asked for next", "+" + ns(data.next.more_ns, data.next.more_said) + " each, to " +
@@ -369,10 +372,12 @@
     var body = el("tbody");
     data.rounds.forEach(function (r, i) {
       var row = el("tr");
-      row.appendChild(el("td", "", String(r.round)));
+      row.appendChild(el("td", "", String(r.round) + (r.catch_up ? ", catch-up" : "")));
       row.appendChild(el("td", "mono", ns(r.production_ns, r.production_said)));
       data.measures.forEach(function (m) {
-        var p = m.points.filter(function (q) { return q.round === r.round; })[0];
+        // A catch-up judges nothing: its round's values are on its own row.
+        var p = r.catch_up ? null
+          : m.points.filter(function (q) { return q.round === r.round; })[0];
         var text = !p ? "" : p.measured
           ? withError(p.value, p.error) + (p.agree === false ? ", disagree" : p.met ? ", met" : "")
           : "not yet determined";

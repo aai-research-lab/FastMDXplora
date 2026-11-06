@@ -13,6 +13,7 @@ rather than opening a file to find out what it said.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -38,12 +39,17 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
         # not a study with no report yet. Named in the answer's unavailable.
         return {"ok": False, "reason": "not read",
                 "html": "", "not_produced": [], "downloads": {}}
+    lead = _round_lead(base)
     if not _records.is_file(source):
-        return {"ok": False, "reason": "no report yet",
+        return {"ok": False, "reason": "no report yet" + (f": {lead}" if lead else ""),
                 "html": "", "not_produced": [], "downloads": {}}
 
     text = _links_from_the_report(_records.read_text(source, encoding="utf-8", errors="replace"),
                                   report_dir, base)
+    if lead and _round_lead(base, said_only=True) not in text:
+        # Its rule's round ended short, or its rule was never applied: said
+        # above the report written before it, as every page says it.
+        text = f"{lead}\n\n{text}"
     # The markdown library lives in the `pdf` extra, not the base
     # install, and a base install still has a report to show. With it,
     # the report is rendered; without it, the same text is shown as it
@@ -94,6 +100,38 @@ def report_payload(root: Path | str, *, trace: bool = True) -> dict[str, Any]:
         "figure_provenance": provenance,
         **_traced(html, rendered, base, source, trace=trace),
     }
+
+
+def _another_folder(written: str, base: Path) -> bool:
+    """Whether a folder a saved report names is not the study at ``base``:
+    both resolved (a study named through a link, as macOS's /tmp is, is
+    the same folder). A relative name, given from wherever the study was
+    run, is not known to be another folder."""
+    path = Path(written)
+    if not path.is_absolute():
+        return False
+    try:
+        return path.resolve() != base.resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
+def _round_lead(base: Path, *, said_only: bool = False) -> str:
+    """How the study's rule's round ended, where it ended short or the rule
+    was never applied (`stopping.round_ended`), with what carries it on;
+    empty otherwise. ``said_only``: its sentence alone, which a report
+    written after the round's end says itself, so it is not said again."""
+    try:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(base)
+    except Exception:  # noqa: BLE001 - the report stands as written
+        return ""
+    if ended is None:
+        return ""
+    if said_only:
+        return ended.said
+    return f"**{ended.label}.** {ended.said} {ended.carry_on_on_a_page}"
 
 
 def _withheld_since(base: Path, report_dir: Path) -> str:
@@ -249,6 +287,19 @@ def _study_of_runs_payload(base: Path, *, trace: bool = True) -> dict[str, Any]:
     comparison = base / "comparison" / "comparison_report.md"
     if _records.is_file(comparison):
         text = _records.read_text(comparison, encoding="utf-8", errors="replace")
+        elsewhere = sorted({found for found in re.findall(r"`fastmdx resume ([^`]+)`", text)
+                            if _another_folder(found, base)})
+        if elsewhere:
+            # Written in the folder this study was copied from: the command
+            # it gives carries that folder on, not this one.
+            text = (f"_Written in {', '.join(elsewhere)}, the folder this study was copied "
+                    f"from: here, `fastmdx resume {base}` carries it on._\n\n{text}")
+        said = _round_lead(base, said_only=True)
+        if said and said not in text:
+            # Written as its round then ended; it has ended otherwise since
+            # (a resume that carried it on and died): said first, as every
+            # page says it.
+            text = f"{_round_lead(base)}\n\n{text}"
         html, rendered = render_markdown(text)
         downloads = {}
         for key, name in (("markdown", "comparison_report.md"),
@@ -261,7 +312,16 @@ def _study_of_runs_payload(base: Path, *, trace: bool = True) -> dict[str, Any]:
                 "figure_provenance": _comparison_provenance(comparison.parent),
                 **_traced(html, rendered, base, comparison, trace=trace)}
     if not completed:
-        return {"ok": False, "reason": f"none of {len(runs)} runs completed yet",
+        try:
+            from fastmdxplora.simulation.stopping import round_ended
+
+            ended = round_ended(base)
+        except Exception:  # noqa: BLE001 - said as its runs stand
+            ended = None
+        # Its round ended short: said, as every page says it.
+        return {"ok": False, "reason": (f"{ended.said} {ended.carry_on_on_a_page}"
+                                        if ended is not None else
+                                        f"none of {len(runs)} runs completed yet"),
                 "html": "", "not_produced": [], "downloads": {},
                 "runs": len(runs), "pending": pending}
     html, rendered = render_markdown(_so_far(base, runs, completed))
@@ -501,9 +561,26 @@ def _so_far(base: Path, runs: list[dict[str, Any]], completed: list[dict[str, An
     # Read so far between rounds where it says so; else completed.
     done = sum(1 for r in completed if not (r.get("so_far") and r.get("state") != "completed"))
     between = len(completed) - done
-    # Still to run: neither completed nor read so far between rounds.
-    pending = len(runs) - len(completed)
+    # Still to run: neither completed nor read so far between rounds, nor
+    # ended without finishing (a run cut or stopped is not "to run").
+    ended_short = [r for r in runs if r not in completed
+                   and r.get("state") in ("interrupted", "stopped", "failed")]
+    pending = len(runs) - len(completed) - len(ended_short)
     lines = [f"# {base.name}: {done} of {len(runs)} runs completed", ""]
+    try:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(base)
+    except Exception:  # noqa: BLE001 - the runs still say how far each got
+        ended = None
+    if ended is not None:
+        # Its rule's round ended short, or its rule was never applied: said
+        # first, as every page says it (`stopping.round_ended`), with what
+        # carries it on.
+        lines += [f"**{ended.label}.** {ended.said} {ended.carry_on_on_a_page}", ""]
+    if ended_short and ended is None:
+        lines += [f"_{len(ended_short)} ended without finishing: see "
+                  f"{'its' if len(ended_short) == 1 else 'their'} Overview._", ""]
     if between:
         lines += [f"_{between} {'is' if between == 1 else 'are'} read as far as "
                   f"{'its' if between == 1 else 'their'} finished pieces go: the study extends "

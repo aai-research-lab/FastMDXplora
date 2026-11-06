@@ -326,7 +326,9 @@ _CARRYING = frozenset({
 #: (`telemetry.status_as_it_stands`'s ``ended_by``), as the pages say it.
 ENDED_HOW = {"process": "its process is gone, and it wrote no end",
              "silence": "nothing written for a day, and no end written",
-             "analysis_owed": "stopped after its pieces were joined; fastmdx resume runs "
+             "silence_elsewhere": "nothing written for an hour by its process on another "
+                                  "machine or container, and no end written",
+             "analysis_owed": "ended after its pieces were joined; fastmdx resume runs "
                               "their analyses and report"}
 
 
@@ -423,14 +425,18 @@ def _rounds(base: Path) -> list[dict[str, Any]]:
                                      or (written_again and phase == "report")))]
         return {"at": max(before), "before": False} if before else None
 
+    from fastmdxplora.simulation.stopping import round_numbers, rounds_judged
+
     events: list[dict[str, Any]] = []
-    for number, entry in enumerate(rounds, start=1):
+    # Numbered as the rule judged them: a catch-up is part of its round.
+    numbers = round_numbers(rounds)
+    for index, entry in enumerate(rounds, start=1):
         entry = entry if isinstance(entry, dict) else {}
-        last = number == len(rounds)
-        starts = began_by[number - 1]
+        last = index == len(rounds)
+        starts = began_by[index - 1]
         placed = ({"at": min(starts), "before": True} if starts
-                  else after_the_steps_before(began_by[number:], last=last))
-        event = _round(number, entry, record, last=last)
+                  else after_the_steps_before(began_by[index:], last=last))
+        event = _round(numbers[index - 1], entry, record, last=last)
         event["placed"] = placed
         production = _finite(entry.get("production_ns"))
         event["production_said"] = length_said(production) if production is not None else ""
@@ -441,7 +447,7 @@ def _rounds(base: Path) -> list[dict[str, Any]]:
         # the record says it, the study's own sentence and none of its
         # rounds'.
         asked = ended == "asked"
-        again = f"resumed after round {len(rounds)}, then " if rounds else ""
+        again = f"resumed after round {rounds_judged(rounds)}, then " if rounds else ""
         events.append({
             **_step("round", "stopping", "stopped" if asked else "not_applied"),
             "said": "The stopping rule: " + again + (
@@ -469,8 +475,9 @@ def _round(number: int, entry: dict[str, Any], record: dict[str, Any], *,
     if decided["theirs"] and not decided["going"]:
         # The round's own sentence, never the study's.
         detail = decided["sentence"] or detail
+    catch_up = ", its catch-up" if entry.get("brought_up") else ""
     return {**_step("round", "stopping", str(entry.get("decision") or "")),
-            "said": f"Round {number}: {decided['said']}", "detail": detail,
+            "said": f"Round {number}{catch_up}: {decided['said']}", "detail": detail,
             "stopped_by": decided["stopped_by"], "going": decided["going"], "round": number}
 
 

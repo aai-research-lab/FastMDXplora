@@ -278,7 +278,9 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     is: a record of one run linked to another's, or to the study's, is a
     link out of it and refused. Nothing else of the study is admitted. None
     for a study of its own."""
-    if inside.parent.name != "runs":
+    from fastmdxplora.batch.explorer import campaign_of
+
+    if inside.parent.name != "runs" or campaign_of(inside) is None:
         return None
     from fastmdxplora.gui.problems_view import admitted_for_problems
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
@@ -289,6 +291,11 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     def admitted(path: Path) -> bool:
         try:
             parts = path.relative_to(study).parts
+            if not parts:
+                # The study's folder, only as the way to its records
+                # admitted here (its process record, read as a lock is:
+                # whether it goes on another machine, `resume.going_elsewhere`).
+                return path.resolve() == study.resolve()
             if len(parts) == 1:
                 return (parts[0] in (RECORD, RUN_PROCESS_FILE, "batch_manifest.json", runs.name)
                         and path.resolve() == study / parts[0])
@@ -609,6 +616,37 @@ def _refusals_said(answer: dict[str, Any]) -> str:
                      + (", so what it says is not shown" if len(records) == 1
                         else ", so what they say is not shown"))
     return "; ".join(parts) + "."
+
+
+def stopping_card(root: Path) -> Any:
+    """The rule's card of the study open, or of the study a run of several
+    belongs to: the study's card, read in the study's own held read
+    (`_confined`: its record, config, batch manifest and process records),
+    so a run's page says what a resume of the study does, from the ceiling
+    its config now sets, as the study's page does."""
+    from fastmdxplora.gui.stopping_view import stopping_payload
+
+    in_its_study = _a_run_in_its_study(root.resolve()) if root.is_dir() else None
+    if in_its_study is not None:
+        from fastmdxplora.gui.telemetry import _study_of
+
+        # Only a run its study names (`telemetry._study_of`): a study of
+        # its own saved in a folder named ``runs`` has its own card.
+        if _confined(root, lambda inside: _study_of(inside) == inside):
+            in_its_study = None
+    if in_its_study is None:
+        return _said_not_read(_confined(root, stopping_payload))
+    study, inside = in_its_study[0], root.resolve()
+    answer = _confined(study, stopping_payload)
+    if isinstance(answer, dict) and answer.get("unavailable"):
+        # Each record it did not read named from the run's page, as a
+        # read of that page names it (`_named_from`).
+        why = answer.get("unavailable_why") or {}
+        named = {name: _named_from(inside, study, name) for name in answer["unavailable"]}
+        answer = {**answer, "unavailable": sorted(named.values()),
+                  "unavailable_why": {named[name]: said for name, said in why.items()
+                                      if name in named}}
+    return _said_not_read(answer)
 
 
 def _said_not_read(answer: Any) -> Any:
@@ -1925,11 +1963,7 @@ def make_handler(
                         root, lambda inside: secondary_structure(inside, of))))
                 return
             if path == "/api/stopping":
-                from fastmdxplora.gui.stopping_view import stopping_payload
-
-                # Read from the study's own records only (`_confined`): its
-                # record, batch manifest and process records.
-                self._send_json(_said_not_read(_confined(root, stopping_payload)))
+                self._send_json(stopping_card(root))
                 return
             if path == "/api/again":
                 # What can be run again on the study on screen, and why not,
@@ -4823,6 +4857,23 @@ def _summary_records(
                   else "in progress")
     else:
         status = "not run"
+    state = None
+    if phase_statuses:
+        # One reading for both rows: the study's state, as its header and
+        # every page read it (`workspace.study_state`). Its Manifest is its
+        # first piece's, or its run's before its rule's round, and read
+        # completed beside a round that failed or was cut, or beside a run
+        # whose process was gone ("completed" over "interrupted").
+        try:
+            from fastmdxplora.gui.workspace import study_state
+
+            state = study_state(root)
+        except Exception:  # noqa: BLE001 - the Manifest's word stands
+            state = None
+        if state in ("completed", "stopped", "failed", "interrupted"):
+            status = state
+        elif state == "running":
+            status = "in progress"
     frames = _first_present(
         analysis_manifest.get("n_frames"),
         sim_manifest.get("n_production_frames"),
@@ -4843,6 +4894,14 @@ def _summary_records(
         # Its live record not read, or a piece's: not the manifest's word,
         # nor the first piece's, in its place.
         latest = "not read"
+    elif state == "running" and str(latest).lower() == "waiting":
+        # A run waiting for its study's next round: going, and said so on
+        # both rows, as its status card says it.
+        status = "waiting"
+    elif status in ("completed", "stopped", "failed", "interrupted") and latest != status:
+        # The live record is a piece's or the run's own, and said
+        # "completed" beside a round that stopped: the one reading on both.
+        latest = status
     records = [
         {"label": "Project status", "value": status},
         {"label": "Latest status", "value": str(latest or "—")},
@@ -4861,6 +4920,18 @@ def _summary_records(
     ]
     if extended:
         records[4]["value"] += f" in {extended[1]} pieces"
+        # Its last piece not joined: its frames are of the pieces before it
+        # (`records_answer._span_analysed`), as the Agent says.
+        try:
+            from fastmdxplora.gui.records_answer import _span_analysed
+            from fastmdxplora.simulation.resume import _extended_since_it_finished
+
+            span = _span_analysed(root) if _extended_since_it_finished(root) else None
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            span = None
+        if span is not None and span < float(extended[0]) - 1e-6:
+            records[4]["value"] += ", its last not joined"
+            records[2]["value"] += f" (of its first {say_length(span)}, joined)"
     elif production_not_read:
         records[4]["value"] = "not read"
     return records

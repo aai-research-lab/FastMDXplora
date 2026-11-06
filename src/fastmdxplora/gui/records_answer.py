@@ -17,6 +17,8 @@ records through its tools.
 
 from __future__ import annotations
 
+import json
+
 import re
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,99 @@ TRAPPED = ("A single run's error is estimated from the run itself, so it cannot 
            "extends them until their means agree.")
 
 
+def _span_analysed(base: Path) -> float | None:
+    """The production its analyses read, in ns: their frames times the run's
+    frame interval and timestep (`analysis/analysis_manifest.json`). None
+    for a variable step, whose frames are not evenly spaced in time, and
+    where a record does not say."""
+    import yaml
+
+    from fastmdxplora import record_access
+    from fastmdxplora.simulation.lengths import _variable_step
+    from fastmdxplora.simulation.resume import trajectory_interval_of
+
+    try:
+        manifest = json.loads(record_access.read_text(
+            base / "analysis" / "analysis_manifest.json", encoding="utf-8"))
+        frames = manifest["n_frames"]
+        # Its frames as the analysis read them: every stride-th, so each
+        # spans that many of the run's.
+        stride = (manifest.get("load_kwargs") or {}).get("stride") or 1
+        simulation = (yaml.safe_load(record_access.read_text(
+            base / "resolved_config.yml", encoding="utf-8")) or {}).get("simulation") or {}
+        interval = trajectory_interval_of(base)
+        if (_variable_step(simulation) or not interval or not isinstance(frames, int)
+                or not isinstance(stride, int)):
+            return None
+        return frames * stride * interval * float(simulation.get("timestep_fs") or 2.0) / 1e6
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError):
+        return None
+
+
+def _the_means_are_of_less(base: Path) -> str | None:
+    """Said first of a run whose means are of less than its production: its
+    joined pieces' analyses owed, or its last piece not joined. Of what span
+    its means are, and what gives them over the whole, as the resume reads
+    it (`resume.how_a_resume_finds`): `fastmdx resume` of its study, or,
+    where the run stopped with an error in its analyses, which a resume
+    refuses, analysing it again. While a resume or an extension runs them,
+    that they run (`being_carried_on`)."""
+    from fastmdxplora.simulation.resume import (_extended_since_it_finished, analysis_owed,
+                                                being_carried_on, extended_production,
+                                                how_a_resume_finds, production_done_ns)
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    try:
+        owed, unjoined = analysis_owed(base), _extended_since_it_finished(base)
+        if not (owed or unjoined):
+            return None
+        from fastmdxplora.batch.explorer import campaign_of
+
+        going = being_carried_on(base) or being_carried_on(campaign_of(base) or base)
+        # Its length as the paragraph below says it (`extended_production`).
+        extended = extended_production(base)
+        whole = extended[0] if extended else production_done_ns(base)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return None
+    span = _span_analysed(base)
+    if span is not None and whole and span >= whole - 1e-6:
+        # Its means are of the whole of it.
+        return None
+    of = (f"of its first {length_said(span)}" if span is not None
+          else "of its pieces before the join")
+    the_whole = f"its {length_said(whole)}" if whole else "its whole production"
+    if going:
+        from fastmdxplora.gui.telemetry import _GOING_STATUSES, _pieces_of, read_status
+
+        # Simulated only while its newest piece's own record says it goes;
+        # otherwise the resume joins and analyses (a piece stopped at its
+        # end is joined first).
+        try:
+            pieces = _pieces_of(base)
+            simulated = bool(pieces) and str(read_status(pieces[-1]).get("status") or
+                                             "").lower() in _GOING_STATUSES
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            simulated = False
+        if owed or not simulated:
+            return (f"Its pieces are being joined and analysed now: the means below are "
+                    f"{of}, not of {the_whole}, until that ends.")
+        return (f"Its next piece is being simulated now: the means below are {of}, not of "
+                f"{the_whole}, until its pieces are joined and analysed.")
+    found = how_a_resume_finds(base) or {}
+    from fastmdxplora.batch.explorer import campaign_of
+
+    study = campaign_of(base) or base
+    if found.get("own"):
+        then = (f"once what its analyses said is put right, fastmdx explore --output {base} "
+                "--include analysis report --rerun runs them")
+    else:
+        then = f"fastmdx resume {study} " + ("joins it and runs them" if unjoined
+                                               else "runs them")
+    what = ("Its last piece is not joined" if unjoined else
+            "Its pieces were joined and their analyses and report have not run")
+    return f"{what}, so the means below are {of}, not of {the_whole}; {then}."
+
+
 def answer_from_the_records(root: str | Path | None, question: str) -> str | None:
     """The answer to one of :data:`QUESTIONS` about the study at ``root``, in
     Markdown, or None where there is no study there or no such question."""
@@ -47,10 +142,52 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
     if not base.is_dir():
         return None
     if (base / "batch_manifest.json").is_file():
-        return _several_runs(base)
+        several = _several_runs(base)
+        going = _still_going(base)
+        if going and several and several.startswith(MARK):
+            # Going, here or on another machine: said first, as a run's
+            # answer says it.
+            return f"{MARK}\n\n{going}{several[len(MARK):]}"
+        return several
     said = {"found": _found, "long_enough": _long_enough,
             "strengthen": _strengthen}[question](base)
+    from fastmdxplora.simulation.stopping import round_ended
+
+    owed = _the_means_are_of_less(base)
+    if owed:
+        # Its means are of less than its production: said first, with what
+        # gives them over the whole.
+        said = f"{owed}\n\n{said}"
+    going = _still_going(base)
+    if going:
+        # Going, here or on another machine (its study's
+        # `being_carried_on`): said first; what is below is as it stands.
+        said = f"{going}\n\n{said}"
+    ended = round_ended(base)
+    if ended is not None:
+        # A run that completed whose rule's round did not: said first, as
+        # its status and All studies say it (`stopping.round_ended`).
+        said = f"{ended.said} {ended.carry_on_on_a_page}\n\n{said}"
     return MARK + "\n\n" + said
+
+
+def _still_going(base: Path) -> str:
+    """That the run's study is still going, here or on another machine
+    (`resume.going_elsewhere` says where): its records are read as they
+    stand. Empty where it is not."""
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.resume import being_carried_on, going_elsewhere
+
+    study = campaign_of(base) or base
+    try:
+        if not being_carried_on(study):
+            return ""
+        where = going_elsewhere(study)
+    except Exception:  # noqa: BLE001 - its records as they stand
+        return ""
+    # Where it goes says it is going (`going_elsewhere`): said once.
+    return ((where or "It is still going.")
+            + " What follows is its records as they stand now.")
 
 
 def _supports(base: Path) -> str:
@@ -263,6 +400,13 @@ def _ask(base: Path) -> tuple[str, str] | None:
         # that would be one the study did not plan, or stop its own.
         return (ask.as_text() + " Its study extends this run itself, in its next round "
                 "(simulation.stop_when); nothing needs running by hand.", "")
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.resume import being_carried_on
+
+    if being_carried_on(campaign_of(base) or base):
+        # Still going, here or on another machine: an extension now is
+        # refused (`resume.extend_study`), so none is offered while it goes.
+        return (ask.as_text() + " It is still going; extend it once it has ended.", "")
     command = ""
     if extension_of(base, more_ns=ask.more_ns).possible:
         command = (f"fastmdx explore --simulate-resume-from {base.resolve()} "
@@ -396,9 +540,11 @@ def _not_analysed(base: Path) -> str:
     said = ("Its records do not say yet: it has not been analysed, so no analysis "
             "has judged whether its series equilibrated.")
     try:
-        from fastmdxplora.gui.telemetry import status_as_it_stands
+        # The study's state, as every page reads it (`workspace.study_state`,
+        # its rule's round first), not its live record's.
+        from fastmdxplora.gui.workspace import study_state
 
-        status = str(status_as_it_stands(base).get("status") or "").lower()
+        status = str(study_state(base) or "").lower()
     except Exception:  # noqa: BLE001 - the plainer answer stands
         status = ""
     if status in ("stopped", "failed", "interrupted"):
@@ -575,6 +721,13 @@ def _several_runs(base: Path) -> str:
     parts = [f"This is a study of {len(runs)} runs, {done} completed{rounds}. Each run keeps its "
              "own records: view one from Runs in the sidebar and ask about it, or read the "
              "comparison across them on the Report page."]
+    from fastmdxplora.simulation.stopping import round_ended
+
+    ended = round_ended(base)
+    if ended is not None:
+        # Its runs each completed and the study did not: said first, as
+        # every page says it (`stopping.round_ended`).
+        parts.insert(0, f"{ended.said} {ended.carry_on_on_a_page}")
     energy = _free_energy(base)
     if energy:
         parts.insert(0, energy)

@@ -1266,11 +1266,21 @@ def _build_parser() -> argparse.ArgumentParser:
             "had begun; the whole study again if it had not. A study that "
             "stopped with a refusal is not run again, since that was its "
             "answer. Running this twice does the work once, so a service "
-            "can run it every time a job restarts."
+            "can run it every time a job restarts. A job restarted on "
+            "another node or in another container finds the study's "
+            "process recorded there, which cannot be asked from here: it "
+            "is refused until that record has been quiet for an hour, or "
+            "run with --taken-over once that process has ended."
         ),
     )
     resume.add_argument("study", metavar="STUDY",
                         help="The study folder, as given to --output when it ran.")
+    resume.add_argument("--taken-over", action="store_true",
+                        help="Carry on a study whose process was recorded on another "
+                             "machine or container, which cannot be asked from here, "
+                             "without waiting for its records to be quiet for an hour: "
+                             "for when you know that process has ended. A process on "
+                             "this machine still refuses it. The GUI never runs this.")
     resume.add_argument("--json", action="store_true",
                         help="Print the outcome as one line of JSON, for a program to read.")
 
@@ -2058,6 +2068,34 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             return 1
         return 0
 
+    if (getattr(args, "force", False) or getattr(args, "rerun", False)) and not getattr(
+            args, "dry_run", False):
+        # Its phases run again over a study held by another process, or
+        # going on another machine, would write into it and take its process
+        # records: refused before anything is written, as a resume is.
+        from fastmdxplora.batch.explorer import campaign_of
+        from fastmdxplora.simulation.resume import _held_elsewhere, _still_running
+
+        where = config.get("output") or args.output_dir
+        if where and Path(where).expanduser().is_dir():
+            root = Path(where).expanduser().resolve()
+            study = campaign_of(root) or root
+            # Refused before anything is written, every case: its run (or its
+            # study's) going on this machine said in the phases' own words
+            # (`orchestrator`), a study held by another process here or
+            # going on another machine as a resume's refusal says it.
+            if _still_running(root) or _still_running(study):
+                # Its study named where the study is the one going.
+                going = root if _still_running(root) else study
+                print(f"fastmdx: {going} is still running. Run its phases again once it has "
+                      "stopped.", file=sys.stderr)
+                return 1
+            held = _held_elsewhere(study)
+            if held:
+                from fastmdxplora.again import refused_again
+
+                print("fastmdx: " + refused_again(held), file=sys.stderr)
+                return 1
     fmdx = FastMDXplora(
         config_data=config,
         output_dir=args.output_dir,
@@ -2109,6 +2147,31 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         # Stopped at the terminal: the study wrote where it stopped and
         # what carries it on, and the shell is told it was interrupted.
         rc = 130
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Every run ended well and the rule's round did not: the study failed
+    # (or was stopped), as its batch manifest and every page say it.
+    ended = round_ended(fmdx.output_dir)
+    if ended is not None:
+        from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                                 STOPPED_IN_THE_ROUNDS, _was_stopped)
+
+        erred = [r for r in results if r.status == "error" and not _was_stopped(r)
+                 and getattr(r, "error_type", None) not in (
+                     STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS)]
+        if getattr(args, "rerun", False):
+            # Its phases run again carry no round on: its code is what they
+            # did (1 a run's own error, 130 stopped here, 0 each ended
+            # well), whatever its round left the study as; that round is
+            # said after it.
+            rc = 1 if erred else 130 if (rc == 130 or any(
+                _was_stopped(r) for r in results)) else 0
+        else:
+            # The study's state decides, as every page reads it: a round
+            # stopped when asked exits 130, as a study stopped at the
+            # terminal does, whatever its runs stopped in the round are
+            # recorded as; 1 is for a run's own error or a failed round.
+            rc = 130 if ended.state == "stopped" and not erred else 1
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
         # The analysis phase finishes when one of its analyses fails, and
@@ -2133,6 +2196,11 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         print()
         print(f"Project output: {fmdx.output_dir}")
         print(f"Manifest:       {fmdx.output_dir / 'manifest.json'}")
+        if ended is not None:
+            # Last, as a study of several says it in its summary: the run
+            # ended well and its rule's round did not.
+            print(ended.said)
+            print(ended.carry_on)
     _finish_dashboard_for_command(session, args)
     return rc
 
@@ -3307,14 +3375,34 @@ def _cmd_resume(args: argparse.Namespace) -> int:
 
     from fastmdxplora.simulation.resume import resume_study
 
-    if getattr(args, "json", False):
-        # What the runs print goes to stderr, so the answer on stdout is the
-        # one line of JSON a program reads; it followed every phase's
-        # progress there, and no JSON reader read it.
-        with _stdout_on_stderr():
-            answer = resume_study(args.study)
-    else:
-        answer = resume_study(args.study)
+    # Asked for only where the person gave it (`--taken-over`).
+    taken = {"taken_over": True} if getattr(args, "taken_over", False) else {}
+    try:
+        if getattr(args, "json", False):
+            # What the runs print goes to stderr, so the answer on stdout is
+            # the one line of JSON a program reads; it followed every phase's
+            # progress there, and no JSON reader read it.
+            with _stdout_on_stderr():
+                answer = resume_study(args.study, **taken)
+        else:
+            answer = resume_study(args.study, **taken)
+    except KeyboardInterrupt:
+        # A Ctrl+C obeyed at once: said as the study then stands, never a
+        # traceback; one heard after its last record was written leaves it
+        # finished, and is not a stop.
+        try:
+            from fastmdxplora.gui.workspace import study_state
+
+            finished = study_state(args.study) == "completed"
+        except Exception:  # noqa: BLE001 - said as a stop
+            finished = False
+        if finished:
+            print("fastmdx: the study had finished when the stop was heard; nothing is "
+                  "left to carry on.", file=sys.stderr)
+            return 0
+        print(f"fastmdx: stopped when asked; `fastmdx resume {args.study}` carries it on.",
+              file=sys.stderr)
+        return 130
     if getattr(args, "json", False):
         if not answer.get("ok"):
             from fastmdxplora.remedies import remedies_of
@@ -3335,12 +3423,19 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             "restarted": "Production had not begun, so the study was run from its start.",
             "runs": "Every run of the study was carried on or run, and the "
                     "study's comparison across them rebuilt.",
+            "judged": "Nothing was simulated: its stopping rule was applied to its "
+                      "production as it stands.",
+            "records": "Nothing was simulated: the run's records were finished, and it "
+                       "reads completed.",
         }
         if answer.get("did") == "reported":
             # What was reported over, and the command that chose it.
             print(answer.get("detail") or said["reported"])
         else:
             print(said.get(answer.get("did"), "Done."))
+        if answer.get("rule_said"):
+            # What its rule decided, last of what was done.
+            print(f"Its stopping rule: {answer['rule_said']}")
         saved = [str(phase) for phase in answer.get("saved_in_previous") or []]
         if saved:
             # What was saved, by name: the report too only where it was there.
@@ -3364,13 +3459,25 @@ def _cmd_resume(args: argparse.Namespace) -> int:
                 print("The study's production is "
                       + str(answer.get("production_done_source") or "not recorded") + ".")
     else:
-        print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
+        if not answer.get("said_above"):
+            # A study of several says its round's end last in its summary.
+            print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
         from fastmdxplora.batch.explorer import _what_would_fix_it
 
-        fixes = _what_would_fix_it(answer.get("study") or args.study)
+        # A round not carried on is fixed as its sentence says: a run's own
+        # remedy (`fastmdx resume` for its owed analyses) said otherwise.
+        fixes = ([] if answer.get("round_ended")
+                 else _what_would_fix_it(answer.get("study") or args.study))
         if fixes:
             print("\n".join(fixes), file=sys.stderr)
-    return 0 if answer.get("ok") else 1
+    if answer.get("ok"):
+        return 0
+    # A stop asked (the round stopped when asked, or the resume itself), as
+    # `fastmdx explore` says it: interrupted; a resume a run refused ran
+    # nothing, and was not stopped; a round that failed is not a stop.
+    state = (answer.get("round_ended") or {}).get("state")
+    return (130 if (state == "stopped" or (answer.get("stopped") and state is None))
+            and not answer.get("refused") else 1)
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

@@ -1949,39 +1949,212 @@ def _holds() -> dict[Path, int]:
     return _HOLDS
 
 
-def _record_run_process(output_dir: Path) -> None:
-    import atexit
+#: How often a running process stamps its own process records
+#: (``alive_at``), in every phase, from a thread of its own (`_heartbeat`):
+#: the study's readers on another machine count an hour of quiet from it
+#: (`resume.ANOTHER_HOST_QUIET_SECONDS`, twelve of these), never from the
+#: phase's own writes, which a long setup, analysis or join does not make.
+HEARTBEAT_SECONDS = 300.0
+#: Set for a test's study only, to stamp more often than every 5 minutes.
+HEARTBEAT_ENV = "FASTMDX_HEARTBEAT_SECONDS"
+_HEARTBEAT: list[threading.Thread] = []
+
+
+def _heartbeat_every() -> float:
+    try:
+        return max(0.05, float(os.environ.get(HEARTBEAT_ENV) or HEARTBEAT_SECONDS))
+    except ValueError:
+        return HEARTBEAT_SECONDS
+
+
+def _put_in_place(path: Path, text: str) -> None:
+    """``text`` written whole to ``path``: to a file beside it first, made
+    new with a name no other writer has (`tempfile.mkstemp`, never through
+    a link), then put in its place in one step (`os.replace`), so a reader
+    never finds it empty or cut short, and a write cut (a kill, a full
+    disk) leaves the record as it was. A temporary such a cut left beside
+    it, of a process no longer alive, is removed. Raises OSError where it
+    could not be written."""
+    import tempfile
+
+    from fastmdxplora.record_access import _umask
+
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.{os.getpid()}.",
+                                        suffix=".tmp")
+    try:
+        # Readable as a file written in place is (the umask's mode, not the
+        # owner-only one `mkstemp` gives): a lab's shared study is read by
+        # the group, its record from another machine among it.
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o666 & ~_umask())
+            stream.write(text)
+        os.replace(name, path)
+    except OSError:
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+        raise
+    _clear_cut_temporaries(path)
+
+
+def _clear_cut_temporaries(path: Path) -> None:
+    """Temporaries beside ``path`` (``<record>.<pid>.<...>.tmp``) of a
+    process on this machine no longer alive: a stamp cut by a kill."""
+    from fastmdxplora.gui.exploration import _process_alive
+
+    try:
+        beside = list(path.parent.glob(f"{path.name}.*.tmp"))
+    except OSError:
+        return
+    for left in beside:
+        try:
+            pid = int(left.name[len(path.name) + 1:].split(".", 1)[0])
+        except ValueError:
+            continue
+        try:
+            if pid != os.getpid() and not left.is_symlink() and not _process_alive(pid):
+                left.unlink()
+        except Exception:  # noqa: BLE001 - left as it is
+            pass
+
+
+def _mark_written_here(path: Path) -> None:
+    """The record at ``path`` noted as the one this process wrote last."""
+    try:
+        stat = path.stat()
+        _RECORDS_WRITTEN_HERE[_key(path)] = (stat.st_ino, stat.st_mtime_ns)
+    except OSError:
+        pass
+
+
+def stamp_alive(path: Path) -> None:
+    """``alive_at`` written into a process record of this process, every
+    other field as it stands (put in place whole, `_put_in_place`);
+    nothing where the record names another process (its number, and its
+    start where this machine says). A record this process wrote last that
+    no longer parses (cut short before records were put in place whole) is
+    written again."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    try:
+        record = json.loads(text)
+    except ValueError:
+        record = None
+        try:
+            stat = path.stat()
+            ours = _RECORDS_WRITTEN_HERE.get(_key(path)) == (stat.st_ino, stat.st_mtime_ns)
+        except OSError:
+            ours = False
+        if ours:
+            # A record of this process cut in place (before records were put
+            # in place whole): written again; a full disk leaves it so.
+            try:
+                _write_run_process(path)
+            except OSError:
+                return
+            _mark_written_here(path)
+        return
+    if not isinstance(record, dict) or record.get("pid") != os.getpid():
+        return
+    ticks = process_start_ticks(os.getpid())
+    if "start_ticks" in record and ticks is not None and record["start_ticks"] != ticks:
+        return
+    record["alive_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        _put_in_place(path, json.dumps(record))
+    except OSError:
+        return
+    _mark_written_here(path)
+
+
+def _heartbeat() -> None:
+    """Stamp every process record this process holds, for as long as it
+    lives: a daemon thread, so it ends with the process."""
+    import time
+
+    while True:
+        time.sleep(_heartbeat_every())
+        _beat_once()
+
+
+def _beat_once() -> None:
+    """One heartbeat: each record held here stamped; a stamp that fails
+    (a full disk) is no end of the heartbeat."""
+    with _HOLDS_LOCK:
+        held = [key for key, count in _holds().items() if count > 0]
+        for folder in held:
+            try:
+                stamp_alive(Path(folder) / RUN_PROCESS_FILE)
+            except Exception:  # noqa: BLE001 - the heartbeat lives on
+                pass
+
+
+def _start_heartbeat() -> None:
+    """The heartbeat thread, started once in each process that writes a
+    process record (a study's, a resume's, a worker's)."""
+    if _HEARTBEAT and _HEARTBEAT[0].is_alive() and _HEARTBEAT[0].ident is not None:
+        return
+    _HEARTBEAT.clear()
+    thread = threading.Thread(target=_heartbeat, name="fastmdx-heartbeat", daemon=True)
+    _HEARTBEAT.append(thread)
+    thread.start()
+
+
+def _write_run_process(path: Path) -> None:
+    """This process's record written at ``path``, put in place whole. Its
+    start in ticks since boot, beside the boot (`this_machine`): the
+    process is the run only while its number and start both match."""
     import sys
 
-    path = Path(output_dir) / RUN_PROCESS_FILE
-    # Its start in ticks since boot, beside the boot (`this_machine`): the
-    # process is the run only while its number and start both match.
     ticks = process_start_ticks(os.getpid())
+    now = datetime.now(timezone.utc).isoformat()
+    _put_in_place(path, json.dumps({
+        "pid": os.getpid(),
+        "argv": list(sys.argv),
+        "started_at": now,
+        "alive_at": now,
+        **this_machine(),
+        **({"start_ticks": ticks} if ticks is not None else {}),
+    }))
+
+
+def _remove_at_exit(folder: Path) -> None:
+    """`_remove_if_written_here` at the process's exit, under the holds'
+    lock, so no heartbeat in flight writes the record back after it."""
+    with _HOLDS_LOCK:
+        _remove_if_written_here(folder)
+
+
+def _record_run_process(output_dir: Path) -> None:
+    import atexit
+
+    path = Path(output_dir) / RUN_PROCESS_FILE
     try:
-        path.write_text(json.dumps({
-            "pid": os.getpid(),
-            "argv": list(sys.argv),
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            **this_machine(),
-            **({"start_ticks": ticks} if ticks is not None else {}),
-        }), encoding="utf-8")
+        _write_run_process(path)
         written = True
     except OSError:
-        # Perhaps left empty or cut short (a full disk): this process's,
-        # to remove as its own (`_forget_run_process`).
+        # Not written (a full disk): the record there, if any, as it was.
         written = False
     key = _key(path)
-    try:
-        stat = key.stat()
-        identity: tuple[int, int] | None = (stat.st_ino, stat.st_mtime_ns)
-    except OSError:
-        identity = None
+    identity: tuple[int, int] | None = None
+    if written:
+        # Only the record this process put in place is noted as its own: a
+        # write that failed left the one there (another process's, perhaps).
+        try:
+            stat = key.stat()
+            identity = (stat.st_ino, stat.st_mtime_ns)
+        except OSError:
+            identity = None
     first = key not in _RECORDS_WRITTEN_HERE
     _RECORDS_WRITTEN_HERE[key] = identity
     if first and (written or identity is not None):
         # For a run that raised past its end, and an orchestrator made and
         # never run: removed at exit, where it is still this process's.
-        atexit.register(_remove_if_written_here, key.parent)
+        atexit.register(_remove_at_exit, key.parent)
+    _start_heartbeat()
 
 
 def _written_by_this_process(record: Any) -> bool:
