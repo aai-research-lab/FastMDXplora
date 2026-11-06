@@ -796,6 +796,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   under the holds' lock. A run's page of a study going on another machine,
   read as the GUI holds it, reads going, and the Agent's records answers
   say a study is still going and offer no extension it would refuse.
+- Analyze again, Write it again and `fastmdx report --rerun` refuse a study
+  held by another process or going on another machine before writing
+  anything, as a resume does. `fastmdx report --rerun` of a study whose
+  round was cut says the round and its resume, not "Batch complete". A
+  process record's temporary is made new beside it, a leftover of a killed
+  stamp is removed by the next write and not fetched back from a remote
+  machine, and the heartbeat outlives a full disk. The Agent's going line
+  says where once.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
