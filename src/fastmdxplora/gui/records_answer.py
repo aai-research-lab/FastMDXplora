@@ -86,7 +86,9 @@ def _the_means_are_of_less(base: Path) -> str | None:
         owed, unjoined = analysis_owed(base), _extended_since_it_finished(base)
         if not (owed or unjoined):
             return None
-        going = being_carried_on(base)
+        from fastmdxplora.batch.explorer import campaign_of
+
+        going = being_carried_on(base) or being_carried_on(campaign_of(base) or base)
         # Its length as the paragraph below says it (`extended_production`).
         extended = extended_production(base)
         whole = extended[0] if extended else production_done_ns(base)
@@ -150,12 +152,35 @@ def answer_from_the_records(root: str | Path | None, question: str) -> str | Non
         # Its means are of less than its production: said first, with what
         # gives them over the whole.
         said = f"{owed}\n\n{said}"
+    going = _still_going(base)
+    if going:
+        # Going, here or on another machine (its study's
+        # `being_carried_on`): said first; what is below is as it stands.
+        said = f"{going}\n\n{said}"
     ended = round_ended(base)
     if ended is not None:
         # A run that completed whose rule's round did not: said first, as
         # its status and All studies say it (`stopping.round_ended`).
         said = f"{ended.said} {ended.carry_on_on_a_page}\n\n{said}"
     return MARK + "\n\n" + said
+
+
+def _still_going(base: Path) -> str:
+    """That the run's study is still going, here or on another machine
+    (`resume.going_elsewhere` says where): its records are read as they
+    stand. Empty where it is not."""
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.resume import being_carried_on, going_elsewhere
+
+    study = campaign_of(base) or base
+    try:
+        if not being_carried_on(study):
+            return ""
+        where = going_elsewhere(study)
+    except Exception:  # noqa: BLE001 - its records as they stand
+        return ""
+    return ("It is still going" + (f": {where}" if where else ".")
+            + " What follows is its records as they stand now.")
 
 
 def _supports(base: Path) -> str:
@@ -368,6 +393,13 @@ def _ask(base: Path) -> tuple[str, str] | None:
         # that would be one the study did not plan, or stop its own.
         return (ask.as_text() + " Its study extends this run itself, in its next round "
                 "(simulation.stop_when); nothing needs running by hand.", "")
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.resume import being_carried_on
+
+    if being_carried_on(campaign_of(base) or base):
+        # Still going, here or on another machine: an extension now is
+        # refused (`resume.extend_study`), so none is offered while it goes.
+        return (ask.as_text() + " It is still going; extend it once it has ended.", "")
     command = ""
     if extension_of(base, more_ns=ask.more_ns).possible:
         command = (f"fastmdx explore --simulate-resume-from {base.resolve()} "

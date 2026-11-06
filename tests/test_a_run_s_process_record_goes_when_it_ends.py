@@ -388,7 +388,7 @@ def test_a_record_that_cannot_be_read_keeps_no_gui_here_running(tmp_path, monkey
     write = Path.write_text
 
     def full(self, *args, **kwargs):
-        if self.name == RUN_PROCESS_FILE:
+        if self.name.startswith(RUN_PROCESS_FILE):
             write(self, "", encoding="utf-8")
             raise OSError(28, "No space left on device")
         return write(self, *args, **kwargs)
@@ -400,7 +400,9 @@ def test_a_record_that_cannot_be_read_keeps_no_gui_here_running(tmp_path, monkey
         patched.setattr(Path, "write_text", full)
         _record_run_process(mine)
     (theirs / RUN_PROCESS_FILE).write_text("", encoding="utf-8")
-    assert (mine / RUN_PROCESS_FILE).read_text(encoding="utf-8") == ""
+    # Written beside it first and put in place whole: a full disk leaves no
+    # record, never an empty one, and nothing beside it.
+    assert list(mine.iterdir()) == []
     adopted = _AdoptedProcess(os.getpid(), mine)
     assert adopted.poll() is not None
     _hold_run_process(theirs)

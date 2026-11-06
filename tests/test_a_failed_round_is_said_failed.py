@@ -3691,10 +3691,21 @@ def _every_reader_says_going(study: Path, *, elsewhere: bool) -> None:
     assert health["message"].startswith("It is going on another-host") or \
         "another container" in health["message"], health
     assert "--taken-over" in health["message"], health
+    from fastmdxplora.gui.records_answer import answer_from_the_records
+    from fastmdxplora.gui.server import _confined
+
     for run in sorted((study / "runs").glob("*")):
-        assert study_state(run) == "running", run
-        page = _status_records(run)["health"]
+        # Each run's page as the GUI reads it, held to the run (`_confined`):
+        # its header, sidebar and `/api/status`, its records answer.
+        state, page, answer = _confined(run, lambda inside: (
+            study_state(inside), _status_records(inside)["health"],
+            answer_from_the_records(inside, "found") or ""))
+        assert state == "running", run
         assert page["state"] == "running", (run, page)
+        # No resume offered but the person's own, --taken-over.
+        assert "It is still going" in answer, answer[:600]
+        assert not re.search(r"fastmdx resume(?! --taken-over)", answer), answer[:900]
+        assert study_state(run) == "running", run
         assert stopping_card(run).get("outcome_label") == card.get("outcome_label")
         assert remedies_of(run) == []
         assert problems_payload(run).get("available", True), problems_payload(run)
@@ -3868,6 +3879,82 @@ def test_taken_over_refuses_a_lock_held_now(killed_before_its_rule, tmp_path):
         os.close(held)
 
 
+_HOLDING = """
+import os, sys, time
+from pathlib import Path
+from fastmdxplora import orchestrator
+folder = Path(sys.argv[1])
+orchestrator._hold_run_process(folder)
+if sys.argv[2] == "cut":
+    import resource, signal
+    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+    path = folder / orchestrator.RUN_PROCESS_FILE
+    size = len(path.read_bytes())
+    resource.setrlimit(resource.RLIMIT_FSIZE, (size // 2, size // 2))
+    orchestrator.stamp_alive(path)
+    print("stamped", flush=True)
+    time.sleep(60)
+print("held", flush=True)
+time.sleep(60)
+"""
+
+
+def _holding(folder: Path, how: str, beat: str):
+    """A process holding ``folder``'s record, its heartbeat every ``beat``
+    seconds; ``how`` "cut": its one stamp cut short by a file size limit."""
+    import os
+    import subprocess
+    import sys
+
+    folder.mkdir(parents=True, exist_ok=True)
+    return subprocess.Popen(
+        [sys.executable, "-c", _HOLDING, str(folder), how],
+        env={**os.environ, "FASTMDX_HEARTBEAT_SECONDS": beat,
+             "PYTHONPATH": _source()}, stdout=subprocess.PIPE, text=True)
+
+
+def test_a_heartbeat_never_leaves_its_record_empty_or_cut(tmp_path):
+    """The heartbeat wrote its record in place (truncate, then write): a
+    reader looping found it empty thousands of times, and a stamp cut short
+    (a kill, a full disk) left it unparsable: a killed study read running,
+    a live one missed the refusal of a second process."""
+    import time
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    folder = tmp_path / "beating"
+    process = _holding(folder, "beat", "0.002")
+    try:
+        assert process.stdout.readline().strip() == "held"
+        unread = 0
+        until = time.monotonic() + 3
+        while time.monotonic() < until:
+            try:
+                json.loads((folder / RUN_PROCESS_FILE).read_text())
+            except ValueError:
+                unread += 1
+        assert unread == 0, unread
+    finally:
+        process.kill()
+        process.wait()
+    cut = tmp_path / "cut"
+    process = _holding(cut, "cut", "1000")
+    try:
+        before = None
+        for _ in range(200):
+            if (cut / RUN_PROCESS_FILE).is_file():
+                before = (cut / RUN_PROCESS_FILE).read_text()
+                break
+            time.sleep(0.01)
+        assert process.stdout.readline().strip() == "stamped"
+        after = (cut / RUN_PROCESS_FILE).read_text()
+        assert json.loads(after) == json.loads(before), after
+        assert [path.name for path in cut.iterdir()] == [RUN_PROCESS_FILE]
+    finally:
+        process.kill()
+        process.wait()
+
+
 def test_a_study_held_in_a_long_phase_elsewhere_reads_going(tmp_path, monkeypatch):
     """A study on another machine in a phase longer than the hour (its
     analysis), its live record's stamp an hour old, read quiet, and a plain
@@ -3898,6 +3985,14 @@ def test_a_study_held_in_a_long_phase_elsewhere_reads_going(tmp_path, monkeypatc
         (study / "simulation" / "live_status.json").write_text(json.dumps(status))
         time.sleep(6)
         assert study_state(study) == "running"
+        from fastmdxplora.gui.records_answer import answer_from_the_records
+
+        # The Agent's answers say it goes, and offer no extension that its
+        # going refuses.
+        for question in ("found", "long_enough", "strengthen"):
+            answer = answer_from_the_records(study, question) or ""
+            assert "It is still going" in answer, (question, answer[:600])
+            assert "--simulate-resume-from" not in answer, (question, answer[:600])
         before = {name: data for name, data in _snapshot(study).items()
                   if not name.endswith(RUN_PROCESS_FILE)}
         code, printed, said = _resume_by_the_cli(study)

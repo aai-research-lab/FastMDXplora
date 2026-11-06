@@ -278,7 +278,9 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     is: a record of one run linked to another's, or to the study's, is a
     link out of it and refused. Nothing else of the study is admitted. None
     for a study of its own."""
-    if inside.parent.name != "runs":
+    from fastmdxplora.batch.explorer import campaign_of
+
+    if inside.parent.name != "runs" or campaign_of(inside) is None:
         return None
     from fastmdxplora.gui.problems_view import admitted_for_problems
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
@@ -289,6 +291,11 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     def admitted(path: Path) -> bool:
         try:
             parts = path.relative_to(study).parts
+            if not parts:
+                # The study's folder, only as the way to its records
+                # admitted here (its process record, read as a lock is:
+                # whether it goes on another machine, `resume.going_elsewhere`).
+                return path.resolve() == study.resolve()
             if len(parts) == 1:
                 return (parts[0] in (RECORD, RUN_PROCESS_FILE, "batch_manifest.json", runs.name)
                         and path.resolve() == study / parts[0])
