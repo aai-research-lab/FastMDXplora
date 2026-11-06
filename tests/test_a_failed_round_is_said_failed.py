@@ -44,7 +44,8 @@ pytestmark = pytest.mark.skipif(not HAS_BACKENDS, reason="needs OpenMM, MDTraj a
 from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE  # noqa: E402
 
 #: 300 production steps a piece; the rule cannot be met (±1e-06 nm), so the
-#: study extends its runs after the first piece.
+#: study extends its runs after the first piece. Minimization capped at 100
+#: iterations: run to convergence it took most of each run's first piece.
 _CONFIG = {
     "sweep": {"simulation.random_seed": [1, 2]},
     "execution": {"mode": "sequential"},
@@ -52,7 +53,7 @@ _CONFIG = {
     "simulation": {"platform": "CPU", "production_steps": 300,
                    "nvt_steps": 100, "npt_steps": 100, "timestep_fs": 2,
                    "trajectory_interval_steps": 50, "state_interval_steps": 25,
-                   "checkpoint_interval_steps": 100,
+                   "checkpoint_interval_steps": 100, "minimize_max_iterations": 100,
                    "stop_when": {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
                                  "max_duration_ns": 0.006}},
     "analysis": {"include": ["rmsd"]},
