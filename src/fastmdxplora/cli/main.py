@@ -2074,14 +2074,17 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         # going on another machine, would write into it and take its process
         # records: refused before anything is written, as a resume is.
         from fastmdxplora.batch.explorer import campaign_of
-        from fastmdxplora.simulation.resume import _held_elsewhere
+        from fastmdxplora.simulation.resume import _held_elsewhere, _still_running
 
         where = config.get("output") or args.output_dir
         if where and Path(where).expanduser().is_dir():
             root = Path(where).expanduser().resolve()
-            held = _held_elsewhere(campaign_of(root) or root)
+            # Its own run going on this machine is refused by the phases'
+            # own check, in its words (`orchestrator`); here, the rest.
+            held = "" if _still_running(root) else _held_elsewhere(campaign_of(root) or root)
             if held:
-                print(f"\n  \u2717 {held.replace('Resume it once', 'Run it again once')}")
+                print(f"fastmdx: {held.replace('Resume it once', 'Run it again once')}",
+                      file=sys.stderr)
                 return 1
     fmdx = FastMDXplora(
         config_data=config,
