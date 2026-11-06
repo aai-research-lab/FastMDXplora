@@ -307,6 +307,13 @@ that carries it on as its last lines) and exit code (1),
 `batch_manifest.json` (`round_ended`), the GUI's status, sidebar, All studies
 and Overview, the Agent and the comparison report, for a study of one run or
 several, and when it is analysed again. A round stopped when asked exits 130.
+A worker killed in a parallel study (in its rounds or before them) leaves its
+pool taking no more runs: the runs still queued are said not started, and
+`fastmdx resume` runs them. On Python 3.12 and later the study then waits on
+its other workers, each told to stop where its run can be carried on, for as
+long as one still holds a run, up to the stop grace and 10 s (30 s by
+default; `FASTMDX_STOP_GRACE_SECONDS` lengthens it), and ends them; a stop
+asked meanwhile ends them at once.
 The sentence names the runs the round extended and says the others by their
 production, since an extension that did not finish may have run part of the
 way. A study whose process was killed while it extended its runs, its record

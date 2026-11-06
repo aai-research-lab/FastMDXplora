@@ -681,9 +681,10 @@ fastmdx resume runs/study --taken-over   # its process on another node has ended
 A study whose process was recorded on another machine or in another
 container (a cluster node, a job requeued elsewhere) cannot be asked from
 here whether that process still runs. Another container on the same host is
-told apart only on Linux, which says each process's namespace. While its records were written within
-the last hour, `resume` refuses it, saying when it can be resumed from here;
-after an hour of nothing written it is carried on as any stopped study is.
+told apart only on Linux, where a process's namespace can be read. While its
+records were written within the last hour, `resume` refuses it, saying when
+it can be resumed from here; after an hour of nothing written it is carried
+on as any stopped study is.
 `--taken-over` carries it on at once, for when you know the process there
 has ended; a process on this machine holding the study still refuses it,
 and the GUI never runs it (its Fixes card shows the command, for you to run).
