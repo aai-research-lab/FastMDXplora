@@ -790,6 +790,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   read going, an hour's quiet is said as an hour, the time left names its
   zone and quotes the folder, and `--taken-over` refuses a lock held now,
   naming it.
+- A process record is written beside itself and put in place whole, the
+  heartbeat's stamps too, so a reader never finds it empty or cut short and
+  a kill or a full disk mid-write leaves it as it was; it is removed at exit
+  under the holds' lock. A run's page of a study going on another machine,
+  read as the GUI holds it, reads going, and the Agent's records answers
+  say a study is still going and offer no extension it would refuse.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's

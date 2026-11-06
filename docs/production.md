@@ -400,7 +400,8 @@ still refuses it, and the GUI never runs it. A record of a piece its run's
 join took in, or a piece set aside, is not read as going. "Written" is a
 heartbeat: while a study's process (a resume's, a worker's) lives it stamps
 its own process record every 5 minutes (``alive_at``), in every phase,
-from a thread of its own, so an hour is twelve heartbeats missed, never a
+from a thread of its own, writing it beside itself and putting it in place
+whole, so an hour is twelve heartbeats missed, never a
 long setup, analysis or join; the newest of that stamp and the live
 records' is read, on the clock of the machine that wrote it, so a copy
 reads the same. That reading trusts the other machine's clock: one running
