@@ -951,6 +951,11 @@ class DashboardRuntime:
     process_started_at: str | None = None
     process_finished_at: str | None = None
     process_returncode: int | None = None
+    #: The process started is a study's phases run again (`run_again`).
+    ran_again: bool = False
+    #: Its study's round, unfinished, which that rerun exited with (its
+    #: code, not a failure): its sentence and the command that carries it on.
+    again_round: dict[str, str] | None = None
     completion_error: str | None = None
     data_stale: bool = False
     log_path: Path | None = None
@@ -1170,6 +1175,23 @@ class DashboardRuntime:
         if self.process_finished_at is None:
             self.process_finished_at = _utc_now()
         where = self.running_root or self.active_root
+        if (self.ran_again and self.process_returncode in (1, 130)
+                and self.completion_error is None and where is not None
+                and Path(where).resolve() not in self.stopped_roots):
+            # Its phases run again over a study whose round is unfinished
+            # exit with that round's code (1 cut or failed, 130 stopped), as
+            # `fastmdx report --rerun` does: done, said with its round.
+            from fastmdxplora.batch.explorer import campaign_of
+            from fastmdxplora.simulation.stopping import round_ended
+
+            try:
+                ended = round_ended(campaign_of(Path(where)) or Path(where))
+            except Exception:  # noqa: BLE001 - said as its exit is
+                ended = None
+            if ended is not None and self.process_returncode == (
+                    130 if ended.state == "stopped" else 1):
+                self.again_round = {"said": ended.said, "terminal": " ".join(ended.argv)}
+                return
         if (self.process_returncode != 0 and self.completion_error is None
                 and where is not None and Path(where).resolve() in self.stopped_roots):
             # Stopped here, as asked: not a failure. Its reason was the
@@ -1389,6 +1411,9 @@ class DashboardRuntime:
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
                                                if running and not viewing_running else None),
                 "returncode": self.process_returncode,
+                # A study's phases run again over an unfinished round: done,
+                # with that round (`_refresh_process`).
+                "again_round": self.again_round if viewing_running else None,
                 "error": self.completion_error if viewing_running else None,
                 "started_at": self.process_started_at,
                 "finished_at": self.process_finished_at,
@@ -1434,6 +1459,7 @@ class DashboardRuntime:
         from fastmdxplora.refusals import OutsideWorkspace, refusal_of
         from fastmdxplora.runs_here import StartRefused, may_start, record_start, starting_in
 
+        self.ran_again, self.again_round = False, None
         folders = self._rule_folders()
         config = None
         if config_path is not None:
@@ -2237,6 +2263,7 @@ class DashboardRuntime:
                                   study, dashboard_url)
             if started.get("ok") is False:
                 return started
+            self.ran_again = True
             return {"ok": True, "error": None, "said": planned.said(), **started}
 
     def stop(self) -> dict[str, Any]:

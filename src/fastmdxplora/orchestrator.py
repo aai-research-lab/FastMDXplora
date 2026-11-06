@@ -1977,10 +1977,16 @@ def _put_in_place(path: Path, text: str) -> None:
     could not be written."""
     import tempfile
 
+    from fastmdxplora.record_access import _umask
+
     descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.{os.getpid()}.",
                                         suffix=".tmp")
     try:
+        # Readable as a file written in place is (the umask's mode, not the
+        # owner-only one `mkstemp` gives): a lab's shared study is read by
+        # the group, its record from another machine among it.
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o666 & ~_umask())
             stream.write(text)
         os.replace(name, path)
     except OSError:
@@ -2071,13 +2077,19 @@ def _heartbeat() -> None:
 
     while True:
         time.sleep(_heartbeat_every())
-        with _HOLDS_LOCK:
-            held = [key for key, count in _holds().items() if count > 0]
-            for folder in held:
-                try:
-                    stamp_alive(Path(folder) / RUN_PROCESS_FILE)
-                except Exception:  # noqa: BLE001 - the heartbeat lives on
-                    pass
+        _beat_once()
+
+
+def _beat_once() -> None:
+    """One heartbeat: each record held here stamped; a stamp that fails
+    (a full disk) is no end of the heartbeat."""
+    with _HOLDS_LOCK:
+        held = [key for key, count in _holds().items() if count > 0]
+        for folder in held:
+            try:
+                stamp_alive(Path(folder) / RUN_PROCESS_FILE)
+            except Exception:  # noqa: BLE001 - the heartbeat lives on
+                pass
 
 
 def _start_heartbeat() -> None:

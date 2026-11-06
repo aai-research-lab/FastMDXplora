@@ -3948,6 +3948,12 @@ def test_a_study_going_elsewhere_is_not_analysed_again_from_here(killed_before_i
         offered = again.offered(page)
         assert not any(phase.get("can") for phase in offered.values()
                        if isinstance(phase, dict)), offered
+        # Its command the refusal's last words, given for the page to set
+        # as code, and a rerun named as possible after the time it names.
+        for phase in ("analysis", "report"):
+            why, terminal = offered[phase]["why"], offered[phase].get("terminal") or ""
+            assert terminal.startswith("fastmdx resume --taken-over"), offered[phase]
+            assert why.endswith(terminal) and "can be run again or resumed" in why, why
     out = io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
         code = main(["report", "--output", str(study), "--rerun"])
@@ -4021,6 +4027,183 @@ def test_a_cut_stamp_s_temporary_is_cleared_and_not_fetched(tmp_path):
     (arrived / f"{RUN_PROCESS_FILE}.4242.xyz.tmp").write_text("{")
     _only_files_and_folders(arrived)
     assert list(arrived.iterdir()) == []
+
+
+@pytest.mark.parametrize("seeds", [True, False], ids=["two seeds", "one run"])
+def test_phases_run_again_into_a_study_going_here_are_refused(tmp_path, seeds):
+    """`fastmdx report/analyze --rerun` of a study going on this machine
+    wrote into it and took its process record (52 and 45 files), as did
+    Analyze again from the GUI's POST: refused, nothing written."""
+    import os
+    import signal
+    from unittest import mock
+
+    from fastmdxplora import again
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.refusals import StudyError
+
+    config = _study_of_seeds(tmp_path, seeds=seeds)
+    hold = tmp_path / "hold"
+    process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)], tmp_path,
+                          hold, call="fastmdxplora.simulation.stopping:run_until_known")
+    study = tmp_path / "study"
+    try:
+        _until_held(process, hold, ["call"])
+        before = _snapshot(study)
+        pages = [study, *sorted((study / "runs").glob("*"))]
+        for page in pages:
+            for command in ("report", "analyze"):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                    code = main([command, "--output", str(page), "--rerun"])
+                assert code == 1 and "is still running" in out.getvalue(), out.getvalue()[-800:]
+            runtime = DashboardRuntime(workspace_root=study.parent, exploration_root=study.parent)
+            runtime.active_root = page
+            with mock.patch.object(DashboardRuntime, "_spawn") as spawned:
+                answer = runtime.run_again(["analysis"])
+            assert not answer["ok"] and not spawned.called, answer
+            with pytest.raises(StudyError) as refused:
+                again.plan(page, ["analysis"])
+            # A study of one run is its own run: named once.
+            assert str(refused.value).count(study.name) <= 1, str(refused.value)
+        assert _snapshot(study) == before
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
+def test_phases_run_again_into_a_study_a_resume_holds_are_refused(killed_before_its_rule,
+                                                                  tmp_path):
+    """A study held by `fastmdx resume` here (its lock and its process
+    record the resume's): `report --rerun` wrote 34 files into it, its
+    resume's record and members.json among them."""
+    import os
+    import signal
+
+    from fastmdxplora.cli.main import main
+
+    study = tmp_path / "study"
+    shutil.copytree(killed_before_its_rule["study"], study, symlinks=True)
+    hold = tmp_path / "hold"
+    process = _held_study(["fastmdxplora.cli.main", "resume", str(study)], tmp_path, hold,
+                          call="fastmdxplora.simulation.stopping:run_until_known")
+    try:
+        _until_held(process, hold, ["call"])
+        before = _snapshot(study)
+        for page in [study, *sorted((study / "runs").glob("*"))]:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                code = main(["report", "--output", str(page), "--rerun"])
+            assert code == 1 and ("still going" in out.getvalue()
+                                  or "is still running" in out.getvalue()), out.getvalue()[-800:]
+        assert _snapshot(study) == before
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+
+
+def test_a_rerun_of_a_study_whose_resume_died_says_its_round_as_every_page(resume_died,
+                                                                           tmp_path):
+    """A rerun read the round with a resume's reading, which skips the dead
+    resume's marker: it said "stopped when asked" in its summary and its
+    batch_manifest.json, where every page said it did not finish."""
+    from fastmdxplora.cli.main import main
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(resume_died, study, symlinks=True)
+    ended = round_ended(study)
+    assert ended.state == "interrupted" and "the resume carrying it on ended" in ended.said
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        main(["report", "--output", str(study), "--rerun"])
+    said = out.getvalue()
+    assert "was stopped when asked" not in said and "the resume carrying it on ended" in said, \
+        said[-1500:]
+    recorded = json.loads((study / "batch_manifest.json").read_text())["round_ended"]
+    assert recorded["state"] == "interrupted", recorded
+
+
+def test_the_gui_says_a_rerun_over_an_unfinished_round_was_done(sequential_unjoined, tmp_path):
+    """Analyze again of a study whose round was cut exited with the round's
+    code, and the GUI said it as a failure with the log's last line."""
+    import subprocess
+    import sys
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study = tmp_path / "study"
+    shutil.copytree(sequential_unjoined, study, symlinks=True)
+    runtime = DashboardRuntime(workspace_root=study.parent, exploration_root=study.parent)
+    runtime.active_root = study
+    runtime.ran_again = True
+    runtime.process = subprocess.Popen([sys.executable, "-c", "raise SystemExit(1)"])
+    runtime.process.wait()
+    runtime._refresh_process()
+    assert runtime.completion_error is None
+    assert runtime.again_round == {"said": round_ended(study).said,
+                                   "terminal": f"fastmdx resume {study}"}
+
+
+def test_a_process_record_is_written_with_the_umask_s_mode(tmp_path, monkeypatch):
+    """`mkstemp` made every process record owner-only: another member of
+    the group read a study going on another machine as completed."""
+    import os
+    import stat
+
+    from fastmdxplora import orchestrator
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.record_access import _umask
+
+    record = tmp_path / RUN_PROCESS_FILE
+    orchestrator._put_in_place(record, "{}")
+    assert stat.S_IMODE(record.stat().st_mode) == 0o666 & ~_umask()
+    # A live process's temporary beside it is its own, and kept.
+    mine = tmp_path / f"{RUN_PROCESS_FILE}.{os.getpid()}.x.tmp"
+    mine.write_text("{")
+    orchestrator._put_in_place(record, "{}")
+    assert mine.exists()
+    # A rewrite that fails (a full disk) is no error of the heartbeat's.
+    record.write_text("{\"pid\": 4")
+    orchestrator._mark_written_here(record)
+
+    def full(path):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(orchestrator, "_write_run_process", full)
+    orchestrator.stamp_alive(record)
+
+
+def test_the_heartbeat_lives_on_past_a_stamp_that_fails(tmp_path, monkeypatch):
+    """A stamp that raised ended the heartbeat's thread: a study going on
+    another machine then read quiet after the hour."""
+    import threading
+    import time
+
+    from fastmdxplora import orchestrator
+
+    calls = []
+
+    def failing(path):
+        calls.append(path)
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setenv(orchestrator.HEARTBEAT_ENV, "0.02")
+    monkeypatch.setattr(orchestrator, "stamp_alive", failing)
+    folder = tmp_path / "held"
+    folder.mkdir()
+    orchestrator._hold_run_process(folder)
+    beating = threading.Thread(target=orchestrator._heartbeat, daemon=True)
+    try:
+        beating.start()
+        time.sleep(0.4)
+        assert beating.is_alive() and len(calls) >= 2, calls
+    finally:
+        orchestrator._release_run_process(folder)
 
 
 def test_a_heartbeat_never_leaves_its_record_empty_or_cut(tmp_path):

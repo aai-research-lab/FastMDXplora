@@ -404,6 +404,14 @@
     if (writing === null || running || app.started_at !== writing) return;
     if (app.returncode === null || app.returncode === undefined) return;
     writing = null;
+    if (app.again_round) {
+      // Done over a round left unfinished: said so, with that round and
+      // the command that carries it on, as the terminal says it.
+      say("Written again. " + app.again_round.said + " To carry it on: " +
+          app.again_round.terminal, app.again_round.terminal);
+      load();
+      return;
+    }
     if (app.returncode !== 0 || app.error) {
       say(app.error || "It stopped before the report was written again; its log is in the side panel.");
       return;

@@ -2079,12 +2079,20 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         where = config.get("output") or args.output_dir
         if where and Path(where).expanduser().is_dir():
             root = Path(where).expanduser().resolve()
-            # Its own run going on this machine is refused by the phases'
-            # own check, in its words (`orchestrator`); here, the rest.
-            held = "" if _still_running(root) else _held_elsewhere(campaign_of(root) or root)
+            study = campaign_of(root) or root
+            # Refused before anything is written, every case: its run (or its
+            # study's) going on this machine said in the phases' own words
+            # (`orchestrator`), a study held by another process here or
+            # going on another machine as a resume's refusal says it.
+            if _still_running(root) or _still_running(study):
+                print(f"fastmdx: {root} is still running. Run its phases again once it has "
+                      "stopped.", file=sys.stderr)
+                return 1
+            held = _held_elsewhere(study)
             if held:
-                print(f"fastmdx: {held.replace('Resume it once', 'Run it again once')}",
-                      file=sys.stderr)
+                from fastmdxplora.again import refused_again
+
+                print("fastmdx: " + refused_again(held), file=sys.stderr)
                 return 1
     fmdx = FastMDXplora(
         config_data=config,

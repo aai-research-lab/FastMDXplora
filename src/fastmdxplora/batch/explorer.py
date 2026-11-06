@@ -1709,6 +1709,10 @@ class BatchExplorer:
         # determined, its report again, its campaign's comparison).
         from fastmdxplora.orchestrator import _hold_run_process
 
+        # Its rule's round as it stood before this process took the study:
+        # a study's phases run again (`fastmdx report --rerun`) carry no
+        # round on, and are said with that round (`_round_ended`).
+        self._round_as_it_stood = self._round_before_it_is_taken()
         _hold_run_process(self.output_dir, rewrite=True)
         self._holding_its_record = True
 
@@ -3401,6 +3405,28 @@ class BatchExplorer:
                 pass
         return run
 
+    def _record_of_rounds(self) -> bytes | None:
+        try:
+            return (self.output_dir / "stopping.json").read_bytes()
+        except OSError:
+            return None
+
+    def _round_before_it_is_taken(self) -> tuple[bytes, Any] | None:
+        """The study's record of its rounds and its round as every page read
+        it before this process took the study; None for a resume (which
+        carries the round on) or a study with no such record."""
+        if getattr(self, "resume", False):
+            return None
+        record = self._record_of_rounds()
+        if record is None:
+            return None
+        from fastmdxplora.simulation.stopping import round_ended
+
+        try:
+            return record, round_ended(self.output_dir)
+        except Exception:  # noqa: BLE001 - read again at its end
+            return None
+
     def _round_ended(self) -> Any:
         """The study's rule's last round, failed, stopped or cut, as every
         page reads it (`stopping.round_ended`): read whether or not this
@@ -3414,6 +3440,11 @@ class BatchExplorer:
         # on) as cut: the process it names is this one. So does a study's
         # phases run again (`fastmdx report --rerun`), which holds the study
         # as a resume does and carries no round on: its round as it stood.
+        stood = getattr(self, "_round_as_it_stood", None)
+        if stood is not None and self._record_of_rounds() == stood[0]:
+            # No round carried on since it was taken (phases run again): its
+            # round as every page read it then, a resume that died included.
+            return stood[1]
         resuming = bool(getattr(self, "resume", False)) or run_process_held_here(
             self.output_dir)
         return round_ended(self.output_dir, resuming=resuming)
