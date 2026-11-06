@@ -797,13 +797,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   read as the GUI holds it, reads going, and the Agent's records answers
   say a study is still going and offer no extension it would refuse.
 - Analyze again, Write it again and `fastmdx report --rerun` refuse a study
-  held by another process or going on another machine before writing
-  anything, as a resume does. `fastmdx report --rerun` of a study whose
+  running or held on this machine or going on another machine before
+  writing anything, as a resume does. `fastmdx report --rerun` of a study whose
   round was cut says the round and its resume, not "Batch complete". A
   process record's temporary is made new beside it, a leftover of a killed
   stamp is removed by the next write and not fetched back from a remote
   machine, and the heartbeat outlives a full disk. The Agent's going line
   says where once.
+- `fastmdx report/analyze --rerun` of a study running, or held by a resume,
+  on this machine, or of one of its runs, is refused before anything is
+  written ("is still running"), for a study of several runs too. Process
+  records are written with the umask's mode, as files written in place
+  are, so the group reads them. A rerun of a study whose resume died says
+  its round as every page does. Analyze again and Write it again of a study
+  whose round is unfinished say it was done, then the round's sentence and
+  its command, not a failure. A refusal for another machine says the rerun
+  can be asked after the time it names, its command set as code.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
