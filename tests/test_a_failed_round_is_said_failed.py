@@ -4162,7 +4162,7 @@ def test_a_process_record_is_written_with_the_umask_s_mode(tmp_path, monkeypatch
     record = tmp_path / RUN_PROCESS_FILE
     orchestrator._put_in_place(record, "{}")
     assert stat.S_IMODE(record.stat().st_mode) == 0o666 & ~_umask()
-    # A live process's temporary beside it is its own, and kept.
+    # A live process's temporary beside it is its own, and left there.
     mine = tmp_path / f"{RUN_PROCESS_FILE}.{os.getpid()}.x.tmp"
     mine.write_text("{")
     orchestrator._put_in_place(record, "{}")
