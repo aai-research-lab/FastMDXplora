@@ -438,6 +438,66 @@ class _StudyStop:
                 "further run starts.")
 
 
+#: Seconds past the stop grace (`runner.stop_grace_seconds`) the other
+#: workers of a broken pool are given to end before they are killed: time
+#: to write the checkpoint at the frame a run stopped on.
+BROKEN_POOL_MARGIN_SECONDS = 10.0
+
+
+def _shut_down(pool: Any) -> None:
+    """``pool`` shut down, its workers waited for, also where one of them
+    ended abruptly (killed, out of memory) and broke it.
+
+    A broken pool ends its other workers with SIGTERM. On Python 3.12 and
+    later that is all it sends before waiting for each to end, and a worker
+    takes SIGTERM as a request to stop where its run can be carried on
+    (`_listen_for_a_stop_in_this_worker`): an idle one goes on waiting for
+    work, so the study waited for ever. Each is given the stop grace and a
+    margin to end where it can be carried on, then killed. Python 3.11 and
+    earlier also sent each its end on the pool's queue, and they ended."""
+    if getattr(pool, "_broken", False):
+        _end_the_other_workers(pool)
+    pool.shutdown(wait=True, cancel_futures=True)
+
+
+def _end_the_other_workers(pool: Any) -> None:
+    """The workers of a broken pool still alive, killed once the stop grace
+    and `BROKEN_POOL_MARGIN_SECONDS` have passed (`_shut_down`)."""
+    import time
+    from multiprocessing.connection import wait
+
+    from fastmdxplora.simulation.runner import stop_grace_seconds
+
+    # Private to the executor, and the only list of its workers there is.
+    workers = list((getattr(pool, "_processes", None) or {}).values())
+    deadline = time.monotonic() + stop_grace_seconds() + BROKEN_POOL_MARGIN_SECONDS
+    # Each worker's sentinel is ready once it has ended; it is not reaped
+    # here, so the pool's own thread waiting on it is left as it was.
+    alive = {}
+    for worker in workers:
+        try:
+            alive[worker.sentinel] = worker
+        except (AttributeError, ValueError):
+            continue
+    while alive:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        for sentinel in wait(list(alive), timeout=left):
+            alive.pop(sentinel, None)
+    if not alive:
+        return
+    logger.warning(
+        "A worker of the study ended abruptly; %d other worker(s) had not ended "
+        "%.0f s after being asked to stop and were killed.", len(alive),
+        stop_grace_seconds() + BROKEN_POOL_MARGIN_SECONDS)
+    for worker in alive.values():
+        try:
+            worker.kill()
+        except (OSError, ValueError, AttributeError):
+            continue
+
+
 def _threads_for_each(n_workers: int) -> int:
     """The cores each worker may use, so together they fill the machine once.
 
@@ -2107,7 +2167,7 @@ class BatchExplorer:
             return answers
         finally:
             stop.__exit__(None, None, None)
-            pool.shutdown(wait=True, cancel_futures=True)
+            _shut_down(pool)
 
     @staticmethod
     def _report_again(run: Path) -> None:
@@ -3328,7 +3388,7 @@ class BatchExplorer:
                     ))
         finally:
             stop.__exit__(None, None, None)
-            pool.shutdown(wait=True, cancel_futures=True)
+            _shut_down(pool)
 
         # Preserve deterministic (submission) order in the manifest.
         order = {spec.run_id: i for i, spec in enumerate(self.run_specs)}

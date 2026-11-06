@@ -25,6 +25,7 @@ import io
 import json
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,11 @@ _CONFIG = {
 }
 
 SECOND = "tri__random-seed-2"
+
+#: The longest any wait here on a study's process (or for it to be held)
+#: lasts: less than pytest-timeout's 600 s, so a study that never ends fails
+#: its test, not the whole session.
+_A_STUDY_S_WAIT = 480
 
 
 def _refusing_the_second(seen: dict):
@@ -592,7 +598,7 @@ def _held_study(argv: list[str], cwd: Path, hold: Path, **at: str):
         start_new_session=True)
 
 
-def _until_held(process, hold: Path, names: list[str], *, timeout: float = 1200) -> dict:
+def _until_held(process, hold: Path, names: list[str], *, timeout: float = _A_STUDY_S_WAIT) -> dict:
     """Each of ``names``'s marker (``<name>.held``) written, with the id of
     the process held there; fails where the study ended first."""
     import time
@@ -1398,7 +1404,11 @@ def test_a_worker_killed_in_a_round_names_no_run(tmp_path):
     try:
         killed = _until_held(process, tmp_path / "hold", [SECOND])[SECOND]
         os.kill(killed, signal.SIGKILL)
-        process.wait(timeout=1200)
+        try:
+            process.wait(timeout=_A_STUDY_S_WAIT)
+        except subprocess.TimeoutExpired:
+            raise AssertionError(f"the study did not end {_A_STUDY_S_WAIT} s after its "
+                                 "worker was killed") from None
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
@@ -1410,6 +1420,71 @@ def test_a_worker_killed_in_a_round_names_no_run(tmp_path):
     assert ended.said.startswith("Its stopping rule's round 1 failed: a worker extending "
                                  "the runs ended abruptly (BrokenProcessPool")
     assert "extending tri__random-seed" not in ended.said
+
+
+_A_POOL_BROKEN = """
+import os, signal, sys, time
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
+
+from fastmdxplora.batch import explorer
+
+
+def killed():
+    time.sleep(0.5)
+    os.kill(os.getpid(), signal.SIGKILL)
+
+
+if __name__ == "__main__":
+    # Two workers, as a study's pool makes them, both started and then idle.
+    pool = ProcessPoolExecutor(2, mp_context=get_context(sys.argv[1]),
+                               initializer=explorer._give_this_worker_its_share,
+                               initargs=(1,))
+    for future in [pool.submit(time.sleep, 0.5) for _ in range(2)]:
+        future.result()
+    assert len(pool._processes) == 2
+    try:
+        pool.submit(killed).result()
+    except Exception as exc:
+        print(type(exc).__name__, flush=True)
+    # As the study's pools end (before this, a plain shutdown).
+    getattr(explorer, "_shut_down",
+            lambda pool: pool.shutdown(wait=True, cancel_futures=True))(pool)
+    print("ended", flush=True)
+"""
+
+
+@pytest.mark.parametrize("method", ["spawn", "fork"])
+def test_a_pool_whose_worker_is_killed_ends(method, tmp_path):
+    """A study's pool, one worker killed and the other idle, ends: on
+    Python 3.12 and later the pool sends the other worker SIGTERM alone,
+    which a worker takes as a request to stop its run, and the study waited
+    on it for ever (`explorer._shut_down`)."""
+    import multiprocessing
+    import os
+    import sys
+
+    if method not in multiprocessing.get_all_start_methods():
+        pytest.skip(f"no {method} here")
+    script = tmp_path / "pool.py"
+    script.write_text(_A_POOL_BROKEN)
+    env = {**os.environ, "PYTHONPATH": _source(), "FASTMDX_STOP_GRACE_SECONDS": "1"}
+    import signal
+
+    ran = subprocess.Popen([sys.executable, str(script), method], cwd=tmp_path, env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           start_new_session=True)
+    try:
+        printed, said = ran.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        raise AssertionError("the pool did not end 120 s after its worker was killed") from None
+    finally:
+        if ran.poll() is None:
+            # Its workers with it.
+            os.killpg(ran.pid, signal.SIGKILL)
+            ran.communicate()
+    assert ran.returncode == 0, said[-2000:]
+    assert printed.split() == ["BrokenProcessPool", "ended"], said[-2000:]
 
 
 # ---------------------------------------------------------------------------
@@ -1978,7 +2053,7 @@ def stopped_mid_round(tmp_path_factory):
     try:
         _until_held(process, tmp_path / "hold", ["tri__random-seed-1", SECOND])
         os.killpg(process.pid, signal.SIGINT)
-        code = process.wait(timeout=1200)
+        code = process.wait(timeout=_A_STUDY_S_WAIT)
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
@@ -2304,7 +2379,7 @@ def _resumed_until(study: Path, where: str) -> int:
     driver.write_text(_KILLED_AT)
     env = {**os.environ, "PYTHONPATH": str(Path(fastmdxplora.__file__).parents[1])}
     return subprocess.run([sys.executable, str(driver), str(study), where], env=env,
-                          capture_output=True, timeout=900).returncode
+                          capture_output=True, timeout=_A_STUDY_S_WAIT).returncode
 
 
 def _summary_of(study: Path) -> dict[str, str]:
@@ -2548,7 +2623,8 @@ def _signalled_at(where: Path, name: str, run: str, *argv: str, with_: str = "SI
     env = {**os.environ, "PYTHONPATH": _source(), "SIGNALLED_WITH": with_,
            "SIGNALLED_AFTER": "1" if after else ""}
     return subprocess.run([sys.executable, str(driver), name, run, *argv],
-                          env=env, cwd=where, capture_output=True, text=True, timeout=1200)
+                          env=env, cwd=where, capture_output=True, text=True,
+                          timeout=_A_STUDY_S_WAIT)
 
 
 @pytest.fixture(scope="module")
@@ -2666,7 +2742,7 @@ def _killed_in(where: Path, name: str, *argv: str) -> int:
     driver.write_text(_KILLED_IN)
     return subprocess.run([sys.executable, str(driver), name, *argv],
                           env={**os.environ, "PYTHONPATH": _source()}, cwd=where,
-                          capture_output=True, timeout=1200).returncode
+                          capture_output=True, timeout=_A_STUDY_S_WAIT).returncode
 
 
 @pytest.fixture(scope="module")
@@ -2689,7 +2765,7 @@ def sequential_unjoined(tmp_path_factory):
     ran = subprocess.run([sys.executable, str(driver), "_join_and_analyse", "explore", "-c",
                           str(tmp_path / "study.yml")],
                          env={**os.environ, "PYTHONPATH": _source()}, cwd=tmp_path,
-                         capture_output=True, timeout=1200)
+                         capture_output=True, timeout=_A_STUDY_S_WAIT)
     assert ran.returncode == 9
     return tmp_path / "study"
 
@@ -4338,7 +4414,7 @@ def test_a_rerun_stopped_by_ctrl_c_is_counted_stopped(request, tmp_path, case):
     ran = subprocess.run([sys.executable, str(driver), "fastmdxplora.analysis.analyze:run",
                           "analyze", "--output", str(made["study"]), "--rerun"],
                          env={**os.environ, "PYTHONPATH": _source()}, cwd=tmp_path,
-                         capture_output=True, text=True, timeout=1200)
+                         capture_output=True, text=True, timeout=_A_STUDY_S_WAIT)
     said = ran.stdout + ran.stderr
     assert ran.returncode == 130, said[-2000:]
     # Its headline is the study's round's ("Batch failed" for a failed one).
