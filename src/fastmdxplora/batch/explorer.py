@@ -3452,8 +3452,10 @@ class BatchExplorer:
                 # The workers watched too, in short waits: one that ends is
                 # seen here at once, and its pool woken to find it, as a run
                 # still going may not answer for hours.
+                left = HEARTBEAT_SECONDS - (time.monotonic() - said_at)
                 finished, pending = wait_for_any(
-                    futures, timeout=0.25, return_when=FIRST_COMPLETED)
+                    futures, timeout=max(0.0, min(0.25, left)),
+                    return_when=FIRST_COMPLETED)
                 if finished:
                     return next(iter(finished))
                 if not woken and _a_worker_ended(pool):
