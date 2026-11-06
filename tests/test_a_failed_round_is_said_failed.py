@@ -87,7 +87,8 @@ def _the_logger_as_the_module_found_it():
 
 #: The longest any wait here on a study's process (or for it to be held)
 #: lasts: less than pytest-timeout's 600 s, so a study that never ends fails
-#: its test, not the whole session.
+#: its test, not the whole session. A test that waits twice (held, then
+#: ended) shares one deadline between them.
 _A_STUDY_S_WAIT = 480
 
 
@@ -1425,11 +1426,14 @@ def test_a_worker_killed_in_a_round_names_no_run(tmp_path):
     # The worker extending the second seed, held in its piece, then killed.
     process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(tmp_path / "study.yml")],
                     tmp_path, tmp_path / "hold", piece="segment-001", runs=SECOND)
+    import time
+
+    deadline = time.monotonic() + _A_STUDY_S_WAIT
     try:
         killed = _until_held(process, tmp_path / "hold", [SECOND])[SECOND]
         os.kill(killed, signal.SIGKILL)
         try:
-            process.wait(timeout=_A_STUDY_S_WAIT)
+            process.wait(timeout=max(1.0, deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
             raise AssertionError(f"the study did not end {_A_STUDY_S_WAIT} s after its "
                                  "worker was killed") from None
@@ -1447,11 +1451,18 @@ def test_a_worker_killed_in_a_round_names_no_run(tmp_path):
 
 
 _A_POOL_BROKEN = """
-import os, signal, sys, time
+import inspect, os, signal, sys, time
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
 
 from fastmdxplora.batch import explorer
+
+
+def warm():
+    # As a worker that has run a run: its stop listener's module imported.
+    import fastmdxplora.simulation.runner  # noqa: F401
+    time.sleep(0.5)
+    return os.getpid()
 
 
 def killed():
@@ -1464,18 +1475,90 @@ if __name__ == "__main__":
     pool = ProcessPoolExecutor(2, mp_context=get_context(sys.argv[1]),
                                initializer=explorer._give_this_worker_its_share,
                                initargs=(1,))
-    for future in [pool.submit(time.sleep, 0.5) for _ in range(2)]:
-        future.result()
-    assert len(pool._processes) == 2
+    workers = [future.result() for future in [pool.submit(warm) for _ in range(2)]]
+    assert len(set(workers)) == 2, workers
+    print("workers", *workers, flush=True)
+    signalled = len(sys.argv) > 2
+    stop = explorer._StudyStop(pool)
+    stop.__enter__()
     try:
         pool.submit(killed).result()
     except Exception as exc:
         print(type(exc).__name__, flush=True)
-    # As the study's pools end (before this, a plain shutdown).
-    getattr(explorer, "_shut_down",
-            lambda pool: pool.shutdown(wait=True, cancel_futures=True))(pool)
-    print("ended", flush=True)
+    # As the study's pools end: before this, the listener taken away and a
+    # plain shutdown.
+    shut_down = getattr(explorer, "_shut_down", None)
+    if shut_down is None or "stop" not in inspect.signature(shut_down).parameters:
+        stop.__exit__(None, None, None)
+        (shut_down or (lambda pool: pool.shutdown(wait=True, cancel_futures=True)))(pool)
+    else:
+        try:
+            shut_down(pool, stop)
+        finally:
+            stop.__exit__(None, None, None)
+    print("ended", "asked" if stop.requested else "not asked", flush=True)
 """
+
+
+def _a_broken_pool(tmp_path: Path, method: str, *, grace: str = "1"):
+    """`_A_POOL_BROKEN` started in a process group of its own, its two
+    workers' ids read from it once it says them."""
+    import os
+    import sys
+
+    script = tmp_path / "pool.py"
+    script.write_text(_A_POOL_BROKEN)
+    env = {**os.environ, "PYTHONPATH": _source(), "FASTMDX_STOP_GRACE_SECONDS": grace}
+    ran = subprocess.Popen([sys.executable, str(script), method], cwd=tmp_path, env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           start_new_session=True)
+    first = ran.stdout.readline().split()
+    assert first[:1] == ["workers"], (first, ran.stderr.read()[-2000:] if ran.poll() else "")
+    return ran, [int(pid) for pid in first[1:]]
+
+
+def _ended(ran, seconds: float, what: str) -> tuple[str, str]:
+    """``ran``'s output once it has ended within ``seconds``; fails, its
+    group killed, where it has not."""
+    import os
+    import signal
+
+    try:
+        return ran.communicate(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"{what} did not end within {seconds:.0f} s") from None
+    finally:
+        if ran.poll() is None:
+            # Its workers with it.
+            os.killpg(ran.pid, signal.SIGKILL)
+            ran.communicate()
+
+
+def _none_alive(pids: list[int], seconds: float = 5.0) -> list[int]:
+    """Which of ``pids`` still run ``seconds`` on (a zombie is not)."""
+    import os
+    import time
+
+    def running(pid: int) -> bool:
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+            return stat.rsplit(")", 1)[1].split()[0] != "Z"
+        except OSError:
+            pass
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    until = time.monotonic() + seconds
+    while True:
+        left = [pid for pid in pids if running(pid)]
+        if not left or time.monotonic() > until:
+            return left
+        time.sleep(0.1)
 
 
 @pytest.mark.parametrize("method", ["spawn", "fork"])
@@ -1483,32 +1566,102 @@ def test_a_pool_whose_worker_is_killed_ends(method, tmp_path):
     """A study's pool, one worker killed and the other idle, ends: on
     Python 3.12 and later the pool sends the other worker SIGTERM alone,
     which a worker takes as a request to stop its run, and the study waited
-    on it for ever (`explorer._shut_down`)."""
+    on it for ever (`explorer._shut_down`). Its workers have imported the
+    stop listener's module, as one that has run a run has: one importing it
+    as the pool's second SIGTERM came died of an ImportError, and the pool
+    ended by that chance."""
     import multiprocessing
-    import os
-    import sys
 
     if method not in multiprocessing.get_all_start_methods():
         pytest.skip(f"no {method} here")
-    script = tmp_path / "pool.py"
-    script.write_text(_A_POOL_BROKEN)
-    env = {**os.environ, "PYTHONPATH": _source(), "FASTMDX_STOP_GRACE_SECONDS": "1"}
-    import signal
-
-    ran = subprocess.Popen([sys.executable, str(script), method], cwd=tmp_path, env=env,
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                           start_new_session=True)
-    try:
-        printed, said = ran.communicate(timeout=120)
-    except subprocess.TimeoutExpired:
-        raise AssertionError("the pool did not end 120 s after its worker was killed") from None
-    finally:
-        if ran.poll() is None:
-            # Its workers with it.
-            os.killpg(ran.pid, signal.SIGKILL)
-            ran.communicate()
+    ran, workers = _a_broken_pool(tmp_path, method)
+    printed, said = _ended(ran, 120, "the pool, 120 s after its worker was killed,")
     assert ran.returncode == 0, said[-2000:]
-    assert printed.split() == ["BrokenProcessPool", "ended"], said[-2000:]
+    assert printed.split() == ["BrokenProcessPool", "ended", "not", "asked"], said[-2000:]
+    assert "ImportError" not in said, said[-2000:]
+    assert _none_alive(workers) == []
+
+
+@pytest.mark.parametrize("number", ["SIGINT", "SIGTERM"])
+def test_a_stop_to_the_study_alone_while_it_waits_on_its_workers_ends_them(number, tmp_path):
+    """A stop sent to the study's process alone (`kill -INT`, the GUI's
+    Stop) while it waited on the other workers of its broken pool: SIGINT
+    hung it, its pool's thread joining a worker nothing ended; SIGTERM ended
+    it and left the idle worker waiting for work for ever. The study's own
+    listener hears it as a stop, and its workers are ended."""
+    import os
+    import signal
+    import sys
+    import time
+
+    if sys.version_info < (3, 12):
+        pytest.skip("before Python 3.12 a broken pool sends each worker its end: no wait")
+    ran, workers = _a_broken_pool(tmp_path, "spawn", grace="60")
+    assert ran.stdout.readline().split() == ["BrokenProcessPool"]
+    # Into its wait (the stop grace and 10 s), then the stop.
+    time.sleep(3)
+    assert ran.poll() is None
+    os.kill(ran.pid, getattr(signal, number))
+    printed, said = _ended(ran, 30, f"the study, given {number},")
+    left = _none_alive(workers)
+    assert left == [], f"workers {left} outlived the study"
+    assert ran.returncode == 0, said[-2000:]
+    assert printed.split() == ["ended", "asked"], said[-2000:]
+
+
+def test_a_study_with_runs_queued_ends_when_a_worker_is_killed(tmp_path):
+    """Four seeds on two workers, the worker running the second killed in
+    its production: the next run handed to the broken pool waited for ever
+    on Python 3.12 and later (3.11 raised `BrokenProcessPool` out of the
+    study). The runs the pool was not given are said not started, and the
+    study ends with none of its workers left."""
+    import os
+    import signal
+    import time
+
+    pdb = tmp_path / "tri-ala.pdb"
+    pdb.write_text(TRI_ALANINE)
+    config = json.loads(json.dumps(_CONFIG))
+    config["sweep"] = {"simulation.random_seed": [1, 2, 3, 4]}
+    config["simulation"].pop("stop_when")
+    config["execution"] = {"mode": "parallel", "workers": 2}
+    config["systems"] = [{"id": "tri", "system": str(pdb)}]
+    config["output"] = str(tmp_path / "study")
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    # The second seed's production held, then its worker killed.
+    process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(tmp_path / "study.yml")],
+                          tmp_path, tmp_path / "hold", piece=SECOND, after="100")
+    deadline = time.monotonic() + _A_STUDY_S_WAIT
+    try:
+        killed = _until_held(process, tmp_path / "hold", ["runs"])["runs"]
+        os.kill(killed, signal.SIGKILL)
+        try:
+            code = process.wait(timeout=max(1.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            raise AssertionError(f"the study did not end {_A_STUDY_S_WAIT} s after its "
+                                 "worker was killed") from None
+        try:
+            # Nothing of its group left: its workers ended with it.
+            for _ in range(50):
+                os.killpg(process.pid, 0)
+                time.sleep(0.1)
+            raise AssertionError("a worker of the study outlived it")
+        except ProcessLookupError:
+            pass
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+    assert code == 1
+    runs = {run["run_id"]: run for run in json.loads(
+        (tmp_path / "study" / "batch_manifest.json").read_text())["runs"]}
+    assert sorted(runs) == [f"tri__random-seed-{seed}" for seed in (1, 2, 3, 4)], sorted(runs)
+    assert runs[SECOND]["status"] == "error"
+    assert "BrokenProcessPool" in runs[SECOND]["message"]
+    queued = [run for run in runs.values() if run["status"] == "skipped"]
+    assert queued, runs
+    assert all(run["message"].startswith("Not started: a worker of the study ended abruptly")
+               for run in queued), queued
 
 
 # ---------------------------------------------------------------------------
@@ -2074,10 +2227,13 @@ def stopped_mid_round(tmp_path_factory):
                     checkpoint="1")
     checkpoints = [tmp_path / "study" / "runs" / name / "segment-001" / "simulation" /
                    "checkpoint.chk" for name in ("tri__random-seed-1", SECOND)]
+    import time
+
+    deadline = time.monotonic() + _A_STUDY_S_WAIT
     try:
         _until_held(process, tmp_path / "hold", ["tri__random-seed-1", SECOND])
         os.killpg(process.pid, signal.SIGINT)
-        code = process.wait(timeout=_A_STUDY_S_WAIT)
+        code = process.wait(timeout=max(1.0, deadline - time.monotonic()))
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
