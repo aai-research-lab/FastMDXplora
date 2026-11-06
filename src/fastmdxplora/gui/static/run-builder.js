@@ -2665,6 +2665,7 @@
       const button = el(id);
       if (button) button.disabled = !can;
     });
+    updateCodeCopyButton();
     if (!can) setStatus("waiting", why);
     renderChanged();
     scheduleCheck();
@@ -2844,6 +2845,12 @@
     return (found ? found[0] : String(words)).trim();
   }
 
+  function updateCodeCopyButton() {
+    const button = el("run-copy-code");
+    const pane = document.querySelector("#run-summary-panel [data-code-pane]:not([hidden])");
+    if (button) button.disabled = el("run-start-button").disabled || !pane || !pane.textContent.trim();
+  }
+
   function showCode(built) {
     const yaml = el("run-config-preview");
     const command = el("run-command-preview");
@@ -2852,11 +2859,13 @@
       text(yaml, "");
       text(command, "");
       text(script, "");
+      updateCodeCopyButton();
       return;
     }
     text(yaml, built.ok ? built.yaml : (built.error || ""));
     text(command, built.ok ? (built.command || "This study cannot be said as one command; use the config file.") : "");
     text(script, built.ok ? (built.script || "") : "");
+    updateCodeCopyButton();
   }
 
   // ------------------------------------------------ what setup will build
@@ -3601,6 +3610,22 @@
     document.querySelectorAll("#run-summary-panel [data-code-pane]").forEach((pane) => {
       pane.hidden = pane.dataset.codePane !== which;
     });
+    const name = { yaml: "config", command: "command", script: "script" }[which];
+    const button = el("run-copy-code");
+    if (button && name) {
+      button.setAttribute("aria-label", `Copy the ${name}`);
+      button.title = `Copy the ${name}`;
+    }
+    updateCodeCopyButton();
+  }
+
+  async function copyCodePane() {
+    const button = el("run-copy-code");
+    const pane = document.querySelector("#run-summary-panel [data-code-pane]:not([hidden])");
+    if (!button || button.disabled || !pane) return;
+    const name = button.getAttribute("aria-label").replace(/^Copy the /, "");
+    const copied = name.charAt(0).toUpperCase() + name.slice(1) + " copied";
+    await window.FastMDXIcons.copy(button, pane.textContent, copied, "Clipboard unavailable here");
   }
 
   /* A config that has been elsewhere can be run as it stands, or opened and
@@ -4216,6 +4241,7 @@
     wire("run-elsewhere", runElsewhere);
     wire("run-download", () => download());
     wire("run-copy-command", () => copyCommand(undefined, sayOnTheForm, el("run-copy-command")));
+    wire("run-copy-code", copyCodePane);
     wire("run-download-script", () => downloadScript());
     wire("run-start-button", start);
     wire("run-phone-start", start);
