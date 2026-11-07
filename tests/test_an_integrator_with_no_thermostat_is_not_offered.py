@@ -78,7 +78,8 @@ def test_a_new_study_naming_one_gets_the_thermostat_refusal(name):
     refusal = caught.value.refusal
     assert refusal.code == "config.option.not_permitted"
     assert refusal.details["suggestion"] == "langevin_middle"
-    assert refusal.details["permitted"] == ["langevin_middle", "langevin", "variable_langevin"]
+    assert refusal.details["permitted"] == ["langevin_middle", "langevin", "variable_langevin",
+                                           "brownian"]
 
 
 def test_a_name_never_offered_is_still_refused_as_unknown():

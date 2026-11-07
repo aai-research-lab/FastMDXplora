@@ -127,9 +127,9 @@ def check_integrator(name: str, *, temperature_K: float, friction_per_ps: float,
             "samples no defined ensemble. Use `langevin_middle`.",
             code="config.option.not_permitted", option="integrator",
             context="simulation", given=key,
-            # The suggestion first; brownian left out, as it needs a friction
-            # the default does not have.
-            permitted=["langevin_middle", "langevin", "variable_langevin"],
+            # The suggestion first; brownian last, permitted too, with the
+            # friction it needs (refused below where it has too little).
+            permitted=["langevin_middle", "langevin", "variable_langevin", "brownian"],
             suggestion="langevin_middle")
     if key == "brownian":
         least = least_brownian_friction(temperature_K, timestep_fs)

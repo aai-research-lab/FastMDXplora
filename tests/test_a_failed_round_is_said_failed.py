@@ -6272,3 +6272,16 @@ def test_a_kill_as_a_checkpoint_is_written_leaves_a_whole_set(tmp_path, monkeypa
         assert verify_checkpoint(checkpoint, require_seal=True), kill_at
         step = (read_checkpoint_sidecar(checkpoint) or {}).get("step")
         assert (checkpoint.read_bytes(), step) in ((first, 100), (second, 200)), kill_at
+
+
+def test_an_integrator_with_no_thermostat_lists_brownian_among_those_permitted():
+    """Refused for having no thermostat, an integrator was told the
+    permitted ones without brownian, which is permitted, with the friction
+    it needs."""
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.runner import check_integrator
+
+    with pytest.raises(StudyError) as refused:
+        check_integrator("verlet", temperature_K=300.0, friction_per_ps=1.0, timestep_fs=2.0)
+    refusal = refused.value.refusal
+    assert "brownian" in refusal.details["permitted"], refusal.details
