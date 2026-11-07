@@ -293,26 +293,46 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
     }
 
 
-def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
-    """The wall's bias in the windows that sampled the bound state, judged up
-    to the cutoff the integral uses.
+def _number(value: Any, what: str, window: Any) -> float:
+    """`value` as a float, or a StudyError naming the window and the field."""
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise StudyError(
+            f"Window {window!r} of `wall_bias_kjmol` has `{what}` "
+            f"{value!r:.40}, which is not a number.",
+            code="config.option.wrong_type") from exc
 
-    Per window (``[{"window", "centre", "bias_kjmol", "nearest_nm"}, ...]``,
-    as `umbrella.wall_bias_by_window` gives it), a window is judged where any
-    of its samples after equilibration came to the cutoff or inside it
-    (``nearest_nm``), and by its centre only where that is not given. A
-    window held just outside a steep well is pulled into it, and its wall
-    then acts on bound state the integral is taken over. The largest of
-    their means is the number; a bias of +inf is a wall that bit. A judged
-    window whose bias is NaN or missing is named in ``not_read``, and the
-    number is then refused rather than resting on the windows that were
-    read; so it is where no window sampled the bound range at all. One
-    number is the caller's own reading and is taken as it stands, with the
-    range it covers unknown; a NaN one is refused too.
+
+def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
+    """The wall's bias where the bound state is, judged up to the cutoff the
+    integral uses.
+
+    Per window, as `umbrella.wall_bias_by_window` gives it. Where a row has
+    its frames (``coordinate_nm`` and ``frame_bias_kjmol``), the window is
+    judged on its frames at or inside the cutoff alone, and only where it has
+    any: the mean of their bias, frames whose bias is NaN left out and
+    counted. A window held just outside a steep well is pulled into it, and a
+    window that touched the bound range once is mostly elsewhere, so neither
+    where it was held nor its mean over the whole run is the wall over the
+    bound state. A window with frames inside is judged however few they
+    are, and their count is recorded (``frames_inside``): one frame with the
+    wall against it is population the integral is over. Where a row has no
+    frames (or none were read), it is judged where ``nearest_nm`` (else its
+    centre) is at or inside the cutoff, on ``bias_kjmol``, its mean over the
+    whole run.
+
+    The largest of the judged means is the number; +inf is a wall that bit.
+    A judged window with no bias read (every frame inside NaN, or a NaN or
+    missing ``bias_kjmol``) is named in ``not_read`` and the number is
+    refused rather than resting on the windows that were read; so it is
+    where no window sampled the bound range at all. One number is the
+    caller's own reading and is taken as it stands, with the range it covers
+    unknown; a NaN one is refused too.
     """
     empty = {"bias_kjmol": None, "up_to_nm": None, "windows": None,
-             "bit": None, "not_read": None, "unreadable": False,
-             "none_inside": False, "scalar": False}
+             "judged": None, "bit": None, "not_read": None,
+             "unreadable": False, "none_inside": False, "scalar": False}
     if wall_bias_kjmol is None:
         return empty
     if isinstance(wall_bias_kjmol, (str, bytes, dict)) or (
@@ -328,42 +348,74 @@ def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
         if np.isnan(value):
             return {**empty, "unreadable": True, "scalar": True}
         return {**empty, "bias_kjmol": value, "scalar": True}
-    rows = []
+    edge = cutoff * (1.0 + 1e-9)
+    judged = []
     for number, row in enumerate(wall_bias_kjmol):
         if not isinstance(row, dict) or not {"window", "centre"} <= set(row):
             raise StudyError(
                 f"Row {number} of `wall_bias_kjmol` is not a window's "
                 "{\"window\", \"centre\", \"bias_kjmol\"}: "
                 f"{row!r:.80} was given.", code="config.option.wrong_type")
-        centre = float(row["centre"])
+        window = row["window"]
+        if isinstance(window, bool) or not float(
+                _number(window, "window", window)).is_integer():
+            raise StudyError(
+                f"Row {number} of `wall_bias_kjmol` has `window` "
+                f"{window!r:.40}, which is not a window's number.",
+                code="config.option.wrong_type")
+        window = int(_number(window, "window", window))
+        centre = _number(row["centre"], "centre", window)
         if not np.isfinite(centre):
             raise StudyError(
-                f"Window {row['window']} of `wall_bias_kjmol` has no centre "
+                f"Window {window} of `wall_bias_kjmol` has no centre "
                 f"({row['centre']!r}), so whether it holds the bound state "
                 "cannot be told.", code="config.option.wrong_type")
+        where = row.get("coordinate_nm")
+        frames = row.get("frame_bias_kjmol")
+        if where is not None and frames is not None:
+            where = np.asarray(where, dtype=float).ravel()
+            frames = np.asarray(frames, dtype=float).ravel()
+        if where is not None and frames is not None and where.size:
+            if where.shape != frames.shape:
+                raise StudyError(
+                    f"Window {window} of `wall_bias_kjmol` has "
+                    f"{where.size} coordinates and {frames.size} biases; "
+                    "they are one per frame.",
+                    code="simulation.bias.dimension_mismatch")
+            bound = where <= edge
+            if not bound.any():
+                continue
+            read = bound & ~np.isnan(frames)
+            judged.append({
+                "window": window, "centre": centre,
+                "bias_kjmol": (float(np.mean(frames[read])) if read.any()
+                               else float("nan")),
+                "frames_inside": int(bound.sum()),
+                "frames_unread": int((bound & ~read).sum())})
+            continue
         bias = row.get("bias_kjmol")
+        bias = float("nan") if bias is None else _number(
+            bias, "bias_kjmol", window)
         nearest = row.get("nearest_nm")
-        rows.append({
-            "window": int(row["window"]), "centre": centre,
-            "bias_kjmol": float("nan") if bias is None else float(bias),
-            "nearest_nm": (None if nearest is None
-                           or not np.isfinite(float(nearest))
-                           else float(nearest))})
-    edge = cutoff * (1.0 + 1e-9)
-    inside = [row for row in rows
-              if (row["nearest_nm"] if row["nearest_nm"] is not None
-                  else row["centre"]) <= edge]
-    read = [row for row in inside if not np.isnan(row["bias_kjmol"])]
-    not_read = [row["window"] for row in inside if row not in read]
+        nearest = None if nearest is None else _number(
+            nearest, "nearest_nm", window)
+        reach = nearest if nearest is not None and np.isfinite(nearest) \
+            else centre
+        if reach <= edge:
+            judged.append({"window": window, "centre": centre,
+                           "bias_kjmol": bias, "frames_inside": None,
+                           "frames_unread": None})
+    read = [row for row in judged if not np.isnan(row["bias_kjmol"])]
+    not_read = [row["window"] for row in judged if row not in read]
     return {
         "bias_kjmol": max((row["bias_kjmol"] for row in read), default=None),
         "up_to_nm": float(cutoff),
         "windows": [row["window"] for row in read],
-        "bit": [{key: row[key] for key in ("window", "centre", "bias_kjmol")}
-                for row in read if row["bias_kjmol"] > WALL_QUIET_KJMOL],
+        "judged": judged,
+        "bit": [row for row in read if row["bias_kjmol"] > WALL_QUIET_KJMOL],
         "not_read": not_read,
         "unreadable": bool(not_read),
-        "none_inside": not inside,
+        "none_inside": not judged,
         "scalar": False,
     }
 
@@ -430,12 +482,14 @@ def binding_free_energy(
     which is read off the runs rather than assumed: a wall that bit there
     has removed part of the bound population and no analytic term puts it
     back. Best given per window, as `umbrella.wall_bias_by_window` returns
-    it (a list of ``{"window", "centre", "bias_kjmol"}``): then every window
-    whose centre is at or inside the cutoff the integral uses is judged, and
-    those that bit are named. A single number is still accepted, as the
-    largest mean in windows the caller chose, and is judged as it stands.
-    Given nothing, it says the check was not made rather than implying it
-    passed.
+    it, frame by frame: then every window with frames at or inside the
+    cutoff the integral uses is judged on those frames alone, wherever it
+    was held, and those that bit are named (`_the_wall_up_to`). A window
+    with no bias read on its frames there refuses the number, as does no
+    window in the bound range at all. A single number is still accepted, as
+    the largest mean in windows the caller chose, and is judged as it
+    stands. Given nothing, it says the check was not made rather than
+    implying it passed.
 
     ``resample_curves_kjmol`` is the bootstrap's resampled curves, one row
     per resample on the same points (``pmf["uncertainty"]
@@ -444,8 +498,9 @@ def binding_free_energy(
     them, with 0.6 kJ/mol as the floor (`_judge_the_bulk`). ``errors_kjmol``,
     the per-bin standard errors, is accepted and checked but not judged
     against: each holds the noise of the bin the curve is zeroed at, which
-    cancels in a departure. Without resamples 0.6 kJ/mol is the whole
-    allowance. The record says which was judged.
+    cancels in a departure. Without resamples, or with fewer than
+    `BULK_RESAMPLES_NEEDED` whose tail is whole, 0.6 kJ/mol is the whole
+    allowance and the tilt is not judged. The record says which was judged.
 
     ``judge_the_bulk=False`` reads the reference off the tail without
     judging its shape: for each of the bootstrap's resamples, whose curve
@@ -673,6 +728,7 @@ def binding_free_energy(
             "cone_wall_windows": wall["windows"],
             "cone_wall_bit_in": wall["bit"],
             "cone_wall_not_read_in": wall["not_read"],
+            "cone_wall_judged": wall["judged"],
         }
         widen = (
             "Widen `half_angle_deg` (or `margin`, for a cone worked out from "
@@ -688,8 +744,8 @@ def binding_free_energy(
                 "wall bit where the bound state is cannot be told."
                 if wall["scalar"] else
                 f"The cone's wall could not be read in {_windows(wall['not_read'])}, "
-                f"which sampled the bound range (up to {chosen:.3g} nm): its "
-                "bias there is not a number. The correction for running inside "
+                f"which sampled the bound range (up to {chosen:.3g} nm): no "
+                "bias was read on its frames there. The correction for running inside "
                 "a cone assumes the bound pose fits within it, and a wall "
                 "nobody could read may have bitten. Run those windows again, "
                 "or check the `cone.bias` column of their COLVAR files."
@@ -710,9 +766,13 @@ def binding_free_energy(
                 f"{chosen:.3g} nm) was judged"
             ) if bit else ""
             return {"delta_g_kjmol": None, **wall_record, "refused": (
-                f"The cone's wall carried {wall['bias_kjmol']:.2f} kJ/mol "
-                f"where the bound state is, against {WALL_QUIET_KJMOL} "
-                f"allowed{where}. The "
+                ("The cone's wall gave an infinite bias (a frame it gave no "
+                 "finite energy)" if np.isinf(wall["bias_kjmol"]) else
+                 f"The cone's wall carried {wall['bias_kjmol']:.2f} kJ/mol")
+                + " where the bound state is"
+                + (" (over the frames at or inside the cutoff)"
+                   if any(b["frames_inside"] for b in bit or ()) else "")
+                + f", against {WALL_QUIET_KJMOL} allowed{where}. The "
                 "correction for running inside a cone assumes the bound pose "
                 "fits within it: the bulk state loses "
                 f"{correction:.2f} kJ/mol of room and the bound state loses "
@@ -764,6 +824,9 @@ def binding_free_energy(
         # Windows that sampled the bound range whose bias was not a number.
         # Never read as quiet: a number is refused while any is listed.
         "cone_wall_not_read_in": wall["not_read"],
+        # Each judged window: its mean bias over its frames in the bound
+        # range, how many frames that was and how many had no bias read.
+        "cone_wall_judged": wall["judged"],
         "binding_constant_nm3": constant_nm3,
         "bound_cutoff_nm": chosen,
         "bound_cutoff_chosen_by": (

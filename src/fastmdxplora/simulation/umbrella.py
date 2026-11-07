@@ -1082,15 +1082,19 @@ def wall_bias_by_window(
     puts that back -- so the assumption is read here, from the column the
     run writes for it, rather than assumed.
 
-    One row per window, ``{"window", "centre", "bias_kjmol", "nearest_nm"}``:
-    the bias is the mean of the column over the frames of production left
-    after equilibration (the same frames `collect_samples` takes), and
-    ``nearest_nm`` the smallest value of the coordinate over those frames,
-    so that `binding.binding_free_energy` can judge every window that
-    sampled the bound range, wherever it was centred: a window held just
-    outside a steep well is pulled into it. The bias is NaN, and
-    ``nearest_nm`` None, for a window with no COLVAR, no such column or no
-    frames left, so that it is named as not read rather than passed over.
+    One row per window, ``{"window", "centre", "bias_kjmol", "nearest_nm",
+    "coordinate_nm", "frame_bias_kjmol"}``, over the frames of production left
+    after equilibration (the same frames `collect_samples` takes): the
+    coordinate and the wall's bias frame by frame (NaN for a frame whose bias
+    is not written, or not a number), so that `binding.binding_free_energy`
+    can judge the wall over the frames in the bound range alone, in every
+    window that sampled it, wherever the window was centred (one held just
+    outside a steep well is pulled into it); ``nearest_nm`` the smallest
+    coordinate; ``bias_kjmol`` the mean over every frame whose bias was read,
+    for callers that take one number per window. The coordinate is read
+    whether or not the bias column is there. A window with no COLVAR or no
+    frames left has NaN and None, and empty frames, so that it is named as
+    not read rather than passed over.
     Returns None where no window recorded the column, which is every study
     that ran without a cone and every study that ran before the column
     existed.
@@ -1114,27 +1118,45 @@ def wall_bias_by_window(
                     if "FIELDS" in line and not names:
                         names = line.split("FIELDS")[1].split()
                     continue
-                if not line.strip() or "cone.bias" not in names:
+                if not line.strip():
                     continue
+                # The coordinate is read whether or not the bias is there, so
+                # a window that sampled the bound range is known to have, and
+                # one with no bias to show for it is named, not passed over.
                 parts = line.split()
-                column = names.index("cone.bias")
-                if len(parts) > max(column, 1):
-                    try:
-                        rows.append((float(parts[0]), float(parts[1]),
-                                     float(parts[column])))
-                    except ValueError:
-                        continue
+                column = (names.index("cone.bias") if "cone.bias" in names
+                          else None)
+                if len(parts) < 2:
+                    continue
+                try:
+                    time, where = float(parts[0]), float(parts[1])
+                except ValueError:
+                    continue
+                try:
+                    bias = (float(parts[column])
+                            if column is not None and len(parts) > column
+                            else float("nan"))
+                except ValueError:
+                    bias = float("nan")
+                rows.append((time, where, bias))
         recorded = recorded or "cone.bias" in names
         table = np.asarray(rows, dtype=float).reshape(-1, 3)
         table = table[production_begins_at(table[:, 0]):]
         table = table[int(len(table) * fraction):]
+        read = np.isfinite(table[:, 2])
         carried.append({
             "window": int(index), "centre": centres[index],
-            "bias_kjmol": (float(np.mean(table[:, 2])) if len(table)
+            "bias_kjmol": (float(np.mean(table[read, 2])) if read.any()
                            else float("nan")),
             "nearest_nm": (float(np.nanmin(table[:, 1]))
                            if len(table) and np.isfinite(table[:, 1]).any()
-                           else None)})
+                           else None),
+            # Frame by frame, so the wall can be judged over the frames in
+            # the bound range alone: a window that touched it once is mostly
+            # elsewhere, and its mean over the whole run is not the wall where
+            # the bound state is.
+            "coordinate_nm": table[:, 1].copy(),
+            "frame_bias_kjmol": table[:, 2].copy()})
     return carried if recorded else None
 
 
