@@ -1613,6 +1613,13 @@ def _until(condition):
         time.sleep(0.02)
 
 
+def _say(path, text):
+    # Whole or not at all: a reader never finds it empty.
+    new = path.with_name(path.name + ".new")
+    new.write_text(text)
+    os.replace(new, path)
+
+
 def run(spec, run_out, *_args, **_kwargs):
     # A run of the study, as `explorer._execute_run` is called, doing what
     # its role says (ROLES, by seed).
@@ -1625,7 +1632,7 @@ def run(spec, run_out, *_args, **_kwargs):
     role = json.loads(os.environ["ROLES"]).get(seed, "ok")
     out = Path(run_out)
     out.mkdir(parents=True, exist_ok=True)
-    (here / f"started-{seed}").write_text(str(os.getpid()))
+    _say(here / f"started-{seed}", str(os.getpid()))
     status, message = "ok", ""
     if role == "die":
         # Once each other run given a role has begun.
@@ -1649,9 +1656,9 @@ def run(spec, run_out, *_args, **_kwargs):
             while True:
                 time.sleep(0.05)
         except RunStopped:
-            (here / f"saving-{seed}").write_text("")
+            _say(here / f"saving-{seed}", "")
             time.sleep(float(os.environ.get("SAVE") or 1))
-            (here / f"saved-{seed}").write_text("")
+            _say(here / f"saved-{seed}", "")
             status, message = "error", "stopped"
         finally:
             explorer._running_a_run = False
@@ -1704,7 +1711,7 @@ if __name__ == "__main__":
               "execution": {"mode": "parallel", "workers": 2}}
     for repeat in range(int(os.environ.get("REPEATS") or 1)):
         for name in os.listdir(here):
-            if name.split("-")[0] in ("started", "saving", "saved"):
+            if name.split("-")[0] in ("started", "saving", "saved") or name.endswith(".new"):
                 (here / name).unlink()
         study = explorer.BatchExplorer(config_data=config, output_dir=here / f"study-{repeat}")
         results = study._run_parallel(None, None)
@@ -1767,9 +1774,17 @@ def test_no_run_is_handed_to_a_broken_pool_in_30_studies(tmp_path):
     assert ran.returncode == 0, said[-2000:]
     studies = [json.loads(line) for line in printed.splitlines() if line.startswith("{")]
     assert len(studies) == 30, said[-2000:]
-    handed = [results for results in studies
+    # A study whose first seed failed of itself, not of the broken pool,
+    # ended before the death: its runs 3 and 4 were rightly handed on.
+    valid = [results for results in studies
+             if results["tri__random-seed-1"][0] == "ok"
+             or "BrokenProcessPool" in results["tri__random-seed-1"][1]]
+    assert len(valid) >= 25, f"only {len(valid)} of 30 studies ran as asked: {studies[:2]}"
+    handed = [results for results in valid
               if any(results[f"tri__random-seed-{seed}"][0] != "skipped" for seed in (3, 4))]
-    assert handed == [], f"{len(handed)} of 30 handed a run to a broken pool: {handed[:2]}"
+    print(f"{len(valid)} of 30 studies ran as asked; {len(handed)} handed a run on")
+    assert handed == [], (f"{len(handed)} of {len(valid)} handed a run to a broken pool: "
+                          f"{handed[:2]}")
 
 
 @pytest.mark.parametrize("roles,said", [
@@ -1837,6 +1852,34 @@ def test_a_stop_while_a_worker_saves_waits_for_its_save(number, tmp_path):
     assert status == "skipped" and message.startswith(
         "Not started: the study was asked to stop"), results
     assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
+
+
+def test_a_second_sigterm_while_a_worker_saves_leaves_no_worker(tmp_path):
+    """A second SIGTERM to the study's process alone (stop now) while the
+    other worker of its broken pool saved its run: the study ended at once,
+    and that worker, its save done, waited for work for ever. Its workers
+    are ended before the study ends."""
+    import os
+    import signal
+    import sys
+    import time
+
+    if sys.version_info < (3, 12):
+        pytest.skip("before Python 3.12 a broken pool's workers end by themselves")
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "save", "2": "die"}, seeds=2, SAVE="20")
+    try:
+        _until(lambda: (tmp_path / "saving-1").exists() or ran.poll() is not None, 120)
+        for _ in range(2):
+            # Further apart than one request delivered twice.
+            time.sleep(3)
+            try:
+                os.kill(ran.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                break
+    finally:
+        _printed, logged = _ended(ran, 60, "the study, given SIGTERM twice,")
+    assert not ran.left_behind, (f"a worker of {_its_workers(tmp_path)} outlived it: "
+                                 + logged[-1500:])
 
 
 def test_a_run_s_hold_writes_over_a_record_its_ended_process_left(tmp_path):

@@ -373,16 +373,25 @@ class _StudyStop:
                 continue
         return self
 
-    def _pass_on(self, number: int) -> None:
+    def _pass_on(self, number: int, *, now: bool = False) -> None:
         import signal
 
+        if _a_worker_ended(self.pool):
+            # Its workers are asked by the pool as it breaks (or as soon as
+            # it is woken to see it): a SIGTERM from here as well would be
+            # taken as stop now, before the frame. Asked again (``now``),
+            # the study ends at once, and its workers are ended first: a
+            # worker of a broken pool waits for work for ever.
+            if now:
+                for pid in list(getattr(self.pool, "_processes", None) or {}):
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError, OSError, ValueError):
+                        continue
+            return
         # Ctrl-C reaches the workers already: a terminal sends it to the
         # whole process group. SIGTERM is sent to one process.
         if number != signal.SIGTERM:
-            return
-        if _broken(self.pool):
-            # Its workers were asked already, by the pool as it broke: a
-            # second SIGTERM would be taken as stop now, before the frame.
             return
         # Private to the executor, and the only list of its workers there is.
         for pid in list(getattr(self.pool, "_processes", None) or {}):
@@ -399,7 +408,7 @@ class _StudyStop:
         heard = _a_stop_heard(number)
         if heard == "again":
             return
-        self._pass_on(number)
+        self._pass_on(number, now=heard != "first")
         if heard == "first":
             self.signal = number
             logger.warning(
@@ -495,10 +504,14 @@ def _wake_the_pool(pool: Any) -> None:
     """The pool's own thread woken, so it reads its workers again and finds
     the one that ended: it then fails that run's future and asks the others
     to stop."""
+    if _broken(pool):
+        # Found already, and its thread may be closing what it is woken by
+        # (Python 3.12 takes no lock to wake it).
+        return
     wakeup = getattr(pool, "_executor_manager_thread_wakeup", None)
     try:
         wakeup.wakeup()
-    except (AttributeError, OSError, ValueError):
+    except Exception:  # noqa: BLE001 - closed meanwhile: nothing left to wake
         pass
 
 
@@ -512,7 +525,43 @@ def _until_the_pool_has_seen_it(pool: Any, seconds: float = 10.0) -> None:
         time.sleep(0.05)
 
 
-def _shut_down(pool: Any, stop: Any = None, folder: Any = None) -> None:
+class _BreakWatch:
+    """A pool watched from its making for a worker that ended (Python 3.12
+    and later), its other workers then ended as each frees
+    (`_end_the_other_workers`), once, from here or from `_shut_down`: a run
+    handed to the pool in the moment a worker ended waits on a lock the
+    pool's own thread holds while it waits on those workers, and only their
+    end lets it go (it then reads not started)."""
+
+    def __init__(self, pool: Any, stop: Any = None, folder: Any = None) -> None:
+        import sys
+        import threading
+
+        self.pool, self.stop, self.folder = pool, stop, folder
+        self._ending = threading.Lock()
+        self._ended = False
+        self._done = threading.Event()
+        if sys.version_info >= (3, 12):
+            threading.Thread(target=self._watch, name="fastmdx-pool-end", daemon=True).start()
+
+    def _watch(self) -> None:
+        while not self._done.wait(0.5):
+            if _broken(self.pool):
+                self.end()
+                return
+
+    def end(self) -> None:
+        with self._ending:
+            if self._ended:
+                return
+            self._ended = True
+            _end_the_other_workers(self.pool, stop=self.stop, folder=self.folder)
+
+    def close(self) -> None:
+        self._done.set()
+
+
+def _shut_down(pool: Any, stop: Any = None, folder: Any = None, watch: Any = None) -> None:
     """``pool`` shut down, its workers waited for, also where one of them
     ended abruptly (killed, out of memory) and broke it. Called with the
     study's stop listener (``stop``) still listening, so a stop asked
@@ -524,58 +573,68 @@ def _shut_down(pool: Any, stop: Any = None, folder: Any = None) -> None:
     (`_listen_for_a_stop_in_this_worker`): an idle one goes on waiting for
     work, so the study waited for ever. There each is ended once it holds
     no run (``folder``'s process records), or once the stop grace and a
-    margin have passed (`_end_the_other_workers`); a worker ending while
-    the pool is shut down is ended the same way. Python 3.11 and earlier
-    also send each its end on the pool's queue, and they end by themselves:
-    nothing is done there."""
+    margin have passed (`_end_the_other_workers`), from here or by the
+    pool's watch (``watch``, `_BreakWatch`), whichever is first. Python 3.11
+    and earlier also send each its end on the pool's queue, and they end
+    by themselves: nothing is done there."""
     import sys
-    import threading
 
     if sys.version_info < (3, 12):
         pool.shutdown(wait=True, cancel_futures=True)
         return
-    if _a_worker_ended(pool):
-        _until_the_pool_has_seen_it(pool)
-        _end_the_other_workers(pool, stop=stop, folder=folder)
-    # A worker that ends now, as the pool is shut down: its thread holds the
-    # pool's lock while it waits on the others, and `shutdown` waits on it.
-    finished = threading.Event()
-
-    def watch() -> None:
-        while not finished.wait(0.5):
-            if _broken(pool):
-                _end_the_other_workers(pool, stop=stop, folder=folder)
-                return
-
-    watcher = threading.Thread(target=watch, name="fastmdx-pool-end", daemon=True)
-    watcher.start()
+    watch = watch if watch is not None else _BreakWatch(pool, stop, folder)
     try:
+        if _a_worker_ended(pool):
+            _until_the_pool_has_seen_it(pool)
+            watch.end()
+        # A worker that ends now, as the pool is shut down, is ended by the
+        # watch: the pool's thread holds its lock while it waits on the
+        # others, and `shutdown` waits on that lock.
         pool.shutdown(wait=True, cancel_futures=True)
     finally:
-        finished.set()
+        watch.close()
 
 
-def _holding_a_run(folder: Any, pids: set[int]) -> set[int]:
+def _holding_a_run(folder: Any, pids: set[int]) -> dict[int, Path | None]:
     """Which of ``pids`` a process record of the study in ``folder`` names
-    (`resume._process_records`): a worker holds its run's record while it
-    runs it, and gives it back as the run ends, saved or not. A record left
-    by a process that has ended is written over as a run takes its hold
-    (`orchestrator._hold_run_process`), so the run's worker is named."""
+    (`resume._process_records`), with the run each holds: a worker holds its
+    run's record while it runs it, and gives it back as the run ends, saved
+    or not. A record left by a process that has ended is written over as a
+    run takes its hold (`orchestrator._hold_run_process`), so the run's
+    worker is named."""
     from fastmdxplora.simulation.resume import _process_records
 
-    held: set[int] = set()
+    held: dict[int, Path | None] = {}
     try:
         records = _process_records(Path(folder))
     except OSError:
-        return set(pids)
+        return {pid: None for pid in pids}
     for path in records:
         try:
             pid = json.loads(path.read_text(encoding="utf-8")).get("pid")
         except (OSError, ValueError, AttributeError):
             continue
         if pid in pids:
-            held.add(pid)
+            # A piece's record is its run's.
+            run = path.parent
+            held[pid] = run.parent if run.name.startswith("segment-") else run
     return held
+
+
+def _how_it_ended(run: Path | None) -> str:
+    """How the run a freed worker carried stands, as its pages read it:
+    ``"done"``, ``"stopped"`` where it can be carried on, or ``"ended"``
+    where neither can be read."""
+    if run is None:
+        return "ended"
+    try:
+        from fastmdxplora.gui.workspace import study_state
+
+        state = study_state(run)
+    except Exception:  # noqa: BLE001 - said without it
+        return "ended"
+    return {"completed": "done", "stopped": "stopped", "interrupted": "stopped"}.get(
+        state, "ended")
 
 
 def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -> None:
@@ -618,8 +677,13 @@ def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -
     # What each did: carried no run, ended the run it carried, still held
     # one at the end of the wait, or was ended at a stop with none known.
     carried = (_holding_a_run(folder, {worker.pid for worker in alive.values()})
-               if folder is not None else set())
-    done: dict[str, int] = {"none": 0, "ended": 0, "held": 0, "stop": 0}
+               if folder is not None else {})
+    done: dict[str, int] = {"none": 0, "done": 0, "stopped": 0, "ended": 0, "held": 0,
+                            "stop": 0}
+
+    def freed(worker: Any) -> str:
+        return _how_it_ended(carried[worker.pid]) if worker.pid in carried else "none"
+
     try:
         while alive:
             if folder is not None:
@@ -628,7 +692,7 @@ def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -
                     if worker.pid not in holding:
                         _kill(worker)
                         alive.pop(sentinel)
-                        done["ended" if worker.pid in carried else "none"] += 1
+                        done[freed(worker)] += 1
                 if not alive:
                     break
             elif stop is not None and stop.requested and not asked_before:
@@ -642,7 +706,7 @@ def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -
             for sentinel in wait(list(alive), timeout=min(left, 0.5)):
                 worker = alive.pop(sentinel, None)
                 if worker is not None:
-                    done["ended" if worker.pid in carried else "none"] += 1
+                    done[freed(worker)] += 1
     finally:
         # However the wait ended: a worker left waiting for work outlives
         # the study, holding the pool's pipe it never reads the end of.
@@ -651,14 +715,18 @@ def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -
     said = []
     if done["none"]:
         said.append(f"{done['none']} carried no run")
+    if done["done"]:
+        said.append(f"{done['done']} had finished the run it carried")
+    if done["stopped"]:
+        said.append(f"{done['stopped']} had stopped the run it carried where it can be "
+                    "carried on")
     if done["ended"]:
-        said.append(f"{done['ended']} had ended the run it carried (done, or stopped where "
-                    "it can be carried on)")
+        said.append(f"{done['ended']} had ended the run it carried")
     if done["stop"]:
         said.append(f"{done['stop']} were ended at the stop asked meanwhile")
     if done["held"]:
         said.append(f"{done['held']} still held a run {allowed:.0f} s after being asked to "
-                    "stop, and carries it on from its last checkpoint")
+                    "stop, and `fastmdx resume` carries that run on from its last checkpoint")
     if said:
         logger.warning("A worker of the study ended abruptly; of its other workers, %s: "
                        "each was ended.", "; ".join(said))
@@ -2313,6 +2381,7 @@ class BatchExplorer:
             initializer=_give_this_worker_its_share,
             initargs=(_threads_for_each(workers),))
         stop = _StudyStop(pool, folder=self.output_dir)
+        watch = _BreakWatch(pool, stop, self.output_dir)
         try:
             stop.__enter__()
             from fastmdxplora.simulation.stopping import extension_begins
@@ -2341,7 +2410,7 @@ class BatchExplorer:
         finally:
             # The study's listener still listening while its workers end.
             try:
-                _shut_down(pool, stop, folder=self.output_dir)
+                _shut_down(pool, stop, folder=self.output_dir, watch=watch)
             finally:
                 stop.__exit__(None, None, None)
 
@@ -3505,6 +3574,7 @@ class BatchExplorer:
             initializer=_give_this_worker_its_share,
             initargs=(threads_each,))
         stop = _StudyStop(pool, folder=self.output_dir)
+        watch = _BreakWatch(pool, stop, self.output_dir)
         try:
             stop.__enter__()
             for _ in range(min(n_workers, n)):
@@ -3600,7 +3670,7 @@ class BatchExplorer:
         finally:
             # The study's listener still listening while its workers end.
             try:
-                _shut_down(pool, stop, folder=self.output_dir)
+                _shut_down(pool, stop, folder=self.output_dir, watch=watch)
             finally:
                 stop.__exit__(None, None, None)
 
