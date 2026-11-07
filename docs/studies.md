@@ -607,18 +607,22 @@ reference is about: the room at radius r is `4πr²`, so a free ligand is more
 likely to be found at 2 nm than at 1 nm for no energetic reason at all.
 
 **How the tail is judged to be bulk.** In bulk `A(r) + 2kT ln r` is a constant,
-so the study takes the outer quarter of the curve and looks at how far each
-point of that sum departs from its mean there. Each point is allowed the larger
-of 0.6 kJ/mol and `z` standard errors of its departure, the errors being the
-bootstrap's error bars on the curve at that bin and on the tail's mean. `z` is
-chosen so that a tail truly in bulk is refused by its noise alone with a 5%
-chance over all its points together (Šidák's bound, 3.47 for 100 points). The
-bins of a recombined curve share noise, which makes this allowance a little
-larger than it need be; a tail within it cannot be told apart from bulk by the
-run. Where the curve came without error bars, 0.6 kJ/mol is the whole
-allowance. `binding` in `pmf.json` says which was judged in `bulk_judged`
-(`bulk_judged_against_errors`, `bulk_allowed_kjmol` at `bulk_worst_at_nm`),
-and a refusal names the point and both numbers.
+so the outer quarter of the curve is checked for two things: how far each point
+of that sum departs from its mean there, and how far the tail tilts across its
+length (the least-squares slope against r, times the length). Where the
+bootstrap's resampled curves are given to the check, each is allowed the larger
+of 0.6 kJ/mol and a multiple of its own spread over those resamples: Šidák's
+bound for the points (3.14 for 15 points) and 2.24 for the tilt, each at a 2.5%
+chance, so that a tail truly in bulk is refused by its noise alone no more than
+about 5% of the time. The spread is read off the resamples rather than off the
+curve's error bars, because each error bar holds the noise of the bin the curve
+is zeroed at, which every point of the tail shares and which cancels in a
+departure, so an allowance made from them is several times too wide. Where the
+resamples are not given, 0.6 kJ/mol is the whole allowance for each point and
+the tilt is not judged. `binding` in `pmf.json` says which was judged in
+`bulk_judged` and `bulk_judged_by` (`bulk_allowed_kjmol` at `bulk_worst_at_nm`,
+`bulk_tilt_kjmol` against `bulk_tilt_allowed_kjmol`), and a refusal names the
+point or the tilt and both numbers.
 
 Two things have to be true for that reference to mean anything, and on a real
 site neither is:
@@ -751,12 +755,15 @@ up room; the bound state gives up none — *provided the bound pose fits inside
 the cone*. A cone too narrow for it has removed part of the population the
 binding integral is taken over, and no analytic term puts that back. So every
 window writes the wall's bias beside its coordinate, and the binding free
-energy is **refused** where the wall carried more than 0.25 kJ/mol in any
-window whose centre is at or inside the cutoff the integral uses, naming those
-windows (`cone_wall_bit_in`) and asking for a wider angle. Every window up to
-that cutoff is judged (`cone_wall_windows`, `cone_wall_checked_up_to_nm`), not
-only those near the minimum. Where no such column exists the result says
-`cone_wall_checked: false` rather than implying the check passed.
+energy is **refused** where the wall carried more than 0.25 kJ/mol in the
+windows holding the bound state, naming the number and asking for a wider
+angle. Where the windows' biases are given one by one, every window whose
+centre is at or inside the cutoff the integral uses is judged
+(`cone_wall_windows`, `cone_wall_checked_up_to_nm`), those that bit are named
+(`cone_wall_bit_in`), and a window whose bias could not be read is named
+(`cone_wall_not_read_in`) and never taken as quiet; where none up to the cutoff
+could be read, the number is refused. Where no such column exists the result
+says `cone_wall_checked: false` rather than implying the check passed.
 
 `pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
 curve says, `delta_g_kjmol` is what it means, and `cone_correction_kjmol` is
