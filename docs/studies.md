@@ -612,8 +612,10 @@ of that sum departs from its mean there, and how far the tail tilts across its
 length (the least-squares slope against r, times the length). Where the
 bootstrap's resampled curves are given to the check, each is allowed the larger
 of 0.6 kJ/mol and a multiple of its own spread over those resamples: Šidák's
-bound for the points (3.14 for 15 points) and 2.24 for the tilt, each at a 2.5%
-chance, so that a tail truly in bulk is refused by its noise alone no more than
+bound for the points and a two-sided limit for the tilt, each at a 2.5% chance,
+on Student's t with one fewer degrees of freedom than the resamples (3.37 for
+15 points and 2.33 for the tilt with 40 resamples; 3.14 and 2.24 with very
+many), so that a tail truly in bulk is refused by its noise alone no more than
 about 5% of the time. The spread is read off the resamples rather than off the
 curve's error bars, because each error bar holds the noise of the bin the curve
 is zeroed at, which every point of the tail shares and which cancels in a
@@ -757,12 +759,15 @@ binding integral is taken over, and no analytic term puts that back. So every
 window writes the wall's bias beside its coordinate, and the binding free
 energy is **refused** where the wall carried more than 0.25 kJ/mol in the
 windows holding the bound state, naming the number and asking for a wider
-angle. Where the windows' biases are given one by one, every window whose
-centre is at or inside the cutoff the integral uses is judged
-(`cone_wall_windows`, `cone_wall_checked_up_to_nm`), those that bit are named
-(`cone_wall_bit_in`), and a window whose bias could not be read is named
-(`cone_wall_not_read_in`) and never taken as quiet; where none up to the cutoff
-could be read, the number is refused. Where no such column exists the result
+angle. Where the windows' biases are given one by one, every window that
+sampled the bound range is judged: any window with a sample after equilibration
+at or inside the cutoff the integral uses, wherever it was centred, since a
+window held just outside a steep well is pulled into it (by its centre only
+where its samples are not given). They are listed in `cone_wall_windows` up to
+`cone_wall_checked_up_to_nm`, and those that bit in `cone_wall_bit_in`. A bias
+of +inf is a wall that bit. A judged window whose bias could not be read is
+named in `cone_wall_not_read_in` and the number is refused, as it is where no
+window sampled the bound range at all. Where no such column exists the result
 says `cone_wall_checked: false` rather than implying the check passed.
 
 `pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
