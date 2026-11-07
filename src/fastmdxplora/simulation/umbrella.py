@@ -54,6 +54,7 @@ __all__ = [
     "plan_windows",
     "windows_as_sweep",
     "collect_samples",
+    "wall_bias_by_window",
     "wall_bias_where_the_bound_state_is",
     "overlap_between",
     "compute_pmf",
@@ -1068,30 +1069,36 @@ def spring_unit(variable: Any) -> str:
     return f"kJ/mol/{unit}^2" if unit else "kJ/mol"
 
 
-def wall_bias_where_the_bound_state_is(
-    directories: "dict[int, Any]", plan: "UmbrellaPlan",
-    bound_below: float, *, equilibration_fraction: float | None = None,
-) -> float | None:
-    """How hard the cone's wall pushed where the bound state is.
+def wall_bias_by_window(
+    directories: "dict[int, Any]", plan: "UmbrellaPlan", *,
+    equilibration_fraction: float | None = None,
+) -> "list[dict[str, Any]] | None":
+    """How hard the cone's wall pushed in each window, after equilibration.
 
     The correction for running inside a cone assumes the bound pose fits
     within it: the bulk state gives up ``4 pi / Omega`` of room and the bound
     state gives up nothing. A wall that bites in the bound windows has taken
     part of the population the binding integral is over, and no analytic term
-    puts that back -- so the assumption is measured here, from the column the
+    puts that back -- so the assumption is read here, from the column the
     run writes for it, rather than assumed.
 
-    Returns None where no window recorded one, which is every study that ran
-    without a cone and every study that ran before the column existed.
+    One row per window that recorded the column, ``{"window", "centre",
+    "bias_kjmol"}``, the bias the mean of the column over the frames left
+    after equilibration.
+    Every window is read, so `binding.binding_free_energy` can judge each
+    one up to the cutoff it integrates to, which it knows only once it has
+    the curve. Returns None where no window recorded one, which is every
+    study that ran without a cone and every study that ran before the column
+    existed.
     """
     from pathlib import Path
 
     fraction = (plan.equilibration_fraction if equilibration_fraction is None
                 else float(equilibration_fraction))
-    inside = {w.index for w in plan.windows if w.centre <= bound_below}
-    carried: list[float] = []
+    centres = {w.index: float(w.centre) for w in plan.windows}
+    carried: list[dict[str, Any]] = []
     for index, directory in sorted(directories.items()):
-        if index not in inside:
+        if index not in centres:
             continue
         colvar = Path(directory) / "simulation" / "COLVAR"
         if not colvar.is_file():
@@ -1115,8 +1122,29 @@ def wall_bias_where_the_bound_state_is(
         if rows:
             kept = np.asarray(rows)[int(len(rows) * fraction):]
             if kept.size:
-                carried.append(float(np.mean(kept)))
-    return max(carried) if carried else None
+                carried.append({"window": int(index),
+                                "centre": centres[index],
+                                "bias_kjmol": float(np.mean(kept))})
+    return carried or None
+
+
+def wall_bias_where_the_bound_state_is(
+    directories: "dict[int, Any]", plan: "UmbrellaPlan",
+    bound_below: float, *, equilibration_fraction: float | None = None,
+) -> float | None:
+    """The largest of `wall_bias_by_window` over windows centred at or below
+    ``bound_below``, or None where none of them recorded the column.
+
+    For callers that fix the bound range before the curve is read.
+    The binding free energy is better given `wall_bias_by_window` whole: it
+    then judges every window up to the cutoff the integral uses, which a
+    range fixed beforehand (1.25 times the minimum, say) can fall short of.
+    """
+    rows = wall_bias_by_window(directories, plan,
+                               equilibration_fraction=equilibration_fraction)
+    inside = [row["bias_kjmol"] for row in rows or ()
+              if row["centre"] <= bound_below]
+    return max(inside) if inside else None
 
 
 def collect_samples(

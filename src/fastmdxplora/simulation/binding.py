@@ -223,6 +223,38 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
     }
 
 
+def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
+    """The wall's bias in the windows the bound state spans, judged up to
+    the cutoff the integral uses.
+
+    Per window (``[{"window", "centre", "bias_kjmol"}, ...]``), every window
+    whose centre is at or inside ``cutoff`` is judged and its largest mean is
+    the number. A window beyond it is left out: its centre is outside the
+    range the integral is taken over. One number is the caller's own reading
+    and is taken as it stands, with the range it covers unknown.
+    """
+    if wall_bias_kjmol is None:
+        return {"bias_kjmol": None, "up_to_nm": None, "windows": None,
+                "bit": None}
+    if isinstance(wall_bias_kjmol, (int, float, np.floating)):
+        return {"bias_kjmol": float(wall_bias_kjmol), "up_to_nm": None,
+                "windows": None, "bit": None}
+    rows = [{"window": int(row["window"]), "centre": float(row["centre"]),
+             "bias_kjmol": float(row["bias_kjmol"])}
+            for row in wall_bias_kjmol]
+    inside = [row for row in rows
+              if row["centre"] <= cutoff * (1.0 + 1e-9)]
+    if not inside:
+        return {"bias_kjmol": None, "up_to_nm": float(cutoff), "windows": [],
+                "bit": []}
+    return {
+        "bias_kjmol": max(row["bias_kjmol"] for row in inside),
+        "up_to_nm": float(cutoff),
+        "windows": [row["window"] for row in inside],
+        "bit": [row for row in inside if row["bias_kjmol"] > WALL_QUIET_KJMOL],
+    }
+
+
 def binding_free_energy(
     coordinate: Any,
     free_energy_kjmol: Any,
@@ -231,7 +263,7 @@ def binding_free_energy(
     bound_cutoff_nm: float | None = None,
     bulk_fraction: float = 0.25,
     cone: Any = None,
-    wall_bias_kjmol: float | None = None,
+    wall_bias_kjmol: Any = None,
     resampled: "dict[str, Any] | None" = None,
     errors_kjmol: Any = None,
 ) -> dict[str, Any]:
@@ -255,12 +287,17 @@ def binding_free_energy(
     that fits inside the cone loses nothing, so the free energy comes out too
     negative by ``kT ln(4 pi / Omega)`` and that is added back here.
 
-    ``wall_bias_kjmol`` is the mean bias the wall applied where the bound
-    state is. The correction above rests on the cone not cutting the bound
-    state, which is a measurement rather than an assumption: a wall that bit
-    there has removed part of the bound population and no analytic term puts
-    it back. Given the number, this checks it; given nothing, it says the
-    check was not made rather than implying it passed.
+    ``wall_bias_kjmol`` is the bias the wall applied where the bound state
+    is. The correction above rests on the cone not cutting the bound state,
+    which is read off the runs rather than assumed: a wall that bit there
+    has removed part of the bound population and no analytic term puts it
+    back. Best given per window, as `umbrella.wall_bias_by_window` returns
+    it (a list of ``{"window", "centre", "bias_kjmol"}``): then every window
+    whose centre is at or inside the cutoff the integral uses is judged, and
+    those that bit are named. A single number is still accepted, as the
+    largest mean in windows the caller chose, and is judged as it stands.
+    Given nothing, it says the check was not made rather than implying it
+    passed.
 
     ``errors_kjmol`` is the bootstrap's standard error of the free energy at
     each point (``pmf["uncertainty"]["standard_error"]``). Given, the bulk
@@ -430,11 +467,27 @@ def binding_free_energy(
 
     # The cap the windows ran in, and what it costs.
     cone_record, correction = _what_the_cone_costs(cone, temperature_K)
+    wall = _the_wall_up_to(wall_bias_kjmol, chosen)
     if cone_record is not None:
-        if wall_bias_kjmol is not None and wall_bias_kjmol > WALL_QUIET_KJMOL:
-            return {"delta_g_kjmol": None, "cone": cone_record, "refused": (
-                f"The cone's wall carried {wall_bias_kjmol:.2f} kJ/mol where "
-                f"the bound state is, against {WALL_QUIET_KJMOL} allowed. The "
+        if wall["bias_kjmol"] is not None and wall["bias_kjmol"] > WALL_QUIET_KJMOL:
+            bit = wall["bit"]
+            where = (
+                " in window" + ("s " if len(bit) > 1 else " ")
+                + ", ".join(f"{b['window']} (at {b['centre']:.3g} nm, "
+                            f"{b['bias_kjmol']:.2f} kJ/mol)" for b in bit)
+                + f", every window up to the cutoff of {chosen:.3g} nm having "
+                "been judged"
+            ) if bit else ""
+            return {"delta_g_kjmol": None, "cone": cone_record,
+                    "bound_cutoff_nm": chosen,
+                    "cone_wall_bias_kjmol": wall["bias_kjmol"],
+                    "cone_wall_checked_up_to_nm": wall["up_to_nm"],
+                    "cone_wall_windows": wall["windows"],
+                    "cone_wall_bit_in": bit,
+                    "refused": (
+                f"The cone's wall carried {wall['bias_kjmol']:.2f} kJ/mol where "
+                f"the bound state is{where}, against {WALL_QUIET_KJMOL} "
+                "allowed. The "
                 "correction for running inside a cone assumes the bound pose "
                 "fits within it: the bulk state loses "
                 f"{correction:.2f} kJ/mol of room and the bound state loses "
@@ -476,9 +529,14 @@ def binding_free_energy(
             delta_g - correction if cone_record is not None else None),
         "cone": cone_record,
         "cone_correction_kjmol": correction if cone_record is not None else None,
-        "cone_wall_bias_kjmol": wall_bias_kjmol,
+        "cone_wall_bias_kjmol": wall["bias_kjmol"],
         "cone_wall_checked": (
-            None if cone_record is None else wall_bias_kjmol is not None),
+            None if cone_record is None else wall["bias_kjmol"] is not None),
+        # Where the wall was judged: up to the cutoff the integral used when
+        # it came per window, unknown (None) when it came as one number.
+        "cone_wall_checked_up_to_nm": wall["up_to_nm"],
+        "cone_wall_windows": wall["windows"],
+        "cone_wall_bit_in": wall["bit"],
         "binding_constant_nm3": constant_nm3,
         "bound_cutoff_nm": chosen,
         "bound_cutoff_chosen_by": (
