@@ -620,9 +620,10 @@ about 5% of the time. The spread is read off the resamples rather than off the
 curve's error bars, because each error bar holds the noise of the bin the curve
 is zeroed at, which every point of the tail shares and which cancels in a
 departure, so an allowance made from them is several times too wide. Where the
-resamples are not given, 0.6 kJ/mol is the whole allowance for each point and
-the tilt is not judged. `binding` in `pmf.json` says which was judged in
-`bulk_judged` and `bulk_judged_by` (`bulk_allowed_kjmol` at `bulk_worst_at_nm`,
+resamples are not given, or fewer than 20 of them hold a free energy in every
+bin of the tail, 0.6 kJ/mol is the whole allowance for each point and the tilt
+is not judged. `binding` in `pmf.json` says which was judged in `bulk_judged`
+and `bulk_judged_by` (`bulk_allowed_kjmol` at `bulk_worst_at_nm`,
 `bulk_tilt_kjmol` against `bulk_tilt_allowed_kjmol`), and a refusal names the
 point or the tilt and both numbers.
 
@@ -759,16 +760,21 @@ binding integral is taken over, and no analytic term puts that back. So every
 window writes the wall's bias beside its coordinate, and the binding free
 energy is **refused** where the wall carried more than 0.25 kJ/mol in the
 windows holding the bound state, naming the number and asking for a wider
-angle. Where the windows' biases are given one by one, every window that
-sampled the bound range is judged: any window with a sample after equilibration
-at or inside the cutoff the integral uses, wherever it was centred, since a
-window held just outside a steep well is pulled into it (by its centre only
-where its samples are not given). They are listed in `cone_wall_windows` up to
-`cone_wall_checked_up_to_nm`, and those that bit in `cone_wall_bit_in`. A bias
-of +inf is a wall that bit. A judged window whose bias could not be read is
-named in `cone_wall_not_read_in` and the number is refused, as it is where no
-window sampled the bound range at all. Where no such column exists the result
-says `cone_wall_checked: false` rather than implying the check passed.
+angle. Where the windows' biases are given frame by frame, every window with
+frames after equilibration at or inside the cutoff the integral uses is judged,
+wherever it was centred (a window held just outside a steep well is pulled into
+it), and it is judged on those frames alone: the mean of the wall's bias over
+its frames in the bound range, so a window that touched the cutoff once and met
+the wall further out is not taken for a wall over the bound state. A window is
+judged however few its frames inside, and the count is recorded. The windows
+judged are in `cone_wall_judged` (with `frames_inside` and `frames_unread`) and
+`cone_wall_windows` up to `cone_wall_checked_up_to_nm`, those that bit in
+`cone_wall_bit_in`. An infinite bias is a wall that bit. A frame whose bias is
+not a number is left out and counted; a judged window with no bias read on its
+frames inside (one whose COLVAR lacks the `cone.bias` column, say) is named in
+`cone_wall_not_read_in` and the number is refused, as it is where no window
+sampled the bound range at all. Where no window has the column the result says
+`cone_wall_checked: false` rather than implying the check passed.
 
 `pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
 curve says, `delta_g_kjmol` is what it means, and `cone_correction_kjmol` is
