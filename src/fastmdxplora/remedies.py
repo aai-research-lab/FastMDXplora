@@ -28,6 +28,7 @@ a guess with this study's name on it.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 from dataclasses import dataclass, field, replace
@@ -1174,7 +1175,7 @@ def _planned(folder: Path | None) -> tuple[float, float]:
     from fastmdxplora.simulation.runner import plan_stages
 
     sim: dict[str, Any] = {}
-    if folder is not None and not record_access.is_file(Path(folder) / "resolved_config.yml"):
+    if folder is not None and not os.path.lexists(Path(folder) / "resolved_config.yml"):
         # A run that never started has no config of its own: its study's
         # plan of it (`batch_manifest.json`'s ``planned``) says its lengths,
         # where the package's defaults priced a run of 10 ps at hours.
