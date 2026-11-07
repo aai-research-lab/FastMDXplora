@@ -948,12 +948,15 @@ STOP_REPEAT_SECONDS = 2.0
 #: When this process was first asked to stop, shared by everything here that
 #: listens, so the request is counted once whichever of them hears it.
 _first_stop_at: float | None = None
+#: Whether a Ctrl-C (SIGINT) was among the stops heard.
+_ctrl_c_heard = False
 
 
 def _listen_afresh() -> None:
     """Forget an earlier stop: a new run, or its production, is starting."""
-    global _first_stop_at
+    global _first_stop_at, _ctrl_c_heard
     _first_stop_at = None
+    _ctrl_c_heard = False
 
 
 def _a_stop_heard(number: int | None = None) -> str:
@@ -961,18 +964,27 @@ def _a_stop_heard(number: int | None = None) -> str:
 
     ``"first"`` for the first; ``"again"`` for the same SIGTERM delivered
     twice within :data:`STOP_REPEAT_SECONDS`; ``"now"`` for a later one, or
-    any second Ctrl-C, which means stop at once.
+    a second Ctrl-C, which means stop at once. A first Ctrl-C after a
+    SIGTERM is ``"again"``: the stop it asks is the one under way. A worker
+    of a broken pool has the pool's SIGTERM before a person's Ctrl-C reaches
+    its group, and took that Ctrl-C as stop now, losing the save at its
+    frame; two Ctrl-C still mean now.
     """
     import signal as _signal
     import time
 
-    global _first_stop_at
+    global _first_stop_at, _ctrl_c_heard
     now = time.monotonic()
+    ctrl_c = number == _signal.SIGINT
     if _first_stop_at is None:
         _first_stop_at = now
+        _ctrl_c_heard = ctrl_c
         return "first"
-    if number == _signal.SIGINT:
-        return "now"
+    if ctrl_c:
+        if _ctrl_c_heard:
+            return "now"
+        _ctrl_c_heard = True
+        return "again"
     return "again" if now - _first_stop_at < STOP_REPEAT_SECONDS else "now"
 
 

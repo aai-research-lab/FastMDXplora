@@ -66,7 +66,7 @@ TEMPERATURE_EXPLANATION = "Temperature is outside the expected range. " + TEMPER
 INTERRUPTED_EXPLANATION = (
     "Its last update said it was still going, and the process that ran it is "
     "gone: the machine restarted, or its job was ended by a scheduler or by "
-    "hand. What it wrote up to then is kept, and the command fastmdx resume "
+    "hand. What it wrote up to then is saved, and the command fastmdx resume "
     "says whether it can be carried on from its last checkpoint."
 )
 
@@ -87,7 +87,7 @@ ANALYSIS_OWED_STOPPED_EXPLANATION = (
 
 STOPPED_EXPLANATION = (
     "It was asked to stop (Ctrl+C, or Stop) and ended where it can be "
-    "carried on. What it wrote up to then is kept, and fastmdx resume "
+    "carried on. What it wrote up to then is saved, and fastmdx resume "
     "carries it on from there."
 )
 #: Stopped while the trajectory was analysed or the report written: the
@@ -101,7 +101,7 @@ STOPPED_IN_A_PHASE_AFTER_EXPLANATION = (
 #: message that says so, it read "ended where it can be carried on".
 STOPPED_BEFORE_PRODUCTION_EXPLANATION = (
     "It was asked to stop (Ctrl+C, or Stop) before its production began. "
-    "What it wrote up to then is kept, and fastmdx resume runs it again from "
+    "What it wrote up to then is saved, and fastmdx resume runs it again from "
     "the start."
 )
 

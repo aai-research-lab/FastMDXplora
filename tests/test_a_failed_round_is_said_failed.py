@@ -1666,6 +1666,38 @@ def run(spec, run_out, *_args, **_kwargs):
     return RunResult(run_id=spec["run_id"], system=spec["system"], status=status,
                      output_dir=out, sweep_values=spec["sweep_values"], phases=[],
                      message=message)
+
+
+def extend(run, *_args, **_kwargs):
+    # A run's extension in the study's round, as `explorer._extend_one` is
+    # called: "carry" runs for 40 s unless asked to stop; "die" ends its
+    # worker once "carry" has begun.
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
+    from fastmdxplora.refusals import RunStopped
+
+    here = Path(os.environ["STAND_IN"])
+    name = Path(run).name
+    role = json.loads(os.environ["ROLES"])[name]
+    _say(here / f"started-{name}", str(os.getpid()))
+    if role == "die":
+        _until(lambda: (here / "started-a").exists())
+        os.kill(os.getpid(), signal.SIGKILL)
+    # Its run's record held while it runs, as an extension's is.
+    _hold_run_process(Path(run))
+    explorer._running_a_run = True
+    try:
+        until = time.monotonic() + 40
+        while time.monotonic() < until:
+            time.sleep(0.05)
+    except RunStopped:
+        _say(here / f"stopped-{name}", "")
+        return {"ok": False, "stopped": True}
+    finally:
+        explorer._running_a_run = False
+        _release_run_process(Path(run))
+    _say(here / f"finished-{name}", "")
+    return {"ok": True}
 """
 
 _A_STUDY_OF_STAND_INS = """
@@ -1703,8 +1735,22 @@ if __name__ == "__main__" and os.environ.get("DEATHS_SEEN_ON_WAKING"):
     process._ExecutorManagerThread.wait_result_broken_or_wakeup = deaths_seen_on_waking
 
 explorer._execute_run = stand_in.run
+explorer._extend_one = stand_in.extend
+if os.environ.get("HOW"):
+    # How a freed worker's run ended, as its pages would read it.
+    explorer._how_it_ended = lambda run: os.environ["HOW"]
 
-if __name__ == "__main__":
+if __name__ == "__main__" and os.environ.get("ROUND"):
+    # A round of the stopping rule extending two runs side by side.
+    config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
+              "sweep": {"simulation.random_seed": [1, 2]},
+              "execution": {"mode": "parallel", "workers": 2}}
+    study = explorer.BatchExplorer(config_data=config, output_dir=here / "study")
+    runs = [here / "study" / "runs" / "a", here / "study" / "runs" / "b"]
+    for run in runs:
+        run.mkdir(parents=True, exist_ok=True)
+    print(json.dumps(study._extend_runs(runs, 0.001)), flush=True)
+elif __name__ == "__main__":
     seeds = int(os.environ["SEEDS"])
     config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
               "sweep": {"simulation.random_seed": list(range(1, seeds + 1))},
@@ -1790,8 +1836,12 @@ def test_no_run_is_handed_to_a_broken_pool_in_30_studies(tmp_path):
 @pytest.mark.parametrize("roles,said", [
     ({"1": "ok", "2": "die"}, "1 carried no run"),
     ({"1": "save", "2": "die"}, "1 had ended the run it carried"),
-    ({"1": "hold", "2": "die"}, "1 still held a run 11 s after being asked to stop"),
-], ids=["idle", "saving", "held"])
+    ({"1": "hold", "2": "die"}, "1 still held a run 11 s after being asked to stop, and "
+                                "`fastmdx resume` carries that run on from its last checkpoint"),
+    ({"1": "save", "2": "die", "how": "done"}, "1 had finished the run it carried"),
+    ({"1": "save", "2": "die", "how": "stopped"},
+     "1 had stopped the run it carried where it can be carried on"),
+], ids=["idle", "saving", "held", "finished", "stopped"])
 def test_a_broken_study_ends_each_other_worker_as_it_frees_and_says_so(roles, said, tmp_path):
     """Each other worker of a broken pool is ended once it holds no run: one
     that carried none at once, one stopping its run once that is saved, one
@@ -1804,7 +1854,9 @@ def test_a_broken_study_ends_each_other_worker_as_it_frees_and_says_so(roles, sa
     if sys.version_info < (3, 12):
         pytest.skip("before Python 3.12 a broken pool's workers end by themselves")
     began = time.monotonic()
-    ran = _a_study_of_stand_ins(tmp_path, roles, seeds=2, grace="1", SAVE="3")
+    roles = dict(roles)
+    how = {"HOW": roles.pop("how")} if "how" in roles else {}
+    ran = _a_study_of_stand_ins(tmp_path, roles, seeds=2, grace="1", SAVE="3", **how)
     printed, logged = _ended(ran, 120, "the study")
     took = time.monotonic() - began
     assert ran.returncode == 0, logged[-2000:]
@@ -1880,6 +1932,104 @@ def test_a_second_sigterm_while_a_worker_saves_leaves_no_worker(tmp_path):
         _printed, logged = _ended(ran, 60, "the study, given SIGTERM twice,")
     assert not ran.left_behind, (f"a worker of {_its_workers(tmp_path)} outlived it: "
                                  + logged[-1500:])
+    assert "Stopping now: the study's workers were ended" in logged, logged[-1500:]
+
+
+def test_how_a_freed_worker_s_run_ended_is_read_from_its_pages(tmp_path, monkeypatch):
+    """The words of a freed worker's run come from how its pages read it."""
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.gui import workspace
+
+    for state, how in (("completed", "done"), ("stopped", "stopped"),
+                       ("interrupted", "stopped"), ("running", "ended")):
+        monkeypatch.setattr(workspace, "study_state", lambda run, state=state: state)
+        assert explorer._how_it_ended(tmp_path) == how, state
+    assert explorer._how_it_ended(None) == "ended"
+
+
+def test_a_first_ctrl_c_after_a_sigterm_asks_the_stop_under_way():
+    """A Ctrl-C after a SIGTERM (a pool's, a scheduler's, the GUI's Stop) was
+    taken as a second stop, stop now; it asks the one under way, and only a
+    second Ctrl-C means now."""
+    import signal
+
+    from fastmdxplora.simulation.runner import _a_stop_heard, _listen_afresh
+
+    _listen_afresh()
+    try:
+        assert [_a_stop_heard(signal.SIGTERM), _a_stop_heard(signal.SIGINT),
+                _a_stop_heard(signal.SIGINT)] == ["first", "again", "now"]
+        _listen_afresh()
+        assert [_a_stop_heard(signal.SIGINT), _a_stop_heard(signal.SIGINT)] == ["first", "now"]
+    finally:
+        _listen_afresh()
+
+
+@pytest.mark.parametrize("presses", [1, 2])
+def test_a_ctrl_c_while_a_broken_study_waits_lets_its_worker_save(presses, tmp_path):
+    """A terminal's Ctrl-C (to the study's whole group) while the other
+    worker of its broken pool saved the run it was stopping: that worker
+    had the pool's SIGTERM first and took the Ctrl-C as a second stop, stop
+    now, and lost its save. One Ctrl-C is the stop under way: it saves; two
+    still end it at once. None of its workers is left either way."""
+    import os
+    import signal
+    import sys
+    import time
+
+    if sys.version_info < (3, 12):
+        pytest.skip("before Python 3.12 a broken pool's workers end by themselves")
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "save", "2": "die"}, seeds=2, SAVE="6")
+    try:
+        _until(lambda: (tmp_path / "saving-1").exists() or ran.poll() is not None, 120)
+        time.sleep(1)
+        for _ in range(presses):
+            try:
+                os.killpg(ran.pid, signal.SIGINT)
+            except ProcessLookupError:
+                break
+            time.sleep(0.5)
+    finally:
+        _printed, logged = _ended(ran, 60, f"the study, given {presses} Ctrl-C,")
+    assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
+    assert (tmp_path / "saved-1").exists() == (presses == 1), logged[-1500:]
+
+
+def test_a_stop_in_a_round_whose_worker_died_unseen_reaches_the_other(tmp_path):
+    """A round of the stopping rule extending two runs side by side, the
+    worker of one killed where the pool's own thread was not watching it,
+    then one SIGTERM to the study: nothing woke that thread while the study
+    waited on the runs' answers, and the stop was not passed on, so the
+    other ran its whole extension. The study's watch wakes the pool, which
+    asks it to stop: it stops, and the study ends."""
+    import os
+    import signal
+    import sys
+    import time
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    (tmp_path / "stand_in.py").write_text(_STAND_IN)
+    script = tmp_path / "study.py"
+    script.write_text(_A_STUDY_OF_STAND_INS)
+    env = {**os.environ, "PYTHONPATH": _source(), "STAND_IN": str(tmp_path), "ROUND": "1",
+           "ROLES": json.dumps({"a": "carry", "b": "die"}), "DEATHS_SEEN_ON_WAKING": "1"}
+    ran = subprocess.Popen([sys.executable, str(script)], cwd=tmp_path, env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           start_new_session=True)
+    began = time.monotonic()
+    try:
+        _until(lambda: (tmp_path / "started-b").exists() or ran.poll() is not None, 120)
+        time.sleep(1)
+        try:
+            os.kill(ran.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    finally:
+        printed, logged = _ended(ran, 120, "the round")
+    assert (tmp_path / "stopped-a").exists() and not (tmp_path / "finished-a").exists(), \
+        logged[-1500:]
+    assert time.monotonic() - began < 35, "the other run's extension went on to its end"
+    assert not ran.left_behind
 
 
 def test_a_run_s_hold_writes_over_a_record_its_ended_process_left(tmp_path):

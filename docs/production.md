@@ -315,8 +315,9 @@ then ends each other worker once it holds no run: at once where it carried
 none, once its run is saved where one was stopping (or had finished), and
 at most after the stop grace and 10 s (30 s by default;
 `FASTMDX_STOP_GRACE_SECONDS` lengthens it), a run still held then carried on
-from its last checkpoint. A stop asked meanwhile is waited out the same
-way, and the study exits 1, not 130: a run of it had already failed.
+from its last checkpoint. A stop asked meanwhile, a Ctrl-C at the terminal
+too, is waited out the same way, and the study exits 1, not 130: a run of
+it had already failed. A second stop ends the workers at once, saying so.
 The sentence names the runs the round extended and says the others by their
 production, since an extension that did not finish may have run part of the
 way. A study whose process was killed while it extended its runs, its record
@@ -742,7 +743,9 @@ interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
 platform that allows more or less. A second signal is obeyed at once. A
 second SIGTERM within two seconds of the first is the same request arriving
 twice, as it does when sent to a whole process group, and counts once; a
-second Ctrl-C, however quick, means now. Either way the study records where
+second Ctrl-C, however quick, means now. A first Ctrl-C after a SIGTERM (a
+scheduler's, the GUI's Stop, a broken pool's) asks the stop already under
+way, so a run still saves at its frame; a second Ctrl-C means now. Either way the study records where
 it stopped (the retryable `simulation.run.stopped`), the GUI says Stopped
 with what would fix it, `fastmdx resume` carries it on, and the command
 exits 130.

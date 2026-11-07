@@ -383,11 +383,13 @@ class _StudyStop:
             # the study ends at once, and its workers are ended first: a
             # worker of a broken pool waits for work for ever.
             if now:
-                for pid in list(getattr(self.pool, "_processes", None) or {}):
-                    try:
-                        os.kill(int(pid), signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError, OSError, ValueError):
-                        continue
+                # By the pool's own process objects, never by a number a
+                # worker reaped meanwhile may have handed on.
+                for worker in list((getattr(self.pool, "_processes", None) or {}).values()):
+                    _kill(worker)
+                logger.warning(
+                    "Stopping now: the study's workers were ended; `fastmdx resume %s` "
+                    "carries its runs on from their last checkpoints.", self.folder or "")
             return
         # Ctrl-C reaches the workers already: a terminal sends it to the
         # whole process group. SIGTERM is sent to one process.
@@ -504,9 +506,9 @@ def _wake_the_pool(pool: Any) -> None:
     """The pool's own thread woken, so it reads its workers again and finds
     the one that ended: it then fails that run's future and asks the others
     to stop."""
-    if _broken(pool):
-        # Found already, and its thread may be closing what it is woken by
-        # (Python 3.12 takes no lock to wake it).
+    if _broken(pool) or getattr(pool, "_shutdown_thread", False):
+        # Found already, or shutting down: its thread may be closing what it
+        # is woken by (Python 3.12 and earlier take no lock to wake it).
         return
     wakeup = getattr(pool, "_executor_manager_thread_wakeup", None)
     try:
@@ -526,12 +528,16 @@ def _until_the_pool_has_seen_it(pool: Any, seconds: float = 10.0) -> None:
 
 
 class _BreakWatch:
-    """A pool watched from its making for a worker that ended (Python 3.12
-    and later), its other workers then ended as each frees
-    (`_end_the_other_workers`), once, from here or from `_shut_down`: a run
-    handed to the pool in the moment a worker ended waits on a lock the
-    pool's own thread holds while it waits on those workers, and only their
-    end lets it go (it then reads not started)."""
+    """A pool watched from its making for a worker that ended. On every
+    Python its own thread is woken to see it (`_wake_the_pool`), from here,
+    never from a signal's listener: a study waiting on a run's answer (a
+    round's extensions) woke it from nowhere else, and the other workers
+    were not asked to stop until that answer came, a stop asked meanwhile
+    with them. On Python 3.12 and later its other workers are then ended as
+    each frees (`_end_the_other_workers`), once, from here or from
+    `_shut_down`: a run handed to the pool in the moment a worker ended
+    waits on a lock the pool's own thread holds while it waits on those
+    workers, and only their end lets it go (it then reads not started)."""
 
     def __init__(self, pool: Any, stop: Any = None, folder: Any = None) -> None:
         import sys
@@ -541,14 +547,17 @@ class _BreakWatch:
         self._ending = threading.Lock()
         self._ended = False
         self._done = threading.Event()
-        if sys.version_info >= (3, 12):
-            threading.Thread(target=self._watch, name="fastmdx-pool-end", daemon=True).start()
+        self._ends_them = sys.version_info >= (3, 12)
+        threading.Thread(target=self._watch, name="fastmdx-pool-end", daemon=True).start()
 
     def _watch(self) -> None:
-        while not self._done.wait(0.5):
+        while not self._done.wait(0.25):
             if _broken(self.pool):
-                self.end()
+                if self._ends_them:
+                    self.end()
                 return
+            if _a_worker_ended(self.pool):
+                _wake_the_pool(self.pool)
 
     def end(self) -> None:
         with self._ending:
@@ -576,11 +585,15 @@ def _shut_down(pool: Any, stop: Any = None, folder: Any = None, watch: Any = Non
     margin have passed (`_end_the_other_workers`), from here or by the
     pool's watch (``watch``, `_BreakWatch`), whichever is first. Python 3.11
     and earlier also send each its end on the pool's queue, and they end
-    by themselves: nothing is done there."""
+    by themselves: there the watch only wakes the pool."""
     import sys
 
     if sys.version_info < (3, 12):
-        pool.shutdown(wait=True, cancel_futures=True)
+        try:
+            pool.shutdown(wait=True, cancel_futures=True)
+        finally:
+            if watch is not None:
+                watch.close()
         return
     watch = watch if watch is not None else _BreakWatch(pool, stop, folder)
     try:
