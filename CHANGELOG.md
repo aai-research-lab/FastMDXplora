@@ -836,7 +836,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   no run: at once where it carried none, once its run is saved where one
   was stopping, at most after the stop grace and 10 s; a stop asked
   meanwhile, to the study's process alone too, is waited out the same way,
-  and none is left behind. 3.11 and earlier end their workers themselves,
+  a second one ends the workers with the study, and none is left behind. 3.11 and earlier end their workers themselves,
   as before. The study sees a worker end from its own thread (the pool's
   may see it only at the next result) and gives the pool no more runs: the
   ones queued are said not started (3.12 and later waited for ever handing
