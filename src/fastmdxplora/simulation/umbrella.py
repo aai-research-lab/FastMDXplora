@@ -1082,13 +1082,17 @@ def wall_bias_by_window(
     puts that back -- so the assumption is read here, from the column the
     run writes for it, rather than assumed.
 
-    One row per window, ``{"window", "centre", "bias_kjmol"}``, the bias the
-    mean of the column over the frames left after equilibration, or NaN for
-    a window with no COLVAR, no such column or no frames left, so that it is
-    named as not read rather than passed over. Every window is read, so
-    `binding.binding_free_energy` can judge each one up to the cutoff it
-    integrates to, which it knows only once it has the curve. Returns None where no window recorded one, which is every
-    study that ran without a cone and every study that ran before the column
+    One row per window, ``{"window", "centre", "bias_kjmol", "nearest_nm"}``:
+    the bias is the mean of the column over the frames of production left
+    after equilibration (the same frames `collect_samples` takes), and
+    ``nearest_nm`` the smallest value of the coordinate over those frames,
+    so that `binding.binding_free_energy` can judge every window that
+    sampled the bound range, wherever it was centred: a window held just
+    outside a steep well is pulled into it. The bias is NaN, and
+    ``nearest_nm`` None, for a window with no COLVAR, no such column or no
+    frames left, so that it is named as not read rather than passed over.
+    Returns None where no window recorded the column, which is every study
+    that ran without a cone and every study that ran before the column
     existed.
     """
     from pathlib import Path
@@ -1103,31 +1107,34 @@ def wall_bias_by_window(
             continue
         colvar = Path(directory) / "simulation" / "COLVAR"
         names: list[str] = []
-        if not colvar.is_file():
-            carried.append({"window": int(index), "centre": centres[index],
-                            "bias_kjmol": float("nan")})
-            continue
-        rows: list[float] = []
-        for line in colvar.read_text(encoding="utf-8").splitlines():
-            if line.startswith("#"):
-                if "FIELDS" in line and not names:
-                    names = line.split("FIELDS")[1].split()
-                continue
-            if not line.strip() or "cone.bias" not in names:
-                continue
-            parts = line.split()
-            column = names.index("cone.bias")
-            if len(parts) > column:
-                try:
-                    rows.append(float(parts[column]))
-                except ValueError:
+        rows: list[tuple[float, float, float]] = []
+        if colvar.is_file():
+            for line in colvar.read_text(encoding="utf-8").splitlines():
+                if line.startswith("#"):
+                    if "FIELDS" in line and not names:
+                        names = line.split("FIELDS")[1].split()
                     continue
-        kept = np.asarray(rows)[int(len(rows) * fraction):]
-        if "cone.bias" in names:
-            recorded = True
-        carried.append({"window": int(index), "centre": centres[index],
-                        "bias_kjmol": (float(np.mean(kept)) if kept.size
-                                       else float("nan"))})
+                if not line.strip() or "cone.bias" not in names:
+                    continue
+                parts = line.split()
+                column = names.index("cone.bias")
+                if len(parts) > max(column, 1):
+                    try:
+                        rows.append((float(parts[0]), float(parts[1]),
+                                     float(parts[column])))
+                    except ValueError:
+                        continue
+        recorded = recorded or "cone.bias" in names
+        table = np.asarray(rows, dtype=float).reshape(-1, 3)
+        table = table[production_begins_at(table[:, 0]):]
+        table = table[int(len(table) * fraction):]
+        carried.append({
+            "window": int(index), "centre": centres[index],
+            "bias_kjmol": (float(np.mean(table[:, 2])) if len(table)
+                           else float("nan")),
+            "nearest_nm": (float(np.nanmin(table[:, 1]))
+                           if len(table) and np.isfinite(table[:, 1]).any()
+                           else None)})
     return carried if recorded else None
 
 
@@ -1140,15 +1147,23 @@ def wall_bias_where_the_bound_state_is(
 
     For callers that fix the bound range before the curve is read.
     The binding free energy is better given `wall_bias_by_window` whole: it
-    then judges every window up to the cutoff the integral uses, which a
-    range fixed beforehand (1.25 times the minimum, say) can fall short of.
+    then judges every window that sampled the range up to the cutoff the
+    integral uses, which a range fixed beforehand (1.25 times the minimum,
+    say) can fall short of. A window in that range whose bias could not be
+    read is named in the log and makes the answer NaN, which
+    `binding.binding_free_energy` refuses, rather than being passed over.
     """
     rows = wall_bias_by_window(directories, plan,
                                equilibration_fraction=equilibration_fraction)
-    inside = [row["bias_kjmol"] for row in rows or ()
-              if row["centre"] <= bound_below
-              and np.isfinite(row["bias_kjmol"])]
-    return max(inside) if inside else None
+    inside = [row for row in rows or () if row["centre"] <= bound_below]
+    unread = [row["window"] for row in inside
+              if np.isnan(row["bias_kjmol"])]
+    if unread:
+        logger.warning(
+            "The cone's wall bias could not be read in window(s) %s, which "
+            "hold the bound state.", ", ".join(str(w) for w in unread))
+        return float("nan")
+    return max((row["bias_kjmol"] for row in inside), default=None)
 
 
 def collect_samples(

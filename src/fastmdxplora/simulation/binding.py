@@ -108,22 +108,37 @@ BULK_FAMILY_CHANCE = 0.05
 BULK_RESAMPLES_NEEDED = 20
 
 
-def _sidak_multiplier(count: int, chance: float) -> float:
+def _two_sided(chance: float, resamples: "int | None") -> float:
+    """The two-sided quantile at `chance`: Student's t with `resamples` - 1
+    degrees of freedom where the standard deviation is read off that many
+    resamples, the normal where `resamples` is None. With 20 to 50 resamples
+    the normal's quantile is too small for a spread estimated that way, and a
+    tail in bulk was refused 8% of the time at 20 where 5% was meant."""
+    if resamples is None:
+        from statistics import NormalDist
+
+        return float(NormalDist().inv_cdf(1.0 - chance / 2.0))
+    from scipy.stats import t as student
+
+    return float(student.ppf(1.0 - chance / 2.0, max(1, int(resamples) - 1)))
+
+
+def _sidak_multiplier(count: int, chance: float,
+                      resamples: "int | None" = None) -> float:
     """How many standard errors each of `count` points may depart by.
 
     Sidak's bound: each point is allowed z standard errors, with z the
-    two-sided normal quantile at 1 - (1 - chance)^(1/count), so that the
-    chance of any of the `count` departing that far by noise alone is
-    `chance` where the departures are independent and normal (Sidak 1967,
-    J. Am. Stat. Assoc. 62, 626). The departures of a tail are correlated
-    with each other, so the bound is approximate here; for two-sided limits
-    on correlated normal variables the inequality runs towards refusing
-    less often than `chance`, not more.
+    two-sided quantile at 1 - (1 - chance)^(1/count), so that the chance of
+    any of the `count` departing that far by noise alone is `chance` where
+    the departures are independent and normal (Sidak 1967, J. Am. Stat.
+    Assoc. 62, 626); Student's t on `resamples` - 1 degrees of freedom where
+    the standard errors are read off that many resamples (`_two_sided`). The
+    departures of a tail are correlated with each other, so the bound is
+    approximate here; for two-sided limits on correlated normal variables
+    the inequality runs towards refusing less often than `chance`, not more.
     """
-    from statistics import NormalDist
-
     each = 1.0 - (1.0 - chance) ** (1.0 / max(1, int(count)))
-    return float(NormalDist().inv_cdf(1.0 - each / 2.0))
+    return _two_sided(each, resamples)
 
 
 def _tilt(radius: np.ndarray, flattened: np.ndarray) -> np.ndarray:
@@ -147,11 +162,12 @@ def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
     - each point's departure d_i = f_i - mean(f), against
       max(0.6 kJ/mol, z_n * s_i), with s_i the standard deviation of d_i
       over the bootstrap's resampled curves and z_n Sidak's multiplier for
-      n points at 2.5% (`_sidak_multiplier`);
+      n points at 2.5% (`_sidak_multiplier`), on Student's t with one
+      fewer degrees of freedom than the resamples used;
     - the tail's tilt T = b * (r_n - r_1), b the least-squares slope of f
       against r, against max(0.6 kJ/mol, z * s_T), with s_T the standard
       deviation of T over the same resamples and z the two-sided normal
-      quantile at 2.5% (2.24).
+      quantile at 2.5% (2.24 with many resamples; Student's t again).
 
     s_i and s_T are read off the resamples themselves, so they carry every
     correlation between the bins, and the noise of the bin the curve is
@@ -168,8 +184,6 @@ def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
     tilt is not judged, exactly as before the resamples were taken; the
     record says why, in `why_fixed`.
     """
-    from statistics import NormalDist
-
     count = int(radius.size)
     flattened = energy + 2.0 * kt * np.log(radius)
     departure = np.abs(flattened - np.mean(flattened))
@@ -182,11 +196,12 @@ def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
     tilt = float(_tilt(radius, flattened))
     each_test = BULK_FAMILY_CHANCE / 2.0
     if usable:
-        multiplier = _sidak_multiplier(count, each_test)
+        used = int(whole.shape[0])
+        multiplier = _sidak_multiplier(count, each_test, used)
         spread = np.std(whole - whole.mean(axis=1, keepdims=True),
                         axis=0, ddof=1)
         allowed = np.maximum(floor, multiplier * spread)
-        tilt_multiplier = float(NormalDist().inv_cdf(1.0 - each_test / 2.0))
+        tilt_multiplier = _two_sided(each_test, used)
         tilt_error = float(np.std(_tilt(radius, whole), ddof=1))
         tilt_allowed = max(BULK_RESIDUAL_KJMOL, tilt_multiplier * tilt_error)
         judged = (
@@ -279,49 +294,77 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
 
 
 def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
-    """The wall's bias in the windows the bound state spans, judged up to
-    the cutoff the integral uses.
+    """The wall's bias in the windows that sampled the bound state, judged up
+    to the cutoff the integral uses.
 
-    Per window (``[{"window", "centre", "bias_kjmol"}, ...]``), every window
-    whose centre is at or inside ``cutoff`` is judged and the largest of
-    their means is the number. A window beyond it is left out: its centre is
-    outside the range the integral is taken over. A window whose bias is not
-    a finite number (no frames, no column, a NaN in the file) is never read
-    as quiet: it is named in ``not_read``, and where no window up to the
-    cutoff could be read the wall is ``unreadable``. One number is the
-    caller's own reading and is taken as it stands, with the range it covers
-    unknown; a non-finite one is unreadable too.
+    Per window (``[{"window", "centre", "bias_kjmol", "nearest_nm"}, ...]``,
+    as `umbrella.wall_bias_by_window` gives it), a window is judged where any
+    of its samples after equilibration came to the cutoff or inside it
+    (``nearest_nm``), and by its centre only where that is not given. A
+    window held just outside a steep well is pulled into it, and its wall
+    then acts on bound state the integral is taken over. The largest of
+    their means is the number; a bias of +inf is a wall that bit. A judged
+    window whose bias is NaN or missing is named in ``not_read``, and the
+    number is then refused rather than resting on the windows that were
+    read; so it is where no window sampled the bound range at all. One
+    number is the caller's own reading and is taken as it stands, with the
+    range it covers unknown; a NaN one is refused too.
     """
     empty = {"bias_kjmol": None, "up_to_nm": None, "windows": None,
-             "bit": None, "not_read": None, "unreadable": False}
+             "bit": None, "not_read": None, "unreadable": False,
+             "none_inside": False, "scalar": False}
     if wall_bias_kjmol is None:
         return empty
-    if isinstance(wall_bias_kjmol, (str, bytes)):
+    if isinstance(wall_bias_kjmol, (str, bytes, dict)) or (
+            isinstance(wall_bias_kjmol, np.ndarray)
+            and wall_bias_kjmol.ndim > 0):
         raise StudyError(
-            "`wall_bias_kjmol` is a number or one row per window "
-            f"(`umbrella.wall_bias_by_window`); {wall_bias_kjmol!r} was "
-            "given.", code="config.option.wrong_type")
-    if np.ndim(wall_bias_kjmol) == 0 and not isinstance(wall_bias_kjmol, dict):
+            "`wall_bias_kjmol` is one number or one row per window "
+            "(`umbrella.wall_bias_by_window`); a "
+            f"{type(wall_bias_kjmol).__name__} was given.",
+            code="config.option.wrong_type")
+    if np.ndim(wall_bias_kjmol) == 0:
         value = float(wall_bias_kjmol)
-        if not np.isfinite(value):
-            return {**empty, "unreadable": True}
-        return {**empty, "bias_kjmol": value}
-    rows = [{"window": int(row["window"]), "centre": float(row["centre"]),
-             "bias_kjmol": (None if row.get("bias_kjmol") is None
-                            else float(row["bias_kjmol"]))}
-            for row in wall_bias_kjmol]
+        if np.isnan(value):
+            return {**empty, "unreadable": True, "scalar": True}
+        return {**empty, "bias_kjmol": value, "scalar": True}
+    rows = []
+    for number, row in enumerate(wall_bias_kjmol):
+        if not isinstance(row, dict) or not {"window", "centre"} <= set(row):
+            raise StudyError(
+                f"Row {number} of `wall_bias_kjmol` is not a window's "
+                "{\"window\", \"centre\", \"bias_kjmol\"}: "
+                f"{row!r:.80} was given.", code="config.option.wrong_type")
+        centre = float(row["centre"])
+        if not np.isfinite(centre):
+            raise StudyError(
+                f"Window {row['window']} of `wall_bias_kjmol` has no centre "
+                f"({row['centre']!r}), so whether it holds the bound state "
+                "cannot be told.", code="config.option.wrong_type")
+        bias = row.get("bias_kjmol")
+        nearest = row.get("nearest_nm")
+        rows.append({
+            "window": int(row["window"]), "centre": centre,
+            "bias_kjmol": float("nan") if bias is None else float(bias),
+            "nearest_nm": (None if nearest is None
+                           or not np.isfinite(float(nearest))
+                           else float(nearest))})
+    edge = cutoff * (1.0 + 1e-9)
     inside = [row for row in rows
-              if row["centre"] <= cutoff * (1.0 + 1e-9)]
-    read = [row for row in inside if row["bias_kjmol"] is not None
-            and np.isfinite(row["bias_kjmol"])]
+              if (row["nearest_nm"] if row["nearest_nm"] is not None
+                  else row["centre"]) <= edge]
+    read = [row for row in inside if not np.isnan(row["bias_kjmol"])]
     not_read = [row["window"] for row in inside if row not in read]
     return {
         "bias_kjmol": max((row["bias_kjmol"] for row in read), default=None),
         "up_to_nm": float(cutoff),
         "windows": [row["window"] for row in read],
-        "bit": [row for row in read if row["bias_kjmol"] > WALL_QUIET_KJMOL],
+        "bit": [{key: row[key] for key in ("window", "centre", "bias_kjmol")}
+                for row in read if row["bias_kjmol"] > WALL_QUIET_KJMOL],
         "not_read": not_read,
-        "unreadable": bool(inside) and not read,
+        "unreadable": bool(not_read),
+        "none_inside": not inside,
+        "scalar": False,
     }
 
 
@@ -539,7 +582,14 @@ def binding_free_energy(
                 "against: the run would still give a smooth curve and a "
                 "plausible number, wrong by however much of the well was "
                 "left outside. Extend the range until the tail has that "
-                "shape."
+                "shape"
+                + (", or, since the allowance here was set by the noise and "
+                   f"is above {BULK_RESIDUAL_KJMOL} kJ/mol, sample the outer "
+                   "windows longer: a tail in bulk is refused by its noise "
+                   f"alone about {BULK_FAMILY_CHANCE:.0%} of the time."
+                   if max(bulk["allowed_kjmol"],
+                          bulk["tilt_allowed_kjmol"] or 0.0)
+                   > BULK_RESIDUAL_KJMOL else ".")
             ),
         }
 
@@ -628,29 +678,36 @@ def binding_free_energy(
             "Widen `half_angle_deg` (or `margin`, for a cone worked out from "
             "the pull) until the wall is quiet there, or point "
             "the axis along the direction the ligand actually leaves by.")
+        def _windows(numbers: "list[int]") -> str:
+            return ("window" + ("s " if len(numbers) > 1 else " ")
+                    + ", ".join(str(n) for n in numbers))
+
         if wall["unreadable"]:
-            named = ("" if not wall["not_read"] else " (window"
-                     + ("s " if len(wall["not_read"]) > 1 else " ")
-                     + ", ".join(str(w) for w in wall["not_read"]) + ")")
             return {"delta_g_kjmol": None, **wall_record, "refused": (
-                f"The cone's wall could not be read in any window up to the "
-                f"cutoff of {chosen:.3g} nm{named}: its bias is not a number "
-                "there. The correction for running inside a cone assumes the "
-                "bound pose fits within it, and a wall nobody could read may "
-                "have bitten. Run those windows again, or check the "
-                "`cone.bias` column of their COLVAR files."
+                "The cone's wall bias given is not a number, so whether the "
+                "wall bit where the bound state is cannot be told."
+                if wall["scalar"] else
+                f"The cone's wall could not be read in {_windows(wall['not_read'])}, "
+                f"which sampled the bound range (up to {chosen:.3g} nm): its "
+                "bias there is not a number. The correction for running inside "
+                "a cone assumes the bound pose fits within it, and a wall "
+                "nobody could read may have bitten. Run those windows again, "
+                "or check the `cone.bias` column of their COLVAR files."
+            )}
+        if wall["none_inside"]:
+            return {"delta_g_kjmol": None, **wall_record, "refused": (
+                "No window sampled the bound range (up to "
+                f"{chosen:.3g} nm), so whether the cone's wall bit there "
+                "cannot be told: the bound state was reached only by the "
+                "tails of windows held outside it. Place windows in the well."
             )}
         if wall["bias_kjmol"] is not None and wall["bias_kjmol"] > WALL_QUIET_KJMOL:
             bit = wall["bit"]
             where = (
-                ", in window" + ("s " if len(bit) > 1 else " ")
-                + ", ".join(f"{b['window']} (at {b['centre']:.3g} nm)"
-                            for b in bit)
-                + f"; every window up to the cutoff of {chosen:.3g} nm was "
-                "judged"
-                + ("" if not wall["not_read"] else
-                   ", except " + ", ".join(str(w) for w in wall["not_read"])
-                   + ", whose bias could not be read")
+                ", in " + _windows([b["window"] for b in bit]) + " ("
+                + ", ".join(f"at {b['centre']:.3g} nm" for b in bit) + ")"
+                + f"; every window that sampled the bound range (up to "
+                f"{chosen:.3g} nm) was judged"
             ) if bit else ""
             return {"delta_g_kjmol": None, **wall_record, "refused": (
                 f"The cone's wall carried {wall['bias_kjmol']:.2f} kJ/mol "
@@ -698,13 +755,14 @@ def binding_free_energy(
         "cone_wall_bias_kjmol": wall["bias_kjmol"],
         "cone_wall_checked": (
             None if cone_record is None else wall["bias_kjmol"] is not None),
-        # Where the wall was judged: up to the cutoff the integral used when
-        # it came per window, unknown (None) when it came as one number.
+        # Where the wall was judged: in every window that sampled the range
+        # up to the cutoff the integral used when it came per window, unknown
+        # (None) when it came as one number.
         "cone_wall_checked_up_to_nm": wall["up_to_nm"],
         "cone_wall_windows": wall["windows"],
         "cone_wall_bit_in": wall["bit"],
-        # Windows up to the cutoff whose bias was not a number: not judged,
-        # and not read as quiet.
+        # Windows that sampled the bound range whose bias was not a number.
+        # Never read as quiet: a number is refused while any is listed.
         "cone_wall_not_read_in": wall["not_read"],
         "binding_constant_nm3": constant_nm3,
         "bound_cutoff_nm": chosen,
