@@ -858,6 +858,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   checkpoint, its sidecar and its seal are written as one set: a kill as
   they were written left the checkpoint at the new step, its sidecar at
   the old one and an empty seal, which nothing could resume.
+- A stop's lines (the first stop, the stop under way, stopping now) are
+  said once, by the study's process: each worker of a parallel study said
+  them too. A study of several runs one after another says them on the
+  terminal as well as in the run's log, where they went alone, so a person
+  saw nothing and pressed again. A part-moved checkpoint set is finished
+  before the next write and once a resume has loaded it.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
