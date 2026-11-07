@@ -16,7 +16,8 @@
   var SHOWN_MEASURES = 4;
   var DOT = { running: "status-dot-live", completed: "status-dot-completed",
               failed: "status-dot-error", stopped: "status-dot-waiting",
-              interrupted: "status-dot-waiting", waiting: "status-dot-waiting" };
+              interrupted: "status-dot-waiting", waiting: "status-dot-waiting",
+              "not started": "status-dot-waiting" };
   var data = null;
   var study = "";
   var timer = null;
@@ -270,6 +271,8 @@
     if (count("running")) parts.push(count("running") + " running");
     var waiting = runs.filter(function (r) { return r.state === "waiting"; }).length;
     if (waiting) parts.push(waiting + " waiting");
+    // Never started, their study ended: not "waiting" for it.
+    if (count("not started")) parts.push(count("not started") + " not started");
     var axes = (data.axes || []).map(function (a) { return a.label.replace(/^random_/, ""); });
     // Replicas as every page says how they differ (batch/aggregate.py).
     parts.push(data.replicas ? "replicas, " + data.replicas_said

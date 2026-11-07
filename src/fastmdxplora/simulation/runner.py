@@ -27,6 +27,7 @@ import csv
 import json
 import math
 import shutil
+import threading as _threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -993,6 +994,11 @@ _IN_A_POOL_WORKER = False
 #: of a study of several runs, one after another): a stop's lines are said
 #: there too, where the person who asked reads.
 _TERMINAL_FD: int | None = None
+#: Held to read and write that terminal, and to give it back: the GUI's
+#: Stop, in a thread of its own, wrote to a descriptor the run had closed,
+#: or one since handed to another file. Reentrant, as a signal's listener
+#: may say a line on the thread that holds it.
+_TERMINAL_LOCK = _threading.RLock()
 
 
 def _say_stop(text: str) -> None:
@@ -1003,12 +1009,43 @@ def _say_stop(text: str) -> None:
     if _IN_A_POOL_WORKER:
         return
     logger.warning("%s", text)
-    terminal = _TERMINAL_FD
-    if terminal is not None:
-        try:
-            _os.write(terminal, (text + "\n").encode("utf-8", "replace"))
-        except OSError:
-            pass
+    with _TERMINAL_LOCK:
+        terminal = _TERMINAL_FD
+        if terminal is not None:
+            try:
+                _os.write(terminal, (text + "\n").encode("utf-8", "replace"))
+            except OSError:
+                pass
+
+
+def _the_study_of(folder: Any) -> str:
+    """The study a listener's folder is of, as `fastmdx resume` takes it: a
+    run of a study of several (``runs/<run>``), or a piece of one
+    (``segment-NNN``), is resumed by its study."""
+    from pathlib import Path as _Path
+
+    if not folder:
+        return ""
+    here = _Path(folder)
+    if here.name.startswith("segment-"):
+        here = here.parent
+    if here.parent.name == "runs":
+        here = here.parent.parent
+    return str(here)
+
+
+def _stop_now(number: int) -> None:
+    """A second stop obeyed at once. In the study's own process it is raised
+    as a KeyboardInterrupt, whatever the signal, so the study's records say
+    it stopped when asked before it ends (a SIGTERM ended it there and then,
+    its round's record left "running"); a pool worker ends as the signal
+    would end it, its parent saying the rest."""
+    import os as _os
+    import signal as _signal
+
+    if number == _signal.SIGINT or not _IN_A_POOL_WORKER:
+        raise KeyboardInterrupt
+    _os.kill(_os.getpid(), number)
 
 
 def stop_now_said(number: int) -> str:
@@ -1130,7 +1167,6 @@ class _StopRequests:
         return self
 
     def _note(self, number: int, _frame: Any) -> None:
-        import os as _os
         import signal as _signal
 
         heard = _a_stop_heard(number)
@@ -1145,12 +1181,10 @@ class _StopRequests:
                 f"can be carried on, if that can be reached within {stop_grace_seconds():.0f} "
                 f"s. {stop_now_said(number)}")
             return
-        _say_stop(f"Stopping now: the run ends at once; `fastmdx resume {self.folder or ''}` "
-                  "carries it on from its last checkpoint.")
+        _say_stop(f"Stopping now: the run ends at once; `fastmdx resume "
+                  f"{_the_study_of(self.folder)}` carries it on from its last checkpoint.")
         self._restore()
-        if number == _signal.SIGINT:
-            raise KeyboardInterrupt
-        _os.kill(_os.getpid(), number)
+        _stop_now(number)
 
     def _restore(self) -> None:
         import signal as _signal
@@ -1183,7 +1217,6 @@ class _StopInTheRounds(_StopRequests):
     and the study ran on. A second is obeyed at once."""
 
     def _note(self, number: int, _frame: Any) -> None:
-        import os as _os
         import signal as _signal
 
         heard = _a_stop_heard(number)
@@ -1198,11 +1231,9 @@ class _StopInTheRounds(_StopRequests):
                 f"answered, where `fastmdx resume` carries it on. {stop_now_said(number)}")
             return
         _say_stop(f"Stopping now: the study's round ends at once; `fastmdx resume "
-                  f"{self.folder or ''}` carries it on from its last checkpoints.")
+                  f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
         self._restore()
-        if number == _signal.SIGINT:
-            raise KeyboardInterrupt
-        _os.kill(_os.getpid(), number)
+        _stop_now(number)
 
 
     def ask_here(self) -> str:

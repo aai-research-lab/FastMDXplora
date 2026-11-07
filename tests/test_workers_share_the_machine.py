@@ -49,6 +49,18 @@ class TestTheCoresAreDividedUp:
                     assert _threads_for_each(workers) * workers <= cores
 
 
+@pytest.fixture(autouse=True)
+def _this_process_is_no_pool_worker():
+    """The initializer marks the process a pool worker (its parent says a
+    stop's lines); called here in the test process, every test after it
+    read this one as a worker and said none."""
+    from fastmdxplora.simulation import runner
+
+    was = runner._IN_A_POOL_WORKER
+    yield
+    runner._IN_A_POOL_WORKER = was
+
+
 class TestTheShareReachesTheLibraries:
     def test_openmm_is_told(self, monkeypatch) -> None:
         monkeypatch.delenv("OPENMM_CPU_THREADS", raising=False)

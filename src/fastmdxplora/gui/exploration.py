@@ -446,6 +446,11 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
             state, fraction = "completed", 1.0
         elif result.get("status") in ("failed", "error"):
             state = "failed"
+        elif result.get("status") == "skipped" and str(result.get("message") or "").startswith(
+                "Not started"):
+            # Never started, its study ended (stopped, or its pool broke):
+            # read "waiting" in a study no longer going.
+            state = "not started"
         elif live:
             stage = str(live.get("stage") or live.get("status") or "").lower()
             step, total = live.get("current_step"), live.get("total_planned_steps")

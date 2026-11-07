@@ -1948,14 +1948,16 @@ def _start_dashboard_for_command(args: argparse.Namespace, output_dir: Path):
     return session
 
 
-def _finish_dashboard_for_command(session, args: argparse.Namespace) -> None:
+def _finish_dashboard_for_command(session, args: argparse.Namespace, rc: int = 0) -> None:
     if session is None:
         return
     if args.dashboard_stop_on_complete:
         session.stop()
         return
     print()
-    print(f"Exploration complete. The GUI is still running at: {session.url}")
+    # Said as it ended: "complete" followed a study stopped or failed.
+    ended = {0: "complete", 130: "stopped"}.get(rc, "ended with an error")
+    print(f"Exploration {ended}. The GUI is still running at: {session.url}")
     print("Press Ctrl+C to stop the GUI.")
     try:
         session.wait_forever()
@@ -2143,9 +2145,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
     # Single run -> flat layout; point at the project manifest.
     rc = 0 if all(r.status == "ok" for r in results) else 1
-    if rc and _stopped_by_ctrl_c(results):
-        # Stopped at the terminal: the study wrote where it stopped and
-        # what carries it on, and the shell is told it was interrupted.
+    if rc and _stopped_when_asked(results):
+        # Stopped when asked (Ctrl+C, SIGTERM, the GUI's Stop): the study
+        # wrote where it stopped and what carries it on, and the shell is
+        # told it was interrupted. A SIGTERM or the GUI's Stop exited 1.
         rc = 130
     from fastmdxplora.simulation.stopping import round_ended
 
@@ -2201,7 +2204,7 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             # ended well and its rule's round did not.
             print(ended.said)
             print(ended.carry_on)
-    _finish_dashboard_for_command(session, args)
+    _finish_dashboard_for_command(session, args, rc)
     return rc
 
 
@@ -2316,6 +2319,20 @@ def _stopped_by_ctrl_c(results: list[Any]) -> bool:
             if refusal.get("code") == STOPPED_CODE and details.get("signal") == "SIGINT":
                 return True
     return False
+
+
+def _stopped_when_asked(results: list[Any]) -> bool:
+    """Whether a study ended because it was asked to stop (Ctrl+C, SIGTERM,
+    the GUI's Stop): a run of it stopped, and none ended in an error of its
+    own (that is the exit code of an error, 1)."""
+    from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                             STOPPED_IN_THE_ROUNDS, _was_stopped)
+
+    stopped = [run for run in results if _was_stopped(run)]
+    erred = [run for run in results if run.status == "error" and not _was_stopped(run)
+             and getattr(run, "error_type", None) not in (
+                 STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS)]
+    return bool(stopped) and not erred
 
 
 def _share_args(parser: argparse.ArgumentParser) -> None:

@@ -854,6 +854,23 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
     def asked() -> bool:
         return bool(heard is not None and heard.requested)
 
+    def extended(entry: dict[str, Any], tried: list[Path], extend: Any) -> list[dict[str, Any]]:
+        """``extend()``'s answers; at a stop obeyed at once (a second stop,
+        raised as KeyboardInterrupt), the round said stopped when asked, its
+        record written, before the study ends: it was left "running", and
+        every page read the study interrupted."""
+        try:
+            return list(extend())
+        except KeyboardInterrupt:
+            began = entry.get("started")
+            began = [str(name) for name in began] if isinstance(began, list) else []
+            entry["extended"] = []
+            named = ("the run" if len(runs) == 1 and began
+                     else _and(began) if began else None)
+            _the_round_stopped(record, entry, named, {"stopped": True})
+            write()
+            raise
+
     def ended_by(entry: dict[str, Any], tried: list[Path],
                  answers: list[dict[str, Any]]) -> dict[str, Any] | None:
         """The round stopped where an extension of ``tried`` failed or was
@@ -929,7 +946,8 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
             current["entry"] = entry
             write()
             tried = [run for run in runs if run.name in short]
-            stopped = ended_by(entry, tried, [] if asked() else list(extend_to(tried, target)))
+            stopped = ended_by(entry, tried, [] if asked() else extended(
+                entry, tried, lambda: extend_to(tried, target)))
             if stopped is not None:
                 previous = record["rounds"][-2] if len(record["rounds"]) > 1 else {}
                 if (entry.get("stopped_by") == "asked" and previous.get("stopped_by") == "asked"
@@ -1029,7 +1047,8 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
         say(f"Not yet determined: {'; '.join(v.said for v in verdicts if not v.met)}. "
             f"Extending {'every run' if len(runs) > 1 else 'the run'} by {length_said(more)} "
             f"(to {length_said(production + more)} of the {length_said(ceiling)} allowed).")
-        stopped = ended_by(entry, runs, [] if asked() else list(extend_all(runs, more)))
+        stopped = ended_by(entry, runs, [] if asked() else extended(
+            entry, runs, lambda more=more: extend_all(runs, more)))
         if stopped is not None:
             return stopped
     record["outcome"] = "rounds"

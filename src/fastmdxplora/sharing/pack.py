@@ -92,7 +92,10 @@ _ONLY_ALL_NAMES = frozenset({
     "system.xml", "state.xml", "integrator.xml", "solvated.pdb", "state_final.xml",
     "state_minimized.xml", "complex_for_pka.pdb", "retained.pdb", "report.pdf",
     "slides.pptx", "dashboard.html", "simulation.log", "fastmdxplora.log",
-    "checkpoint.chk.json", "checkpoint.chk.sha256"})
+    "checkpoint.chk.json", "checkpoint.chk.sha256",
+    # A checkpoint's set a kill left part moved (`runner._write_checkpoint_set`):
+    # its waiting files go with the checkpoint they belong to, never without it.
+    "checkpoint.chk.new", "checkpoint.chk.json.new", "checkpoint.chk.sha256.new"})
 _ONLY_ALL_SUFFIXES = frozenset({".chk", ".mp4", ".webm"})
 _MEDOID = re.compile(r"_medoid_\d+\.pdb$")
 

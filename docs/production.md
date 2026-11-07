@@ -745,12 +745,15 @@ obeyed at once: a second SIGTERM, though one within two seconds of the
 first is the same request arriving twice, as it does when sent to a whole
 process group, and counts once; a second Ctrl-C, however quick. A first
 Ctrl-C after a SIGTERM (a scheduler's, the GUI's Stop, a broken pool's)
-asks the stop already under way, and says so ("the stop asked already is
-under way"), so a run still saves at its frame; a second Ctrl-C means now,
-and the study says it is stopping now. Either way the study records where
-it stopped (the retryable `simulation.run.stopped`), the GUI says Stopped
-with what would fix it, `fastmdx resume` carries it on, and the command
-exits 130.
+asks the stop already under way, and says so once, on the terminal ("Ctrl+C
+received: the stop asked already is under way ... Press Ctrl+C again to stop
+now."), so a run still saves at its frame; a second Ctrl-C means now, and
+the study says "Stopping now", with the `fastmdx resume` of the study. Either
+way the study records where it stopped (the retryable
+`simulation.run.stopped`, and its round stopped when asked), the GUI says
+Stopped with what would fix it, `fastmdx resume` carries it on, and the
+command exits 130, whether Ctrl-C, SIGTERM or the GUI's Stop asked, unless a
+run of it ended in an error of its own (1).
 
 **A study of several runs stops as one.** Running its runs in parallel, the
 study passes SIGTERM on to each of them (Ctrl-C reaches them from the terminal

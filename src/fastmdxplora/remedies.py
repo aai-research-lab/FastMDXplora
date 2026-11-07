@@ -572,6 +572,7 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
                if isinstance(p, dict)}
     stopped: list[tuple[str, Path, str]] = []
     unstarted: list[tuple[str, Path]] = []
+    ended: list[tuple[str, Path]] = []
     windows: dict[int, tuple[str, Path, dict[str, Any] | None]] = {}
     remedies: list[Remedy] = []
     for run in batch.get("runs") or []:
@@ -591,12 +592,18 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
             continue
         if run.get("status") != "error":
             continue
-        from fastmdxplora.batch.explorer import CUT_IN_THE_ROUNDS, STOPPED_IN_THE_ROUNDS
+        from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_IN_THE_ROUNDS,
+                                                 WORKER_ENDED)
 
         if run.get("error_type") in (STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS):
             # Stopped or cut in its study's round: fixed as the round's own
             # sentence says (`stopping.round_ended`), never as a refusal of
             # its own with no code and no cost.
+            continue
+        if run.get("error_type") == WORKER_ENDED:
+            # Its worker ended abruptly while it ran: carried on from its
+            # last checkpoint, as a run stopped is.
+            ended.append((run_id, folder))
             continue
         refusal = _refusal_of_run(run)
         if run.get("error_type") == "Stopped" or _retryable(refusal):
@@ -606,19 +613,27 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
             windows[index] = (run_id, folder, refusal)
             continue
         remedies.append(remedy_for(refusal, study=folder, where=run_id))
-    if stopped or unstarted:
+    if stopped or unstarted or ended:
         code = next((c for _, _, c in stopped if known(c)), "simulation.run.stopped")
-        names = [run_id for run_id, _, _ in stopped] + [run_id for run_id, _ in unstarted]
-        why = (f"{_counted(len(stopped), 'run')} stopped where "
-               f"{'it' if len(stopped) == 1 else 'they'} can be carried on"
-               if stopped else "")
+        names = ([run_id for run_id, _, _ in stopped] + [run_id for run_id, _ in ended]
+                 + [run_id for run_id, _ in unstarted])
+        parts = []
+        if stopped:
+            parts.append(f"{_counted(len(stopped), 'run')} stopped where "
+                         f"{'it' if len(stopped) == 1 else 'they'} can be carried on")
+        if ended:
+            parts.append(f"{_counted(len(ended), 'run')} ended with "
+                         f"{'its worker' if len(ended) == 1 else 'their workers'}, killed "
+                         "while running")
         if unstarted:
-            why += (" and " if why else "") + f"{_counted(len(unstarted), 'run')} did not start"
+            parts.append(f"{_counted(len(unstarted), 'run')} did not start")
+        why = ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
         why = why[0].upper() + why[1:] + "."
         if code != "simulation.run.stopped":
             why += f" {code_for(code).summary}"
         remedy = _resume(code, why, "the study",
-                         [folder for _, folder, _ in stopped] + [f for _, f in unstarted], root,
+                         [folder for _, folder, _ in stopped] + [f for _, f in ended]
+                         + [f for _, f in unstarted], root,
                          unstarted=len(unstarted))
         remedies.insert(0, _covering(remedy, names))
     if any(refusal is not None for _, _, refusal in windows.values()):
@@ -1133,6 +1148,21 @@ def _covering(remedy: Remedy, names: list[str]) -> Remedy:
     return replace(remedy, covers=tuple(names))
 
 
+def _as_its_study_plans_it(folder: Path) -> dict[str, Any]:
+    """A run's ``simulation`` block as its study planned it, from the
+    study's `batch_manifest.json` (``runs/<run>`` of the study); empty where
+    it is not planned there."""
+    if folder.parent.name != "runs":
+        return {}
+    batch = _read(folder.parent.parent / "batch_manifest.json")
+    for planned in (batch.get("planned") or []) if isinstance(batch, dict) else []:
+        if isinstance(planned, dict) and str(planned.get("run_id")) == folder.name:
+            options = planned.get("options") if isinstance(planned.get("options"), dict) else {}
+            simulation = options.get("simulation")
+            return dict(simulation) if isinstance(simulation, dict) else {}
+    return {}
+
+
 def _planned(folder: Path | None) -> tuple[float, float]:
     """(production, equilibration) in ns, as the run's own config plans them,
     resolved by the runner's own function: a run that names no length runs
@@ -1144,7 +1174,12 @@ def _planned(folder: Path | None) -> tuple[float, float]:
     from fastmdxplora.simulation.runner import plan_stages
 
     sim: dict[str, Any] = {}
-    if folder is not None:
+    if folder is not None and not record_access.is_file(Path(folder) / "resolved_config.yml"):
+        # A run that never started has no config of its own: its study's
+        # plan of it (`batch_manifest.json`'s ``planned``) says its lengths,
+        # where the package's defaults priced a run of 10 ps at hours.
+        sim = _as_its_study_plans_it(Path(folder))
+    elif folder is not None:
         resolved = Path(folder) / "resolved_config.yml"
         try:
             config = yaml.safe_load(record_access.read_text(resolved, encoding="utf-8")) or {}

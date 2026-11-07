@@ -210,6 +210,11 @@ _running_a_run = False
 #: phase was running to carry the refusal.
 STOPPED_ERROR_TYPE = "Stopped"
 
+#: What a run of a parallel study is recorded as where its worker ended
+#: abruptly (killed, out of memory) while it ran: carried on by `fastmdx
+#: resume` from its last checkpoint (`BatchExplorer._as_its_records_say`).
+WORKER_ENDED = "WorkerEnded"
+
 #: What a run of a study being resumed is recorded as where its resume
 #: refused it (`_resume_run`).
 RESUME_REFUSED = "ResumeRefused"
@@ -432,9 +437,9 @@ class _StudyStop:
                 "`fastmdx resume %s` carries the runs on from their last checkpoints.",
                 self.folder or "")
         self._restore()
-        if number == signal.SIGINT:
-            raise KeyboardInterrupt
-        os.kill(os.getpid(), number)
+        # Raised whatever the signal, so the study's records say it stopped
+        # when asked before it ends (`runner._stop_now`).
+        raise KeyboardInterrupt
 
     def _restore(self) -> None:
         import signal
@@ -1156,15 +1161,19 @@ def _execute_run(
             # who asked reads (`runner._say_stop`).
             from fastmdxplora.simulation import runner as _runner
 
-            self.terminal_before = _runner._TERMINAL_FD
-            if self.saved is not None:
-                _runner._TERMINAL_FD = self.saved[0]
+            with _runner._TERMINAL_LOCK:
+                self.terminal_before = _runner._TERMINAL_FD
+                if self.saved is not None:
+                    _runner._TERMINAL_FD = self.saved[0]
             return self
 
         def __exit__(self, *_exc):
             from fastmdxplora.simulation import runner as _runner
 
-            _runner._TERMINAL_FD = self.terminal_before
+            # Given back before its descriptors are closed, under the lock a
+            # stop's line is said under (`runner._say_stop`).
+            with _runner._TERMINAL_LOCK:
+                _runner._TERMINAL_FD = self.terminal_before
             if self.saved is not None:
                 # Flush while the descriptors are still moved. PLUMED's
                 # writes sit in the C runtime's buffer until something
@@ -2119,7 +2128,18 @@ class BatchExplorer:
                 # A resumed study's record says the round before until its
                 # rounds are judged again, so not read here.
                 self._write_batch_manifest(round_said=False)
-            self._run_until_known(stopping)
+            try:
+                self._run_until_known(stopping)
+            except KeyboardInterrupt:
+                # Stopped now: the round's record says it stopped when asked
+                # (`stopping._run_until_known`), and the batch manifest says
+                # how the round ended, before the study ends.
+                if not self.is_single:
+                    try:
+                        self._write_batch_manifest()
+                    except Exception:  # noqa: BLE001 - the stop goes on
+                        logger.debug("The batch manifest was not written", exc_info=True)
+                raise
             if not self.is_single:
                 self._the_runs_as_their_records_say()
 
@@ -3478,6 +3498,32 @@ class BatchExplorer:
             f"{self.output_dir}` runs it, and carries on the runs that were "
             "stopped.") for spec in specs]
 
+    def _as_its_records_say(self, result: "RunResult") -> "RunResult":
+        """A run of a pool a worker of which ended abruptly, read from its
+        own records once the pool has ended: every one of them was given
+        `BrokenProcessPool`, and read "error ... the choice is yours" with no
+        resume. Its worker's own run ended with it (`WORKER_ENDED`); another
+        stopped where it can be carried on (`STOPPED_ERROR_TYPE`), or
+        finished, as its records say."""
+        from dataclasses import replace
+
+        try:
+            from fastmdxplora.gui.telemetry import status_as_it_stands
+
+            stands = str((status_as_it_stands(Path(result.output_dir)) or {}).get("status") or "")
+        except Exception:  # noqa: BLE001 - said as its worker's end
+            stands = ""
+        if stands == "completed":
+            return replace(result, status="ok", message="", error_type=None)
+        if stands == "stopped":
+            return replace(result, error_type=STOPPED_ERROR_TYPE, message=(
+                "Stopped where it can be carried on: a worker of the study ended abruptly, "
+                f"and the others were asked to stop. `fastmdx resume {self.output_dir}` "
+                "carries it on."))
+        return replace(result, error_type=WORKER_ENDED, message=(
+            "Its worker ended abruptly (killed, out of memory, say) while it ran. "
+            f"`fastmdx resume {self.output_dir}` carries it on from its last checkpoint."))
+
     def _not_started_in_a_broken_pool(self, specs) -> list["RunResult"]:
         """The runs a study did not start once a worker of its pool ended
         abruptly (killed, out of memory): the pool takes no more."""
@@ -3543,6 +3589,8 @@ class BatchExplorer:
         print("Each run writes its own log; the study reports here.")
 
         results: list[RunResult] = []
+        #: Where in ``results`` the runs a broken pool failed are.
+        lost: list[tuple[int, int]] = []
         futures = {}
         # The device each run was given. The runs in flight are the ones
         # still in `futures`, so what each device holds is counted from it.
@@ -3672,6 +3720,13 @@ class BatchExplorer:
                         message=f"{type(exc).__name__}: {exc}",
                         error_type=type(exc).__name__,
                     )
+                if result.error_type == "BrokenProcessPool":
+                    # Every run of a broken pool gets this, whichever worker
+                    # ended: each is read from its own records once the pool
+                    # has ended (`_as_its_records_say`), and said then.
+                    results.append(result)
+                    lost.append((len(results) - 1, done))
+                    continue
                 mark = "✓" if result.status == "ok" else "✗"
                 _clear_progress_line()
                 print(f"[{done}/{n}] {mark} {spec.run_id}")
@@ -3750,6 +3805,15 @@ class BatchExplorer:
                 _shut_down(pool, stop, folder=self.output_dir, watch=watch)
             finally:
                 stop.__exit__(None, None, None)
+
+        # The runs of a broken pool, as their own records say now it has ended.
+        for index, counted in lost:
+            results[index] = self._as_its_records_say(results[index])
+            done_said = results[index]
+            print(f"[{counted}/{n}] {'✓' if done_said.status == 'ok' else '✗'} "
+                  f"{done_said.run_id}")
+            if done_said.status == "error":
+                print(f"      {_why_it_failed(done_said)}")
 
         # The runs a broken pool was never given (a worker killed), or a stop
         # asked while its workers ended, each said not started.
