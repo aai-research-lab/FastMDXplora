@@ -57,6 +57,7 @@ __all__ = [
     "build_restraint_forces",
     "parse_restraints",
     "resolve_restraints",
+    "restraint_selections",
     "DEFAULT_POSITION_FORCE",
     "ENERGY_FORM",
 ]
@@ -334,6 +335,32 @@ def parse_restraints(spec: Any) -> list[Restraint]:
                     else float(entry["target"])),
             stated=entry.get("force_constant") is not None,
         ))
+    return found
+
+
+def restraint_selections(spec: Any) -> list[tuple[str, str]]:
+    """Each selection a `restrain` setting writes, with where in it: ``""``
+    for the short form, ``"[2].selection"`` for the second block.
+
+    Read as :func:`parse_restraints` reads the setting, and without its
+    refusals: a block it cannot read is the validator's to refuse, and a
+    selection is what this gives for MDTraj to parse before a run. Without
+    that, a typo in one (`resnamez ALA`) was found only when the simulation
+    began, after setup had run.
+    """
+    if spec is None or spec == "":
+        return []
+    if isinstance(spec, str):
+        return [("", spec)]
+    entries = [spec] if isinstance(spec, dict) else spec
+    if not isinstance(entries, (list, tuple)):
+        return []
+    found: list[tuple[str, str]] = []
+    for number, entry in enumerate(entries, start=1):
+        if isinstance(entry, str):
+            found.append((f"[{number}]", entry))
+        elif isinstance(entry, dict) and isinstance(entry.get("selection"), str):
+            found.append((f"[{number}].selection", entry["selection"]))
     return found
 
 

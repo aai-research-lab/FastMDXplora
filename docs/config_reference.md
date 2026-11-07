@@ -290,7 +290,7 @@ Every key each block takes is in
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `restrain` | str or list | — | What to hold still during equilibration. A selection, or a list of restraint blocks |
+| `restrain` | str or list | — | What to hold still during equilibration. A selection, or a list of restraint blocks. Each selection is parsed with MDTraj before a run |
 | `restraint_release` | list | `[1000, 500, 100, 0]` | Force constants stepped through during equilibration, in kJ/mol/nm² |
 | `restrain_production` | bool | `false` | Keep restraints on during production |
 

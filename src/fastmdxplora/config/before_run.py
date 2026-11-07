@@ -132,8 +132,9 @@ def _is_selection_key(key: str) -> bool:
 def selections_in(config: dict[str, Any]) -> list[tuple[str, str]]:
     """Every MDTraj selection a config writes, with the setting it is in:
     the analyses' own, each analysis's selection options in
-    `analysis.options`, the atoms the trajectory keeps, the same in each
-    system entry's blocks.
+    `analysis.options`, the atoms the trajectory keeps, the atoms each
+    restraint holds (`simulation.restrain`, short form or blocks), the same
+    in each system entry's blocks.
 
     An analysis option is read as a selection by its name (`selection`,
     `..._selection`, `selection_...`), and not where its value is that
@@ -162,6 +163,11 @@ def selections_in(config: dict[str, Any]) -> list[tuple[str, str]]:
         simulation = holder.get("simulation")
         if isinstance(simulation, dict) and isinstance(simulation.get("save_selection"), str):
             found.append((f"{where}simulation.save_selection", simulation["save_selection"]))
+        if isinstance(simulation, dict) and simulation.get("restrain") not in (None, ""):
+            from fastmdxplora.simulation.restraints import restraint_selections
+
+            for within, selection in restraint_selections(simulation["restrain"]):
+                found.append((f"{where}simulation.restrain{within}", selection))
 
     blocks("", config)
     for entry in config.get("systems") or []:
