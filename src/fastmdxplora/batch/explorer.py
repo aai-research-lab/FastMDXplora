@@ -439,6 +439,9 @@ class _StudyStop:
         self._restore()
         # Raised whatever the signal, so the study's records say it stopped
         # when asked before it ends (`runner._stop_now`).
+        from fastmdxplora.simulation import runner
+
+        runner._stopped_now = True
         raise KeyboardInterrupt
 
     def _restore(self) -> None:

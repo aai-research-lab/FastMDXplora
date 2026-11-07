@@ -859,9 +859,15 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
         raised as KeyboardInterrupt), the round said stopped when asked, its
         record written, before the study ends: it was left "running", and
         every page read the study interrupted."""
+        from fastmdxplora.simulation.runner import stopped_now
+
         try:
             return list(extend())
         except KeyboardInterrupt:
+            if not stopped_now():
+                # Not a stop asked (no listener heard it): the round is cut,
+                # as a kill leaves it.
+                raise
             began = entry.get("started")
             began = [str(name) for name in began] if isinstance(began, list) else []
             entry["extended"] = []

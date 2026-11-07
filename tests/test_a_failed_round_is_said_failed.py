@@ -1849,7 +1849,7 @@ def test_a_run_is_not_handed_to_a_pool_whose_worker_has_ended(tmp_path):
     results = json.loads(printed.splitlines()[-1])
     assert results["tri__random-seed-2"][0] == "error", results
     for seed in (3, 4):
-        status, message = results[f"tri__random-seed-{seed}"]
+        status, message = results[f"tri__random-seed-{seed}"][:2]
         assert status == "skipped" and message.startswith(
             "Not started: a worker of the study ended abruptly"), results
     assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
@@ -1868,7 +1868,8 @@ def test_no_run_is_handed_to_a_broken_pool_in_30_studies(tmp_path):
     # ended before the death: its runs 3 and 4 were rightly handed on.
     valid = [results for results in studies
              if results["tri__random-seed-1"][0] == "ok"
-             or "BrokenProcessPool" in results["tri__random-seed-1"][1]]
+             or "BrokenProcessPool" in results["tri__random-seed-1"][1]
+             or results["tri__random-seed-1"][2:] in (["WorkerEnded"], ["Stopped"])]
     assert len(valid) >= 25, f"only {len(valid)} of 30 studies ran as asked: {studies[:2]}"
     handed = [results for results in valid
               if any(results[f"tri__random-seed-{seed}"][0] != "skipped" for seed in (3, 4))]
@@ -1944,7 +1945,7 @@ def test_a_stop_while_a_worker_saves_waits_for_its_save(number, tmp_path):
     assert ran.returncode == 0, logged[-2000:]
     assert (tmp_path / "saved-1").exists(), logged[-2000:]
     results = json.loads(printed.splitlines()[-1])
-    status, message = results["tri__random-seed-3"]
+    status, message = results["tri__random-seed-3"][:2]
     assert status == "skipped" and message.startswith(
         "Not started: the study was asked to stop"), results
     assert not ran.left_behind, f"a worker of {_its_workers(tmp_path)} outlived it"
@@ -2435,9 +2436,13 @@ def test_a_round_stopped_now_says_it_stopped_when_asked(tmp_path, monkeypatch):
     stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
                  "max_duration_ns": 0.01}
 
+    from fastmdxplora.simulation import runner
+
     def stopped_now(runs, more):
         for run in runs:
             stopping.extension_begins(run)
+        # As a second stop raises it (`runner._stop_now`).
+        monkeypatch.setattr(runner, "_stopped_now", True)
         raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):

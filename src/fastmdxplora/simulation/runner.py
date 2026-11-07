@@ -960,11 +960,23 @@ _first_stop_at: float | None = None
 _ctrl_c_heard = False
 
 
+#: Set as a second stop is obeyed at once (`_stop_now`): the
+#: KeyboardInterrupt it raises is a stop asked, which the study's rounds
+#: record as such, not a cut (`stopping._run_until_known`).
+_stopped_now = False
+
+
 def _listen_afresh() -> None:
     """Forget an earlier stop: a new run, or its production, is starting."""
-    global _first_stop_at, _ctrl_c_heard
+    global _first_stop_at, _ctrl_c_heard, _stopped_now
     _first_stop_at = None
     _ctrl_c_heard = False
+    _stopped_now = False
+
+
+def stopped_now() -> bool:
+    """Whether this process was asked to stop now (a second stop)."""
+    return _stopped_now
 
 
 def _a_stop_asked_here() -> None:
@@ -1043,6 +1055,8 @@ def _stop_now(number: int) -> None:
     import os as _os
     import signal as _signal
 
+    global _stopped_now
+    _stopped_now = True
     if number == _signal.SIGINT or not _IN_A_POOL_WORKER:
         raise KeyboardInterrupt
     _os.kill(_os.getpid(), number)
