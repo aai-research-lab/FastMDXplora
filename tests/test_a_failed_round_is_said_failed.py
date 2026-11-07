@@ -1633,10 +1633,12 @@ def run(spec, run_out, *_args, **_kwargs):
     out = Path(run_out)
     out.mkdir(parents=True, exist_ok=True)
     _say(here / f"started-{seed}", str(os.getpid()))
+    if role not in ("save", "hold"):
+        _say(here / f"ready-{seed}", "")
     status, message = "ok", ""
     if role == "die":
-        # Once each other run given a role has begun.
-        _until(lambda: all((here / f"started-{other}").exists() or other == seed
+        # Once each other run given a role is ready for what it is to do.
+        _until(lambda: all((here / f"ready-{other}").exists() or other == seed
                            for other in json.loads(os.environ["ROLES"])))
         os.kill(os.getpid(), signal.SIGKILL)
     elif role == "after":
@@ -1652,6 +1654,7 @@ def run(spec, run_out, *_args, **_kwargs):
         # SAVE seconds) and gives the record back; "hold" never stops.
         _hold_run_process(out)
         explorer._running_a_run = role == "save"
+        _say(here / f"ready-{seed}", "")
         try:
             while True:
                 time.sleep(0.05)
@@ -1681,11 +1684,12 @@ def extend(run, *_args, **_kwargs):
     role = json.loads(os.environ["ROLES"])[name]
     _say(here / f"started-{name}", str(os.getpid()))
     if role == "die":
-        _until(lambda: (here / "started-a").exists())
+        _until(lambda: (here / "ready-a").exists())
         os.kill(os.getpid(), signal.SIGKILL)
     # Its run's record held while it runs, as an extension's is.
     _hold_run_process(Path(run))
     explorer._running_a_run = True
+    _say(here / f"ready-{name}", "")
     try:
         until = time.monotonic() + 40
         while time.monotonic() < until:
@@ -1757,7 +1761,8 @@ elif __name__ == "__main__":
               "execution": {"mode": "parallel", "workers": 2}}
     for repeat in range(int(os.environ.get("REPEATS") or 1)):
         for name in os.listdir(here):
-            if name.split("-")[0] in ("started", "saving", "saved") or name.endswith(".new"):
+            if (name.split("-")[0] in ("started", "ready", "saving", "saved")
+                    or name.endswith(".new")):
                 (here / name).unlink()
         study = explorer.BatchExplorer(config_data=config, output_dir=here / f"study-{repeat}")
         results = study._run_parallel(None, None)
