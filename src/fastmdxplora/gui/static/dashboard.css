@@ -6860,6 +6860,7 @@ html[data-page="run"] .page-shell { max-width: 1340px; }
 .page[data-page="run"] .builder-changed li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; }
 .page[data-page="run"] .builder-changed-label { flex: 1; min-width: 0; color: var(--text-primary); }
 .page[data-page="run"] .builder-changed-value { color: var(--text-secondary); font-size: var(--text-xs); overflow-wrap: anywhere; text-align: right; }
+.page[data-page="run"] .builder-code-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .page[data-page="run"] .builder-tabs { display: flex; gap: 2px; margin-bottom: 8px; }
 .page[data-page="run"] .builder-tabs button {
     padding: 3px 9px; border: 0; border-radius: 5px; background: none; color: var(--text-muted);
