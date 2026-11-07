@@ -897,7 +897,7 @@ def _write_checkpoint_set(simulation: Any, chk_path: Path, sidecar: dict[str, An
 
     # A set a kill left part moved is finished first, and what is left of an
     # earlier write cleared, so this write's files never pair with its.
-    _settle_checkpoint_set(chk_path)
+    _finish_checkpoint_set(chk_path)
     payload = simulation.context.createCheckpoint()
     side_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_SIDECAR_SUFFIX)
     seal_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
@@ -2159,7 +2159,7 @@ def _seals(checkpoint: Path, seal: Path) -> bool:
         return False
 
 
-def _settle_checkpoint_set(checkpoint: Path) -> None:
+def _finish_checkpoint_set(checkpoint: Path) -> None:
     """A checkpoint's set left part moved by a kill (`_write_checkpoint_set`)
     finished: its waiting sidecar and seal moved in where they belong to the
     checkpoint in place; then what is left of a write (``.new``) removed.
@@ -2404,8 +2404,8 @@ def load_checkpoint(omm: dict, simulation: Any, path: str | Path, *,
             code="simulation.resume.checkpoint_rejected",
             path=str(checkpoint),
         ) from exc
-    # A killed write's leftovers beside the set it read, settled.
-    _settle_checkpoint_set(checkpoint)
+    # A killed write's leftovers beside the set it read, cleared.
+    _finish_checkpoint_set(checkpoint)
     return checkpoint
 
 
