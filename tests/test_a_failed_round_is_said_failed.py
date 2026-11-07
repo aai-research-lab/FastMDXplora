@@ -2099,7 +2099,7 @@ else:
 try:
     os.kill(os.getpid(), signal.SIGINT)
     time.sleep(0.2)
-    print("kept", stop.signal is not None, flush=True)
+    print("still stopping", stop.signal is not None, flush=True)
     os.kill(os.getpid(), signal.SIGINT)
     time.sleep(0.5)
     print("not stopped now", flush=True)
@@ -2126,7 +2126,7 @@ def test_one_ctrl_c_after_a_stop_is_the_stop_under_way_and_says_so(which, first,
                          env={**os.environ, "PYTHONPATH": _source()}, capture_output=True,
                          text=True, timeout=120)
     said = ran.stdout
-    assert "kept True" in said, said + ran.stderr[-1500:]
+    assert "still stopping True" in said, said + ran.stderr[-1500:]
     assert "the stop asked already is under way" in said and "Press Ctrl+C again" in said, said
     assert "stopped now" in said.splitlines()[-1], said + ran.stderr[-1500:]
     if first == "sigterm":
