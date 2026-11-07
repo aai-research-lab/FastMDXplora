@@ -290,9 +290,13 @@ def _check_choices(value: Any, fld: Any, *, key: str, context: str) -> None:
         # would replace a better message with a worse one.
         return
     offered = set(fld.choices)
+    # A value withdrawn from the choices is still one the software knows: an
+    # older study's record may hold it, and a new study naming it is refused
+    # by that value's own check, with its reason.
+    known = offered | set(getattr(fld, "withdrawn", ()))
     given = value if fld.type is list and isinstance(value, list) else [value]
     for item in given:
-        if item in offered:
+        if item in known:
             continue
         where = f"{context} option '{key}'"
         raise ConfigError(

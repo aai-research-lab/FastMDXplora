@@ -262,9 +262,9 @@ this for you — see [Continuing a study that stopped](agent.md#continuing-a-stu
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `verlet`, `variable_langevin`, `variable_verlet`. The two Verlet ones have no thermostat and are refused; `brownian` needs a friction of about 100 per ps at 2 fs and 300 K |
+| `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `variable_langevin`. `brownian` needs a friction of about 100 per ps at 2 fs and 300 K. `verlet` and `variable_verlet` (no thermostat) are not offered; an older record naming one reads |
 | `timestep_fs` | int or float | `2.0` | Integrator timestep |
-| `integrator_error_tolerance` | float | `0.001` | Variable-timestep integrators only |
+| `integrator_error_tolerance` | float | `0.001` | The variable-timestep integrator (`variable_langevin`) only |
 | `random_seed` | int | unset | Integrator seed. Fixes the dynamics, not the solvation |
 
 ### Enhanced sampling

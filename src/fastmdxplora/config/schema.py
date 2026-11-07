@@ -142,6 +142,13 @@ class Field:
     #: least one step.
     exclusive_minimum: bool = False
     phase_sentinel: Any = _UNSET
+    #: Values a study made by an earlier version may hold and a new study is
+    #: not offered: left out of `choices`, so argparse, the GUI, the config
+    #: template and the JSON schema do not list them, and read where a
+    #: study's record holds one. Each has a refusal of its own for a new
+    #: study, which says why (an integrator with no thermostat:
+    #: `simulation.runner.check_integrator`).
+    withdrawn: tuple[str, ...] = ()
 
     @property
     def phase_value(self) -> Any:
@@ -742,17 +749,20 @@ SIMULATION = PhaseSchema(
         Field("minimize", bool, True,
               "Run energy minimization before equilibration."),
         Field("integrator", str, "langevin_middle",
-              "Integrator: langevin_middle, langevin, brownian, verlet, "
-              "variable_langevin, or variable_verlet. verlet and "
-              "variable_verlet have no thermostat while every stage holds a "
-              "temperature, so they are refused; brownian needs a friction of "
-              "about 100 per ps at 2 fs and 300 K (it scales with the "
-              "timestep and temperature) and is refused below it.",
-              choices=("langevin_middle", "langevin", "brownian", "verlet",
-                       "variable_langevin", "variable_verlet")),
+              "Integrator: langevin_middle, langevin, brownian, or "
+              "variable_langevin. brownian needs a friction of about 100 per "
+              "ps at 2 fs and 300 K (it scales with the timestep and "
+              "temperature) and is refused below it. verlet and "
+              "variable_verlet are no longer offered: they have no thermostat "
+              "while every stage holds a temperature, so a new study naming "
+              "one is refused, and an older study's record that names one "
+              "still reads.",
+              choices=("langevin_middle", "langevin", "brownian",
+                       "variable_langevin"),
+              withdrawn=("verlet", "variable_verlet")),
         Field("integrator_error_tolerance", float, 0.001,
-              "Error tolerance for the variable-timestep integrators "
-              "(variable_langevin / variable_verlet).",
+              "Error tolerance for the variable-timestep integrator "
+              "(variable_langevin).",
               minimum=0.0, exclusive_minimum=True),
         Field("minimize_tolerance_kjmol_per_nm", (int, float), 10.0,
               "Minimization force tolerance in kJ/mol/nm.",

@@ -1072,8 +1072,10 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: (`image_check` among the analyses `include` and `exclude` accept, then
 #: `solvent_padding_nm` defaulting to 2.0); no verdict changed. Set again by
 #: `setup-temp` (`setup.temperature_K` has no default of its own, as unset
-#: it is the run's `simulation.temperature_K`); no verdict changed.
-ASKED_NOW = "980d9b027dd5f721d6435b4bc72317e5fcc7d6af8d1a7652fddb502a8f8fddd6"
+#: it is the run's `simulation.temperature_K`); no verdict changed. Set again
+#: by `setup-honest` (`verlet` and `variable_verlet` not among the integrator's
+#: choices); no verdict changed.
+ASKED_NOW = "34b11158700faaac629d863445de8aedd83c084969a06ea5ed2830f97c451e7d"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1434,8 +1436,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "795b135d191274174adaa482fd7fbf06cb34870f85bb6550a8de78e8e435403d",
-    False: "4205b3fd103a96386db38300fe969249e3918886fb52bf085af44d40a5431e33"}
+    True: "8628909bc5d38721f02b6474f1d2d7a9893a0c4e6f8d5f5a4123d7a55e7a5182",
+    False: "f329e1988077a59698b90cdef9b68f83a612966d0ba78b02af20999655f15005"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:
