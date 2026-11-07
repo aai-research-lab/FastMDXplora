@@ -350,6 +350,8 @@ class _StudyStop:
         #: (`runner.stop_what_listens_here`).
         self.folder = folder
         self.signal: int | None = None
+        #: Asked again: stop now.
+        self.now = False
         self._previous: dict[int, Any] = {}
 
     @property
@@ -405,20 +407,30 @@ class _StudyStop:
     def _heard(self, number: int, _frame: Any) -> None:
         import signal
 
-        from fastmdxplora.simulation.runner import _a_stop_heard, stop_grace_seconds
+        from fastmdxplora.simulation.runner import (CTRL_C_UNDER_WAY, _a_stop_heard,
+                                                    stop_grace_seconds, stop_now_said)
 
         heard = _a_stop_heard(number)
-        if heard == "again":
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == signal.SIGINT:
+                logger.warning("%s", CTRL_C_UNDER_WAY)
             return
+        ended = _a_worker_ended(self.pool)
         self._pass_on(number, now=heard != "first")
         if heard == "first":
             self.signal = number
             logger.warning(
                 "%s received: each run in progress ends where it can be carried "
                 "on (in production, at its next frame if that is within %.0f s), "
-                "and no further run starts. Send it again to stop now.",
-                signal.Signals(number).name, stop_grace_seconds())
+                "and no further run starts. %s",
+                signal.Signals(number).name, stop_grace_seconds(), stop_now_said(number))
             return
+        self.now = True
+        if not ended:
+            logger.warning(
+                "Stopping now: each run in progress ends at once, and no further run starts; "
+                "`fastmdx resume %s` carries the runs on from their last checkpoints.",
+                self.folder or "")
         self._restore()
         if number == signal.SIGINT:
             raise KeyboardInterrupt
@@ -455,6 +467,9 @@ class _StudyStop:
             # `STOP_REPEAT_SECONDS`, as stop now, and dies without the
             # checkpoint its first was ending at.
             return "Stopping: asked already."
+        from fastmdxplora.simulation.runner import _a_stop_asked_here
+
+        _a_stop_asked_here()
         self.signal = signal.SIGTERM
         logger.warning(
             "Stop asked from the GUI: each run in progress ends where it can be carried "
@@ -2397,28 +2412,59 @@ class BatchExplorer:
         watch = _BreakWatch(pool, stop, self.output_dir)
         try:
             stop.__enter__()
-            from fastmdxplora.simulation.stopping import extension_begins
-
-            for run in runs:
-                extension_begins(run)
-            futures = [pool.submit(_extend_one, str(run), more_ns,
-                                   self._device_for_worker(index), total_ns)
-                       for index, run in enumerate(runs)]
             from concurrent.futures.process import BrokenProcessPool
 
-            answers = []
-            for future in futures:
+            from fastmdxplora.simulation.stopping import extension_begins, to_begin_another
+
+            # Handed out as workers free, as the study's first runs are
+            # (`submit_next`): all handed at once, the pool queued those not
+            # yet running where a stop could not reach them, and each began
+            # after the stop, "stop now" too.
+            answers: dict[int, dict[str, Any]] = {}
+            pending: dict[Any, int] = {}
+            begun = 0
+
+            def hand_one() -> bool:
+                nonlocal begun
+                if begun >= len(runs) or stop.requested or not to_begin_another():
+                    return False
+                if _a_worker_ended(pool):
+                    _wake_the_pool(pool)
+                    return False
+                extension_begins(runs[begun])
                 try:
-                    answers.append(future.result())
-                except BrokenProcessPool as exc:
-                    # A worker ended abruptly (killed, out of memory): every
-                    # run's future gets this, whichever worker it was, so no
-                    # run is named by it (`stopping._the_round_stopped`).
-                    answers.append({"ok": False, "stage": None, "lost": True,
-                                    "error": f"{type(exc).__name__}: {exc}"})
-                except Exception as exc:  # noqa: BLE001 - said in the record
-                    answers.append({"ok": False, "stage": "simulation",
-                                    "error": f"{type(exc).__name__}: {exc}"})
+                    future = pool.submit(_extend_one, str(runs[begun]), more_ns,
+                                         self._device_for_worker(begun), total_ns)
+                except (BrokenProcessPool, RuntimeError):
+                    # Broken, or shut down, since the look above: not begun.
+                    return False
+                pending[future] = begun
+                begun += 1
+                return True
+
+            for _ in range(workers):
+                if not hand_one():
+                    break
+            while pending:
+                finished, _waiting = wait_for_any(pending, timeout=0.25,
+                                                  return_when=FIRST_COMPLETED)
+                for future in finished:
+                    index = pending.pop(future)
+                    try:
+                        answers[index] = future.result()
+                    except BrokenProcessPool as exc:
+                        # A worker ended abruptly (killed, out of memory): every
+                        # run's future gets this, whichever worker it was, so no
+                        # run is named by it (`stopping._the_round_stopped`).
+                        answers[index] = {"ok": False, "stage": None, "lost": True,
+                                          "error": f"{type(exc).__name__}: {exc}"}
+                    except Exception as exc:  # noqa: BLE001 - said in the record
+                        answers[index] = {"ok": False, "stage": "simulation",
+                                          "error": f"{type(exc).__name__}: {exc}"}
+                    hand_one()
+            # The runs begun, in order; one never begun after a stop has no
+            # answer, as one after another (`stopping` says it never began).
+            answers = [answers[index] for index in range(begun)]
             return answers
         finally:
             # The study's listener still listening while its workers end.

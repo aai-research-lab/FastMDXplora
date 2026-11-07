@@ -1745,12 +1745,14 @@ if os.environ.get("HOW"):
     explorer._how_it_ended = lambda run: os.environ["HOW"]
 
 if __name__ == "__main__" and os.environ.get("ROUND"):
-    # A round of the stopping rule extending two runs side by side.
+    # A round of the stopping rule extending its runs (ROLES's) side by side
+    # on two workers.
+    names = sorted(json.loads(os.environ["ROLES"]))
     config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
-              "sweep": {"simulation.random_seed": [1, 2]},
+              "sweep": {"simulation.random_seed": list(range(1, len(names) + 1))},
               "execution": {"mode": "parallel", "workers": 2}}
     study = explorer.BatchExplorer(config_data=config, output_dir=here / "study")
-    runs = [here / "study" / "runs" / "a", here / "study" / "runs" / "b"]
+    runs = [here / "study" / "runs" / name for name in names]
     for run in runs:
         run.mkdir(parents=True, exist_ok=True)
     print(json.dumps(study._extend_runs(runs, 0.001)), flush=True)
@@ -2035,6 +2037,102 @@ def test_a_stop_in_a_round_whose_worker_died_unseen_reaches_the_other(tmp_path):
         logged[-1500:]
     assert time.monotonic() - began < 35, "the other run's extension went on to its end"
     assert not ran.left_behind
+
+
+def test_a_stop_in_a_round_starts_no_extension_still_waiting(tmp_path):
+    """A round of four extensions on two workers, one stop once the first
+    two have begun: every extension was handed to the pool at once, and it
+    held the waiting ones where no stop reached them, so each began after
+    the stop and ran to its end ("no further run starts" said). The waiting
+    ones never begin, and the round's answers name only the two."""
+    import os
+    import signal
+    import sys
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    (tmp_path / "stand_in.py").write_text(_STAND_IN)
+    script = tmp_path / "study.py"
+    script.write_text(_A_STUDY_OF_STAND_INS)
+    env = {**os.environ, "PYTHONPATH": _source(), "STAND_IN": str(tmp_path), "ROUND": "1",
+           "ROLES": json.dumps({name: "carry" for name in "abcd"})}
+    ran = subprocess.Popen([sys.executable, str(script)], cwd=tmp_path, env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           start_new_session=True)
+    try:
+        _until(lambda: all((tmp_path / f"ready-{name}").exists() for name in "ab")
+               or ran.poll() is not None, 120)
+        try:
+            os.kill(ran.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    finally:
+        printed, logged = _ended(ran, 120, "the round")
+    begun = sorted(path.name.split("-", 1)[1] for path in tmp_path.glob("started-*"))
+    assert begun == ["a", "b"], (begun, logged[-1500:])
+    assert all((tmp_path / f"stopped-{name}").exists() for name in "ab"), logged[-1500:]
+    answers = json.loads(printed.splitlines()[-1])
+    assert len(answers) == 2 and all(answer.get("stopped") for answer in answers), answers
+    assert "no further run starts" in logged, logged[-1500:]
+    assert not ran.left_behind
+
+
+_STOPS_HEARD = """
+import logging, os, signal, sys, time
+from types import SimpleNamespace
+
+logging.basicConfig(level=logging.WARNING, stream=sys.stdout, format="%(message)s")
+from fastmdxplora.batch import explorer
+from fastmdxplora.simulation import runner
+
+which, first = sys.argv[1], sys.argv[2]
+if which == "study":
+    stop = explorer._StudyStop(SimpleNamespace(_processes={}), folder="study")
+else:
+    # Production's listener, as a study run in one process has it.
+    stop = runner._StopRequests(folder=os.getcwd())
+stop.__enter__()
+if first == "gui":
+    print("asked:", stop.ask_here(), flush=True)
+else:
+    os.kill(os.getpid(), signal.SIGTERM)
+    time.sleep(0.2)
+try:
+    os.kill(os.getpid(), signal.SIGINT)
+    time.sleep(0.2)
+    print("kept", stop.signal is not None, flush=True)
+    os.kill(os.getpid(), signal.SIGINT)
+    time.sleep(0.5)
+    print("not stopped now", flush=True)
+except KeyboardInterrupt:
+    print("stopped now", flush=True)
+"""
+
+
+@pytest.mark.parametrize("which,first", [("run", "gui"), ("run", "sigterm"), ("study", "gui"),
+                                         ("study", "sigterm")])
+def test_one_ctrl_c_after_a_stop_is_the_stop_under_way_and_says_so(which, first, tmp_path):
+    """The GUI's Stop, then one Ctrl-C, in a study run in one process: the
+    Ctrl-C stopped the run at once, before its frame, where the docs say it
+    saves there. After a SIGTERM a first Ctrl-C was the stop under way and
+    said nothing, while the line before said "Send it again to stop now".
+    One Ctrl-C now says the stop goes on and how to stop now; a second
+    stops now, and the study says so."""
+    import os
+    import sys
+
+    script = tmp_path / "stops.py"
+    script.write_text(_STOPS_HEARD)
+    ran = subprocess.run([sys.executable, str(script), which, first], cwd=tmp_path,
+                         env={**os.environ, "PYTHONPATH": _source()}, capture_output=True,
+                         text=True, timeout=120)
+    said = ran.stdout
+    assert "kept True" in said, said + ran.stderr[-1500:]
+    assert "the stop asked already is under way" in said and "Press Ctrl+C again" in said, said
+    assert "stopped now" in said.splitlines()[-1], said + ran.stderr[-1500:]
+    if first == "sigterm":
+        assert "Send it again to stop now" not in said, said
+    if which == "study":
+        assert "Stopping now:" in said, said
 
 
 def test_a_run_s_hold_writes_over_a_record_its_ended_process_left(tmp_path):
@@ -5721,3 +5819,89 @@ def test_a_resume_killed_in_its_join_after_a_stop_reads_cut_however_its_files_ar
         for run in joined:
             words = status_as_it_stands(study / "runs" / run)["latest_error"]
             assert "stopped when asked" not in words and "process ended" in words, words
+
+
+# ---------------------------------------------------------------------------
+# A kill as a checkpoint is written (R54 L1)
+# ---------------------------------------------------------------------------
+
+class _Killed(Exception):
+    """A kill, at one write or move of a checkpoint's files."""
+
+
+def _a_checkpoint_written(tmp_path: Path, monkeypatch, *, payload: bytes, step: int,
+                          kill_at: int | None) -> int:
+    """A production checkpoint written as the interval reporter writes one,
+    for a stand-in simulation holding ``payload`` at ``step``; killed at the
+    ``kill_at``-th write or move of its files (a write cut leaves the file
+    empty). How many writes and moves it took, where it was not killed."""
+    import os
+
+    from fastmdxplora.simulation import runner
+
+    class Context:
+        def createCheckpoint(self):  # noqa: N802 - OpenMM's name
+            return payload
+
+        def getTime(self):  # noqa: N802 - OpenMM's name
+            raise RuntimeError("no clock here")
+
+    class Simulation:
+        def __init__(self):
+            self.context, self.currentStep, self.reporters = Context(), step, []
+
+    class Reporter:
+        def __init__(self, *_args):
+            pass
+
+    simulation = Simulation()
+    reporter = runner._attach_checkpoint_reporter(
+        {"CheckpointReporter": Reporter}, simulation, tmp_path / "checkpoint.chk", interval=100,
+        sidecar={"stage": "production", "ensemble": "nvt", "temperature_K": 300.0,
+                 "timestep_fs": 2.0})
+    done = {"n": 0}
+    real = {"bytes": Path.write_bytes, "text": Path.write_text, "replace": os.replace}
+
+    def counted(kind):
+        def act(*args, **kwargs):
+            done["n"] += 1
+            if kill_at is not None and done["n"] == kill_at:
+                if kind != "replace":
+                    real[kind](args[0], b"" if kind == "bytes" else "")
+                raise _Killed(kind)
+            return real[kind](*args, **kwargs)
+        return act
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "write_bytes", counted("bytes"))
+        patch.setattr(Path, "write_text", counted("text"))
+        patch.setattr(os, "replace", counted("replace"))
+        try:
+            reporter.report(simulation, None)
+        except _Killed:
+            pass
+    return done["n"]
+
+
+def test_a_kill_as_a_checkpoint_is_written_leaves_a_whole_set(tmp_path, monkeypatch):
+    """Killed as it wrote its checkpoint, a run left the checkpoint at the
+    new step, its sidecar at the old one and an empty seal: resume refused
+    it, and its advice gave the same refusal again. Killed at any write or
+    move, the set before it, or the new one whole, is read."""
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar, verify_checkpoint
+
+    first, second = b"A" * 64, b"B" * 96
+    whole = tmp_path / "whole"
+    whole.mkdir()
+    _a_checkpoint_written(whole, monkeypatch, payload=first, step=100, kill_at=None)
+    steps = _a_checkpoint_written(whole, monkeypatch, payload=second, step=200, kill_at=None)
+    assert steps >= 3
+    for kill_at in range(1, steps + 1):
+        folder = tmp_path / f"killed-{kill_at}"
+        folder.mkdir()
+        _a_checkpoint_written(folder, monkeypatch, payload=first, step=100, kill_at=None)
+        _a_checkpoint_written(folder, monkeypatch, payload=second, step=200, kill_at=kill_at)
+        checkpoint = folder / "checkpoint.chk"
+        assert verify_checkpoint(checkpoint, require_seal=True), kill_at
+        step = (read_checkpoint_sidecar(checkpoint) or {}).get("step")
+        assert (checkpoint.read_bytes(), step) in ((first, 100), (second, 200)), kill_at

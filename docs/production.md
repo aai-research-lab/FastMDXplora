@@ -740,12 +740,14 @@ checkpoint is run twice and the joined trajectory keeps its spacing. It does
 so only when the next frame can be reached within 20 seconds, which leaves
 time inside the 30 or so a scheduler allows before it kills; otherwise the last
 interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
-platform that allows more or less. A second signal is obeyed at once. A
-second SIGTERM within two seconds of the first is the same request arriving
-twice, as it does when sent to a whole process group, and counts once; a
-second Ctrl-C, however quick, means now. A first Ctrl-C after a SIGTERM (a
-scheduler's, the GUI's Stop, a broken pool's) asks the stop already under
-way, so a run still saves at its frame; a second Ctrl-C means now. Either way the study records where
+platform that allows more or less. A second stop of the same kind is
+obeyed at once: a second SIGTERM, though one within two seconds of the
+first is the same request arriving twice, as it does when sent to a whole
+process group, and counts once; a second Ctrl-C, however quick. A first
+Ctrl-C after a SIGTERM (a scheduler's, the GUI's Stop, a broken pool's)
+asks the stop already under way, and says so ("the stop asked already is
+under way"), so a run still saves at its frame; a second Ctrl-C means now,
+and the study says it is stopping now. Either way the study records where
 it stopped (the retryable `simulation.run.stopped`), the GUI says Stopped
 with what would fix it, `fastmdx resume` carries it on, and the command
 exits 130.

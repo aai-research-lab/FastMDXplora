@@ -879,29 +879,33 @@ def _grid_by_the_cell(simulation: Any, script_in: Callable[[Any], str],
                     "cell as equilibration left it.")
 
 
-def _write_checkpoint_pair(simulation: Any, chk_path: Path) -> None:
-    """Write the context's checkpoint and its seal as a pair.
+def _write_checkpoint_set(simulation: Any, chk_path: Path, sidecar: dict[str, Any]) -> None:
+    """Write the context's checkpoint, its sidecar and its seal as one set.
 
-    The checkpoint and its seal are one fact in two files, so they are
-    written as a pair: both to .new, then renamed in, the checkpoint first
-    and the seal second. A kill during the writes leaves the live pair
-    untouched; a kill between the two renames leaves a new checkpoint whose
-    seal has not landed, and the .new seal it was written with is still
-    there for the loader to verify against. There is no moment at which a
-    whole checkpoint cannot be shown to be whole.
+    The three are one fact in three files. Each is written whole beside its
+    place (``.new``), then put in place, the checkpoint first, its sidecar
+    second and its seal last. A kill while they are written leaves the set
+    before it as it was; a kill between the moves leaves a checkpoint whose
+    seal still waits beside it (``.new``), and the readers take the set it
+    seals (`verify_checkpoint`, `read_checkpoint_sidecar`). The sidecar and
+    the seal were written in place after the checkpoint, so a kill there
+    left a checkpoint at the new step, its sidecar at the old one and an
+    empty seal, which nothing could resume.
     """
     import hashlib
     import os as _os
 
     payload = simulation.context.createCheckpoint()
-    new_chk = chk_path.with_suffix(chk_path.suffix + ".new")
+    side_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_SIDECAR_SUFFIX)
     seal_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
-    new_seal = seal_path.with_suffix(seal_path.suffix + ".new")
+    new_chk, new_side, new_seal = (path.with_suffix(path.suffix + ".new")
+                                   for path in (chk_path, side_path, seal_path))
     new_chk.write_bytes(payload)
-    new_seal.write_text(
-        f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
-        encoding="utf-8")
+    write_checkpoint_sidecar(chk_path, into=new_side, **sidecar)
+    new_seal.write_text(f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+                        encoding="utf-8")
     _os.replace(new_chk, chk_path)
+    _os.replace(new_side, side_path)
     _os.replace(new_seal, seal_path)
 
 
@@ -957,6 +961,35 @@ def _listen_afresh() -> None:
     global _first_stop_at, _ctrl_c_heard
     _first_stop_at = None
     _ctrl_c_heard = False
+
+
+def _a_stop_asked_here() -> None:
+    """A stop asked without a signal (the GUI's Stop in this process),
+    counted as a first SIGTERM is: a Ctrl-C after it is the stop under way,
+    and a second one means now. Not counted, a Ctrl-C after the GUI's Stop
+    stopped a run at once, before its frame."""
+    import time
+
+    global _first_stop_at, _ctrl_c_heard
+    if _first_stop_at is None:
+        _first_stop_at = time.monotonic()
+        _ctrl_c_heard = False
+
+
+#: Said where a Ctrl-C is the stop under way (`_a_stop_heard`'s "again"
+#: for a Ctrl-C), by the study's process and a run's production: nothing
+#: said, a person pressed again, and that meant now.
+CTRL_C_UNDER_WAY = ("Ctrl+C received: the stop asked already is under way (a run in "
+                    "production ends at its next frame). Press Ctrl+C again to stop now.")
+
+
+def stop_now_said(number: int) -> str:
+    """How a first stop's line says to stop now: a Ctrl-C after a SIGTERM
+    is the same stop, so after one it takes two."""
+    import signal as _signal
+
+    return ("Press Ctrl+C again to stop now." if number == _signal.SIGINT
+            else "Send SIGTERM again, or press Ctrl+C twice, to stop now.")
 
 
 def _a_stop_heard(number: int | None = None) -> str:
@@ -1058,6 +1091,12 @@ class _StopRequests:
         if pending is not None and self.signal is None:
             self.signal, self.asked_here = pending.signal, pending.asked_here
             self.before_it_began = True
+            # Still the one stop: a Ctrl-C now is it under way.
+            global _first_stop_at, _ctrl_c_heard
+            import time
+
+            _first_stop_at = time.monotonic()
+            _ctrl_c_heard = pending.signal == _signal.SIGINT and not pending.asked_here
             #: The study whose round noted it: its resume carries the round on.
             self.study = pending.folder
         return self
@@ -1067,14 +1106,16 @@ class _StopRequests:
         import signal as _signal
 
         heard = _a_stop_heard(number)
-        if heard == "again":
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == _signal.SIGINT:
+                logger.warning("%s", CTRL_C_UNDER_WAY)
             return
-        if self.signal is None:
+        if heard == "first":
             self.signal = number
             logger.warning(
                 "%s received: production will stop at the next frame, where it "
-                "can be carried on, if that can be reached within %.0f s. "
-                "Send it again to stop now.", self.name, stop_grace_seconds())
+                "can be carried on, if that can be reached within %.0f s. %s",
+                self.name, stop_grace_seconds(), stop_now_said(number))
             return
         self._restore()
         if number == _signal.SIGINT:
@@ -1116,14 +1157,16 @@ class _StopInTheRounds(_StopRequests):
         import signal as _signal
 
         heard = _a_stop_heard(number)
-        if heard == "again":
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == _signal.SIGINT:
+                logger.warning("%s", CTRL_C_UNDER_WAY)
             return
-        if self.signal is None:
+        if heard == "first":
             self.signal = number
             logger.warning(
                 "%s received: the study's round ends once the run it extends has "
-                "answered, where `fastmdx resume` carries it on. Send it again to stop "
-                "now.", self.name)
+                "answered, where `fastmdx resume` carries it on. %s", self.name,
+                stop_now_said(number))
             return
         self._restore()
         if number == _signal.SIGINT:
@@ -1140,6 +1183,7 @@ class _StopInTheRounds(_StopRequests):
         if self.signal is not None:
             return "Stopping: asked already."
         self.signal, self.asked_here = _signal.SIGTERM, True
+        _a_stop_asked_here()
         logger.warning("Stop asked from the GUI: the study's round ends once the run it "
                        "extends has answered, where `fastmdx resume` carries it on.")
         return ("Stopping: the study's round ends once the run it extends has answered, "
@@ -1167,6 +1211,7 @@ def _asked_here(stop: "_StopRequests") -> str:
         return "Stopping: asked already."
     stop.signal = _signal.SIGTERM
     stop.asked_here = True
+    _a_stop_asked_here()
     logger.warning(
         "Stop asked from the GUI: production will stop at the next frame, where it "
         "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
@@ -1270,9 +1315,8 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                 f"resume {getattr(stop, 'study', None) or where}` carries the study's round "
                 "on, this run from the piece before it.")
     elif stop.on_frame and step > 0:
-        _write_checkpoint_pair(simulation, checkpoint)
-        write_checkpoint_sidecar(checkpoint, step=step, finished=whole,
-                                 time_ps=_time_ps(simulation), **sidecar)
+        _write_checkpoint_set(simulation, checkpoint, dict(
+            step=step, finished=whole, time_ps=_time_ps(simulation), **sidecar))
         said = (f"Its production had reached its end, so the run is whole; `fastmdx "
                 f"resume {where}` goes on from there." if whole else
                 f"A checkpoint was written on frame {frame}, so `fastmdx resume "
@@ -1342,23 +1386,13 @@ def _attach_checkpoint_reporter(
                 return inner.describeNextReport(sim)
 
             def report(self, sim, state):
-                _write_checkpoint_pair(sim, chk_path)
-                try:
-                    # Sealed as it is written, not only at a clean finish.
-                    # The seal says the file is whole -- that a kill did not
-                    # tear the write -- and that is as true of a checkpoint
-                    # at step 2,000 as of the last one. Sealing only at the
-                    # end made the marker say "this run finished" instead,
-                    # so the checkpoint a killed run leaves, the one worth
-                    # resuming from, looked damaged when it was intact. The
-                    # seal goes after the checkpoint, so a process killed
-                    # between the two leaves no seal and is still refused.
-                    seal_checkpoint(chk_path)
-                    write_checkpoint_sidecar(
-                        chk_path, step=int(sim.currentStep), finished=False,
-                        time_ps=_time_ps(sim), **sidecar)
-                except Exception:  # noqa: BLE001 - the checkpoint itself was written
-                    logger.debug("Could not write the checkpoint sidecar.")
+                # Sealed as it is written, not only at a clean finish: the
+                # seal says the file is whole, as true of a checkpoint at
+                # step 2,000 as of the last one. Written as one set with
+                # its sidecar (`_write_checkpoint_set`).
+                _write_checkpoint_set(sim, chk_path, dict(
+                    step=int(sim.currentStep), finished=False, time_ps=_time_ps(sim),
+                    **sidecar))
 
         reporter = _WithSidecar()
     simulation.reporters.append(reporter)
@@ -2004,7 +2038,7 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
                              system_digest: str | None = None,
                              finished: bool | None = None,
                              trajectory_interval_steps: int | None = None,
-                             time_ps: float | None = None) -> Path:
+                             time_ps: float | None = None, into: Path | None = None) -> Path:
     """What a checkpoint is, beside it: the stage that wrote it, the step,
     the ensemble and temperature, the timestep, and the study.
 
@@ -2034,7 +2068,8 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
     import json
 
     checkpoint = Path(path)
-    sidecar = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    sidecar = (Path(into) if into is not None
+               else checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX))
     sidecar.write_text(json.dumps({
         "stage": str(stage), "step": int(step), "ensemble": str(ensemble),
         "temperature_K": float(temperature_K), "timestep_fs": float(timestep_fs),
@@ -2068,6 +2103,10 @@ def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
 
     checkpoint = Path(path)
     sidecar = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    if _the_set_s_sidecar_waits(checkpoint):
+        # Put in place before its sidecar, which waits beside it (a kill
+        # between the moves, `_write_checkpoint_set`).
+        sidecar = sidecar.with_suffix(sidecar.suffix + ".new")
     if not _records.is_file(sidecar):
         return None
     try:
@@ -2075,6 +2114,25 @@ def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _the_set_s_sidecar_waits(checkpoint: Path) -> bool:
+    """Whether the checkpoint in place is the one the seal waiting beside it
+    seals, with its sidecar waiting too: a kill between the moves of
+    `_write_checkpoint_set`. Read only where those wait, so a checkpoint's
+    readers hash it only then."""
+    import hashlib
+
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX + ".new")
+    side = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX + ".new")
+    try:
+        if not (seal.is_file() and side.is_file()):
+            return False
+        size, digest = seal.read_text(encoding="utf-8").split()
+        payload = checkpoint.read_bytes()
+        return len(payload) == int(size) and hashlib.sha256(payload).hexdigest() == digest
+    except (OSError, ValueError):
+        return False
 
 
 def check_continuation(path: str | Path, *, minimize: bool, nvt_steps: int,
@@ -2144,12 +2202,17 @@ def seal_checkpoint(path: str | Path) -> Path:
     """
     import hashlib
 
+    import os as _os
+
     checkpoint = Path(path)
     payload = checkpoint.read_bytes()
     seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
-    seal.write_text(
+    # Whole or not at all: a seal cut by a kill was empty, and refused.
+    beside = seal.with_name(seal.name + ".tmp")
+    beside.write_text(
         f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
         encoding="utf-8")
+    _os.replace(beside, seal)
     return seal
 
 
@@ -2178,8 +2241,21 @@ def verify_checkpoint(path: str | Path, *, require_seal: bool = False) -> bool:
     import hashlib
 
     checkpoint = Path(path)
-    seal = next((candidate for candidate in _seal_candidates(checkpoint)
-                 if candidate.is_file()), _seal_candidates(checkpoint)[0])
+    candidates = [candidate for candidate in _seal_candidates(checkpoint) if candidate.is_file()]
+    if len(candidates) > 1:
+        # The seal in place and one waiting beside it: whichever seals the
+        # checkpoint in place is its seal (a kill between the moves of
+        # `_write_checkpoint_set`, or before them).
+        payload = checkpoint.read_bytes()
+        for candidate in candidates:
+            try:
+                size_text, digest = candidate.read_text(encoding="utf-8").split()
+                size = int(size_text)
+            except (OSError, ValueError):
+                continue
+            if len(payload) == size and hashlib.sha256(payload).hexdigest() == digest:
+                return True
+    seal = candidates[0] if candidates else _seal_candidates(checkpoint)[0]
     if not seal.is_file():
         if require_seal:
             raise MissingResultError(
@@ -3529,15 +3605,12 @@ def run_simulation(
         # to know that a run's trajectory has no frames past its checkpoint.
         checkpoint_path = output_dir / "checkpoint.chk"
         try:
-            with checkpoint_path.open("wb") as fh:
-                fh.write(simulation.context.createCheckpoint())
-            seal_checkpoint(checkpoint_path)
-            write_checkpoint_sidecar(
-                checkpoint_path, stage="production", step=int(simulation.currentStep),
+            _write_checkpoint_set(simulation, checkpoint_path, dict(
+                stage="production", step=int(simulation.currentStep),
                 ensemble="npt" if wants_npt_production else "nvt", temperature_K=float(temperature_K),
                 timestep_fs=float(timestep_fs), study=str(output_dir.parent), finished=True,
                 trajectory_interval_steps=int(trajectory_interval_steps),
-                time_ps=_time_ps(simulation))
+                time_ps=_time_ps(simulation)))
         except Exception:  # noqa: BLE001 - a run that finished still finished
             logger.warning(
                 "Could not write a sealed checkpoint to %s; this run is "
