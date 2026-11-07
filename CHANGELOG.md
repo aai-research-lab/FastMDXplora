@@ -834,17 +834,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   alone and waits on them, and a worker takes SIGTERM as a request to stop,
   so one waiting for work waited for ever. Each is now ended once it holds
   no run: at once where it carried none, once its run is saved where one
-  was stopping, at most after the stop grace and 10 s; a stop asked
-  meanwhile, to the study's process alone too, is waited out the same way,
-  a second one ends the workers with the study, and none is left behind. 3.11 and earlier end their workers themselves,
-  as before. The study sees a worker end from its own thread (the pool's
-  may see it only at the next result) and gives the pool no more runs: the
-  ones queued are said not started (3.12 and later waited for ever handing
-  it the next; 3.11 raised `BrokenProcessPool` out of the study). A run's
-  hold writes over a record its ended process left. A worker's stop
-  listener imports nothing, so two quick stops no longer end an idle
-  worker. Another container on the same host is told apart only on Linux,
-  as the docs now say.
+  was stopping, at most after the stop grace and 10 s. A stop asked
+  meanwhile (to the study's process alone, or a Ctrl-C at the terminal, now
+  taken after a SIGTERM as the stop under way) is waited out the same way;
+  a second one ends the workers with the study, saying so, and none is
+  left behind. On 3.11 and earlier the pool ends its workers itself; there
+  the study only wakes it and ends them at a second stop. The study sees a
+  worker end from threads of its own (the pool's may see it only at the
+  next result, and in a round's extensions nothing else woke it, so a stop
+  did not reach the other runs) and gives the pool no more runs: the ones
+  queued are said not started (3.12 and later waited for ever handing it
+  the next; 3.11 raised `BrokenProcessPool` out of the study). A run's hold
+  writes over a record its ended process left. A worker's stop listener
+  imports nothing, so two quick stops no longer end an idle worker.
+  Another container on the same host is told apart only on Linux, as the
+  docs now say.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
