@@ -298,6 +298,145 @@ comparison report (for replicas) has a section, *How long it ran, and why*,
 built from it, and the Agent is given it. A budget prices the study at its
 ceiling, since that is what it may spend.
 
+**A round that failed fails the study.** Where an extension fails (a worker
+killed for memory, a refusal as it is planned) or is stopped when asked, each
+run may have ended well and the study has not: it is said failed (or
+stopped) by one reading of `stopping.json`, the same in the CLI's summary
+("Batch failed", with the round's sentence and the `fastmdx resume` command
+that carries it on as its last lines) and exit code (1),
+`batch_manifest.json` (`round_ended`), the GUI's status, sidebar, All studies
+and Overview, the Agent and the comparison report, for a study of one run or
+several, and when it is analysed again. A round stopped when asked exits 130.
+A worker killed in a parallel study (in its rounds or before them) is seen at
+once, and its pool takes no more runs: the runs still queued are said not
+started, and `fastmdx resume` runs them. The pool asks its other workers to
+stop where their runs can be carried on. On Python 3.12 and later the study
+then ends each other worker once it holds no run: at once where it carried
+none, once its run is saved where one was stopping (or had finished), and
+at most after the stop grace and 10 s (30 s by default;
+`FASTMDX_STOP_GRACE_SECONDS` lengthens it), a run still held then carried on
+from its last checkpoint. A stop asked meanwhile, a Ctrl-C at the terminal
+too, is waited out the same way, and the study exits 1, not 130: a run of
+it had already failed. A second stop ends the workers at once, saying so.
+The sentence names the runs the round extended and says the others by their
+production, since an extension that did not finish may have run part of the
+way. A study whose process was killed while it extended its runs, its record
+left "running", is said interrupted. `fastmdx resume` first extends the runs
+short of the round's length to it, never past the ceiling, then judges them
+again; a resume whose round fails again is not done (exit 1). A study of one
+run cut mid round has its extension carried on to the round's length, then
+is judged. While a resume runs, the study reads running. Where a run's last
+piece stopped with an answer of its own (a checkpoint refused inside it), the
+resume gives that answer again and the round is still said failed, and the
+sentence says so, with the piece to move out before resuming; where a run's
+extension failed in its analyses, it says to analyse that run again (`fastmdx
+explore --output RUN --include analysis report --rerun`) before resuming.
+Where the ceiling was lowered below the longest run, or below the length cut
+extensions run to, no run is carried on and the round is said as it ended. A
+piece stopped at its last step (by its planned steps, a variable step's too)
+is finished, for the join and every page; a piece an extension made (its
+own config resumes from a checkpoint) that ran to its end and was never
+joined reads with its join owed until a resume joins it: stopped where the
+round was stopped when asked, interrupted where its process ended. A run
+joined and not yet analysed is not counted completed. A study whose runs
+ended well and whose rule was never applied to them (its process ended
+before the first round was judged, or it was stopped before the rule was
+applied again) reads interrupted or stopped, with `fastmdx resume`, which
+applies it.
+
+A Ctrl+C or a signal while the rule judges and extends the runs, outside a
+run's production (a piece's join or analyses, between two runs, as a
+catch-up piece starts), is noted, not raised: the run being extended
+finishes what it is doing, no further run's extension begins, a production
+begun after it takes no step (nothing of it is saved, and the resume carries
+the run on from the piece before), and the round is said stopped when asked
+(exit 130); a stop heard as a plain run's production begins is taken after
+its first chunk, its frame bounded by the grace period, as always; asked while the rule
+judges, no run is named as being extended. A second one stops at once. The
+GUI's own Stop in the study's process is taken the same way. Each run's extension is
+recorded in the round as it begins (`started`), so a round cut after it
+says which runs' extensions never began. A resume stopped as it carries its
+round on leaves the round said stopped, its runs counted as they stand, and
+exits 130. A catch-up stopped before any run moved is said as part of the
+round it carries on only where that round was itself stopped when asked; a
+round that failed or was cut keeps its own ending. Every reader numbers the
+rounds as the rule judged them, a catch-up shown as part of its round.
+
+**One reading of a study's state.** A study's state is derived once:
+`stopping.round_ended` (its rule's round failed, was stopped or was cut, or
+its rule was never applied to runs that ended well), then
+`workspace.study_state` (its runs, or its run's own records). Every reader
+takes it from there, never from its own reading of a live record: the
+header, the sidebar and All studies (`study_state`); the health card, its
+Stop and `/api/status` (`telemetry.analyze_health`, which says the round
+first); the run page's summary, both rows (`server._summary_records`); the
+fixes card, the CLI's fixes and the Agent's remedies (`remedies.remedies_of`,
+which leave a round's runs to its sentence and give a piece not joined its
+own words); the rule's card (`stopping_view.stopping_payload`); the Agent's
+context (`agent_panel._stopping_summary`) and its health line
+(`agent_panel._run_status`, which the AI app's record of a study reads too),
+the note the Agent panel posts when a run it started has ended
+(`agent_panel.run_summary_endpoint`), its records answer and its count of
+runs (`records_answer`, `exploration.runs_of_a_study`, the runs list); each
+run's own page in a study of several, read held to the run (it reads of its
+study only its record of its rounds, `stopping.round_stopped_when_asked`
+and `stopping.round_failed`, and its rule's card is the study's,
+`server.stopping_card`); the Report page (`report_page`, the round's sentence above the runs
+so far, or above a study of one run's report); `fastmdx share`
+(`sharing.pack.finished_manifest`, for a study of one run or several, before
+it reads each run); the CLI's last line and
+exit code, `batch_manifest.json` and the comparison report; and the report
+(`report_dashboard`). Readers that ask only whether a run is going (the
+files page, the deposit, the trajectory's frames, the Overview's
+thermodynamics, Problems, the Timeline) say no ended state. A resume writes
+in the study's record of its rounds that it carries the study on, before
+its work, and takes it away after, naming its process as the study's lock
+does (its number, when it began, the machine): one that died leaves the
+study read cut, never stopped when asked or failed by an earlier round's
+words. The study's readers read a marker only once no process holds the
+study's lock; a run's page reads any marker as its study's round carried on
+(neither stopped when asked nor failed), going or ended, and its rule's card
+is the study's, read in the study's own held read. A run record from this
+machine before its last boot names a process that is gone. One from a
+different host or container names a process that cannot be asked from here
+(a container is told apart only on Linux, where a process's namespace can be
+read; on macOS and Windows a container on the same host is not):
+while the study's records were written within the last hour, the study
+reads going on every
+reader, "It is going on <host>, which cannot be asked from here", with the
+time after which it can be resumed from here; once quiet for an hour, it
+reads as its records say it ended, saying where, and its fix is the
+person's to run once it has ended there, never run from the GUI. `fastmdx
+resume --taken-over` carries it on before the hour, for a person who knows
+its process there has ended; a process on this machine holding the study
+still refuses it, and the GUI never runs it. A record of a piece its run's
+join took in, or a piece set aside, is not read as going. "Written" is a
+heartbeat: while a study's process (a resume's, a worker's) lives it stamps
+its own process record every 5 minutes (``alive_at``), in every phase,
+from a thread of its own, writing it beside itself and putting it in place
+whole, so an hour is twelve heartbeats missed, never a
+long setup, analysis or join; the newest of that stamp and the live
+records' is read, on the clock of the machine that wrote it, so a copy
+reads the same. That reading trusts the other machine's clock: one running
+an hour or more slow makes a study going there read quiet here, so a
+cluster's nodes keep their clocks set (NTP), and a study read from a
+machine whose clock is not is resumed only once its process is known to
+have ended there. The study is going too while any of its
+runs' locks is held (a round's extension holds its run's), and `fastmdx
+resume`, or an extension of one of its runs, refuses, before it writes
+anything, while a process on this machine runs it, the study's lock or any
+run's is held, or it goes on that host. A folder under `runs/` is a run of
+the study above only where that study's `batch_manifest.json` names it (or, that record missing or broken,
+its `stopping.json`; or that record linked out of the study), read in a hold
+of its own (`explorer.campaign_of`). A fix for a run
+of a study of several gives the study's `fastmdx resume`. The round's test
+file walks every reader, each run's page and its rule's card in its held
+read, over each state it builds (a rule never applied, a piece not joined,
+runs joined and not analysed, stopped in a round, cut, failed, failed in its
+join, a resume that died, a resume refused, completed) and checks they
+agree, what each fix gives, what `fastmdx share` does, the CLI's last line
+and exit code, and that no read is refused.
+
 **How far to trust the precision it states.** Stopping as soon as an error
 falls below a target favours a round whose error came out small by chance.
 The rule was calibrated on series with a known mean
@@ -601,10 +740,14 @@ checkpoint is run twice and the joined trajectory keeps its spacing. It does
 so only when the next frame can be reached within 20 seconds, which leaves
 time inside the 30 or so a scheduler allows before it kills; otherwise the last
 interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
-platform that allows more or less. A second signal is obeyed at once. A
-second SIGTERM within two seconds of the first is the same request arriving
-twice, as it does when sent to a whole process group, and counts once; a
-second Ctrl-C, however quick, means now. Either way the study records where
+platform that allows more or less. A second stop of the same kind is
+obeyed at once: a second SIGTERM, though one within two seconds of the
+first is the same request arriving twice, as it does when sent to a whole
+process group, and counts once; a second Ctrl-C, however quick. A first
+Ctrl-C after a SIGTERM (a scheduler's, the GUI's Stop, a broken pool's)
+asks the stop already under way, and says so ("the stop asked already is
+under way"), so a run still saves at its frame; a second Ctrl-C means now,
+and the study says it is stopping now. Either way the study records where
 it stopped (the retryable `simulation.run.stopped`), the GUI says Stopped
 with what would fix it, `fastmdx resume` carries it on, and the command
 exits 130.

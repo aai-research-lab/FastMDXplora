@@ -53,9 +53,13 @@
   /* A sentence, its command (``terminal``, its last words) set as code. */
   function withCommand(said, text, terminal) {
     text = String(text || "");
-    if (terminal && text.slice(-terminal.length) === terminal) {
-      said.textContent = text.slice(0, text.length - terminal.length);
+    var at = terminal ? text.lastIndexOf(terminal) : -1;
+    if (at >= 0) {
+      // Its command set as code where the sentence gives it, its last
+      // words or within it (a round's carry-on goes on after it).
+      said.textContent = text.slice(0, at);
       said.appendChild(commandNode(terminal));
+      said.appendChild(document.createTextNode(text.slice(at + terminal.length)));
     } else {
       said.textContent = text;
     }
@@ -245,8 +249,16 @@
     if (started === null || running || app.started_at !== started) return;
     if (app.returncode === null || app.returncode === undefined) return;
     started = null;
+    if (app.again_round) {
+      // Done over a round left unfinished: said so, with that round and
+      // the command that carries it on, as the terminal says it.
+      say("Analyzed again. " + app.again_round.said, app.again_round.terminal);
+      return;
+    }
     if (app.returncode !== 0 || app.error) {
-      say(app.error || "It stopped before the analyses were written again; its log is in the side panel.");
+      // A failure's own command (its round's carry-on) set as code too.
+      say(app.error || "It stopped before the analyses were written again; its log is in the side panel.",
+          app.error ? app.error_terminal : "");
       return;
     }
     say("Analyzed again. What it replaced is in " + ((offered && offered.previous) || "previous") + "/.");

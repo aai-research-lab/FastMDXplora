@@ -220,7 +220,32 @@ def frames_of(run: Path) -> Path | None:
 def _going(runs: Iterable[Path]) -> list[str]:
     from fastmdxplora.simulation.resume import _still_running
 
-    return [run.name for run in runs if _still_running(run)]
+    # Each named once: a study of one run is its own run.
+    return list(dict.fromkeys(run.name for run in runs if _still_running(run)))
+
+
+def refused_again(held: str) -> str:
+    """A resume's refusal (`resume._held_elsewhere`) said of phases run
+    again: run again once it has stopped; going on another machine, run
+    again or resumed from here after the time it names, once it has ended
+    there."""
+    import re
+
+    said = (held.replace("Resume it once it has stopped.", "Run it again once it has stopped.")
+            .replace("It can be resumed from here after", "It can be run again or resumed from "
+                     "here after"))
+    # The command its last words, as a page sets a command (``terminal``).
+    return re.sub(r"or now with `(fastmdx resume --taken-over [^`]+)` once it has ended there\.",
+                  r"or now, once it has ended there, with: \1", said)
+
+
+def _command_said(why: str) -> str | None:
+    """The command a refusal ends with (`refused_again`), for a page to set
+    as code; None where it ends with none."""
+    import re
+
+    found = re.search(r"with: (fastmdx resume --taken-over .+)$", why)
+    return found.group(1) if found else None
 
 
 def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | None = None) -> Again:
@@ -244,6 +269,14 @@ def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | Non
         raise StudyError(f"{', '.join(going)} {'is' if len(going) == 1 else 'are'} still "
                          "running. Run it again once it has stopped.",
                          code="environment.workspace.run_going")
+    from fastmdxplora.simulation.resume import _held_elsewhere
+
+    # Its study held by another process, or going on another machine
+    # (`resume._held_elsewhere`): its phases run again would write into it
+    # and take its process records, as a resume would; refused the same.
+    held = _held_elsewhere(campaign or root)
+    if held:
+        raise StudyError(refused_again(held), code="environment.workspace.run_going")
 
     left_out: list[tuple[str, str]] = []
     if "analysis" in asked:
@@ -314,8 +347,9 @@ def offered(study: str | Path) -> dict[str, Any]:
         try:
             found = plan(root, [phase])
         except Exception as exc:  # noqa: BLE001 - said, not raised
-            out[phase] = {"can": False, "why": refusal_of(exc).message,
-                          "code": refusal_of(exc).code}
+            why = refusal_of(exc).message
+            out[phase] = {"can": False, "why": why, "code": refusal_of(exc).code,
+                          **({"terminal": _command_said(why)} if _command_said(why) else {})}
             continue
         out[phase] = {"can": True, "runs": len(found.runs),
                       "report_too": found.report_added, "said": found.said(),

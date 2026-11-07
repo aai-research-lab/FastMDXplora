@@ -931,11 +931,22 @@ def run(
         # Real runtime failure (numerical instability, bad topology, etc.).
         # Record it in the manifest so the project-level manifest still
         # picks up an actionable trace.
-        notes.append(f"Simulation failed: {type(exc).__name__}: {exc}")
+        # Stopped when asked at its last step (the runner's ``finished``):
+        # its production is whole, and its record says what it wrote, its
+        # frames and its length, as a run that ended says them.
+        whole = getattr(exc, "finished", False) is True
+        if whole:
+            notes.append(f"Stopped when asked at its last step: {exc}")
+            artifacts.extend(artifacts_of_a_whole_production(output_dir))
+        else:
+            notes.append(f"Simulation failed: {type(exc).__name__}: {exc}")
         if presenter:
             presenter.step(f"Simulation error: {exc}", status="error")
         _write_manifest(output_dir, params, artifacts, notes, platform_used=None,
-                        prepared_system=prepared_system)
+                        prepared_system=prepared_system,
+                        **({"n_frames": getattr(exc, "frames", None),
+                            "duration_ns_actual": getattr(exc, "duration_ns", None)}
+                           if whole else {}))
         # Re-raise so the orchestrator marks the phase as errored.
         raise
 
@@ -946,6 +957,18 @@ def run(
 
     logger.debug("simulation: wrote %d artifact(s) to %s", len(artifacts), output_dir)
     return artifacts
+
+
+#: What a simulation writes, as its record names the files (``artifacts_planned``
+#: and the topology its trajectory is read with).
+_WRITTEN = ("production.dcd", "trajectory_topology.pdb", "topology.pdb", "state_final.xml",
+            "energy.csv", "simulation.log", "state_minimized.xml", "checkpoint.chk")
+
+
+def artifacts_of_a_whole_production(output_dir: Path) -> list[str]:
+    """The files of a simulation stopped when asked at its last step, its
+    production whole, as they are in its folder (relative to it)."""
+    return [name for name in _WRITTEN if (Path(output_dir) / name).is_file()]
 
 
 def _write_manifest(

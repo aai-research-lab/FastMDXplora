@@ -1044,12 +1044,35 @@ def study_state(folder: Path | str) -> str:
 
 def _state_of(base: Path, batch: Any, manifest: Any) -> str:
     try:
-        from fastmdxplora.simulation.resume import _still_running
+        from fastmdxplora.simulation.resume import _still_running, being_carried_on
 
-        if _still_running(base):
+        # Going, or carried on by a resume (its lock taken before its
+        # process record is written): never completed meanwhile.
+        if _still_running(base) or being_carried_on(base):
+            return "running"
+        from fastmdxplora.batch.explorer import campaign_of
+        from fastmdxplora.simulation.resume import going_elsewhere
+
+        # A run of a study going on another machine: going, as its study.
+        study = campaign_of(base)
+        if study is not None and going_elsewhere(study):
             return "running"
     except Exception:  # noqa: BLE001 - a record, not a verdict
         pass
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Its rule's round failed (or was stopped) while extending runs that
+    # each ended well: said completed while its record said it failed.
+    ended = round_ended(base)
+    if ended is not None:
+        if ended.state != "failed" and isinstance(batch, dict):
+            from fastmdxplora.gui.exploration import runs_of_a_study
+
+            # A run that failed is said first: the rule judged the others,
+            # and its round's stop does not say over that run's error.
+            if any(run.get("state") == "failed" for run in runs_of_a_study(base) or []):
+                return "failed"
+        return ended.state
     if not isinstance(batch, dict):
         # The live record, before the manifest: the manifest is written when
         # a run ends, so a run cut short has none, or the one before it. A
@@ -1103,10 +1126,23 @@ def _state_of(base: Path, batch: Any, manifest: Any) -> str:
         if _simulated(base):
             return "not known"
         return "not started"
+    from fastmdxplora.simulation.resume import stopped_at_its_end
+
     for phase in phases:
-        if isinstance(phase, dict) and phase.get("status") == "error":
+        if (isinstance(phase, dict) and phase.get("status") == "error"
+                and not stopped_at_its_end(base, phase)):
             code = str((phase.get("refusal") or {}).get("code") or "")
             return "stopped" if code == "simulation.run.stopped" else "failed"
+    if any(stopped_at_its_end(base, phase) for phase in phases):
+        from fastmdxplora.gui.telemetry import phases_asked
+
+        # Stopped at its last step: whole, and the phases the study asks for
+        # after it say the rest (none asked: it is done).
+        later = {str(p.get("name")): p.get("status") for p in phases if isinstance(p, dict)}
+        asked = phases_asked(base) or ["analysis", "report"]
+        if any(later.get(name) not in ("ok", "skipped")
+               for name in ("analysis", "report") if name in asked):
+            return "stopped"
     from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
 
     # Its pieces' analyses owed, with no live record to say so; going while

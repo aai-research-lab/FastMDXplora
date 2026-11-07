@@ -307,7 +307,7 @@ def build_dashboard(
         output_folder=project_root.as_posix(),
         live_html=live_html,
         stages=_stage_steps(manifest, live_status, run_stages(project_root)),
-        study_state=_study_state(manifest, live_status),
+        study_state=_study_state(manifest, live_status, root=project_root),
         platform=str(live_status.get("platform") or ""),
         report=_report_for_page(project_root, output_dir,
                                 include_bundle_link=include_bundle_link,
@@ -1703,9 +1703,21 @@ def _stage_steps(
     return steps
 
 
-def _study_state(manifest: dict[str, Any], live_status: dict[str, Any] | None) -> tuple[str, str]:
+def _study_state(manifest: dict[str, Any], live_status: dict[str, Any] | None, *,
+                 root: Path | None = None) -> tuple[str, str]:
     """What the sidebar's dot and word say: the manifest's verdict, or,
-    before it is written, the live record's."""
+    before it is written, the live record's; for a run whose rule's round
+    failed, was stopped or was cut, that (`stopping.round_ended`), as the
+    GUI's status and All studies say it."""
+    if root is not None:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        try:
+            ended = round_ended(root)
+        except Exception:  # noqa: BLE001 - said from the manifest
+            ended = None
+        if ended is not None:
+            return ended.state, "error" if ended.state == "failed" else "waiting"
     recorded = _project_status(manifest)
     if manifest.get("phases"):
         if recorded == "ok":

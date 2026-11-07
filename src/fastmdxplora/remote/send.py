@@ -1943,7 +1943,10 @@ def _only_files_and_folders(arrived: Path) -> list[str]:
                     mode = entry.lstat().st_mode
                 except OSError:
                     continue
-                if stat.S_ISREG(mode) and name.casefold() in theirs:
+                # And a temporary a stamp of such a record left beside it
+                # (`orchestrator._put_in_place`), cut by a kill.
+                if stat.S_ISREG(mode) and (name.casefold() in theirs or (
+                        name.startswith(RUN_PROCESS_FILE + ".") and name.endswith(".tmp"))):
                     entry.unlink(missing_ok=True)
                     continue
                 if name.casefold() == defaults and not stat.S_ISDIR(mode):

@@ -66,7 +66,7 @@ TEMPERATURE_EXPLANATION = "Temperature is outside the expected range. " + TEMPER
 INTERRUPTED_EXPLANATION = (
     "Its last update said it was still going, and the process that ran it is "
     "gone: the machine restarted, or its job was ended by a scheduler or by "
-    "hand. What it wrote up to then is kept, and the command fastmdx resume "
+    "hand. What it wrote up to then is saved, and the command fastmdx resume "
     "says whether it can be carried on from its last checkpoint."
 )
 
@@ -87,7 +87,7 @@ ANALYSIS_OWED_STOPPED_EXPLANATION = (
 
 STOPPED_EXPLANATION = (
     "It was asked to stop (Ctrl+C, or Stop) and ended where it can be "
-    "carried on. What it wrote up to then is kept, and fastmdx resume "
+    "carried on. What it wrote up to then is saved, and fastmdx resume "
     "carries it on from there."
 )
 #: Stopped while the trajectory was analysed or the report written: the
@@ -101,7 +101,7 @@ STOPPED_IN_A_PHASE_AFTER_EXPLANATION = (
 #: message that says so, it read "ended where it can be carried on".
 STOPPED_BEFORE_PRODUCTION_EXPLANATION = (
     "It was asked to stop (Ctrl+C, or Stop) before its production began. "
-    "What it wrote up to then is kept, and fastmdx resume runs it again from "
+    "What it wrote up to then is saved, and fastmdx resume runs it again from "
     "the start."
 )
 
@@ -377,6 +377,11 @@ def phases_after_ended_well(project_root: str | Path) -> None:
     status = _own_status(root / STATUS_FILE)
     stage = str(status.get("stage") or "").lower()
     state = str(status.get("status") or "").lower()
+    if (stage == "production" and state == "stopped" and _its_production_whole(root)):
+        # Stopped at the last step of its production, whole by the join's
+        # reading: its analyses and report run since, it read stopped for
+        # good after the resume that ran them.
+        stage = "report"
     if (stage not in _PHASES_AFTER
             or state not in {"stopped", "failed", "interrupted", *_GOING_STATUSES}):
         return
@@ -390,6 +395,17 @@ def phases_after_ended_well(project_root: str | Path) -> None:
     writer._last_status = before
     writer.write_status(status="completed", stage="report",
                         stage_states={"analysis": "completed", "report": "completed"})
+
+
+def _its_production_whole(simulation: Path) -> bool:
+    """Whether a run's own production ran to its end (`joining.piece_finished`,
+    the one reading of a stretch of production's end)."""
+    from fastmdxplora.analysis.joining import piece_finished
+
+    try:
+        return piece_finished(simulation)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return False
 
 
 def _read_status_path(path: Path) -> dict[str, Any]:
@@ -489,12 +505,14 @@ def _frames_kept(folder: Path) -> int | None:
     """The production frames a piece contributes to the joined trajectory:
     all it wrote where it finished, those before its last checkpoint where
     it was stopped (the rest are run again by the next piece)."""
-    from fastmdxplora.analysis.joining import _finished
     from fastmdxplora.simulation.resume import frames_before_checkpoint
 
     simulation = folder / "simulation"
     try:
-        if _finished(simulation):
+        # A clean finish (its final state written) says its frames; any other
+        # end, a stop at its last step included, is counted from its
+        # checkpoint, which there is all of them (a live count left stale).
+        if _records.is_file(simulation / "state_final.xml"):
             count = read_status(folder).get("current_frame_count")
             return int(count) if isinstance(count, (int, float)) else None
         return frames_before_checkpoint(folder)
@@ -557,12 +575,134 @@ def _newer(one: dict[str, Any], other: dict[str, Any]) -> bool:
     return first > second
 
 
+def _as_it_ended(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A piece's live record, said completed where its production reached
+    its end (`joining.piece_finished`, the join's reading) and the join has
+    taken it in, its record saying it was stopped (the runner stops there,
+    or said it not finished before): the run read stopped for good after a
+    resume that completed it. Before its join the run is as its round left
+    it: stopped, its production whole, its join owed. So is a piece that
+    finished as planned and was never joined (its study stopped or cut
+    between the two, `_its_join_owed`): it read completed, while the Agent
+    and the round's sentence said its join owed."""
+    if str(status.get("status") or "").lower() in _FINISHED_STATUSES:
+        return _its_join_owed(piece, status)
+    if str(status.get("status") or "").lower() != "stopped":
+        return status
+    from fastmdxplora.analysis.joining import piece_finished
+
+    try:
+        index = int(piece.name.split("-", 1)[1])
+        joined = json.loads(_records.read_text(piece.parent / "joined" / "joined.json",
+                                               encoding="utf-8"))
+        if (index not in {int(i) for i in joined.get("segments") or []}
+                or not piece_finished(piece / "simulation")):
+            return status
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return status
+    states = dict(status.get("stage_states") or {}) if isinstance(
+        status.get("stage_states"), dict) else {}
+    states["production"] = "completed"
+    total = status.get("total_planned_steps")
+    return {**status, "status": "completed", "latest_error": None, "stage_states": states,
+            **({"current_step": total} if isinstance(total, (int, float)) else {})}
+
+
+def _its_join_owed(piece: Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A piece's live record that says it finished, read as its study left
+    it where the join has not taken it in (`joined/joined.json`) and nothing
+    carries the study on now: its production whole, its join and the
+    analyses of it owed, which `fastmdx resume` runs
+    (`resume.how_a_resume_finds`, ``unjoined``). Stopped where the study's
+    round was stopped when asked; else its process ended before the join
+    (killed, out of memory): interrupted, never "stopped, as asked". Only a
+    piece an extension made is joined by it, told by its own config (it
+    resumes from a checkpoint) or the config written beside it; a piece
+    with neither (a record written by hand) reads as it says."""
+    from fastmdxplora.simulation.resume import being_carried_on
+
+    try:
+        if not _an_extension_s_piece(piece):
+            return status
+        index = int(piece.name.split("-", 1)[1])
+        try:
+            joined = json.loads(_records.read_text(piece.parent / "joined" / "joined.json",
+                                                   encoding="utf-8"))
+            taken = {int(i) for i in joined.get("segments") or []}
+        except (OSError, ValueError):
+            taken = set()
+        if index in taken or being_carried_on(piece.parent) or being_carried_on(
+                _study_of(piece.parent)):
+            return status
+        from fastmdxplora.simulation.stopping import round_failed
+
+        # The study's round first: a join that failed left the piece, and
+        # the study's process ended on that error, not before the join.
+        failed = round_failed(_study_of(piece.parent))
+        stopped = not failed and _its_round_was_stopped(piece.parent, piece)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return status
+    if failed:
+        # Its production whole, its join failed: the status bar says the
+        # join failed ("Joining failed"), not its production.
+        # Counted at its production's end, where its join is.
+        states = status.get("stage_states") if isinstance(status.get("stage_states"),
+                                                          dict) else {}
+        return {**status, "status": "failed", "join_owed": True, "stage": "joining",
+                "stage_states": {**states, "production": "failed"},
+                "latest_error": (f"{failed} Its piece {piece.name} ran to its end and was not "
+                                 f"joined: {_resume_said(piece.parent)} joins it again and "
+                                 "runs its analyses and report.")}
+    how = ("the study was stopped when asked" if stopped
+           else "the study's process ended")
+    return {**status, "status": "stopped" if stopped else "interrupted",
+            "join_owed": True,
+            "latest_error": (f"Its piece {piece.name} ran to its end, and {how} before the "
+                             f"piece was joined: {_resume_said(piece.parent)} "
+                             "joins it and runs its analyses and report.")}
+
+
+def _an_extension_s_piece(piece: Path) -> bool:
+    """Whether a piece was made by an extension (or a resume), which joins
+    it: its own config resumes from a checkpoint, or its config is written
+    beside it (`segment-NNN.yml`)."""
+    if _records.is_file(piece.with_name(piece.name + ".yml")):
+        return True
+    import yaml
+
+    try:
+        config = yaml.safe_load(_records.read_text(piece / "resolved_config.yml",
+                                                   encoding="utf-8")) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return False
+    simulation = config.get("simulation") if isinstance(config, dict) else None
+    return isinstance(simulation, dict) and bool(simulation.get("resume_from"))
+
+
+def _study_of(run: Path) -> Path:
+    """The study a run belongs to: its own folder, or the study of runs it
+    is one of (`explorer.campaign_of`, the one reading of it)."""
+    from fastmdxplora.batch.explorer import campaign_of
+
+    return campaign_of(run) or run
+
+
+def _its_round_was_stopped(run: Path, piece: Path) -> bool:
+    """Whether the study's rule's round ended stopped when asked, with no
+    resume since that died carrying it on (`stopping.round_stopped_when_asked`,
+    from its record of its rounds alone: never from when files were written,
+    nor from records of the study a run's page does not read)."""
+    from fastmdxplora.simulation.stopping import round_stopped_when_asked
+
+    return round_stopped_when_asked(_study_of(run))
+
+
 def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
     pieces = _pieces_of(root)
     if not pieces:
         return first
     newest = pieces[-1]
-    last = read_status(newest)
+    last = _as_it_ended(newest, read_status(newest))
     if not last:
         return first
     whole = dict(first)
@@ -570,15 +710,16 @@ def _as_one_run(root: Path, first: dict[str, Any]) -> dict[str, Any]:
     whole["pieces"] = len(pieces) + 1
     # What the simulation last said of itself is its newest piece's word.
     for key in ("latest_error", "latest_warning", "current_checkpoint_path", "platform",
-                "precision", "precision_applied"):
+                "precision", "precision_applied", "join_owed"):
         if key in last:
             whole[key] = last.get(key)
     if _newer(last, first):
         # The piece is the newest word: the study is where it is.
         stage = str(last.get("stage") or "").lower()
         whole["status"] = last.get("status")
-        # A piece only produces, whatever stage it was first marked in.
-        whole["stage"] = stage if stage in {"analysis", "report"} else "production"
+        # A piece only produces, whatever stage it was first marked in; one
+        # whose join failed is said at its join (`_its_join_owed`).
+        whole["stage"] = stage if stage in {"analysis", "report", "joining"} else "production"
         whole["last_update_timestamp"] = last.get("last_update_timestamp")
         states = dict(first.get("stage_states") or {}) if isinstance(
             first.get("stage_states"), dict) else {}
@@ -697,8 +838,10 @@ def read_study_status(project_root: str | Path) -> dict[str, Any]:
         whole["current_checkpoint_path"] = _checkpoint_here(root, whole)
     if not whole.get("piece"):
         whole = _as_far_as_it_wrote(root, whole)
-    elif (str(whole.get("status") or "").lower() == "stopped"
+    elif (str(whole.get("status") or "").lower() == "stopped" and not whole.get("join_owed")
           and str(whole.get("stage") or "").lower() == "production"):
+        # A piece stopped part way, said as the study; one run to its end
+        # and not joined keeps its own words (`_its_join_owed`).
         whole["latest_error"] = _stopped_as_one_run(root, whole)
     return _the_stage_it_ended_in(whole)
 
@@ -757,7 +900,8 @@ def _resume_said(root: str | Path | None) -> str:
     on this computer. The fix card gives the whole command."""
     if root is None:
         return "fastmdx resume"
-    return f"fastmdx resume, given this study ({Path(root).name}),"
+    # A run of a study of several is carried on by its study's resume.
+    return f"fastmdx resume, given this study ({_study_of(Path(root)).name}),"
 
 
 def _as_far_as_it_wrote(root: Path, status: dict[str, Any]) -> dict[str, Any]:
@@ -845,6 +989,9 @@ _STEPPED_STAGES = frozenset({"minimization", "nvt", "npt", "production"})
 #: and end only, and an analysis of a long trajectory on a cluster node can
 #: be quiet for hours. A day says nothing wrong of any of them.
 SILENT_RUN_ENDED_AFTER_SECONDS = 24 * 3600
+#: ``ended_by`` of a run whose process was another machine's or
+#: container's, quiet past `resume.ANOTHER_HOST_QUIET_SECONDS` (an hour).
+SILENT_ELSEWHERE = "silence_elsewhere"
 
 #: What its process was found to be, kept a few seconds: the page asks
 #: every few seconds, and asking means starting `ps` (PowerShell on Windows).
@@ -971,7 +1118,23 @@ def how_the_run_ended(project_root: str | Path,
     if said == "running":
         return None
     age = _timestamp_age_seconds(str(status.get("last_update_timestamp") or ""))
-    return "silence" if age is not None and age > SILENT_RUN_ENDED_AFTER_SECONDS else None
+    span = SILENT_RUN_ENDED_AFTER_SECONDS
+    elsewhere = False
+    if isinstance(record, dict):
+        from fastmdxplora.simulation.resume import ANOTHER_HOST_QUIET_SECONDS, _from_another_host
+
+        # Its process's heartbeat, stamped in every phase (`orchestrator.
+        # stamp_alive`): the newest word of it.
+        alive = _timestamp_age_seconds(str(record.get("alive_at") or ""))
+        if alive is not None:
+            age = alive if age is None else min(age, alive)
+        if _from_another_host(record) and ANOTHER_HOST_QUIET_SECONDS < span:
+            # Another machine's or container's process: an hour, as the
+            # study's readers take it (`resume.going_elsewhere`).
+            span, elsewhere = ANOTHER_HOST_QUIET_SECONDS, True
+    if age is None or age <= span:
+        return None
+    return SILENT_ELSEWHERE if elsewhere else "silence"
 
 
 def run_ended_unsaid(project_root: str | Path, status: dict[str, Any] | None = None) -> bool:
@@ -996,15 +1159,41 @@ def status_as_it_stands(project_root: str | Path, *,
     if ended is None:
         waiting = between_rounds(project_root, status) if status and include_campaign else None
         if waiting is None:
-            return _owing_its_analysis(project_root, status)
+            return _not_yet_said_whole(project_root, _owing_its_analysis(project_root, status))
         return _waiting_for_the_round(status, waiting)
     step, total = status.get("current_step"), status.get("total_planned_steps")
     finished = (str(status.get("stage") or "").lower() in _STEPPED_STAGES
                 and isinstance(step, (int, float)) and isinstance(total, (int, float))
                 and 0 < total <= step)
-    return _owing_its_analysis(project_root, {
+    return _not_yet_said_whole(project_root, _owing_its_analysis(project_root, {
         **status, "status": "completed" if finished else "interrupted",
-        "ended_by": ended, "recorded_status": status.get("status")})
+        "ended_by": ended, "recorded_status": status.get("status")}))
+
+
+def _not_yet_said_whole(project_root: str | Path, status: dict[str, Any]) -> dict[str, Any]:
+    """A run said completed whose Manifest still records its simulation
+    stopped when asked at its last step (`resume.stopped_at_its_end`, not
+    yet said whole): a resume says it whole last, after its analyses and
+    its rule (`resume._said_whole_last`), so one ended before that is read
+    stopped, its stop said, and `fastmdx resume` finishes it. It read
+    completed with its rule never applied and no fix offered."""
+    if str((status or {}).get("status") or "").lower() not in _FINISHED_STATUSES:
+        return status
+    from fastmdxplora.simulation.resume import being_carried_on, stopped_at_its_end
+
+    try:
+        manifest = json.loads(_records.read_text(Path(project_root) / "manifest.json",
+                                                 encoding="utf-8"))
+    except (OSError, ValueError):
+        return status
+    phases = manifest.get("phases") if isinstance(manifest, dict) else None
+    stop = next((phase for phase in phases or [] if stopped_at_its_end(project_root, phase)),
+                None)
+    if stop is None or being_carried_on(project_root):
+        return status
+    return {**status, "status": "stopped", "stage": "production",
+            "latest_error": str(stop.get("message") or "") or status.get("latest_error"),
+            "recorded_status": status.get("recorded_status") or status.get("status")}
 
 
 #: ``ended_by`` for a study stopped after its pieces were joined, before
@@ -1026,7 +1215,8 @@ def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dic
                      and str(status.get("stage") or "").lower() in _PHASES_AFTER)
     if not status or (said not in _FINISHED_STATUSES and not stopped_after):
         return status
-    from fastmdxplora.simulation.resume import analysis_owed, being_carried_on
+    from fastmdxplora.simulation.resume import (analysis_owed, being_carried_on,
+                                                how_a_resume_finds)
 
     if not analysis_owed(project_root):
         return status
@@ -1037,6 +1227,16 @@ def _owing_its_analysis(project_root: str | Path, status: dict[str, Any]) -> dic
         return {**status, "status": "running", "stage": "analysis", "piece": None,
                 "current_step": None, "total_planned_steps": None,
                 "carrying_on": True,
+                "recorded_status": status.get("recorded_status") or status.get("status")}
+    own = (how_a_resume_finds(project_root) or {}).get("own")
+    if own:
+        # Its analyses of the join ended in an error of their own, which a
+        # resume refuses: failed, analysed again once put right, as the
+        # round's card, the CLI and the Agent say.
+        return {**status, "status": "failed", "stage": "analysis", "piece": None,
+                "latest_error": f"Its analyses of its joined pieces ended in an error: {own}",
+                "analysed_again_by": (f"fastmdx explore --output {Path(project_root)} "
+                                      "--include analysis report --rerun"),
                 "recorded_status": status.get("recorded_status") or status.get("status")}
     # Stopped in the study's analysis, not in a piece's production, nor at
     # its last step ("in piece 1's analysis, at step 4,400 of 4,400").
@@ -1629,8 +1829,36 @@ def analyze_health(
     """Classify the latest telemetry into ok/warning/failed with plain text.
 
     With `root`, a folder with no telemetry is described by what it holds:
-    runs one level down, nothing at all, or a run that recorded none.
+    runs one level down, nothing at all, or a run that recorded none. A
+    study going on another machine or container says so
+    (`resume.going_elsewhere`), as nothing here can be asked of it.
     """
+    health = _analyze_health(status, metrics, stale_after_seconds=stale_after_seconds,
+                             root=root)
+    if root is None:
+        return health
+    try:
+        from fastmdxplora.simulation.resume import going_elsewhere
+
+        where = going_elsewhere(_study_of(Path(root)))
+    except Exception:  # noqa: BLE001 - its health as its records say it
+        where = ""
+    if where:
+        # Going there, as its study's state says (`workspace.study_state`),
+        # on the study's page and each of its runs' alike: never ended
+        # from records a process there is still writing.
+        health = {**health, "state": "running", "headline": "Running", "message": where}
+    return health
+
+
+def _analyze_health(
+    status: dict[str, Any],
+    metrics: list[dict[str, Any]],
+    *,
+    stale_after_seconds: float = 90.0,
+    root: str | Path | None = None,
+) -> dict[str, str]:
+    """`analyze_health` from its records alone."""
     latest_error = status.get("latest_error")
     stage = str(status.get("stage") or "").lower()
     waiting = status.get("between_rounds")
@@ -1645,7 +1873,34 @@ def analyze_health(
                         "its whole production."),
             "explanation": "A resume or an extension of the study is running.",
         }
-    if status.get("ended_by") == ANALYSIS_OWED and status.get("stopped_in") in _PHASES_AFTER:
+    owing = status.get("ended_by") == ANALYSIS_OWED
+    # A run's own record (a study of runs keeps none, and is said from its
+    # state below, `_a_study_of_runs`, which a run refused fails).
+    ended = _its_round_ended(root) if root is not None and status else None
+    if ended is not None:
+        # Its rule's round failed, was stopped or was cut, or its rule was
+        # never applied (`stopping.round_ended`, the one derivation
+        # `workspace.study_state` reads): the round's sentence, as the
+        # header, All studies and the card say it, with what the resume runs
+        # first, whatever the live record of its last piece says.
+        return _round_health(ended)
+    if status.get("join_owed"):
+        # Its last piece ran to its end and was never joined
+        # (`_its_join_owed`): cut or stopped as its study is, in its own
+        # words; "Stopped with an error" only where its join failed in its
+        # study's round.
+        said = str(status.get("status") or "interrupted").lower()
+        return {
+            "state": said,
+            "headline": {"stopped": "Stopped", "failed": "Stopped with an error"}.get(
+                said, "Interrupted"),
+            "message": str(latest_error or ""),
+            "explanation": ("Its piece's production is whole; joining it, then its analyses "
+                            "and report, is what remains."),
+            "carry_on": f"fastmdx resume {_study_of(Path(root))}" if root is not None
+            else "fastmdx resume",
+        }
+    if owing and status.get("stopped_in") in _PHASES_AFTER:
         when = ("while its joined pieces were analysed: part of their analyses had "
                 "run, not their report, so any analyses and report shown are"
                 if status["stopped_in"] == "analysis" else
@@ -1662,7 +1917,7 @@ def analyze_health(
         return {
             "state": "interrupted",
             "headline": "Its analysis is owed",
-            "message": ("The study stopped after its pieces were joined, before their "
+            "message": ("The study's process ended after its pieces were joined, before their "
                         "analyses and report had run: any shown are of less than its whole "
                         "production. " + _resume_said(root) + " runs them."),
             "explanation": ANALYSIS_OWED_EXPLANATION,
@@ -1704,11 +1959,14 @@ def analyze_health(
             " coordinate", "energy is"))
         # A headline a card can set large, beside the message, which can run
         # to a paragraph with a path in it and was set as the headline.
+        again = status.get("analysed_again_by")
         return {
             "state": "failed",
             "headline": "Stopped with an error",
             "message": said,
-            "explanation": NUMERIC_EXPLANATION if numeric else "",
+            "explanation": (f"Put right what its analyses said, then {again} analyses it "
+                            "again." if again else NUMERIC_EXPLANATION if numeric else ""),
+            **({"carry_on": again} if again else {}),
         }
 
     latest = metrics[-1] if metrics else {}
@@ -1757,12 +2015,16 @@ def analyze_health(
                 "explanation": STALE_EXPLANATION,
             }
 
-    if str(status.get("status", "")).lower() == "interrupted":
-        silent = status.get("ended_by") == "silence"
+    said = str(status.get("status", "")).lower()
+    if said == "interrupted":
+        silent = status.get("ended_by") in ("silence", SILENT_ELSEWHERE)
         return {
             "state": "interrupted",
             "headline": "Interrupted",
-            "message": ("The run has not written a word for over a day."
+            "message": ("The run has not written a word for over an hour, and its process "
+                        "was on another machine or container."
+                        if status.get("ended_by") == SILENT_ELSEWHERE else
+                        "The run has not written a word for over a day."
                         if silent else "The run ended without recording why."),
             "explanation": SILENT_EXPLANATION if silent else INTERRUPTED_EXPLANATION,
         }
@@ -1796,6 +2058,30 @@ def analyze_health(
             "the page cannot fill. A new run records it without being asked."
         ),
     }
+
+
+def _round_health(ended: Any) -> dict[str, str]:
+    """The health of a study of one run whose rule's round ended before it
+    was judged again (`stopping.round_ended`)."""
+    return {
+        "state": ended.state,
+        "headline": _STUDY_OF_RUNS_SAID[ended.state][0],
+        "message": ended.said,
+        "explanation": ended.carry_on_on_a_page,
+        "carry_on": " ".join(ended.argv),
+    }
+
+
+def _its_round_ended(root: str | Path) -> Any:
+    """How the rule's last round of the study at ``root`` ended, where it
+    failed, was stopped or was cut (`stopping.round_ended`); None otherwise
+    and where it cannot be read."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    try:
+        return round_ended(root)
+    except Exception:  # noqa: BLE001 - said from the run's own record
+        return None
 
 
 def not_read_health(said: str) -> dict[str, str]:
@@ -1856,6 +2142,22 @@ def _a_study_of_runs(root: str | Path) -> dict[str, str] | None:
     headline, message = _STUDY_OF_RUNS_SAID.get(state, (None, None))
     if headline is None:
         return None
+    from fastmdxplora.simulation.stopping import round_ended
+
+    # Its rule's round, not a run, ended it (`stopping.round_ended`, the
+    # derivation `study_state` read): said by what ended it, and carried
+    # on by the command, where "A run of this study ended with an error"
+    # named no run that had.
+    ended = round_ended(root) if state in ("failed", "stopped", "interrupted") else None
+    if ended is not None and ended.state == state:
+        return {
+            "state": state,
+            "headline": headline,
+            "message": ended.said,
+            "explanation": ended.carry_on_on_a_page,
+            "of_runs": True,
+            "carry_on": " ".join(ended.argv),
+        }
     return {
         "state": state,
         "headline": headline,

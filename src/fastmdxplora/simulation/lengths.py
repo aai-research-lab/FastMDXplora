@@ -237,7 +237,14 @@ def _piece_clock(folder: object) -> tuple[float | None, str]:
     side = read_checkpoint_sidecar(folder / "checkpoint.chk") or {}
     state = _state_time(folder)
     finished = side.get("finished")
-    if not isinstance(finished, bool):
+    if isinstance(finished, bool):
+        # One reading of its end (`joining.piece_finished`): a piece stopped
+        # at its last step, said not finished before the runner said so,
+        # ran to its end.
+        from fastmdxplora.analysis.joining import piece_finished
+
+        finished = piece_finished(folder)
+    else:
         # A sidecar from before it said so: only a clean finish writes the
         # final state (`joining._finished`).
         finished = state is not None
@@ -725,18 +732,14 @@ def _platform_logged(root: object) -> tuple[tuple[str, str | None] | None, bool]
 
 def last_piece_stopped(root: object) -> bool:
     """Whether a study carried on in pieces has its last piece stopped
-    before its end: no final state, and no sidecar saying it finished."""
-    from fastmdxplora import record_access
-    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+    before its end, by the join's reading (`joining.piece_finished`): a
+    piece whose checkpoint is at its last step is not."""
+    from fastmdxplora.analysis.joining import piece_finished
 
     pieces = _segments(root)
     if not pieces:
         return False
-    folder = pieces[-1] / "simulation"
-    finished = (read_checkpoint_sidecar(folder / "checkpoint.chk") or {}).get("finished")
-    if isinstance(finished, bool):
-        return not finished
-    return not record_access.is_file(folder / "state_final.xml")
+    return not piece_finished(pieces[-1] / "simulation")
 
 
 def _held() -> bool:
@@ -976,6 +979,27 @@ def _recorded(root: object) -> dict:
             said["production_ran_ns"], said["production_ran_source"] = None, source
         said["pieces"] = clock["pieces"]
 
+    # A run not split into pieces only: a study of pieces whose length is not
+    # recorded (a piece's config that does not read, a piece not read) says
+    # so, never its first piece's plan.
+    if (not extended and not variable and said["production_ran_ns"] is None
+            and state == "read" and not _segments(root)
+            and said.get("production_ran_source") not in (NOT_READ,)
+            and not said.get("production_ran_said")
+            and isinstance(said["production"].get("ns"), (int, float))):
+        from pathlib import Path
+
+        from fastmdxplora.analysis.joining import piece_finished
+
+        # Stopped at its last step, its record unwritten past it: whole, so
+        # what it ran is its plan (`joining.piece_finished`).
+        try:
+            whole = piece_finished(Path(str(root)) / "simulation")
+        except Exception:  # noqa: BLE001 - not known whole
+            whole = False
+        if whole:
+            said["production_ran_ns"] = said["production"]["ns"]
+            said["production_ran_source"] = FROM_STEPS
     said["frames_kept"] = _frames_kept(root)
     return said
 
