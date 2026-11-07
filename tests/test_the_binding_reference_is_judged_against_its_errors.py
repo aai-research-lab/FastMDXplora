@@ -649,3 +649,162 @@ class TestFewResamplesAreAllowedForByStudentsT:
         assert result["delta_g_kjmol"] is None
         assert result["bulk_allowed_kjmol"] > 0.6
         assert "sample the outer windows longer" in result["refused"]
+
+
+def _broad_well():
+    """A broad harmonic well, W = -15 + 30 (r - 0.8)^2 capped at 0, taken to
+    a cutoff of 1.45 nm."""
+    radius = np.linspace(0.05, 3.0, POINTS)
+    potential = np.minimum(0.0, -15.0 + 30.0 * (radius - 0.8) ** 2)
+    return radius, potential - 2.0 * KT * np.log(radius)
+
+
+def _framed(window: int, centre: float, where, bias) -> dict:
+    where = np.asarray(where, dtype=float)
+    return {"window": window, "centre": centre,
+            "bias_kjmol": float(np.nanmean(bias)) if np.isfinite(bias).any()
+            else float("nan"),
+            "nearest_nm": float(where.min()), "coordinate_nm": where,
+            "frame_bias_kjmol": np.asarray(bias, dtype=float)}
+
+
+def _quiet_inside(count: int = 4) -> "list[dict]":
+    return [_framed(i, 0.55 + 0.1 * i, np.full(100, 0.55 + 0.1 * i),
+                    np.zeros(100)) for i in range(count)]
+
+
+class TestTheWallIsJudgedOverTheBoundFrames:
+    def test_a_wall_biting_only_outside_the_cutoff_does_not_refuse(self):
+        """Window 10 (at 1.55 nm) touched the 1.45 nm cutoff once; the wall
+        bit (1.0 kJ/mol) only on its frames near 1.60 nm, so its mean over
+        the run is 0.58 and over its one frame inside it is 0."""
+        where = np.concatenate([[1.45], np.linspace(1.50, 1.65, 99)])
+        bias = np.where(np.abs(where - 1.60) <= 0.05, 1.0, 0.0)
+        rows = _quiet_inside(9) + [_framed(10, 1.55, where, bias)]
+        assert rows[-1]["bias_kjmol"] > 0.5
+
+        radius, energy = _broad_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=1.45,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["refused"] is None
+        judged = {row["window"]: row for row in result["cone_wall_judged"]}
+        assert judged[10]["frames_inside"] == 1
+        assert judged[10]["bias_kjmol"] == pytest.approx(0.0)
+
+    def test_a_narrow_soft_cone_on_a_free_ligand_outside_does_not_refuse(
+            self):
+        """A 15 to 20 degree cone at 1000 kJ/mol/rad^2 carries about 0.3
+        kJ/mol on a free ligand. Window 4 (at 1.0 nm) is free on its 95
+        frames past the 0.93 cutoff and quiet on its 5 inside it."""
+        where = np.concatenate([np.full(5, 0.92), np.full(95, 1.0)])
+        bias = np.where(where > 0.93, 0.3, 0.0)
+        rows = _quiet_inside() + [_framed(4, 1.0, where, bias)]
+        assert rows[-1]["bias_kjmol"] > 0.25
+
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["refused"] is None
+        assert result["cone_wall_bias_kjmol"] == pytest.approx(0.0)
+
+    def test_a_wall_biting_inside_the_cutoff_refuses_with_its_frames(self):
+        where = np.concatenate([np.full(30, 0.90), np.full(70, 1.0)])
+        bias = np.where(where <= 0.93, 0.8, 0.0)
+        rows = _quiet_inside() + [_framed(4, 0.95, where, bias)]
+
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["delta_g_kjmol"] is None
+        assert result["cone_wall_bias_kjmol"] == pytest.approx(0.8)
+        assert result["cone_wall_bit_in"][0]["frames_inside"] == 30
+        assert "over the frames at or inside the cutoff" in result["refused"]
+
+    def test_a_nan_frame_is_left_out_and_counted(self):
+        where = np.full(100, 0.85)
+        bias = np.zeros(100)
+        bias[17] = np.nan
+        rows = _quiet_inside() + [_framed(4, 0.95, where, bias)]
+
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["refused"] is None
+        judged = {row["window"]: row for row in result["cone_wall_judged"]}
+        assert judged[4]["frames_unread"] == 1
+        assert judged[4]["frames_inside"] == 100
+
+    def test_frames_inside_with_no_bias_read_refuse(self):
+        where = np.concatenate([np.full(10, 0.85), np.full(90, 1.0)])
+        bias = np.where(where <= 0.93, np.nan, 0.0)
+        rows = _quiet_inside() + [_framed(4, 0.95, where, bias)]
+
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["delta_g_kjmol"] is None
+        assert result["cone_wall_not_read_in"] == [4]
+
+    def test_a_window_with_no_bias_column_that_sampled_inside_refuses(
+            self, tmp_path):
+        """R6's case: window 4 (at 0.95 nm) samples down to 0.86 nm and its
+        COLVAR has no `cone.bias`; the others have it and read 0."""
+        from fastmdxplora.simulation.umbrella import (
+            plan_windows,
+            wall_bias_by_window,
+        )
+
+        centres = [0.55, 0.65, 0.75, 0.85, 0.95, 1.05]
+        plan = plan_windows({"collective_variable": "ligand_distance",
+                             "centres": centres, "force_constant": 2000.0,
+                             "cone": {"half_angle_deg": 30}})
+        directories = {}
+        for index, centre in enumerate(centres):
+            run = tmp_path / f"window-{index}" / "simulation"
+            run.mkdir(parents=True)
+            if index == 4:
+                text = "#! FIELDS time d\n" + "\n".join(
+                    f"{i * 0.2:.1f} {0.86 + 0.0005 * i:.4f}" for i in range(200))
+            else:
+                text = "#! FIELDS time d cone.bias\n" + "\n".join(
+                    f"{i * 0.2:.1f} {centre} 0.0" for i in range(200))
+            run.joinpath("COLVAR").write_text(text, encoding="utf-8")
+            directories[index] = run.parent
+
+        walls = wall_bias_by_window(directories, plan)
+        assert walls[4]["nearest_nm"] == pytest.approx(0.86 + 0.0005 * 40)
+
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=walls)
+        assert result["delta_g_kjmol"] is None
+        assert result["cone_wall_not_read_in"] == [4]
+
+    def test_an_infinite_bias_is_said_in_words(self):
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=_held_near_the_well(float("inf")))
+
+        assert "an infinite bias" in result["refused"]
+        assert "inf kJ/mol" not in result["refused"]
+
+    @pytest.mark.parametrize("row", [
+        {"window": "x", "centre": 0.5, "bias_kjmol": 0.0},
+        {"window": 2, "centre": 0.5, "bias_kjmol": "abc"}])
+    def test_a_row_that_is_not_numbers_is_refused_by_name(self, row):
+        radius, energy = _narrow_well()
+        with pytest.raises(StudyError, match="not a"):
+            binding_free_energy(radius, energy, temperature_K=TEMPERATURE,
+                                cone=CONE, wall_bias_kjmol=[row])
