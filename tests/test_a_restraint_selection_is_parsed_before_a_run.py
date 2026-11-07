@@ -96,3 +96,33 @@ def test_check_it_refuses_it(tmp_path):
     assert checked["ok"] is False
     assert "simulation.restrain" in checked["error"]
     assert checked["refusal"]["code"] == "config.option.not_permitted"
+
+
+@pytest.mark.parametrize("axis, values, setting", [
+    ("simulation.restrain", ["backbone", BAD], "sweep.simulation.restrain[2]"),
+    ("simulation.restrain", [[{"kind": "position", "selection": BAD}]],
+     "sweep.simulation.restrain[1][1].selection"),
+    ("simulation.save_selection", ["protein", BAD], "sweep.simulation.save_selection[2]"),
+], ids=["a-swept-restraint", "a-swept-block", "a-swept-save-selection"])
+def test_a_swept_selection_is_refused_naming_its_value(axis, values, setting):
+    config = {"systems": [{"id": "a", "system": "1L2Y"}], "sweep": {axis: values}}
+    with pytest.raises(ConfigError) as caught:
+        refuse_what_can_be_seen(config)
+    assert str(caught.value).startswith(f"{setting}: {BAD!r} is not an MDTraj selection (")
+    assert caught.value.refusal.details["option"] == setting
+
+
+def test_a_sweep_of_selections_mdtraj_reads_is_not():
+    refuse_what_can_be_seen({"systems": [{"id": "a", "system": "1L2Y"}], "sweep": {
+        "simulation.restrain": ["backbone", "protein and not element H"],
+        "simulation.temperature_K": [300, 310]}})
+
+
+def test_a_block_s_selection_that_is_not_text_is_refused_with_the_config():
+    """`selection: 5` was read as the selection "5" and refused only when
+    the simulation started."""
+    from fastmdxplora.config.loader import validate_config
+
+    with pytest.raises(ConfigError, match="Restraint 1's `selection` is 5") as caught:
+        validate_config(_study(restrain=[{"kind": "position", "selection": 5}]))
+    assert caught.value.refusal.code == "config.option.wrong_type"

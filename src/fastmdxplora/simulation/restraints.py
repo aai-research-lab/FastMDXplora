@@ -301,6 +301,16 @@ def parse_restraints(spec: Any) -> list[Restraint]:
             raise StudyError(
                 f"A {kind} restraint needs a `selection` saying what it holds."
             , code="simulation.cv.missing_companion")
+        if not isinstance(selection, str):
+            # Read as text, `selection: 5` became the selection "5", and its
+            # refusal waited for the simulation to start.
+            raise StudyError(
+                f"Restraint {number}'s `selection` is {selection!r}: a selection "
+                "is text in MDTraj's selection language, for example "
+                "'protein and name CA'.",
+                code="config.option.wrong_type", option="restrain.selection",
+                context="simulation", expected_type="string",
+                found_type=type(selection).__name__)
         default_force = (DEFAULT_POSITION_FORCE if kind == "position"
                          else None)
         force = entry.get("force_constant", default_force)
