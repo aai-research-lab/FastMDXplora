@@ -93,20 +93,96 @@ def _what_the_cone_costs(cone: Any,
 #: How well the outer range must follow the bulk form before it counts as
 #: bulk. The residual of a fit of A(r) to -2kT ln r + c, in kJ/mol; a
 #: quarter of RT at 300 K, which is smaller than any feature a PMF of this
-#: kind resolves.
+#: kind resolves. Where the curve comes with its bootstrap errors this is
+#: the floor of the allowance, not the whole of it.
 BULK_RESIDUAL_KJMOL = 0.6
 
+#: The chance, over all the points of the tail together, that a curve truly
+#: in bulk is refused because its noise put one point past its allowance.
+BULK_FAMILY_CHANCE = 0.05
 
-def _bulk_residual(radius: np.ndarray, energy: np.ndarray,
-                   kt: float) -> float:
-    """How far the outer range departs from a free ligand's shape.
 
-    In bulk the only thing varying with r is the size of the shell, so
-    A(r) + 2kT ln r is constant. The residual of that combination is the
-    evidence, and it needs no fitted slope: the slope is known.
+def _sidak_multiplier(count: int, chance: float = BULK_FAMILY_CHANCE) -> float:
+    """How many standard errors each of `count` points may depart by.
+
+    Sidak's bound: each point is allowed z standard errors, with z the
+    two-sided normal quantile at 1 - (1 - chance)^(1/count), so that the
+    chance of any of the `count` departing that far by noise alone is
+    `chance` where the departures are independent and normal. Bins of a
+    recombined curve are correlated, so the bound is approximate here; for
+    two-sided tests on correlated normal variables it errs towards allowing
+    more (Sidak 1967, J. Am. Stat. Assoc. 62, 626).
+    """
+    from statistics import NormalDist
+
+    each = 1.0 - (1.0 - chance) ** (1.0 / max(1, int(count)))
+    return float(NormalDist().inv_cdf(1.0 - each / 2.0))
+
+
+def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
+                    errors: "np.ndarray | None", kt: float) -> dict[str, Any]:
+    """Whether the tail is flat in A(r) + 2kT ln r, judged against its errors.
+
+    In bulk f(r) = A(r) + 2kT ln r is a constant c (Gilson et al. 1997,
+    Biophys. J. 72, 1047: the standard-state integral with W(r) flat). Each
+    tail point's departure d_i = f_i - mean(f) is judged against
+
+        allowed_i = max(0.6 kJ/mol, z_n * sqrt(e_i^2 + e_mean^2)),
+        e_mean = sqrt(sum_j e_j^2) / n,
+
+    with e_i the bootstrap's standard error of A at that bin (2kT ln r is
+    exact and adds none), e_mean the tail mean's error, both taken as if the
+    bins were independent, and z_n Sidak's multiplier for n points
+    (`_sidak_multiplier`). Two things make this allowance larger than the
+    departure's own error rather than smaller. The covariance of f_i with the
+    mean it is a part of is left out, which would take 2 e_i^2 / n off the
+    variance. And the curve is zeroed at its lowest bin, so every e_i holds
+    that bin's noise, which is common to the whole tail and cancels in d_i.
+    A tail is therefore refused only where it departs past what its noise
+    could make, and a smooth tail within its errors is taken as bulk because
+    nothing in the run can tell it from bulk.
+
+    Without errors, or with any tail bin's error missing, every point is
+    judged against 0.6 kJ/mol alone, as before the errors were taken.
     """
     flattened = energy + 2.0 * kt * np.log(radius)
-    return float(np.max(np.abs(flattened - np.mean(flattened))))
+    departure = np.abs(flattened - np.mean(flattened))
+    count = int(radius.size)
+    floor = np.full(count, BULK_RESIDUAL_KJMOL)
+    usable = (errors is not None and errors.shape == radius.shape
+              and bool(np.all(np.isfinite(errors))))
+    if usable:
+        multiplier = _sidak_multiplier(count)
+        of_the_mean = float(np.sqrt(np.sum(errors ** 2))) / count
+        own = np.sqrt(errors ** 2 + of_the_mean ** 2)
+        allowed = np.maximum(floor, multiplier * own)
+        judged = (
+            f"each of the outer {count} points' departure from their mean "
+            f"against the larger of {BULK_RESIDUAL_KJMOL} kJ/mol and "
+            f"{multiplier:.2f} standard errors of that departure, from the "
+            f"bootstrap's error at each bin (a {BULK_FAMILY_CHANCE:.0%} "
+            f"chance, over the {count} points, of refusing a tail that is "
+            "bulk)")
+    else:
+        multiplier = None
+        allowed = floor
+        judged = (
+            f"each of the outer {count} points' departure from their mean "
+            f"against {BULK_RESIDUAL_KJMOL} kJ/mol"
+            + (", since the bootstrap's errors were not given for every "
+               "point of it" if errors is not None else
+               ", since the curve came without the bootstrap's errors"))
+    worst = int(np.argmax(departure - allowed))
+    return {
+        "residual": float(np.max(departure)),
+        "passed": bool(np.all(departure <= allowed)),
+        "worst_at_nm": float(radius[worst]),
+        "worst_kjmol": float(departure[worst]),
+        "allowed_kjmol": float(allowed[worst]),
+        "against_errors": usable,
+        "multiplier": multiplier,
+        "judged": judged,
+    }
 
 
 def _what_the_resamples_said(resampled: "dict[str, Any] | None",
@@ -157,6 +233,7 @@ def binding_free_energy(
     cone: Any = None,
     wall_bias_kjmol: float | None = None,
     resampled: "dict[str, Any] | None" = None,
+    errors_kjmol: Any = None,
 ) -> dict[str, Any]:
     """A standard-state binding free energy, or a refusal saying why not.
 
@@ -184,6 +261,12 @@ def binding_free_energy(
     there has removed part of the bound population and no analytic term puts
     it back. Given the number, this checks it; given nothing, it says the
     check was not made rather than implying it passed.
+
+    ``errors_kjmol`` is the bootstrap's standard error of the free energy at
+    each point (``pmf["uncertainty"]["standard_error"]``). Given, the bulk
+    check allows each point of the tail what its noise could make, with
+    0.6 kJ/mol as the floor (`_judge_the_bulk`); not given, 0.6 kJ/mol is
+    the whole allowance. The record says which was judged.
     """
     radius = np.asarray(coordinate, dtype=float)
     energy = np.asarray(free_energy_kjmol, dtype=float)
@@ -194,6 +277,16 @@ def binding_free_energy(
         , code="simulation.bias.dimension_mismatch")
     order = np.argsort(radius)
     radius, energy = radius[order], energy[order]
+    errors = None
+    if errors_kjmol is not None:
+        errors = np.asarray(
+            [np.nan if e is None else e for e in errors_kjmol], dtype=float)
+        if errors.shape != order.shape:
+            raise StudyError(
+                "The free energy's errors must be one per point of the "
+                f"curve; got {errors.shape} for {order.shape}.",
+                code="simulation.bias.dimension_mismatch")
+        errors = errors[order]
 
     if radius.size < 8:
         return {"delta_g_kjmol": None, "refused": (
@@ -236,16 +329,28 @@ def binding_free_energy(
                 "windows that cover it, or a window placed in it, closes it."
             ),
         }
-    residual = _bulk_residual(radius[-n_bulk:], energy[-n_bulk:], kt)
-    if residual > BULK_RESIDUAL_KJMOL:
+    bulk = _judge_the_bulk(radius[-n_bulk:], energy[-n_bulk:],
+                           None if errors is None else errors[-n_bulk:], kt)
+    residual = bulk["residual"]
+    judged_record = {
+        "bulk_residual_kjmol": residual,
+        "bulk_worst_at_nm": bulk["worst_at_nm"],
+        "bulk_allowed_kjmol": bulk["allowed_kjmol"],
+        "bulk_judged_against_errors": bulk["against_errors"],
+        "bulk_error_multiplier": bulk["multiplier"],
+        "bulk_judged": bulk["judged"],
+    }
+    if not bulk["passed"]:
         return {
             "delta_g_kjmol": None,
-            "bulk_residual_kjmol": residual,
+            **judged_record,
             "bulk_from_nm": float(radius[-n_bulk]),
             "refused": (
                 f"The outer {n_bulk} points depart from a free ligand's "
-                f"shape by {residual:.2f} kJ/mol, against "
-                f"{BULK_RESIDUAL_KJMOL} allowed. Beyond the interaction the "
+                f"shape: at {bulk['worst_at_nm']:.3g} nm by "
+                f"{bulk['worst_kjmol']:.2f} kJ/mol, against "
+                f"{bulk['allowed_kjmol']:.2f} allowed there. Judged: "
+                f"{bulk['judged']}. Beyond the interaction the "
                 "curve should fall as -2kT ln r, because the only thing "
                 "changing there is how much room the shell holds. Where it "
                 "does not, the windows stopped while the ligand was still "
@@ -382,7 +487,7 @@ def binding_free_energy(
         "cutoff_sensitivity_kjmol": (
             float(np.max(spread) - np.min(spread)) if len(spread) > 1
             else None),
-        "bulk_residual_kjmol": residual,
+        **judged_record,
         # Where the range taken as bulk begins: the reference is read beyond
         # it, and what is checked about the reference is checked there.
         "bulk_from_nm": float(radius[-n_bulk]),
