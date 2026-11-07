@@ -3603,6 +3603,8 @@
     if (!saved) say("Not saved.");
   }
 
+  const codePaneNames = { yaml: "config", command: "command", script: "script" };
+
   function showCodeTab(which) {
     document.querySelectorAll("#run-summary-panel .builder-tabs [data-code]").forEach((tab) => {
       tab.setAttribute("aria-selected", String(tab.dataset.code === which));
@@ -3610,11 +3612,12 @@
     document.querySelectorAll("#run-summary-panel [data-code-pane]").forEach((pane) => {
       pane.hidden = pane.dataset.codePane !== which;
     });
-    const name = { yaml: "config", command: "command", script: "script" }[which];
+    const name = codePaneNames[which];
     const button = el("run-copy-code");
     if (button && name) {
       button.setAttribute("aria-label", `Copy the ${name}`);
       button.title = `Copy the ${name}`;
+      if (button.dataset.label) button.dataset.label = `Copy the ${name}`;
     }
     updateCodeCopyButton();
   }
@@ -3623,7 +3626,7 @@
     const button = el("run-copy-code");
     const pane = document.querySelector("#run-summary-panel [data-code-pane]:not([hidden])");
     if (!button || button.disabled || !pane) return;
-    const name = button.getAttribute("aria-label").replace(/^Copy the /, "");
+    const name = codePaneNames[pane.dataset.codePane];
     const copied = name.charAt(0).toUpperCase() + name.slice(1) + " copied";
     await window.FastMDXIcons.copy(button, pane.textContent, copied, "Clipboard unavailable here");
   }
