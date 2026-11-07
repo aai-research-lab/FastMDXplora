@@ -864,6 +864,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   checkpoint, its sidecar and its seal are written as one set: a kill as
   they were written left the checkpoint at the new step, its sidecar at
   the old one and an empty seal, which nothing could resume.
+- A study stopped by SIGTERM or the GUI's Stop exited 1, and one stopped by
+  Ctrl-C 130: every stop asked now exits 130, unless a run ended in an error
+  of its own. A second stop (stop now) records the round stopped when asked
+  and writes the batch manifest before the study ends, where its record was
+  left "running" and the GUI read it interrupted; its line names the study
+  to resume, not the run. A broken pool's runs are read from their own
+  records: one saved where it can be carried on is stopped, the killed
+  worker's own ended with it, each with `fastmdx resume`, where both read
+  "error BrokenProcessPool" with nothing to fix it. Runs that never started
+  read "not started" in the GUI, not "waiting", and are priced at their
+  study's plan, not the package's defaults. `fastmdx explore --dashboard`
+  says the study stopped or ended with an error, not "complete". A pack
+  carries a checkpoint's waiting files only with the checkpoint.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
