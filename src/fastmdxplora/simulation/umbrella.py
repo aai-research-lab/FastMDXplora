@@ -1082,12 +1082,12 @@ def wall_bias_by_window(
     puts that back -- so the assumption is read here, from the column the
     run writes for it, rather than assumed.
 
-    One row per window that recorded the column, ``{"window", "centre",
-    "bias_kjmol"}``, the bias the mean of the column over the frames left
-    after equilibration.
-    Every window is read, so `binding.binding_free_energy` can judge each
-    one up to the cutoff it integrates to, which it knows only once it has
-    the curve. Returns None where no window recorded one, which is every
+    One row per window, ``{"window", "centre", "bias_kjmol"}``, the bias the
+    mean of the column over the frames left after equilibration, or NaN for
+    a window with no COLVAR, no such column or no frames left, so that it is
+    named as not read rather than passed over. Every window is read, so
+    `binding.binding_free_energy` can judge each one up to the cutoff it
+    integrates to, which it knows only once it has the curve. Returns None where no window recorded one, which is every
     study that ran without a cone and every study that ran before the column
     existed.
     """
@@ -1097,13 +1097,16 @@ def wall_bias_by_window(
                 else float(equilibration_fraction))
     centres = {w.index: float(w.centre) for w in plan.windows}
     carried: list[dict[str, Any]] = []
+    recorded = False
     for index, directory in sorted(directories.items()):
         if index not in centres:
             continue
         colvar = Path(directory) / "simulation" / "COLVAR"
-        if not colvar.is_file():
-            continue
         names: list[str] = []
+        if not colvar.is_file():
+            carried.append({"window": int(index), "centre": centres[index],
+                            "bias_kjmol": float("nan")})
+            continue
         rows: list[float] = []
         for line in colvar.read_text(encoding="utf-8").splitlines():
             if line.startswith("#"):
@@ -1119,13 +1122,13 @@ def wall_bias_by_window(
                     rows.append(float(parts[column]))
                 except ValueError:
                     continue
-        if rows:
-            kept = np.asarray(rows)[int(len(rows) * fraction):]
-            if kept.size:
-                carried.append({"window": int(index),
-                                "centre": centres[index],
-                                "bias_kjmol": float(np.mean(kept))})
-    return carried or None
+        kept = np.asarray(rows)[int(len(rows) * fraction):]
+        if "cone.bias" in names:
+            recorded = True
+        carried.append({"window": int(index), "centre": centres[index],
+                        "bias_kjmol": (float(np.mean(kept)) if kept.size
+                                       else float("nan"))})
+    return carried if recorded else None
 
 
 def wall_bias_where_the_bound_state_is(
@@ -1143,7 +1146,8 @@ def wall_bias_where_the_bound_state_is(
     rows = wall_bias_by_window(directories, plan,
                                equilibration_fraction=equilibration_fraction)
     inside = [row["bias_kjmol"] for row in rows or ()
-              if row["centre"] <= bound_below]
+              if row["centre"] <= bound_below
+              and np.isfinite(row["bias_kjmol"])]
     return max(inside) if inside else None
 
 
@@ -2541,6 +2545,13 @@ def compute_pmf(
         # Resamples with nothing in the curve's lowest bin, counted for the
         # record.
         unzeroed = [0]
+        # Every curve the statistic is called on, the real one first
+        # (`block_bootstrap` calls it once on the data, then once per
+        # resample), and what `also` gave on each. The binding free energy's
+        # bulk check reads the tail's departures off these, since a per-bin
+        # error holds the zero's noise, which cancels in a departure.
+        curves: list[np.ndarray] = []
+        extras: list[float] = []
 
         def _curve(drawn: dict[int, np.ndarray]) -> np.ndarray:
             inner = compute_pmf(
@@ -2560,6 +2571,7 @@ def compute_pmf(
             if np.isnan(values[anchor]):
                 unzeroed[0] += 1
             values = values - values[anchor]
+            curves.append(values)
             if also is None:
                 return values
             # Carried as one more element of the same array, because
@@ -2573,8 +2585,8 @@ def compute_pmf(
                              inner["pmf"]["free_energy_kjmol"])
             except (ValueError, ZeroDivisionError, KeyError, TypeError):
                 extra = None
-            return np.append(values,
-                             np.nan if extra is None else float(extra))
+            extras.append(np.nan if extra is None else float(extra))
+            return np.append(values, extras[-1])
 
         uncertainty = block_bootstrap(
             {w.index: samples[w.index] for w in ordered}, _curve,
@@ -2582,6 +2594,16 @@ def compute_pmf(
         ).as_dict()
         if also is not None:
             uncertainty, derived = _split_off_the_derived(uncertainty)
+            # Only resamples that gave a number make the interval, so they
+            # are counted apart from those that did not.
+            given = np.isfinite(np.asarray(extras[1:], dtype=float))
+            derived["resamples_with_a_number"] = int(given.sum())
+            derived["resamples_without_a_number"] = int((~given).sum())
+        # One row per resample, the real curve left out; None where a
+        # resample had nothing in a bin, as the curve itself writes one.
+        uncertainty["resample_curves_kjmol"] = [
+            [float(v) if np.isfinite(v) else None for v in row]
+            for row in curves[1:]]
         if uncertainty["note"]:
             logger.info("Free-energy uncertainty: %s", uncertainty["note"])
         # Where the band is zero wide, and what the curve's own zero does.

@@ -93,25 +93,32 @@ def _what_the_cone_costs(cone: Any,
 #: How well the outer range must follow the bulk form before it counts as
 #: bulk. The residual of a fit of A(r) to -2kT ln r + c, in kJ/mol; a
 #: quarter of RT at 300 K, which is smaller than any feature a PMF of this
-#: kind resolves. Where the curve comes with its bootstrap errors this is
-#: the floor of the allowance, not the whole of it.
+#: kind resolves. Where the curve comes with its bootstrap resamples this is
+#: the floor of each allowance, not the whole of it.
 BULK_RESIDUAL_KJMOL = 0.6
 
-#: The chance, over all the points of the tail together, that a curve truly
-#: in bulk is refused because its noise put one point past its allowance.
+#: The chance that a curve truly in bulk is refused by its noise alone,
+#: split evenly between the two tests on the tail (the points' departures
+#: and the tail's tilt), so that by the union bound the two together refuse
+#: a bulk tail at most this often.
 BULK_FAMILY_CHANCE = 0.05
 
+#: Resamples a tail needs, all of its bins holding a free energy, before
+#: their spread is read as the departures' error.
+BULK_RESAMPLES_NEEDED = 20
 
-def _sidak_multiplier(count: int, chance: float = BULK_FAMILY_CHANCE) -> float:
+
+def _sidak_multiplier(count: int, chance: float) -> float:
     """How many standard errors each of `count` points may depart by.
 
     Sidak's bound: each point is allowed z standard errors, with z the
     two-sided normal quantile at 1 - (1 - chance)^(1/count), so that the
     chance of any of the `count` departing that far by noise alone is
-    `chance` where the departures are independent and normal. Bins of a
-    recombined curve are correlated, so the bound is approximate here; for
-    two-sided tests on correlated normal variables it errs towards allowing
-    more (Sidak 1967, J. Am. Stat. Assoc. 62, 626).
+    `chance` where the departures are independent and normal (Sidak 1967,
+    J. Am. Stat. Assoc. 62, 626). The departures of a tail are correlated
+    with each other, so the bound is approximate here; for two-sided limits
+    on correlated normal variables the inequality runs towards refusing
+    less often than `chance`, not more.
     """
     from statistics import NormalDist
 
@@ -119,68 +126,109 @@ def _sidak_multiplier(count: int, chance: float = BULK_FAMILY_CHANCE) -> float:
     return float(NormalDist().inv_cdf(1.0 - each / 2.0))
 
 
+def _tilt(radius: np.ndarray, flattened: np.ndarray) -> np.ndarray:
+    """The least-squares slope of each row of `flattened` against r, times
+    the tail's span: how far the tail falls or rises across its length."""
+    centred = radius - radius.mean()
+    slope = (flattened - flattened.mean(axis=-1, keepdims=True)) @ centred \
+        / float(centred @ centred)
+    return slope * float(radius[-1] - radius[0])
+
+
 def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
-                    errors: "np.ndarray | None", kt: float) -> dict[str, Any]:
-    """Whether the tail is flat in A(r) + 2kT ln r, judged against its errors.
+                    curves: "np.ndarray | None", kt: float, *,
+                    why_fixed: str) -> dict[str, Any]:
+    """Whether the tail is flat in f(r) = A(r) + 2kT ln r.
 
-    In bulk f(r) = A(r) + 2kT ln r is a constant c (Gilson et al. 1997,
-    Biophys. J. 72, 1047: the standard-state integral with W(r) flat). Each
-    tail point's departure d_i = f_i - mean(f) is judged against
+    In bulk f is a constant (Gilson et al. 1997, Biophys. J. 72, 1047: the
+    standard-state integral with W(r) flat). Two things are judged on the
+    n tail points, each at half of `BULK_FAMILY_CHANCE`:
 
-        allowed_i = max(0.6 kJ/mol, z_n * sqrt(e_i^2 + e_mean^2)),
-        e_mean = sqrt(sum_j e_j^2) / n,
+    - each point's departure d_i = f_i - mean(f), against
+      max(0.6 kJ/mol, z_n * s_i), with s_i the standard deviation of d_i
+      over the bootstrap's resampled curves and z_n Sidak's multiplier for
+      n points at 2.5% (`_sidak_multiplier`);
+    - the tail's tilt T = b * (r_n - r_1), b the least-squares slope of f
+      against r, against max(0.6 kJ/mol, z * s_T), with s_T the standard
+      deviation of T over the same resamples and z the two-sided normal
+      quantile at 2.5% (2.24).
 
-    with e_i the bootstrap's standard error of A at that bin (2kT ln r is
-    exact and adds none), e_mean the tail mean's error, both taken as if the
-    bins were independent, and z_n Sidak's multiplier for n points
-    (`_sidak_multiplier`). Two things make this allowance larger than the
-    departure's own error rather than smaller. The covariance of f_i with the
-    mean it is a part of is left out, which would take 2 e_i^2 / n off the
-    variance. And the curve is zeroed at its lowest bin, so every e_i holds
-    that bin's noise, which is common to the whole tail and cancels in d_i.
-    A tail is therefore refused only where it departs past what its noise
-    could make, and a smooth tail within its errors is taken as bulk because
-    nothing in the run can tell it from bulk.
+    s_i and s_T are read off the resamples themselves, so they carry every
+    correlation between the bins, and the noise of the bin the curve is
+    zeroed at, which every resample shares, cancels in d_i and T as it does
+    in the real curve. The per-bin standard errors cannot stand in for them:
+    each holds that zero's noise, often most of it, which made an allowance
+    about three times the departures' real spread and let a tail falling by
+    several kJ/mol pass as bulk. The tilt is the stronger test of a tail that
+    is still falling (windows stopped inside the interaction), and the
+    departures of one that is not smooth.
 
-    Without errors, or with any tail bin's error missing, every point is
-    judged against 0.6 kJ/mol alone, as before the errors were taken.
+    Without resamples, or with fewer than `BULK_RESAMPLES_NEEDED` whose
+    tail is whole, every point is judged against 0.6 kJ/mol alone and the
+    tilt is not judged, exactly as before the resamples were taken; the
+    record says why, in `why_fixed`.
     """
+    from statistics import NormalDist
+
+    count = int(radius.size)
     flattened = energy + 2.0 * kt * np.log(radius)
     departure = np.abs(flattened - np.mean(flattened))
-    count = int(radius.size)
     floor = np.full(count, BULK_RESIDUAL_KJMOL)
-    usable = (errors is not None and errors.shape == radius.shape
-              and bool(np.all(np.isfinite(errors))))
+    whole = None
+    if curves is not None:
+        shaped = curves + 2.0 * kt * np.log(radius)
+        whole = shaped[np.all(np.isfinite(shaped), axis=1)]
+    usable = whole is not None and whole.shape[0] >= BULK_RESAMPLES_NEEDED
+    tilt = float(_tilt(radius, flattened))
+    each_test = BULK_FAMILY_CHANCE / 2.0
     if usable:
-        multiplier = _sidak_multiplier(count)
-        of_the_mean = float(np.sqrt(np.sum(errors ** 2))) / count
-        own = np.sqrt(errors ** 2 + of_the_mean ** 2)
-        allowed = np.maximum(floor, multiplier * own)
+        multiplier = _sidak_multiplier(count, each_test)
+        spread = np.std(whole - whole.mean(axis=1, keepdims=True),
+                        axis=0, ddof=1)
+        allowed = np.maximum(floor, multiplier * spread)
+        tilt_multiplier = float(NormalDist().inv_cdf(1.0 - each_test / 2.0))
+        tilt_error = float(np.std(_tilt(radius, whole), ddof=1))
+        tilt_allowed = max(BULK_RESIDUAL_KJMOL, tilt_multiplier * tilt_error)
         judged = (
             f"each of the outer {count} points' departure from their mean "
             f"against the larger of {BULK_RESIDUAL_KJMOL} kJ/mol and "
-            f"{multiplier:.2f} standard errors of that departure, from the "
-            f"bootstrap's error at each bin (a {BULK_FAMILY_CHANCE:.0%} "
-            f"chance, over the {count} points, of refusing a tail that is "
+            f"{multiplier:.2f} times that departure's spread over "
+            f"{whole.shape[0]} of the bootstrap's resampled curves, and the "
+            f"tail's tilt against the larger of {BULK_RESIDUAL_KJMOL} kJ/mol "
+            f"and {tilt_multiplier:.2f} times its spread over the same "
+            f"resamples (a {each_test:.1%} chance each, so at most "
+            f"{BULK_FAMILY_CHANCE:.0%} together, of refusing a tail that is "
             "bulk)")
     else:
-        multiplier = None
+        multiplier = tilt_multiplier = tilt_error = tilt_allowed = None
         allowed = floor
+        if curves is not None:
+            why_fixed = (
+                f", since only {0 if whole is None else whole.shape[0]} of "
+                f"the resampled curves held a free energy in every bin of the "
+                f"tail, against {BULK_RESAMPLES_NEEDED} needed")
         judged = (
             f"each of the outer {count} points' departure from their mean "
-            f"against {BULK_RESIDUAL_KJMOL} kJ/mol"
-            + (", since the bootstrap's errors were not given for every "
-               "point of it" if errors is not None else
-               ", since the curve came without the bootstrap's errors"))
+            f"against {BULK_RESIDUAL_KJMOL} kJ/mol, the tilt not judged"
+            + why_fixed)
     worst = int(np.argmax(departure - allowed))
+    tilted = tilt_allowed is not None and abs(tilt) > tilt_allowed
     return {
         "residual": float(np.max(departure)),
-        "passed": bool(np.all(departure <= allowed)),
+        "passed": bool(np.all(departure <= allowed)) and not tilted,
+        "departs": not bool(np.all(departure <= allowed)),
+        "tilted": tilted,
         "worst_at_nm": float(radius[worst]),
         "worst_kjmol": float(departure[worst]),
         "allowed_kjmol": float(allowed[worst]),
-        "against_errors": usable,
+        "tilt_kjmol": tilt,
+        "tilt_error_kjmol": tilt_error,
+        "tilt_allowed_kjmol": tilt_allowed,
+        "by": ("the bootstrap's resampled curves" if usable
+               else f"{BULK_RESIDUAL_KJMOL} kJ/mol alone"),
+        "resamples_used": None if whole is None else int(whole.shape[0]),
         "multiplier": multiplier,
+        "tilt_multiplier": tilt_multiplier,
         "judged": judged,
     }
 
@@ -219,7 +267,14 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
         "delta_g_uncertainty_is_a_floor": (
             None if resolved is None else not bool(resolved)),
         "delta_g_uncertainty_note": resampled.get("note") or None,
-        "delta_g_resamples": resampled.get("resamples"),
+        # Only the resamples that gave a number make the interval, so only
+        # they are counted in it; the rest are said beside it.
+        "delta_g_resamples": (
+            resampled.get("resamples_with_a_number")
+            if resampled.get("resamples_with_a_number") is not None
+            else resampled.get("resamples")),
+        "delta_g_resamples_without_a_number": resampled.get(
+            "resamples_without_a_number"),
     }
 
 
@@ -228,31 +283,69 @@ def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
     the cutoff the integral uses.
 
     Per window (``[{"window", "centre", "bias_kjmol"}, ...]``), every window
-    whose centre is at or inside ``cutoff`` is judged and its largest mean is
-    the number. A window beyond it is left out: its centre is outside the
-    range the integral is taken over. One number is the caller's own reading
-    and is taken as it stands, with the range it covers unknown.
+    whose centre is at or inside ``cutoff`` is judged and the largest of
+    their means is the number. A window beyond it is left out: its centre is
+    outside the range the integral is taken over. A window whose bias is not
+    a finite number (no frames, no column, a NaN in the file) is never read
+    as quiet: it is named in ``not_read``, and where no window up to the
+    cutoff could be read the wall is ``unreadable``. One number is the
+    caller's own reading and is taken as it stands, with the range it covers
+    unknown; a non-finite one is unreadable too.
     """
+    empty = {"bias_kjmol": None, "up_to_nm": None, "windows": None,
+             "bit": None, "not_read": None, "unreadable": False}
     if wall_bias_kjmol is None:
-        return {"bias_kjmol": None, "up_to_nm": None, "windows": None,
-                "bit": None}
-    if isinstance(wall_bias_kjmol, (int, float, np.floating)):
-        return {"bias_kjmol": float(wall_bias_kjmol), "up_to_nm": None,
-                "windows": None, "bit": None}
+        return empty
+    if isinstance(wall_bias_kjmol, (str, bytes)):
+        raise StudyError(
+            "`wall_bias_kjmol` is a number or one row per window "
+            f"(`umbrella.wall_bias_by_window`); {wall_bias_kjmol!r} was "
+            "given.", code="config.option.wrong_type")
+    if np.ndim(wall_bias_kjmol) == 0 and not isinstance(wall_bias_kjmol, dict):
+        value = float(wall_bias_kjmol)
+        if not np.isfinite(value):
+            return {**empty, "unreadable": True}
+        return {**empty, "bias_kjmol": value}
     rows = [{"window": int(row["window"]), "centre": float(row["centre"]),
-             "bias_kjmol": float(row["bias_kjmol"])}
+             "bias_kjmol": (None if row.get("bias_kjmol") is None
+                            else float(row["bias_kjmol"]))}
             for row in wall_bias_kjmol]
     inside = [row for row in rows
               if row["centre"] <= cutoff * (1.0 + 1e-9)]
-    if not inside:
-        return {"bias_kjmol": None, "up_to_nm": float(cutoff), "windows": [],
-                "bit": []}
+    read = [row for row in inside if row["bias_kjmol"] is not None
+            and np.isfinite(row["bias_kjmol"])]
+    not_read = [row["window"] for row in inside if row not in read]
     return {
-        "bias_kjmol": max(row["bias_kjmol"] for row in inside),
+        "bias_kjmol": max((row["bias_kjmol"] for row in read), default=None),
         "up_to_nm": float(cutoff),
-        "windows": [row["window"] for row in inside],
-        "bit": [row for row in inside if row["bias_kjmol"] > WALL_QUIET_KJMOL],
+        "windows": [row["window"] for row in read],
+        "bit": [row for row in read if row["bias_kjmol"] > WALL_QUIET_KJMOL],
+        "not_read": not_read,
+        "unreadable": bool(inside) and not read,
     }
+
+
+def _array_of_numbers(values: Any, what: str, ndim: int) -> np.ndarray:
+    """`values` as a float array of `ndim` dimensions, None read as NaN,
+    or a StudyError saying what it was."""
+    shape = ("one number per point" if ndim == 1
+             else "one curve per resample, one number per point")
+    try:
+        held = (None if isinstance(values, (str, bytes))
+                else np.asarray(values, dtype=object))
+    except ValueError:
+        held = None
+    if held is None or held.ndim != ndim:
+        raise StudyError(
+            f"{what} must be {shape}; {type(values).__name__} "
+            f"{values!r:.60} was given.",
+            code="simulation.bias.dimension_mismatch")
+    try:
+        return np.frompyfunc(lambda v: np.nan if v is None else v, 1, 1)(
+            held).astype(float)
+    except (TypeError, ValueError) as exc:
+        raise StudyError(f"{what} must be numbers: {exc}.",
+                         code="config.option.wrong_type") from exc
 
 
 def binding_free_energy(
@@ -266,6 +359,8 @@ def binding_free_energy(
     wall_bias_kjmol: Any = None,
     resampled: "dict[str, Any] | None" = None,
     errors_kjmol: Any = None,
+    resample_curves_kjmol: Any = None,
+    judge_the_bulk: bool = True,
 ) -> dict[str, Any]:
     """A standard-state binding free energy, or a refusal saying why not.
 
@@ -299,11 +394,21 @@ def binding_free_energy(
     Given nothing, it says the check was not made rather than implying it
     passed.
 
-    ``errors_kjmol`` is the bootstrap's standard error of the free energy at
-    each point (``pmf["uncertainty"]["standard_error"]``). Given, the bulk
-    check allows each point of the tail what its noise could make, with
-    0.6 kJ/mol as the floor (`_judge_the_bulk`); not given, 0.6 kJ/mol is
-    the whole allowance. The record says which was judged.
+    ``resample_curves_kjmol`` is the bootstrap's resampled curves, one row
+    per resample on the same points (``pmf["uncertainty"]
+    ["resample_curves_kjmol"]`` from `umbrella.compute_pmf`). Given, the
+    tail's departures and its tilt are judged against their own spread over
+    them, with 0.6 kJ/mol as the floor (`_judge_the_bulk`). ``errors_kjmol``,
+    the per-bin standard errors, is accepted and checked but not judged
+    against: each holds the noise of the bin the curve is zeroed at, which
+    cancels in a departure. Without resamples 0.6 kJ/mol is the whole
+    allowance. The record says which was judged.
+
+    ``judge_the_bulk=False`` reads the reference off the tail without
+    judging its shape: for each of the bootstrap's resamples, whose curve
+    the real curve's verdict stands for. A resample judged on its own would
+    be refused by its own noise, and the interval would be made of the
+    resamples whose tails happened to be flattest.
     """
     radius = np.asarray(coordinate, dtype=float)
     energy = np.asarray(free_energy_kjmol, dtype=float)
@@ -314,16 +419,28 @@ def binding_free_energy(
         , code="simulation.bias.dimension_mismatch")
     order = np.argsort(radius)
     radius, energy = radius[order], energy[order]
-    errors = None
     if errors_kjmol is not None:
-        errors = np.asarray(
-            [np.nan if e is None else e for e in errors_kjmol], dtype=float)
+        errors = _array_of_numbers(errors_kjmol, "`errors_kjmol`", 1)
         if errors.shape != order.shape:
             raise StudyError(
                 "The free energy's errors must be one per point of the "
                 f"curve; got {errors.shape} for {order.shape}.",
                 code="simulation.bias.dimension_mismatch")
-        errors = errors[order]
+        if np.any(errors[np.isfinite(errors)] < 0):
+            raise StudyError(
+                "A standard error is not negative; `errors_kjmol` holds "
+                f"{float(np.nanmin(errors)):g}.",
+                code="config.option.wrong_type")
+    curves = None
+    if resample_curves_kjmol is not None:
+        curves = _array_of_numbers(
+            resample_curves_kjmol, "`resample_curves_kjmol`", 2)
+        if curves.shape[1:] != order.shape:
+            raise StudyError(
+                "Each resampled curve must have one free energy per point of "
+                f"the curve; got {curves.shape[1:]} for {order.shape}.",
+                code="simulation.bias.dimension_mismatch")
+        curves = curves[:, order]
 
     if radius.size < 8:
         return {"delta_g_kjmol": None, "refused": (
@@ -366,27 +483,54 @@ def binding_free_energy(
                 "windows that cover it, or a window placed in it, closes it."
             ),
         }
-    bulk = _judge_the_bulk(radius[-n_bulk:], energy[-n_bulk:],
-                           None if errors is None else errors[-n_bulk:], kt)
-    residual = bulk["residual"]
-    judged_record = {
-        "bulk_residual_kjmol": residual,
-        "bulk_worst_at_nm": bulk["worst_at_nm"],
-        "bulk_allowed_kjmol": bulk["allowed_kjmol"],
-        "bulk_judged_against_errors": bulk["against_errors"],
-        "bulk_error_multiplier": bulk["multiplier"],
-        "bulk_judged": bulk["judged"],
-    }
+    if judge_the_bulk:
+        bulk = _judge_the_bulk(
+            radius[-n_bulk:], energy[-n_bulk:],
+            None if curves is None else curves[:, -n_bulk:], kt,
+            why_fixed=(
+                ", since the bootstrap's per-bin errors were passed without "
+                "its resampled curves, and each per-bin error holds the "
+                "noise of the bin the curve is zeroed at"
+                if errors_kjmol is not None else
+                ", since the bootstrap's resampled curves were not passed"))
+        judged_record = {
+            "bulk_residual_kjmol": bulk["residual"],
+            "bulk_worst_at_nm": bulk["worst_at_nm"],
+            "bulk_allowed_kjmol": bulk["allowed_kjmol"],
+            "bulk_tilt_kjmol": bulk["tilt_kjmol"],
+            "bulk_tilt_error_kjmol": bulk["tilt_error_kjmol"],
+            "bulk_tilt_allowed_kjmol": bulk["tilt_allowed_kjmol"],
+            "bulk_judged_by": bulk["by"],
+            "bulk_resamples_used": bulk["resamples_used"],
+            "bulk_error_multiplier": bulk["multiplier"],
+            "bulk_tilt_multiplier": bulk["tilt_multiplier"],
+            "bulk_judged": bulk["judged"],
+        }
+    else:
+        bulk = {"passed": True}
+        judged_record = {
+            "bulk_judged_by": None,
+            "bulk_judged": ("not judged here: the curve this resample is of "
+                            "was judged once, and its verdict stands"),
+        }
     if not bulk["passed"]:
+        found = []
+        if bulk["departs"]:
+            found.append(
+                f"at {bulk['worst_at_nm']:.3g} nm by "
+                f"{bulk['worst_kjmol']:.2f} kJ/mol, against "
+                f"{bulk['allowed_kjmol']:.2f} allowed there")
+        if bulk["tilted"]:
+            found.append(
+                f"across the tail by a tilt of {bulk['tilt_kjmol']:.2f} "
+                f"kJ/mol, against {bulk['tilt_allowed_kjmol']:.2f} allowed")
         return {
             "delta_g_kjmol": None,
             **judged_record,
             "bulk_from_nm": float(radius[-n_bulk]),
             "refused": (
                 f"The outer {n_bulk} points depart from a free ligand's "
-                f"shape: at {bulk['worst_at_nm']:.3g} nm by "
-                f"{bulk['worst_kjmol']:.2f} kJ/mol, against "
-                f"{bulk['allowed_kjmol']:.2f} allowed there. Judged: "
+                f"shape: {'; and '.join(found)}. Judged: "
                 f"{bulk['judged']}. Beyond the interaction the "
                 "curve should fall as -2kT ln r, because the only thing "
                 "changing there is how much room the shell holds. Where it "
@@ -468,34 +612,56 @@ def binding_free_energy(
     # The cap the windows ran in, and what it costs.
     cone_record, correction = _what_the_cone_costs(cone, temperature_K)
     wall = _the_wall_up_to(wall_bias_kjmol, chosen)
-    if cone_record is not None:
+    if cone_record is None:
+        # Nothing was judged without a cone, so nothing is said about a wall.
+        wall = {key: None for key in wall}
+    else:
+        wall_record = {
+            "cone": cone_record, "bound_cutoff_nm": chosen,
+            "cone_wall_bias_kjmol": wall["bias_kjmol"],
+            "cone_wall_checked_up_to_nm": wall["up_to_nm"],
+            "cone_wall_windows": wall["windows"],
+            "cone_wall_bit_in": wall["bit"],
+            "cone_wall_not_read_in": wall["not_read"],
+        }
+        widen = (
+            "Widen `half_angle_deg` (or `margin`, for a cone worked out from "
+            "the pull) until the wall is quiet there, or point "
+            "the axis along the direction the ligand actually leaves by.")
+        if wall["unreadable"]:
+            named = ("" if not wall["not_read"] else " (window"
+                     + ("s " if len(wall["not_read"]) > 1 else " ")
+                     + ", ".join(str(w) for w in wall["not_read"]) + ")")
+            return {"delta_g_kjmol": None, **wall_record, "refused": (
+                f"The cone's wall could not be read in any window up to the "
+                f"cutoff of {chosen:.3g} nm{named}: its bias is not a number "
+                "there. The correction for running inside a cone assumes the "
+                "bound pose fits within it, and a wall nobody could read may "
+                "have bitten. Run those windows again, or check the "
+                "`cone.bias` column of their COLVAR files."
+            )}
         if wall["bias_kjmol"] is not None and wall["bias_kjmol"] > WALL_QUIET_KJMOL:
             bit = wall["bit"]
             where = (
-                " in window" + ("s " if len(bit) > 1 else " ")
-                + ", ".join(f"{b['window']} (at {b['centre']:.3g} nm, "
-                            f"{b['bias_kjmol']:.2f} kJ/mol)" for b in bit)
-                + f", every window up to the cutoff of {chosen:.3g} nm having "
-                "been judged"
+                ", in window" + ("s " if len(bit) > 1 else " ")
+                + ", ".join(f"{b['window']} (at {b['centre']:.3g} nm)"
+                            for b in bit)
+                + f"; every window up to the cutoff of {chosen:.3g} nm was "
+                "judged"
+                + ("" if not wall["not_read"] else
+                   ", except " + ", ".join(str(w) for w in wall["not_read"])
+                   + ", whose bias could not be read")
             ) if bit else ""
-            return {"delta_g_kjmol": None, "cone": cone_record,
-                    "bound_cutoff_nm": chosen,
-                    "cone_wall_bias_kjmol": wall["bias_kjmol"],
-                    "cone_wall_checked_up_to_nm": wall["up_to_nm"],
-                    "cone_wall_windows": wall["windows"],
-                    "cone_wall_bit_in": bit,
-                    "refused": (
-                f"The cone's wall carried {wall['bias_kjmol']:.2f} kJ/mol where "
-                f"the bound state is{where}, against {WALL_QUIET_KJMOL} "
-                "allowed. The "
+            return {"delta_g_kjmol": None, **wall_record, "refused": (
+                f"The cone's wall carried {wall['bias_kjmol']:.2f} kJ/mol "
+                f"where the bound state is, against {WALL_QUIET_KJMOL} "
+                f"allowed{where}. The "
                 "correction for running inside a cone assumes the bound pose "
                 "fits within it: the bulk state loses "
                 f"{correction:.2f} kJ/mol of room and the bound state loses "
                 "none. A wall that bites in the bound state has taken part of "
                 "the population this integral is over, and no analytic term "
-                "puts it back. Widen `half_angle_deg` until the wall is quiet "
-                "there, or point the axis along the direction the ligand "
-                "actually leaves by."
+                "puts it back. " + widen
             )}
         delta_g += correction
 
@@ -537,6 +703,9 @@ def binding_free_energy(
         "cone_wall_checked_up_to_nm": wall["up_to_nm"],
         "cone_wall_windows": wall["windows"],
         "cone_wall_bit_in": wall["bit"],
+        # Windows up to the cutoff whose bias was not a number: not judged,
+        # and not read as quiet.
+        "cone_wall_not_read_in": wall["not_read"],
         "binding_constant_nm3": constant_nm3,
         "bound_cutoff_nm": chosen,
         "bound_cutoff_chosen_by": (
