@@ -53,7 +53,7 @@ What is kept, what is repaired, and how it is protonated.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14. A protein residue's state comes from its residue type's model pKa (PDBFixer), not shifted by its surroundings (set one with `residue_states`); a ligand's from PROPKA, run on the complex |
+| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14. A protein residue's charge state comes from its residue type's model pKa (PDBFixer), not shifted by its surroundings, and a histidine's tautomer from its hydrogen bonds (set either with `residue_states`); a ligand's from PROPKA, run on the complex |
 | `residue_states` | map | none | Protonation states in place of setup's own, by chain and number: `{A:57: HIP}`. HIS takes HID, HIE or HIP; ASP ASH or ASP; GLU GLH or GLU; LYS LYN or LYS |
 | `model` | int | none | Which model of a file holding several (an NMR ensemble) to prepare, as the file numbers them; unset, the first. Swept, replicas that start from different structures, which a stopping rule counts as independent starts |
 | `protonation_margin` | float | `1.0` | How close a ligand's pKa may come to the pH before setup stops rather than pick a charge state |
