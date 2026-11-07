@@ -849,6 +849,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   imports nothing, so two quick stops no longer end an idle worker.
   Another container on the same host is told apart only on Linux, as the
   docs now say.
+- A stop in a parallel round of the stopping rule's extensions, "stop now"
+  too, let the extensions still waiting begin and run to their end: they
+  are now handed out as workers free, and none begins after a stop. The
+  GUI's Stop counts as a first stop, so one Ctrl-C after it lets a run save
+  at its frame; a first Ctrl-C after any stop says the stop is under way
+  and how to stop now, and a second stop says it is stopping now. A
+  checkpoint, its sidecar and its seal are written as one set: a kill as
+  they were written left the checkpoint at the new step, its sidecar at
+  the old one and an empty seal, which nothing could resume.
 - A run whose means are determined and carry the image note, the solute
   within the cutoff of its image in some frames but not in contact in every
   one, was told "By its records, yes." and "Then replicas." in the Agent's
