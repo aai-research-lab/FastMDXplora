@@ -895,6 +895,9 @@ def _write_checkpoint_set(simulation: Any, chk_path: Path, sidecar: dict[str, An
     import hashlib
     import os as _os
 
+    # A set a kill left part moved is finished first, and what is left of an
+    # earlier write cleared, so this write's files never pair with its.
+    _settle_checkpoint_set(chk_path)
     payload = simulation.context.createCheckpoint()
     side_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_SIDECAR_SUFFIX)
     seal_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
@@ -981,6 +984,31 @@ def _a_stop_asked_here() -> None:
 #: said, a person pressed again, and that meant now.
 CTRL_C_UNDER_WAY = ("Ctrl+C received: the stop asked already is under way (a run in "
                     "production ends at its next frame). Press Ctrl+C again to stop now.")
+
+
+#: Set in a worker of a parallel study's pool: its parent says the stop
+#: lines, once, and the workers say none of what a person reads.
+_IN_A_POOL_WORKER = False
+#: The terminal while a run's output goes to its own log (`_QuietBanner`
+#: of a study of several runs, one after another): a stop's lines are said
+#: there too, where the person who asked reads.
+_TERMINAL_FD: int | None = None
+
+
+def _say_stop(text: str) -> None:
+    """A stop's line: logged, and said on the terminal where a run's output
+    goes to its log. Not in a pool worker, whose parent says it."""
+    import os as _os
+
+    if _IN_A_POOL_WORKER:
+        return
+    logger.warning("%s", text)
+    terminal = _TERMINAL_FD
+    if terminal is not None:
+        try:
+            _os.write(terminal, (text + "\n").encode("utf-8", "replace"))
+        except OSError:
+            pass
 
 
 def stop_now_said(number: int) -> str:
@@ -1108,15 +1136,17 @@ class _StopRequests:
         heard = _a_stop_heard(number)
         if heard == "again" or (heard == "first" and self.signal is not None):
             if number == _signal.SIGINT:
-                logger.warning("%s", CTRL_C_UNDER_WAY)
+                _say_stop(CTRL_C_UNDER_WAY)
             return
         if heard == "first":
             self.signal = number
-            logger.warning(
-                "%s received: production will stop at the next frame, where it "
-                "can be carried on, if that can be reached within %.0f s. %s",
-                self.name, stop_grace_seconds(), stop_now_said(number))
+            _say_stop(
+                f"{self.name} received: production will stop at the next frame, where it "
+                f"can be carried on, if that can be reached within {stop_grace_seconds():.0f} "
+                f"s. {stop_now_said(number)}")
             return
+        _say_stop(f"Stopping now: the run ends at once; `fastmdx resume {self.folder or ''}` "
+                  "carries it on from its last checkpoint.")
         self._restore()
         if number == _signal.SIGINT:
             raise KeyboardInterrupt
@@ -1159,15 +1189,16 @@ class _StopInTheRounds(_StopRequests):
         heard = _a_stop_heard(number)
         if heard == "again" or (heard == "first" and self.signal is not None):
             if number == _signal.SIGINT:
-                logger.warning("%s", CTRL_C_UNDER_WAY)
+                _say_stop(CTRL_C_UNDER_WAY)
             return
         if heard == "first":
             self.signal = number
-            logger.warning(
-                "%s received: the study's round ends once the run it extends has "
-                "answered, where `fastmdx resume` carries it on. %s", self.name,
-                stop_now_said(number))
+            _say_stop(
+                f"{self.name} received: the study's round ends once the run it extends has "
+                f"answered, where `fastmdx resume` carries it on. {stop_now_said(number)}")
             return
+        _say_stop(f"Stopping now: the study's round ends at once; `fastmdx resume "
+                  f"{self.folder or ''}` carries it on from its last checkpoints.")
         self._restore()
         if number == _signal.SIGINT:
             raise KeyboardInterrupt
@@ -1184,8 +1215,8 @@ class _StopInTheRounds(_StopRequests):
             return "Stopping: asked already."
         self.signal, self.asked_here = _signal.SIGTERM, True
         _a_stop_asked_here()
-        logger.warning("Stop asked from the GUI: the study's round ends once the run it "
-                       "extends has answered, where `fastmdx resume` carries it on.")
+        _say_stop("Stop asked from the GUI: the study's round ends once the run it "
+                  "extends has answered, where `fastmdx resume` carries it on.")
         return ("Stopping: the study's round ends once the run it extends has answered, "
                 "and `fastmdx resume` carries it on.")
 
@@ -1212,9 +1243,9 @@ def _asked_here(stop: "_StopRequests") -> str:
     stop.signal = _signal.SIGTERM
     stop.asked_here = True
     _a_stop_asked_here()
-    logger.warning(
+    _say_stop(
         "Stop asked from the GUI: production will stop at the next frame, where it "
-        "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
+        f"can be carried on, if that can be reached within {stop_grace_seconds():.0f} s.")
     return ("Stopping: production ends at its next frame with a checkpoint there, "
             "and `fastmdx resume` carries it on.")
 
@@ -2116,6 +2147,41 @@ def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def _seals(checkpoint: Path, seal: Path) -> bool:
+    """Whether ``seal`` is the seal of the checkpoint in place."""
+    import hashlib
+
+    try:
+        size, digest = seal.read_text(encoding="utf-8").split()
+        payload = checkpoint.read_bytes()
+        return len(payload) == int(size) and hashlib.sha256(payload).hexdigest() == digest
+    except (OSError, ValueError):
+        return False
+
+
+def _settle_checkpoint_set(checkpoint: Path) -> None:
+    """A checkpoint's set left part moved by a kill (`_write_checkpoint_set`)
+    finished: its waiting sidecar and seal moved in where they belong to the
+    checkpoint in place; then what is left of a write (``.new``) removed.
+    Called only where nothing else writes the set: by its writer, and by a
+    resume that has loaded it."""
+    import os as _os
+
+    checkpoint = Path(checkpoint)
+    side = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    waiting = [path.with_suffix(path.suffix + ".new") for path in (checkpoint, side, seal)]
+    try:
+        if _the_set_s_sidecar_waits(checkpoint):
+            _os.replace(waiting[1], side)
+        if waiting[2].is_file() and _seals(checkpoint, waiting[2]):
+            _os.replace(waiting[2], seal)
+        for leftover in waiting:
+            leftover.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _the_set_s_sidecar_waits(checkpoint: Path) -> bool:
     """Whether the checkpoint in place is the one the seal waiting beside it
     seals, with its sidecar waiting too: a kill between the moves of
@@ -2338,6 +2404,8 @@ def load_checkpoint(omm: dict, simulation: Any, path: str | Path, *,
             code="simulation.resume.checkpoint_rejected",
             path=str(checkpoint),
         ) from exc
+    # A killed write's leftovers beside the set it read, settled.
+    _settle_checkpoint_set(checkpoint)
     return checkpoint
 
 

@@ -245,9 +245,12 @@ def _listen_for_a_stop_in_this_worker() -> None:
 
     if threading.current_thread() is not threading.main_thread():  # pragma: no cover
         return
+    from fastmdxplora.simulation import runner
     from fastmdxplora.simulation.runner import _a_stop_heard
 
     _STOP_HEARD = _a_stop_heard
+    # Its parent says a stop's lines, once (`runner._say_stop`).
+    runner._IN_A_POOL_WORKER = True
     for number in (signal.SIGTERM, signal.SIGINT):
         try:
             signal.signal(number, _stop_this_run)
@@ -350,8 +353,6 @@ class _StudyStop:
         #: (`runner.stop_what_listens_here`).
         self.folder = folder
         self.signal: int | None = None
-        #: Asked again: stop now.
-        self.now = False
         self._previous: dict[int, Any] = {}
 
     @property
@@ -425,7 +426,6 @@ class _StudyStop:
                 "and no further run starts. %s",
                 signal.Signals(number).name, stop_grace_seconds(), stop_now_said(number))
             return
-        self.now = True
         if not ended:
             logger.warning(
                 "Stopping now: each run in progress ends at once, and no further run starts; "
@@ -1152,9 +1152,19 @@ def _execute_run(
             except OSError:
                 # A worker that cannot redirect should still run.
                 self.saved = None
+            # A stop's lines are said on the terminal too, where the person
+            # who asked reads (`runner._say_stop`).
+            from fastmdxplora.simulation import runner as _runner
+
+            self.terminal_before = _runner._TERMINAL_FD
+            if self.saved is not None:
+                _runner._TERMINAL_FD = self.saved[0]
             return self
 
         def __exit__(self, *_exc):
+            from fastmdxplora.simulation import runner as _runner
+
+            _runner._TERMINAL_FD = self.terminal_before
             if self.saved is not None:
                 # Flush while the descriptors are still moved. PLUMED's
                 # writes sit in the C runtime's buffer until something
@@ -2431,13 +2441,21 @@ class BatchExplorer:
                 if _a_worker_ended(pool):
                     _wake_the_pool(pool)
                     return False
-                extension_begins(runs[begun])
                 try:
                     future = pool.submit(_extend_one, str(runs[begun]), more_ns,
                                          self._device_for_worker(begun), total_ns)
                 except (BrokenProcessPool, RuntimeError):
                     # Broken, or shut down, since the look above: not begun.
                     return False
+                if (stop.requested or not to_begin_another()) and future.cancel():
+                    # A stop asked as it was handed out, before a worker took
+                    # it: not begun. One a worker took already cannot be
+                    # called back; the stop came to that worker while it was
+                    # idle, so it goes on until a second stop.
+                    return False
+                # Recorded begun once handed out: one refused at the hand-out
+                # was recorded begun and read "did not finish".
+                extension_begins(runs[begun])
                 pending[future] = begun
                 begun += 1
                 return True

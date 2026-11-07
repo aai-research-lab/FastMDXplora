@@ -1633,7 +1633,7 @@ def run(spec, run_out, *_args, **_kwargs):
     out = Path(run_out)
     out.mkdir(parents=True, exist_ok=True)
     _say(here / f"started-{seed}", str(os.getpid()))
-    if role not in ("save", "hold"):
+    if role not in ("save", "hold", "listen"):
         _say(here / f"ready-{seed}", "")
     status, message = "ok", ""
     if role == "die":
@@ -1649,6 +1649,22 @@ def run(spec, run_out, *_args, **_kwargs):
         _until(lambda: (here / f"started-{dying}").exists())
         dead = int((here / f"started-{dying}").read_text())
         _until(lambda: _ended(dead))
+    elif role == "listen":
+        # In production's own stop listener, as a run in production is:
+        # asked to stop, it saves (for SAVE seconds) and returns.
+        from fastmdxplora.simulation import runner
+
+        _hold_run_process(out)
+        try:
+            with runner._StopRequests(folder=out) as stop:
+                _say(here / f"ready-{seed}", "")
+                _until(lambda: stop.signal is not None)
+                _say(here / f"saving-{seed}", "")
+                time.sleep(float(os.environ.get("SAVE") or 1))
+                _say(here / f"saved-{seed}", "")
+        finally:
+            _release_run_process(out)
+        status, message = "error", "stopped"
     elif role in ("save", "hold"):
         # Running, its run's record held: asked to stop, "save" saves (for
         # SAVE seconds) and gives the record back; "hold" never stops.
@@ -2133,6 +2149,95 @@ def test_one_ctrl_c_after_a_stop_is_the_stop_under_way_and_says_so(which, first,
         assert "Send it again to stop now" not in said, said
     if which == "study":
         assert "Stopping now:" in said, said
+
+
+def test_a_ctrl_c_under_way_is_said_once_in_a_parallel_study(tmp_path):
+    """A SIGTERM to a parallel study, then one Ctrl-C to its group, while
+    both its runs were in production: the study's process said the stop
+    was under way, and so did every worker, the same line once each. It is
+    said once, by the study's process."""
+    import os
+    import signal
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "listen", "2": "listen"}, seeds=2, SAVE="4")
+    try:
+        _until(lambda: all((tmp_path / f"ready-{seed}").exists() for seed in "12")
+               or ran.poll() is not None, 120)
+        os.kill(ran.pid, signal.SIGTERM)
+        _until(lambda: all((tmp_path / f"saving-{seed}").exists() for seed in "12")
+               or ran.poll() is not None, 60)
+        os.killpg(ran.pid, signal.SIGINT)
+    finally:
+        printed, logged = _ended(ran, 60, "the study")
+    said = printed + logged
+    assert said.count("the stop asked already is under way") == 1, said[-2500:]
+    assert all((tmp_path / f"saved-{seed}").exists() for seed in "12"), said[-1500:]
+    assert not ran.left_behind
+
+
+_A_SERIAL_STUDY_STOPPED = """
+import os, signal, sys, threading, time
+from pathlib import Path
+
+import fastmdxplora
+from fastmdxplora.batch import explorer
+from fastmdxplora.simulation import runner
+
+here = Path(sys.argv[1])
+
+
+def explore(self, *_args, **_kwargs):
+    # Each run's production, in its stop listener, as the study's own GUI
+    # (`fastmdx explore --dashboard`) asks it to stop.
+    with runner._StopRequests(folder=self.output_dir) as stop:
+        (here / "ready").write_text("")
+        until = time.monotonic() + (30 if not (here / "asked").exists() else 1)
+        while stop.signal is None and time.monotonic() < until:
+            time.sleep(0.05)
+        time.sleep(1)
+    return []
+
+
+def the_gui_then_ctrl_c():
+    while not (here / "ready").exists():
+        time.sleep(0.05)
+    runner.stop_what_listens_here()
+    (here / "asked").write_text("")
+    time.sleep(0.3)
+    os.kill(os.getpid(), signal.SIGINT)
+
+
+if __name__ == "__main__":
+    fastmdxplora.FastMDXplora.explore = explore
+    config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
+              "sweep": {"simulation.random_seed": [1, 2]}, "execution": {"mode": "sequential"}}
+    study = explorer.BatchExplorer(config_data=config, output_dir=here / "study")
+    threading.Thread(target=the_gui_then_ctrl_c, daemon=True).start()
+    study._run_sequential(None, None)
+    print("ended", flush=True)
+"""
+
+
+def test_a_serial_study_says_its_stop_on_the_terminal(tmp_path):
+    """A study of two runs, one after another: each run's output goes to
+    its own log, and so did the GUI's Stop line and the one a Ctrl-C after
+    it says, so the terminal said nothing, and a person pressed again,
+    which stops now. Said on the terminal too, and still in the run's log."""
+    import os
+    import sys
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    script = tmp_path / "serial.py"
+    script.write_text(_A_SERIAL_STUDY_STOPPED)
+    ran = subprocess.run([sys.executable, str(script), str(tmp_path)], cwd=tmp_path,
+                         env={**os.environ, "PYTHONPATH": _source()}, capture_output=True,
+                         text=True, timeout=180)
+    terminal = ran.stdout + ran.stderr
+    assert "ended" in ran.stdout, terminal[-2000:]
+    assert "Stop asked from the GUI" in terminal, terminal[-2000:]
+    assert "the stop asked already is under way" in terminal, terminal[-2000:]
+    logged = (tmp_path / "study" / "runs" / "tri__random-seed-1" / "run.log").read_text()
+    assert "Stop asked from the GUI" in logged and "under way" in logged, logged[-2000:]
 
 
 def test_a_run_s_hold_writes_over_a_record_its_ended_process_left(tmp_path):
