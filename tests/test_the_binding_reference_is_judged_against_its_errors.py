@@ -13,8 +13,6 @@ uses, and a window whose bias is not a number is never read as quiet.
 from __future__ import annotations
 
 import logging
-from statistics import NormalDist
-
 import numpy as np
 import pytest
 
@@ -63,9 +61,13 @@ def _resamples(energy: np.ndarray, *, shared: float, own: float,
             + rng.normal(0.0, own, (count, energy.size)))
 
 
-def _sidak(count: int, chance: float) -> float:
+def _sidak(count: int, chance: float, resamples: int) -> float:
+    """Sidak's per-point quantile, on Student's t with resamples - 1 degrees
+    of freedom since the spread is read off that many resamples."""
+    from scipy.stats import t as student
+
     each = 1.0 - (1.0 - chance) ** (1.0 / count)
-    return NormalDist().inv_cdf(1.0 - each / 2.0)
+    return float(student.ppf(1.0 - each / 2.0, resamples - 1))
 
 
 class TestTheTailIsJudgedAgainstItsResamples:
@@ -86,7 +88,7 @@ class TestTheTailIsJudgedAgainstItsResamples:
 
         tail = curves[:, -TAIL:] + 2.0 * KT * np.log(radius[-TAIL:])
         spread = (tail - tail.mean(axis=1, keepdims=True)).std(axis=0, ddof=1)
-        allowed = np.maximum(0.6, _sidak(TAIL, 0.025) * spread)
+        allowed = np.maximum(0.6, _sidak(TAIL, 0.025, 200) * spread)
         assert allowed.max() < 1.0
         assert result["delta_g_kjmol"] is None
         assert result["bulk_judged_by"] == "the bootstrap's resampled curves"
@@ -248,7 +250,7 @@ def _sampled(plan, tilt: float, seed: int, count: int = 700):
     return sampled
 
 
-def _judged(tilt: float, seeds) -> "list[dict]":
+def _judged(tilt: float, seeds, resamples: int = 60) -> "list[dict]":
     from fastmdxplora.simulation.umbrella import compute_pmf
 
     plan = _plan()
@@ -258,7 +260,7 @@ def _judged(tilt: float, seeds) -> "list[dict]":
         for seed in seeds:
             pmf = compute_pmf(_sampled(plan, tilt, seed), plan,
                               temperature_K=TEMPERATURE,
-                              bootstrap_resamples=60)["pmf"]
+                              bootstrap_resamples=resamples)["pmf"]
             found.append({
                 "errors": np.asarray(pmf["uncertainty"]["standard_error"],
                                      dtype=float),
@@ -283,10 +285,12 @@ class TestThroughTheRecombination:
         assert caught >= 18, caught
 
     def test_a_flat_tail_is_refused_about_one_time_in_twenty(self):
-        found = _judged(0.0, range(100, 120))
+        """60 studies at 40 resamples each: at a true 5% the count is 3, and
+        6 is the binomial's 95% upper bound."""
+        found = _judged(0.0, range(100, 160), resamples=40)
         assert all(f["bulk_judged_by"] == "the bootstrap's resampled curves"
                    for f in found)
-        assert sum(f["delta_g_kjmol"] is None for f in found) <= 1
+        assert sum(f["delta_g_kjmol"] is None for f in found) <= 6
 
     def test_the_curves_and_the_counts_come_back(self):
         from fastmdxplora.simulation.umbrella import compute_pmf
@@ -386,7 +390,7 @@ class TestTheWallIsJudgedUpToTheCutoff:
         assert result["delta_g_kjmol"] is None
         assert result["cone_wall_bias_kjmol"] == pytest.approx(5.0)
         assert result["cone_wall_not_read_in"] == [0]
-        assert "except 0, whose bias could not be read" in result["refused"]
+        assert "could not be read in window 0," in result["refused"]
 
     @pytest.mark.parametrize("walls", [
         [{"window": 0, "centre": 0.30, "bias_kjmol": float("nan")},
@@ -398,7 +402,8 @@ class TestTheWallIsJudgedUpToTheCutoff:
                                      cone=CONE, wall_bias_kjmol=walls)
 
         assert result["delta_g_kjmol"] is None
-        assert "could not be read" in result["refused"]
+        assert ("not a number" if isinstance(walls, float)
+                else "could not be read in windows 0, 1,") in result["refused"]
 
     @pytest.mark.parametrize("scalar", [np.int64(1), np.array(1.0), 1.0])
     def test_one_number_is_still_taken_as_it_stands(self, scalar):
@@ -446,10 +451,12 @@ class TestTheWallIsJudgedUpToTheCutoff:
             directories[index] = run.parent
             if bias is None:
                 continue
-            # Equilibration (the first 20%) at 50 kJ/mol, which must not count.
+            # Equilibration (the first 20%) at 50 kJ/mol, which must not
+            # count; the coordinate sits at the window's centre.
+            centre = plan.windows[index].centre
             rows = "\n".join(
-                f"{i * 0.2:.1f} 0.5 1.0 2.9 {50.0 if i < 20 else bias:.3f}"
-                for i in range(100))
+                f"{i * 0.2:.1f} {centre} 1.0 2.9 "
+                f"{50.0 if i < 20 else bias:.3f}" for i in range(100))
             run.joinpath("COLVAR").write_text(
                 "#! FIELDS time cv restraint.bias cone_angle cone.bias\n"
                 + rows, encoding="utf-8")
@@ -469,3 +476,176 @@ class TestTheWallIsJudgedUpToTheCutoff:
         assert result["delta_g_kjmol"] is None
         assert [b["window"] for b in result["cone_wall_bit_in"]] == [2]
         assert result["cone_wall_not_read_in"] == [4]
+
+
+def _narrow_well():
+    """R4's case: a harmonic well with its minimum at 0.807 nm, taken to a
+    cutoff of 0.930 nm, windows 0.1 nm apart from 0.55 nm."""
+    radius = np.linspace(0.05, 3.0, POINTS)
+    potential = np.minimum(0.0, -15.0 + 1500.0 * (radius - 0.807) ** 2)
+    return radius, potential - 2.0 * KT * np.log(radius)
+
+
+def _held_near_the_well(bias_4: float, nearest_4: "float | None" = 0.86):
+    rows = [{"window": i, "centre": 0.55 + 0.1 * i, "bias_kjmol": 0.0,
+             "nearest_nm": 0.50 + 0.1 * i} for i in range(4)]
+    rows.append({"window": 4, "centre": 0.95, "bias_kjmol": bias_4,
+                 "nearest_nm": nearest_4})
+    rows.append({"window": 5, "centre": 1.05, "bias_kjmol": 3.0,
+                 "nearest_nm": 0.97})
+    return rows
+
+
+class TestTheWallIsJudgedWhereTheWindowsSampled:
+    def test_a_window_held_past_the_cutoff_that_sampled_inside_it_is_judged(
+            self):
+        """Window 4 is centred at 0.95 nm, past the 0.930 cutoff, and its
+        samples reach 0.86 nm: its 0.6 kJ/mol is judged and refuses.
+        Window 5's samples stay beyond the cutoff, so its 3 kJ/mol is not."""
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=_held_near_the_well(0.6))
+
+        assert result["delta_g_kjmol"] is None
+        assert result["cone_wall_windows"] == [0, 1, 2, 3, 4]
+        assert result["cone_wall_bias_kjmol"] == pytest.approx(0.6)
+        assert [b["window"] for b in result["cone_wall_bit_in"]] == [4]
+        # Without its samples, window 4's centre decides, and it is outside.
+        centred = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=_held_near_the_well(0.6, None))
+        assert centred["refused"] is None
+        assert centred["cone_wall_windows"] == [0, 1, 2, 3]
+
+    def test_the_same_read_off_colvar_files(self, tmp_path):
+        """The coordinate column is read with the bias: window 4 (at 0.95
+        nm) sampled down to 0.86 nm, most of it inside the cutoff."""
+        from fastmdxplora.simulation.umbrella import (
+            plan_windows,
+            wall_bias_by_window,
+        )
+
+        centres = [0.55, 0.65, 0.75, 0.85, 0.95, 1.05]
+        plan = plan_windows({"collective_variable": "ligand_distance",
+                             "centres": centres, "force_constant": 2000.0,
+                             "cone": {"half_angle_deg": 30}})
+        rng = np.random.default_rng(5)
+        directories = {}
+        for index, centre in enumerate(centres):
+            run = tmp_path / f"window-{index}" / "simulation"
+            run.mkdir(parents=True)
+            where = (np.clip(rng.normal(0.895, 0.025, 200), 0.86, None)
+                     if index == 4 else np.full(200, centre))
+            bias = 0.6 if index == 4 else 0.0
+            run.joinpath("COLVAR").write_text(
+                "#! FIELDS time d cone.bias\n" + "\n".join(
+                    f"{i * 0.2:.1f} {r:.4f} {bias}"
+                    for i, r in enumerate(where)), encoding="utf-8")
+            directories[index] = run.parent
+
+        walls = wall_bias_by_window(directories, plan)
+        assert walls[4]["nearest_nm"] == pytest.approx(0.86, abs=1e-3)
+        assert walls[5]["nearest_nm"] == pytest.approx(1.05)
+
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=walls)
+        assert result["delta_g_kjmol"] is None
+        assert [b["window"] for b in result["cone_wall_bit_in"]] == [4]
+
+    def test_no_window_in_the_bound_range_refuses(self):
+        radius, energy = _narrow_well()
+        rows = [{"window": 0, "centre": 1.2, "bias_kjmol": 0.0,
+                 "nearest_nm": 1.1}]
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["delta_g_kjmol"] is None
+        assert "No window sampled the bound range" in result["refused"]
+
+    def test_an_unread_window_is_not_covered_by_a_quiet_one(self):
+        radius, energy = _narrow_well()
+        rows = _held_near_the_well(0.0)
+        rows[1]["bias_kjmol"] = float("nan")
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=rows)
+
+        assert result["delta_g_kjmol"] is None
+        assert result["cone_wall_not_read_in"] == [1]
+        assert "could not be read in window 1," in result["refused"]
+
+    def test_an_infinite_bias_is_a_wall_that_bit(self):
+        radius, energy = _narrow_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.930,
+            cone=CONE, wall_bias_kjmol=_held_near_the_well(float("inf")))
+
+        assert result["delta_g_kjmol"] is None
+        assert [b["window"] for b in result["cone_wall_bit_in"]] == [4]
+
+    @pytest.mark.parametrize("given", [
+        {"window": 0, "centre": 0.5, "bias_kjmol": 0.0},
+        np.array([0.0, 0.1]),
+        [{"window": 3, "centre": float("nan"), "bias_kjmol": 0.0}]])
+    def test_a_wall_that_is_not_rows_of_windows_is_refused(self, given):
+        radius, energy = _narrow_well()
+        with pytest.raises(StudyError):
+            binding_free_energy(radius, energy, temperature_K=TEMPERATURE,
+                                cone=CONE, wall_bias_kjmol=given)
+
+    def test_the_old_range_does_not_pass_over_an_unread_window(
+            self, tmp_path, caplog):
+        from fastmdxplora.simulation.umbrella import (
+            plan_windows,
+            wall_bias_where_the_bound_state_is,
+        )
+
+        plan = plan_windows({"collective_variable": "ligand_distance",
+                             "centres": [0.40, 0.50],
+                             "force_constant": 3000.0,
+                             "cone": {"half_angle_deg": 30}})
+        directories = {}
+        for index in (0, 1):
+            run = tmp_path / f"window-{index}" / "simulation"
+            run.mkdir(parents=True)
+            directories[index] = run.parent
+        directories[1].joinpath("simulation", "COLVAR").write_text(
+            "#! FIELDS time d cone.bias\n" + "\n".join(
+                f"{i * 0.2:.1f} 0.5 0.0" for i in range(50)),
+            encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING):
+            worst = wall_bias_where_the_bound_state_is(directories, plan, 0.6)
+        assert np.isnan(worst)
+        assert "window(s) 0" in caplog.text
+
+
+class TestFewResamplesAreAllowedForByStudentsT:
+    def test_the_multipliers_are_t_on_one_fewer_than_the_resamples(self):
+        from scipy.stats import t as student
+
+        radius, energy = _square_well()
+        result = binding_free_energy(
+            radius, energy, temperature_K=TEMPERATURE, bound_cutoff_nm=0.6,
+            resample_curves_kjmol=_resamples(energy, shared=3.0, own=0.5,
+                                             count=20))
+
+        assert result["bulk_error_multiplier"] == pytest.approx(
+            _sidak(TAIL, 0.025, 20))
+        assert result["bulk_tilt_multiplier"] == pytest.approx(
+            float(student.ppf(1.0 - 0.0125, 19)))
+
+    def test_a_refusal_set_by_the_noise_says_to_sample_longer(self):
+        radius, energy = _square_well()
+        rippled = _with_a_ripple(energy, 3.0)
+        result = binding_free_energy(
+            radius, rippled, temperature_K=TEMPERATURE, bound_cutoff_nm=0.6,
+            resample_curves_kjmol=_resamples(rippled, shared=3.0, own=0.5))
+
+        assert result["delta_g_kjmol"] is None
+        assert result["bulk_allowed_kjmol"] > 0.6
+        assert "sample the outer windows longer" in result["refused"]
