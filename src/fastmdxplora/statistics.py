@@ -374,6 +374,19 @@ def _for_the_mean(series: np.ndarray) -> tuple[float, float]:
     ``2M + 1`` correlation estimates, each about as noisy as ``1 / N``.
     Values that are not finite are left out first, as in
     :func:`statistical_inefficiency`.
+
+    That count is optimistic by about two. It leaves out the variance of the
+    sample variance and the noise of where Geyer's sequence stops (``M`` is
+    chosen from the same series). On AR(1) series (phi 0.5 to 0.95, 1000 to
+    20000 frames, 3000 series each), the degrees of freedom the spread of
+    the squared error itself implies, ``2 E[s^2]^2 / var(s^2)``
+    (Satterthwaite), came out 1.6 to 2.3 times fewer than the ones given
+    here. A 95% interval's t factor is then low by under 1% at 80 degrees
+    of freedom, about 1.5% at 35 and about 6% at 13, so about 2% at the
+    counts runs usually have; the standard error itself is not affected.
+    Recorded as given, not scaled: scaling would move every stated interval and
+    needs the stopping calibration
+    (``preregistration/stopping-calibration.md``) rerun after it.
     """
     values = _finite(series)
     n = values.size
