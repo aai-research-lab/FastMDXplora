@@ -606,6 +606,20 @@ anywhere on the sphere of that radius. That is what the `−2kT ln r` in the bul
 reference is about: the room at radius r is `4πr²`, so a free ligand is more
 likely to be found at 2 nm than at 1 nm for no energetic reason at all.
 
+**How the tail is judged to be bulk.** In bulk `A(r) + 2kT ln r` is a constant,
+so the study takes the outer quarter of the curve and looks at how far each
+point of that sum departs from its mean there. Each point is allowed the larger
+of 0.6 kJ/mol and `z` standard errors of its departure, the errors being the
+bootstrap's error bars on the curve at that bin and on the tail's mean. `z` is
+chosen so that a tail truly in bulk is refused by its noise alone with a 5%
+chance over all its points together (Šidák's bound, 3.47 for 100 points). The
+bins of a recombined curve share noise, which makes this allowance a little
+larger than it need be; a tail within it cannot be told apart from bulk by the
+run. Where the curve came without error bars, 0.6 kJ/mol is the whole
+allowance. `binding` in `pmf.json` says which was judged in `bulk_judged`
+(`bulk_judged_against_errors`, `bulk_allowed_kjmol` at `bulk_worst_at_nm`),
+and a refusal names the point and both numbers.
+
 Two things have to be true for that reference to mean anything, and on a real
 site neither is:
 
@@ -737,10 +751,12 @@ up room; the bound state gives up none — *provided the bound pose fits inside
 the cone*. A cone too narrow for it has removed part of the population the
 binding integral is taken over, and no analytic term puts that back. So every
 window writes the wall's bias beside its coordinate, and the binding free
-energy is **refused** where the wall carried more than 0.25 kJ/mol in the
-windows holding the bound state, naming the number and asking for a wider
-angle. Where no such column exists the result says `cone_wall_checked: false`
-rather than implying the check passed.
+energy is **refused** where the wall carried more than 0.25 kJ/mol in any
+window whose centre is at or inside the cutoff the integral uses, naming those
+windows (`cone_wall_bit_in`) and asking for a wider angle. Every window up to
+that cutoff is judged (`cone_wall_windows`, `cone_wall_checked_up_to_nm`), not
+only those near the minimum. Where no such column exists the result says
+`cone_wall_checked: false` rather than implying the check passed.
 
 `pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
 curve says, `delta_g_kjmol` is what it means, and `cone_correction_kjmol` is
@@ -763,11 +779,11 @@ quantities from their trajectories and records them under `binding.reference` in
   of the sphere at its radius (of the cap, under a cone) and counted as free
   where none of its heavy atoms comes within 0.4 nm of anything that is not
   solvent. The reference assumes all of it is open, so a share `f` that is
-  not makes the answer too negative by `kT ln(1/f)`. Where that exceeds the
-  0.6 kJ/mol the tail's shape is allowed, the number is **withheld**, with the
-  radius, the share and the cost. On trypsin with benzamidine the cap was 18%
-  to 58% open across the outer range, about 3 kJ/mol; no length of run
-  changes that.
+  not makes the answer too negative by `kT ln(1/f)`. Where that exceeds
+  0.6 kJ/mol, the floor of what the tail's shape is allowed, the number is
+  **withheld**, with the radius, the share and the cost. On trypsin with
+  benzamidine the cap was 18% to 58% open across the outer range, about
+  3 kJ/mol; no length of run changes that.
 - **Whether the system has a membrane.** Bulk is then a slab of water. Without
   a cone the number is withheld; with one, the cap is computed as above, the
   bilayer counting as something the ligand is not free beside.
