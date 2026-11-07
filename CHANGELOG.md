@@ -877,6 +877,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study's plan, not the package's defaults. `fastmdx explore --dashboard`
   says the study stopped or ended with an error, not "complete". A pack
   carries a checkpoint's waiting files only with the checkpoint.
+- An integrator refused for having no thermostat was told the permitted
+  ones without brownian, which is permitted with the friction it needs.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
