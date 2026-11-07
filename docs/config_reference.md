@@ -53,7 +53,7 @@ What is kept, what is repaired, and how it is protonated.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14 |
+| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14. A protein residue's state comes from its residue type's model pKa (PDBFixer), not shifted by its surroundings (set one with `residue_states`); a ligand's from PROPKA, run on the complex |
 | `residue_states` | map | none | Protonation states in place of setup's own, by chain and number: `{A:57: HIP}`. HIS takes HID, HIE or HIP; ASP ASH or ASP; GLU GLH or GLU; LYS LYN or LYS |
 | `model` | int | none | Which model of a file holding several (an NMR ensemble) to prepare, as the file numbers them; unset, the first. Swept, replicas that start from different structures, which a stopping rule counts as independent starts |
 | `protonation_margin` | float | `1.0` | How close a ligand's pKa may come to the pH before setup stops rather than pick a charge state |
@@ -185,7 +185,7 @@ is a time, so the number of steps follows the timestep: at 4 fs, 1.5 ns is
 | `production_steps` | int | what 2 ns is at the timestep | In place of `duration_ns`; both are refused unless they say the same length |
 | `nvt_steps` | int | what 500 ps is at the timestep | In place of `nvt_duration_ns`; both are refused unless they say the same length |
 | `npt_steps` | int | what 1 ns is at the timestep | In place of `npt_duration_ns`; both are refused unless they say the same length |
-| `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume |
+| `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume, in the box NPT equilibration ended with (its last box, not its mean) |
 | `stop_when` | map | — | Run until what the study is for is known, rather than for a fixed length. See below |
 
 `stop_when` states the quantities the study is for, how well each must be determined,
