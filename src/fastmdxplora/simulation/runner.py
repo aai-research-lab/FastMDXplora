@@ -1431,6 +1431,31 @@ def _quiet_if_a_study_heard_a_stop() -> None:
         _quiet_once_stopped()
 
 
+def _stopped_when_asked_again(_number: int, _frame: Any) -> None:
+    """A further stop once the command's study heard one, until its work is
+    done: a KeyboardInterrupt, which the command says "stopped when asked"
+    and exits 130 for. A SIGTERM after a resume's summary, as it read its
+    runs' records, ended the process by the signal (143)."""
+    raise KeyboardInterrupt
+
+
+def _a_further_stop_ends_the_command() -> None:
+    """SIGINT and SIGTERM raise KeyboardInterrupt (`_stopped_when_asked_again`)
+    for the rest of the command's work, its study having heard a stop; then
+    quiet (`_quiet_if_a_study_heard_a_stop`), and the command's own handlers
+    put back as `cli.main.main` returns."""
+    import signal as _signal
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for number in (_signal.SIGINT, _signal.SIGTERM):
+        try:
+            _signal.signal(number, _stopped_when_asked_again)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+
+
 def _quiet_once_stopped() -> None:
     """SIGINT and SIGTERM ignored for the rest of the command, its study
     stopped and recorded: a stop after its summary is the stop under way."""
@@ -1511,6 +1536,7 @@ class _StopInTheStudy(_StopInTheRounds):
         super().__exit__(*exc)
         if _QUIET_ONCE_STOPPED and self.signal is not None:
             _A_STUDY_HEARD_A_STOP = True
+            _a_further_stop_ends_the_command()
         return False
 
 

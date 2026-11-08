@@ -1949,6 +1949,14 @@ def _start_dashboard_for_command(args: argparse.Namespace, output_dir: Path):
     return session
 
 
+def _said_stopped_when_asked(study: Any) -> int:
+    """A command's work stopped by a KeyboardInterrupt (a Ctrl-C, or a
+    further stop once its study heard one), said as `fastmdx resume` says it."""
+    print(f"fastmdx: stopped when asked; `fastmdx resume {study}` carries it on.",
+          file=sys.stderr)
+    return 130
+
+
 def _finish_dashboard_for_command(session, args: argparse.Namespace, rc: int = 0) -> None:
     if session is None:
         return
@@ -1994,12 +2002,17 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if resume_from is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.simulation.resume import extend_study
 
-        with _then_quiet_once_stopped():
-            answer = extend_study(resume_from,
-                                  total_ns=simulation.get("duration_ns"),
-                                  more_ns=simulation.get("extra_ns"),
-                                  checkpoint_interval_steps=simulation.get(
-                                      "checkpoint_interval_steps"))
+        try:
+            with _then_quiet_once_stopped():
+                answer = extend_study(resume_from,
+                                      total_ns=simulation.get("duration_ns"),
+                                      more_ns=simulation.get("extra_ns"),
+                                      checkpoint_interval_steps=simulation.get(
+                                          "checkpoint_interval_steps"))
+        except KeyboardInterrupt:
+            # Between its studies (the join), as `fastmdx resume` says it: a
+            # traceback, the process ended by the signal.
+            return _said_stopped_when_asked(resume_from)
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
             return 1
@@ -2060,8 +2073,13 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
         output = Path(config.get("output") or args.output_dir
                       or default_output_name(system_of(config)))
-        with _then_quiet_once_stopped():
-            staged = run_in_stages(config, output, budget_hours=float(budget))
+        try:
+            with _then_quiet_once_stopped():
+                staged = run_in_stages(config, output, budget_hours=float(budget))
+        except KeyboardInterrupt:
+            # Between its studies (its pricing), or in one, as `fastmdx
+            # resume` says it: a traceback, the process ended by the signal.
+            return _said_stopped_when_asked(output)
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
@@ -4082,7 +4100,8 @@ def _listening_as_the_command_began() -> None:
     runner._QUIET_ONCE_STOPPED = False
     for number, handler in _COMMAND_S_HANDLERS.items():
         try:
-            if signal.getsignal(number) is signal.SIG_IGN and handler is not None:
+            if (signal.getsignal(number) in (signal.SIG_IGN, runner._stopped_when_asked_again)
+                    and handler is not None):
                 signal.signal(number, handler)
         except (ValueError, OSError, TypeError):  # pragma: no cover
             pass

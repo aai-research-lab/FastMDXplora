@@ -3298,6 +3298,95 @@ def test_a_stop_between_a_command_s_studies_ends_it_once_the_first_heard_one(
     assert "stopped when asked" in capsys.readouterr().err
 
 
+_A_RESUME_STOPPED_AFTER_ITS_SUMMARY = """
+import importlib, signal, sys, time
+from pathlib import Path
+from fastmdxplora.simulation import resume, runner
+
+cli = importlib.import_module("fastmdxplora.cli.main")
+study = Path(sys.argv[1])
+
+def carried_on(_study, **_given):
+    # Its study, which heard a stop, then the work after `batch.run()` (each
+    # run's records read, its round), where a further SIGTERM lands.
+    with runner.listening_for_the_study(study) as listens:
+        listens.stage = "finishing"
+        listens._note(signal.SIGTERM, None)
+    print("Manifest:", flush=True)
+    until = time.monotonic() + 5
+    while time.monotonic() < until:
+        time.sleep(0.02)
+    return {"ok": True, "did": "runs"}
+
+resume.resume_study = carried_on
+sys.exit(cli.main(["resume", str(study)]))
+"""
+
+
+def test_a_sigterm_after_a_stopped_resume_s_summary_is_stopped_when_asked(tmp_path):
+    """A further SIGTERM once a resume's study heard a stop, as the resume
+    read its runs' records after the summary: the process ended by the
+    signal (143). It is a stop asked: "stopped when asked", 130."""
+    import os
+    import sys
+
+    study = tmp_path / "study"
+    study.mkdir()
+    script = tmp_path / "command.py"
+    script.write_text(_A_RESUME_STOPPED_AFTER_ITS_SUMMARY)
+    ran = subprocess.Popen([sys.executable, str(script), str(study)], cwd=tmp_path,
+                           env={**os.environ, "PYTHONPATH": _source()},
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           start_new_session=True)
+    try:
+        line = ""
+        for line in iter(ran.stdout.readline, ""):
+            if line.startswith("Manifest:"):
+                break
+        assert line.startswith("Manifest:"), (line, ran.stderr.read()[-2000:]
+                                              if ran.poll() is not None else "")
+        os.kill(ran.pid, signal.SIGTERM)
+    finally:
+        printed, said = _ended(ran, 60, "the resume")
+    assert ran.returncode == 130, (ran.returncode, said[-2000:])
+    assert "fastmdx: stopped when asked" in said, said[-2000:]
+
+
+@pytest.mark.parametrize("path", ["resume_from", "budget_hours"])
+def test_a_stop_in_explore_s_work_between_studies_is_stopped_when_asked(
+        path, tmp_path, monkeypatch, capsys):
+    """`fastmdx explore` carrying a study on (`simulation.resume_from`) or
+    run in stages (`budget_hours`), stopped between its studies (the join,
+    the pricing): a traceback, the process ended by the signal. Said as
+    `fastmdx resume` says it, 130."""
+    import importlib
+
+    from fastmdxplora import agent
+    from fastmdxplora.simulation import resume
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+
+    def stopped(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    config = {"systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
+              "output": str(tmp_path / "study")}
+    if path == "resume_from":
+        monkeypatch.setattr(resume, "study_to_continue", lambda _config: tmp_path / "study")
+        monkeypatch.setattr(resume, "extend_study", stopped)
+    else:
+        config["budget_hours"] = 1.0
+        monkeypatch.setattr(agent, "run_in_stages", stopped)
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
+    try:
+        code = cli.main(["explore", "-c", str(tmp_path / "study.yml")])
+    except KeyboardInterrupt:
+        code = "KeyboardInterrupt"
+    assert code == 130, capsys.readouterr()
+    assert "fastmdx: stopped when asked" in capsys.readouterr().err
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
