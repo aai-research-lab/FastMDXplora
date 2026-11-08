@@ -912,15 +912,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   the rule's last round, stops the study: its phase took the stop now, and
   the study said "Stopping now", then ended "Batch complete", exit 0, the
   report removed and never written. It exits 130, the run said stopped with
-  its report not written, and `fastmdx resume` named to write it. Any stop
-  after a stop now is that one and says nothing, the study listening until
-  it ends: outside a parallel study's pool a third was another stop now,
-  said twice, that cut the study's summary, and a fourth SIGTERM ended the
-  process (143). A first stop once the rule's last round is judged says the
-  study finishes. A resume whose worker is killed leaves a cut round said as
-  it ended, and otherwise says the rule was not applied "again". A stop now
-  in a resume is named by both its stops. Workers a stop now ended are not
-  said ended abruptly. `docs/production.md` says the mixed stop now.
+  its report not written, its manifest's report phase said stopped, and
+  `fastmdx resume` named to write it. A stop while a stop now ends the
+  study is that one and says nothing, the study listening until it ends:
+  outside a parallel study's pool a third was another stop now, said twice,
+  that cut the study's summary, and a fourth SIGTERM ended the process
+  (143). Where a run's phase took the stop now and the study goes on to
+  finish, a further stop ends it at once, exit 130. A first stop once the
+  rule has decided, or its last round is judged, says the study finishes. A
+  resume whose worker is killed leaves a cut round said as it ended, and
+  otherwise says the rule was not applied "again"; after a round stopped
+  when asked it exits 1, as `fastmdx explore` does, not 130. A stop now in a
+  resume is named by both its stops. Workers a stop now ended are not said
+  ended abruptly. `docs/production.md` says the mixed stop now.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
