@@ -930,14 +930,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   what its stopping rule's rounds run.", not "Costs no simulation". A stop
   now in a resume is named by both its stops. Workers a stop now ended are
   not said ended abruptly. `docs/production.md` says the mixed stop now.
-- After `fastmdx explore` or `fastmdx resume` has stopped its study, a stop
-  as its summary is said, or after it as the command ends, is the stop under
-  way and is ignored: one after "Manifest:" ended the process by the signal
-  (143, or Ctrl-C's), and one as the summary was said printed it twice. The
-  GUI that `explore --dashboard` leaves running still ends on Ctrl-C. A
-  study of one says it finishes once a stop now was taken, not that it
-  writes a comparison. A run its round stopped is read so in the batch
-  manifest of a study stopped now, not "ok, nothing to carry on".
+- After `fastmdx explore` (or `xplore`) or `fastmdx resume` has stopped its
+  study, a stop as its summary is said, or once the command's work is done
+  and it ends, is the stop under way and is ignored: one after "Manifest:"
+  ended the process by the signal (143, or Ctrl-C's), and one as the summary
+  was said printed it twice. Between a command's studies (a resume's join, a
+  budget's pricing) a stop still ends it, 130. The GUI that `explore
+  --dashboard` leaves running still ends on Ctrl-C. A study of one says it
+  finishes once a stop now was taken, not that it writes a comparison. A run
+  its round stopped is read so in the batch manifest of a study stopped now,
+  once its live record says so, not "ok, nothing to carry on" or cut.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
