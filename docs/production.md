@@ -746,8 +746,11 @@ first is the same request arriving twice, as it does when sent to a whole
 process group, and counts once; a second Ctrl-C, however quick. A SIGTERM
 more than two seconds after a Ctrl-C is a stop now too, and the study records
 it by both ("Ctrl+C, then SIGTERM"); the GUI's Stop counts as a SIGTERM, so a
-Stop and then two Ctrl-C read "SIGTERM, then Ctrl+C". Any stop after a stop
-now is that one, and says nothing. A stop now while the study writes its
+Stop and then two Ctrl-C read "SIGTERM, then Ctrl+C". A stop while a stop
+now ends the study is that one, and says nothing. Where the run's phase
+takes the stop now (a run in production, in a study of runs one after
+another), the study goes on to write its records and comparison, and a
+further stop there ends it at once. A stop now while the study writes its
 runs' reports again, after its stopping rule's last round, ends it there: the
 run whose report it cut is said stopped, its report not written, and `fastmdx
 resume` writes it. A first

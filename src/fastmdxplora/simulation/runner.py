@@ -1147,6 +1147,20 @@ def _a_stop_now(number: int) -> StopNow:
     return _last_stop_now
 
 
+def _a_stop_now_absorbed(before: "StopNow | None") -> None:
+    """A stop now raised since ``before`` (`_last_stop_now`) that what it
+    ended took as its own (a run's phase recorded it, `orchestrator._run_phase`)
+    while the study goes on: no longer under way, so a further stop is a
+    stop now again, and ends the study. Left under way, every further stop
+    was ignored while the study finished, minutes perhaps, and only a kill
+    ended it."""
+    if _last_stop_now is before:
+        return
+    for listener in list(_LISTENING):
+        if isinstance(listener, _StopInTheRounds):
+            listener.now_under_way = False
+
+
 def stop_now_said(number: int) -> str:
     """How a first stop's line says to stop now: a Ctrl-C after a SIGTERM
     is the same stop, so after one it takes two."""

@@ -3840,12 +3840,18 @@ class BatchExplorer:
             listens = getattr(self, "_listens", None)
             if listens is not None:
                 listens.in_a_run = True
+            from fastmdxplora.simulation import runner as _runner
+
+            before = _runner._last_stop_now
             try:
                 result = _execute_run(
                     spec.to_dict(), str(run_out), include, exclude,
                     self.verbose, device, quiet=not self.is_single,
                     force=self.force, **self._resuming(), **self._keeping(),
                 )
+                # A stop now its phase took, the study going on to finish:
+                # a further stop ends the study (`runner._a_stop_now_absorbed`).
+                _runner._a_stop_now_absorbed(before)
             except StopNow as now:
                 # Stopped now outside its phases (each records its own): said
                 # stopped, the others not started, as the study ends.

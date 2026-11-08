@@ -1634,10 +1634,28 @@ def run(spec, run_out, *_args, **_kwargs):
     out = Path(run_out)
     out.mkdir(parents=True, exist_ok=True)
     _say(here / f"started-{seed}", str(os.getpid()))
-    if role not in ("save", "hold", "listen", "going"):
+    if role not in ("save", "hold", "listen", "going", "absorb"):
         _say(here / f"ready-{seed}", "")
-    status, message = "ok", ""
-    if role == "die":
+    status, message, error_type = "ok", "", None
+    if role == "absorb":
+        # In production's own listener, a stop now taken by the run's phase,
+        # as `orchestrator._run_phase` takes it: the run said stopped, and
+        # the study goes on.
+        from fastmdxplora.simulation import runner
+
+        _hold_run_process(out)
+        try:
+            try:
+                with runner._StopRequests(folder=out):
+                    _say(here / f"ready-{seed}", "")
+                    while True:
+                        time.sleep(0.05)
+            except runner.StopNow:
+                _say(here / f"absorbed-{seed}", "")
+        finally:
+            _release_run_process(out)
+        status, message, error_type = "error", "stopped", "Stopped"
+    elif role == "die":
         # Once each other run given a role is ready for what it is to do.
         _until(lambda: all((here / f"ready-{other}").exists() or other == seed
                            for other in json.loads(os.environ["ROLES"])))
@@ -1694,7 +1712,7 @@ def run(spec, run_out, *_args, **_kwargs):
             _release_run_process(out)
     return RunResult(run_id=spec["run_id"], system=spec["system"], status=status,
                      output_dir=out, sweep_values=spec["sweep_values"], phases=[],
-                     message=message)
+                     message=message, error_type=error_type)
 
 
 def extend(run, *_args, **_kwargs):
@@ -1812,7 +1830,7 @@ elif __name__ == "__main__":
     seeds = int(os.environ["SEEDS"])
     config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
               "sweep": {"simulation.random_seed": list(range(1, seeds + 1))},
-              "execution": {"mode": "parallel", "workers": 2}}
+              "execution": {"mode": os.environ.get("MODE") or "parallel", "workers": 2}}
     for repeat in range(int(os.environ.get("REPEATS") or 1)):
         for name in os.listdir(here):
             if (name.split("-")[0] in ("started", "ready", "saving", "saved")
@@ -2679,8 +2697,10 @@ def test_a_stop_after_a_stop_now_is_that_one(where, monkeypatch):
     """A third stop after a stop now, outside a parallel study's pool: taken
     as another stop now, said "Stopping now" again and raised as the study
     wrote its records, cutting its summary; Python's own handlers put back,
-    a fourth SIGTERM ended the process (143). It is the stop under way, and
-    says nothing, the study listening until it ends."""
+    a fourth SIGTERM ended the process (143). While the stop now unwinds it
+    is the stop under way, and says nothing, the study listening on; once
+    a run's phase has taken it and the study goes on, a further stop is a
+    stop now again."""
     from fastmdxplora.simulation import runner
 
     said: list[str] = []
@@ -2691,20 +2711,30 @@ def test_a_stop_after_a_stop_now_is_that_one(where, monkeypatch):
             study._note(signal.SIGINT, None)
             with pytest.raises(runner.StopNow):
                 study._note(signal.SIGINT, None)
-        else:
-            with runner._StopRequests(folder=None) as production:
+        before = runner._last_stop_now
+        raised = 0
+        with (runner._StopRequests(folder=None) if where == "production"
+              else contextlib.nullcontext()) as production:
+            if production is not None:
                 production._note(signal.SIGINT, None)
                 with pytest.raises(runner.StopNow):
                     production._note(signal.SIGINT, None)
-        raised = 0
-        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGTERM):
-            try:
-                study._note(number, None)
-            except runner.StopNow:
-                raised += 1
+            # As the stop now unwinds.
+            for number in (signal.SIGINT, signal.SIGTERM, signal.SIGTERM):
+                try:
+                    study._note(number, None)
+                except runner.StopNow:
+                    raised += 1
         listening = signal.getsignal(signal.SIGTERM) == study._note
+        if where == "production":
+            # Taken by the run's phase, the study going on to finish: a
+            # further stop is a stop now again, which ends the study.
+            runner._a_stop_now_absorbed(before)
+            with pytest.raises(runner.StopNow):
+                study._note(signal.SIGINT, None)
     runner._listen_afresh()
-    assert sum(line.startswith("Stopping now") for line in said) == 1, said
+    now = [line for line in said if line.startswith("Stopping now")]
+    assert len(now) == (2 if where == "production" else 1), said
     assert raised == 0 and listening, (raised, listening)
 
 
@@ -2787,6 +2817,40 @@ def test_the_workers_a_stop_now_ended_are_not_said_ended_abruptly(now, tmp_path,
     said = " ".join(record.getMessage() for record in caplog.records)
     assert ("ended abruptly" in said) is not now, said
     assert ("Stopped now; of the study's workers still going, 1 carried no run" in said) is now
+
+
+def test_a_third_stop_as_a_serial_study_finishes_ends_it(tmp_path):
+    """A stop now that a run's phase took (production, one run after
+    another), the study going on to finish: every further stop was ignored,
+    with nothing said, while it built its comparison, and only a kill ended
+    it. A third stop there ends the study at once, its records written."""
+    import os
+    import time
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "absorb", "2": "ok"}, seeds=2,
+                                MODE="sequential", WHOLE="1", COMPARING="1")
+    try:
+        _until(lambda: (tmp_path / "ready-1").exists() or ran.poll() is not None, 120)
+        os.kill(ran.pid, signal.SIGINT)
+        time.sleep(0.5)
+        os.kill(ran.pid, signal.SIGINT)
+        _until(lambda: (tmp_path / "comparing").exists() or ran.poll() is not None, 60)
+        os.kill(ran.pid, signal.SIGINT)
+    finally:
+        printed, logged = _ended(ran, 120, "the study")
+    assert (tmp_path / "absorbed-1").exists(), logged[-2000:]
+    assert ran.returncode == 130, (ran.returncode, printed[-2000:], logged[-2000:])
+    assert "Stopping now: the study ends at once" in logged, logged[-2000:]
+    assert json.loads(printed.splitlines()[-1]) == {"stopped now": "StopNow"}
+    study = tmp_path / "study-0"
+    runs = {run["run_id"]: run for run in json.loads(
+        (study / "batch_manifest.json").read_text())["runs"]}
+    assert runs["tri__random-seed-1"]["error_type"] == "Stopped", runs
+    assert runs["tri__random-seed-2"]["message"].startswith(
+        "Not started: the study was asked to stop."), runs
+    assert re.search(r"^Batch stopped: 0 ok, 1 error\(s\), 1 skipped, 2 total$", printed,
+                     re.M), printed[-2000:]
+    assert not ran.left_behind
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
