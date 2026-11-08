@@ -2218,14 +2218,9 @@ class BatchExplorer:
                 self.results = [_its_report_cut(result, now, self.output_dir)
                                 if _same_folder(result.output_dir, cut) else result
                                 for result in self.results]
-            if self._stopping_rule() is not None:
+            ruled = self._stopping_rule() is not None
+            if ruled:
                 self._the_rule_stopped_before_it_was_applied()
-                if not self.is_single:
-                    # A run its round's extension was stopped in, read as its
-                    # records say: a resume stopped now in its round said the
-                    # run "ok, nothing to carry on" beside a round saying it
-                    # stopped.
-                    self._the_runs_as_their_records_say()
             # A run's live record a worker ended by the signal left going (an
             # extension in its round, side by side): read interrupted beside
             # a study said stopped.
@@ -2233,6 +2228,14 @@ class BatchExplorer:
                 _said_stopped(self._run_output_dir(spec), (
                     "Stopped at once when asked: `fastmdx resume "
                     f"{self.output_dir}` carries it on from its last checkpoint."))
+            if ruled and not self.is_single:
+                # A run its round's extension was stopped in, read as its
+                # records say once they say it stopped (above): a resume
+                # stopped now in its round said the run "ok, nothing to carry
+                # on" beside a round saying it stopped; read before, a run a
+                # worker the stop now ended left going read cut, and one of
+                # this process left going "ok".
+                self._the_runs_as_their_records_say()
             if not self.is_single:
                 self._write_batch_manifest()
                 self._print_summary()

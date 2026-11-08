@@ -3220,6 +3220,43 @@ def test_a_run_its_round_stopped_reads_stopped_after_a_stop_now(tmp_path, monkey
     assert (result.status, result.error_type) == ("error", "StoppedInTheRounds"), result
 
 
+def test_a_run_left_going_reads_stopped_after_a_stop_now(tmp_path, monkeypatch):
+    """A run whose live record the stop now left going (its extension in the
+    round, in this process): its runs were read before that record was said
+    stopped, and it read "ok" (or cut, for a worker's) in the batch manifest
+    beside pages saying it stopped."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.gui.telemetry import TelemetryWriter
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner
+
+    study = tmp_path / "study"
+    run = study / "runs" / "b"
+    (run / "simulation").mkdir(parents=True)
+    (study / "batch_manifest.json").write_text(json.dumps({
+        "planned": [{"run_id": "b", "system": "tri", "sweep_values": {}}],
+        "runs": [{"run_id": "b", "status": "ok", "system": "tri", "sweep_values": {},
+                  "output_dir_relative": "runs/b"}]}))
+    TelemetryWriter(run / "simulation").write_status(status="running", stage="production")
+    batch = object.__new__(explorer.BatchExplorer)
+    batch.output_dir, batch.is_single = study, False
+    batch.run_specs = [SimpleNamespace(run_id="b", system="tri", sweep_values={})]
+    batch.results = [RunResult(run_id="b", system="tri", status="ok", output_dir=run,
+                               sweep_values={}, phases=[])]
+    batch._holding_its_record = True
+    monkeypatch.setattr(explorer.BatchExplorer, "_run_output_dir", lambda self, spec: run)
+    monkeypatch.setattr(explorer.BatchExplorer, "_stopping_rule", lambda self: object())
+    monkeypatch.setattr(explorer.BatchExplorer, "_the_rule_stopped_before_it_was_applied",
+                        lambda self: None)
+    monkeypatch.setattr(explorer.BatchExplorer, "_write_batch_manifest", lambda self: None)
+    monkeypatch.setattr(explorer.BatchExplorer, "_print_summary", lambda self: None)
+    batch._stopped_now(runner.StopNow(signal.SIGINT))
+    result = batch.results[0]
+    assert (result.status, result.error_type) == ("error", "StoppedInTheRounds"), result
+
+
 def test_a_stop_between_a_command_s_studies_ends_it_once_the_first_heard_one(
         tmp_path, monkeypatch, capsys):
     """`fastmdx resume` of a study of one: its segment's study, then the
