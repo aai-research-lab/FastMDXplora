@@ -1613,6 +1613,20 @@ def _only_the_report_recorded(path: Path, before: Any) -> None:
         logger.warning("The manifest of %s was not written: %s", Path(path).parent.name, exc)
 
 
+def _put_in_place_bytes(path: Path, data: bytes) -> None:
+    """``data`` written whole to ``path`` (`orchestrator._put_in_place`): a
+    stop now as it was written left a run's config cut short, which the
+    `fastmdx resume` its record names could not read."""
+    from fastmdxplora.orchestrator import _put_in_place
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        Path(path).write_bytes(data)
+        return
+    _put_in_place(Path(path), text)
+
+
 def _the_report_recorded_stopped(path: Path, now: BaseException) -> None:
     """A run's manifest with its report phase said stopped by ``now``, a stop
     now that cut the report written again."""
@@ -2818,6 +2832,19 @@ class BatchExplorer:
         config["output"] = str(run)
         config["include_phase"] = ["report"]
         before = _runner._stops_now
+
+        def put_back(now: Any = None) -> None:
+            # The record of what the study ran, not of this one step, its
+            # config whole or not at all; a report phase a stop now cut said
+            # stopped (the phase was left out of it, what it wrote before
+            # removed).
+            _put_in_place_bytes(resolved, kept)
+            _only_the_report_recorded(run / "manifest.json", manifest)
+            if now is not None:
+                _the_report_recorded_stopped(run / "manifest.json", now)
+            put.append(now)
+
+        put: list = []
         now = None
         try:
             try:
@@ -2825,19 +2852,17 @@ class BatchExplorer:
             except Exception as exc:  # noqa: BLE001 - the runs and the record stand
                 logger.warning("The report was not written again: %s", exc)
             finally:
-                # The record of what the study ran, not of this one step.
-                resolved.write_bytes(kept)
-                _only_the_report_recorded(run / "manifest.json", manifest)
                 if _runner._stops_now != before:
                     now = _runner._the_last_stop_now()
-                    # Its report phase stopped, as its manifest says: the
-                    # phase was left out of it, what it wrote before removed.
-                    _the_report_recorded_stopped(run / "manifest.json", now)
+                put_back(now)
             if now is not None:
                 raise now
         except _runner.StopNow as heard:
-            # Here or in restoring its records, as the study then reads it.
+            # Here or as its records were put back, which a stop now cut: put
+            # back again, a further stop being that one (`now_under_way`).
             heard.report_cut = run
+            if not put or put[-1] is None:
+                put_back(heard)
             raise
 
     # ------------------------------------------------------------------

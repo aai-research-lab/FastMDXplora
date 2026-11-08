@@ -2691,7 +2691,16 @@ def _a_study_of_one_reported(tmp_path: Path, monkeypatch, *, where: str):
 
         monkeypatch.setattr(replaced, "make_way", cleared)
     else:
-        monkeypatch.setattr(explorer, "_only_the_report_recorded", stopped_now)
+        # Once, as its records are put back: then put back again.
+        real, calls = explorer._only_the_report_recorded, []
+
+        def cut_once(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                stopped_now()
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(explorer, "_only_the_report_recorded", cut_once)
     with pytest.raises(runner.StopNow) as caught:
         batch._run_until_known(stopping.targets_of(stop_when))
     runner._listen_afresh()
@@ -2714,11 +2723,12 @@ def test_a_stop_now_in_a_study_of_one_s_report_written_again_stops_it(where, tmp
     assert result.message.startswith(
         "Stopped at once when asked (Ctrl+C twice) as its report was written again"), result
     assert f"`fastmdx resume {run}` writes it." in result.message, result
-    if where != "restore":
-        report = [phase for phase in json.loads((run / "manifest.json").read_text())["phases"]
-                  if phase.get("name") == "report"]
-        assert [(phase["status"], phase["refusal"]["code"]) for phase in report] == [
-            ("error", "simulation.run.stopped")], report
+    report = [phase for phase in json.loads((run / "manifest.json").read_text())["phases"]
+              if phase.get("name") == "report"]
+    assert [(phase["status"], phase["refusal"]["code"]) for phase in report] == [
+        ("error", "simulation.run.stopped")], report
+    # Its config as the study ran it, whole.
+    assert "include_phase" not in yaml.safe_load((run / "resolved_config.yml").read_text())
 
 
 def test_a_killed_worker_s_rule_says_the_worker_ended_not_stopped_when_asked(tmp_path):
