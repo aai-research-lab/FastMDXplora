@@ -879,6 +879,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   carries a checkpoint's waiting files only with the checkpoint.
 - An integrator refused for having no thermostat was told the permitted
   ones without brownian, which is permitted with the friction it needs.
+- A stop now is its own exception, carrying the signal that asked it: a
+  second SIGTERM is recorded as SIGTERM, where the run's record said
+  "stopped by Ctrl+C" with `signal: SIGINT`, and a KeyboardInterrupt no
+  listener heard keeps its meaning. A study listens for a stop for the whole
+  of it, its first pieces to its summary: a second stop to a parallel study
+  in production says each run going stopped (its live record too) and the
+  others not started, and prints the summary, where it left its records
+  "running", its runs interrupted and waiting, with no fix; one while its
+  runs are judged records the round stopped when asked; one while its
+  comparison is built exits 130, where the signal ended it (143). The rule's
+  record and the batch manifest are written whole or not at all. "Stopping
+  now" names a study of one kept in a folder named `runs` by its records,
+  not the folder above. A study whose worker was killed reads "Batch
+  failed" and failed in the GUI, and `fastmdx resume` of it exits 1 as
+  `fastmdx explore` does, not 130; its saved survivor says it saved, and
+  the fix says each run's stop, not "a refusal that has not been given a
+  code yet".
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
