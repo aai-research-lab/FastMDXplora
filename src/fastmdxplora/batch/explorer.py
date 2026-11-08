@@ -1613,6 +1613,27 @@ def _only_the_report_recorded(path: Path, before: Any) -> None:
         logger.warning("The manifest of %s was not written: %s", Path(path).parent.name, exc)
 
 
+def _the_report_recorded_stopped(path: Path, now: BaseException) -> None:
+    """A run's manifest with its report phase said stopped by ``now``, a stop
+    now that cut the report written again."""
+    from fastmdxplora.orchestrator import PhaseResult, _stopped_by_ctrl_c
+    from fastmdxplora.refusals import refusal_of
+
+    after = _json_or_none(path)
+    if not isinstance(after, dict) or not isinstance(after.get("phases"), list):
+        return
+    error = _stopped_by_ctrl_c("report", now)
+    stopped = PhaseResult(name="report", status="error", output_dir=Path(path).parent / "report",
+                          message=str(error), refusal=refusal_of(error).as_dict()).to_dict()
+    after["phases"] = [*[record for record in after["phases"]
+                         if not (isinstance(record, dict) and record.get("name") == "report")],
+                       stopped]
+    try:
+        Path(path).write_text(json.dumps(after, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("The manifest of %s was not written: %s", Path(path).parent.name, exc)
+
+
 def compare_the_runs_again(campaign: Path) -> Path | None:
     """A study of several runs' table of members and comparison, built
     again from its runs' analyses as they are now, marked as the study
@@ -2789,22 +2810,28 @@ class BatchExplorer:
         config = {key: value for key, value in config.items() if key != "exclude_phase"}
         config["output"] = str(run)
         config["include_phase"] = ["report"]
-        before = _runner._last_stop_now
+        before = _runner._stops_now
+        now = None
         try:
-            FastMDXplora(config_data=config, output_dir=str(run)).explore(force=True)
+            try:
+                FastMDXplora(config_data=config, output_dir=str(run)).explore(force=True)
+            except Exception as exc:  # noqa: BLE001 - the runs and the record stand
+                logger.warning("The report was not written again: %s", exc)
+            finally:
+                # The record of what the study ran, not of this one step.
+                resolved.write_bytes(kept)
+                _only_the_report_recorded(run / "manifest.json", manifest)
+                if _runner._stops_now != before:
+                    now = _runner._the_last_stop_now()
+                    # Its report phase stopped, as its manifest says: the
+                    # phase was left out of it, what it wrote before removed.
+                    _the_report_recorded_stopped(run / "manifest.json", now)
+            if now is not None:
+                raise now
         except _runner.StopNow as heard:
+            # Here or in restoring its records, as the study then reads it.
             heard.report_cut = run
             raise
-        except Exception as exc:  # noqa: BLE001 - the runs and the record stand
-            logger.warning("The report was not written again: %s", exc)
-        finally:
-            # The record of what the study ran, not of this one step.
-            resolved.write_bytes(kept)
-            _only_the_report_recorded(run / "manifest.json", manifest)
-        now = _runner._last_stop_now
-        if now is not None and now is not before:
-            now.report_cut = run
-            raise now
 
     # ------------------------------------------------------------------
     def _maybe_aggregate_members(self) -> None:
@@ -3842,7 +3869,7 @@ class BatchExplorer:
                 listens.in_a_run = True
             from fastmdxplora.simulation import runner as _runner
 
-            before = _runner._last_stop_now
+            before = _runner._stops_now
             try:
                 result = _execute_run(
                     spec.to_dict(), str(run_out), include, exclude,

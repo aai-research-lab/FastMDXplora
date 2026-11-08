@@ -2630,11 +2630,95 @@ def test_a_second_sigterm_in_a_report_phase_written_again_stops_the_study(tmp_pa
         "Stopped at once when asked (SIGTERM twice) as its report was written again: "
         "its report is not written."), cut
     assert runs["tri__random-seed-2"]["status"] == "ok", runs
+    report = [phase for phase in json.loads((run / "manifest.json").read_text())["phases"]
+              if phase.get("name") == "report"]
+    assert [(phase["status"], phase["refusal"]["code"]) for phase in report] == [
+        ("error", "simulation.run.stopped")], report
     assert re.search(r"^Batch stopped: 1 ok, 1 error\(s\)", printed, re.M), printed[-2000:]
     assert f"fastmdx resume {study}" in printed, printed[-2000:]
     fix = remedies_of(study)[0]
     assert "resume" in fix.command, fix
     assert not ran.left_behind
+
+
+def _a_study_of_one_reported(tmp_path: Path, monkeypatch, *, where: str):
+    """A study of one run whose report, written again after its rule's last
+    round, is cut by a stop now ``where``: in its report phase, or as its
+    records are put back after it."""
+    import importlib
+
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner, stopping
+
+    run = tmp_path / "study"
+    (run / "report").mkdir(parents=True)
+    (run / "report" / "report.md").write_text("as before")
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    (run / "resolved_config.yml").write_text(yaml.safe_dump(
+        {"systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
+         "output": str(run)}))
+    (run / "manifest.json").write_text(json.dumps(
+        {"system": "tri", "phases": [{"name": "analysis", "status": "ok"},
+                                     {"name": "report", "status": "ok"}]}))
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.012, "independent_starts": "not_required"}
+    batch = object.__new__(explorer.BatchExplorer)
+    batch.output_dir, batch.run_specs = run, []
+    batch.results = [RunResult(run_id="study", system="tri", status="ok", output_dir=run,
+                               sweep_values={}, phases=[])]
+    batch._raw = {"simulation": {"stop_when": stop_when}}
+    batch.resume, batch.is_single, batch.mode = False, True, "sequential"
+    batch._holding_its_record = True
+    monkeypatch.setattr(explorer.BatchExplorer, "_resolve_workers", lambda self: 1)
+    monkeypatch.setattr(stopping, "run_until_known", lambda *_args, **_kwargs: {"rounds": []})
+
+    def stopped_now(*_args, **_kwargs):
+        raise runner._a_stop_now(signal.SIGINT)
+
+    if where == "report":
+        report_run = importlib.import_module("fastmdxplora.report.run")
+        monkeypatch.setattr(report_run, "build_region_highlight_artifacts", stopped_now)
+    elif where == "cleared":
+        # Once what it wrote before is removed, before its phase begins.
+        from fastmdxplora import replaced
+
+        real = replaced.make_way
+
+        def cleared(*args, **kwargs):
+            real(*args, **kwargs)
+            stopped_now()
+
+        monkeypatch.setattr(replaced, "make_way", cleared)
+    else:
+        monkeypatch.setattr(explorer, "_only_the_report_recorded", stopped_now)
+    with pytest.raises(runner.StopNow) as caught:
+        batch._run_until_known(stopping.targets_of(stop_when))
+    runner._listen_afresh()
+    return run, batch, caught.value
+
+
+@pytest.mark.parametrize("where", ["report", "cleared", "restore"])
+def test_a_stop_now_in_a_study_of_one_s_report_written_again_stops_it(where, tmp_path,
+                                                                      monkeypatch):
+    """A study of one's report written again after its rule's last round
+    (`_run_until_known`), cut by a stop now: the study stops, the run said
+    stopped with its report not written, and `fastmdx resume` named; its
+    manifest says its report phase stopped (it had none). A stop now as its
+    records were put back was not named on the run."""
+    run, batch, now = _a_study_of_one_reported(tmp_path, monkeypatch, where=where)
+    assert now.report_cut == run
+    batch._stopped_now(now)
+    result = batch.results[0]
+    assert result.status == "error" and result.error_type == "Stopped", result
+    assert result.message.startswith(
+        "Stopped at once when asked (Ctrl+C twice) as its report was written again"), result
+    assert f"`fastmdx resume {run}` writes it." in result.message, result
+    if where != "restore":
+        report = [phase for phase in json.loads((run / "manifest.json").read_text())["phases"]
+                  if phase.get("name") == "report"]
+        assert [(phase["status"], phase["refusal"]["code"]) for phase in report] == [
+            ("error", "simulation.run.stopped")], report
 
 
 def test_a_killed_worker_s_rule_says_the_worker_ended_not_stopped_when_asked(tmp_path):
@@ -2711,7 +2795,7 @@ def test_a_stop_after_a_stop_now_is_that_one(where, monkeypatch):
             study._note(signal.SIGINT, None)
             with pytest.raises(runner.StopNow):
                 study._note(signal.SIGINT, None)
-        before = runner._last_stop_now
+        before = runner._stops_now
         raised = 0
         with (runner._StopRequests(folder=None) if where == "production"
               else contextlib.nullcontext()) as production:

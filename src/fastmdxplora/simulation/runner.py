@@ -961,10 +961,13 @@ _ctrl_c_heard = False
 #: The signal of the first stop heard (SIGTERM for the GUI's Stop), so a
 #: stop now is named by both it took (`StopNow.said`).
 _first_stop_signal: int | None = None
-#: The last stop now raised in this process (`_stop_now`), so what records
-#: a phase it ended as stopped (`orchestrator._run_phase`) can be told it
-#: was one and let it on (`BatchExplorer._report_again`).
-_last_stop_now: "StopNow | None" = None
+#: How many stops now this process has raised (`_a_stop_now`), and the
+#: signals of the last, so what records a phase it ended as stopped
+#: (`orchestrator._run_phase`) can be told it was one and let it on
+#: (`BatchExplorer._report_again`). Counted, not held: the exception held
+#: held its frames, a study's, for the life of the process.
+_stops_now = 0
+_last_stop_now_signals: tuple[int, int] | None = None
 
 
 class StopNow(KeyboardInterrupt):
@@ -1134,27 +1137,38 @@ def _stop_now(number: int) -> None:
 
 
 def _a_stop_now(number: int) -> StopNow:
-    """The :class:`StopNow` to raise for ``number``, noted as the last one
-    (`_last_stop_now`), and every study and round listening here told it is
-    under way: a further stop is that one, and says nothing (a third stop
-    was another stop now, said twice, and cut the study's records as they
-    were written)."""
-    global _last_stop_now
-    _last_stop_now = StopNow(number, first=_first_stop_signal)
+    """The :class:`StopNow` to raise for ``number``, counted (`_stops_now`),
+    and every study and round listening here told it is under way: a
+    further stop is that one, and says nothing (a third stop was another
+    stop now, said twice, and cut the study's records as they were
+    written)."""
+    global _stops_now, _last_stop_now_signals
+    now = StopNow(number, first=_first_stop_signal)
+    _stops_now += 1
+    _last_stop_now_signals = (now.number, now.first)
     for listener in list(_LISTENING):
         if isinstance(listener, _StopInTheRounds):
             listener.now_under_way = True
-    return _last_stop_now
+    return now
 
 
-def _a_stop_now_absorbed(before: "StopNow | None") -> None:
-    """A stop now raised since ``before`` (`_last_stop_now`) that what it
+def _the_last_stop_now() -> StopNow:
+    """The last stop now raised here (`_a_stop_now`), raised again where what
+    it ended took it as its own."""
+    import signal as _signal
+
+    number, first = _last_stop_now_signals or (_signal.SIGINT, _signal.SIGINT)
+    return StopNow(number, first=first)
+
+
+def _a_stop_now_absorbed(before: int) -> None:
+    """A stop now raised since ``before`` (`_stops_now`) that what it
     ended took as its own (a run's phase recorded it, `orchestrator._run_phase`)
     while the study goes on: no longer under way, so a further stop is a
     stop now again, and ends the study. Left under way, every further stop
     was ignored while the study finished, minutes perhaps, and only a kill
     ended it."""
-    if _last_stop_now is before:
+    if _stops_now == before:
         return
     for listener in list(_LISTENING):
         if isinstance(listener, _StopInTheRounds):
