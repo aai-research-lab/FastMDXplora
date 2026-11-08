@@ -2762,6 +2762,33 @@ def test_a_stop_now_in_a_resume_is_named_by_both_its_stops(tmp_path, monkeypatch
     assert resume.stopped_in_a_resume(KeyboardInterrupt()) == resume.STOPPED_IN_A_RESUME
 
 
+@pytest.mark.parametrize("now", [True, False])
+def test_the_workers_a_stop_now_ended_are_not_said_ended_abruptly(now, tmp_path, caplog):
+    """After a parallel study's stop now, its workers ended by the signal
+    passed on to them, the others were said ended as a pool's are where "A
+    worker of the study ended abruptly", which none did."""
+    import logging
+    import multiprocessing
+    import time
+    from types import SimpleNamespace
+
+    from fastmdxplora.batch import explorer
+
+    worker = multiprocessing.get_context("spawn").Process(target=time.sleep, args=(30,))
+    worker.start()
+    try:
+        pool = SimpleNamespace(_processes={worker.pid: worker})
+        stop = SimpleNamespace(requested=True, now_under_way=now)
+        with caplog.at_level(logging.WARNING, logger="fastmdx.batch"):
+            explorer._end_the_other_workers(pool, stop=stop, folder=tmp_path)
+    finally:
+        worker.kill()
+        worker.join(10)
+    said = " ".join(record.getMessage() for record in caplog.records)
+    assert ("ended abruptly" in said) is not now, said
+    assert ("Stopped now; of the study's workers still going, 1 carried no run" in said) is now
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

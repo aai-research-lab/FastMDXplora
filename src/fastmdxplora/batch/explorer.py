@@ -881,7 +881,12 @@ def _end_the_other_workers(pool: Any, *, stop: Any = None, folder: Any = None) -
     if done["held"]:
         said.append(f"{done['held']} still held a run {allowed:.0f} s after being asked to "
                     "stop, and `fastmdx resume` carries that run on from its last checkpoint")
-    if said:
+    if said and getattr(stop, "now_under_way", False):
+        # Its workers ended by the stop now passed on to them, as asked: no
+        # worker ended abruptly.
+        logger.warning("Stopped now; of the study's workers still going, %s: each was "
+                       "ended.", "; ".join(said))
+    elif said:
         logger.warning("A worker of the study ended abruptly; of its other workers, %s: "
                        "each was ended.", "; ".join(said))
 
