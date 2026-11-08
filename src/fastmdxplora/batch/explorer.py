@@ -2608,6 +2608,12 @@ class BatchExplorer:
             extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
             extend_to=lambda some, total: self._extend_runs(some, None, total_ns=total),
             at_once=min(self._resolve_workers(), len(runs)) if side_by_side else 1)
+        listens = getattr(self, "_listens", None)
+        if listens is not None:
+            # The rule's last round judged, every run ended: a first stop now
+            # ends nothing (a study of one's report is written again below),
+            # and said the study ends where `fastmdx resume` carries it on.
+            listens.stage = "finishing"
         # Judged at these lengths already, by the rule now asked: nothing ran;
         # or judged only, no round extending a run.
         self._rule_ran_nothing = isinstance(judged, dict) and bool(judged.get("nothing_run"))

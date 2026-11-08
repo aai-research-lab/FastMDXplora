@@ -2707,6 +2707,38 @@ def test_a_stop_after_a_stop_now_is_that_one(where, monkeypatch):
     assert raised == 0 and listening, (raised, listening)
 
 
+def test_a_first_stop_after_the_rule_s_last_round_says_the_study_finishes(tmp_path,
+                                                                          monkeypatch):
+    """A first stop once the rule's last round was judged (a study of one's
+    report written again, its runs read from their records) said "no
+    further run starts, and the study ends where `fastmdx resume` carries it
+    on", and the study then finished: the study was said finishing only
+    after."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner, stopping
+
+    run = tmp_path / "study"
+    run.mkdir()
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.012, "independent_starts": "not_required"}
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir = run
+    batch.results = [RunResult(run_id="r", system="tri", status="ok", output_dir=run,
+                               sweep_values={}, phases=[])]
+    batch._raw = {"simulation": {"stop_when": stop_when}}
+    batch.resume, batch.is_single, batch.mode = False, True, "sequential"
+    batch._listens = runner._StopInTheStudy(folder=run)
+    monkeypatch.setattr(BatchExplorer, "_resolve_workers", lambda self: 1)
+    monkeypatch.setattr("fastmdxplora.simulation.stopping.run_until_known",
+                        lambda *_args, **_kwargs: {"rounds": []})
+    stages: list = []
+    monkeypatch.setattr(BatchExplorer, "_report_again",
+                        staticmethod(lambda _run: stages.append(batch._listens.stage)))
+    batch._run_until_known(stopping.targets_of(stop_when))
+    assert stages == ["finishing"], stages
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
