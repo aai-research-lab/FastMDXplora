@@ -851,10 +851,13 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
 def _the_rule_may_extend(study: Path) -> float | None:
     """The ceiling of a study whose stopping rule has rounds still to come
     (not determined, nor at its ceiling): its runs may be extended past
-    their plan, up to it. None where it has no rule, or its rule ended."""
+    their plan, up to it. None where it has no rule, its rule ended, or its
+    record is not the reader's to read (a run's page, held to the run)."""
+    where = Path(study) / "stopping.json"
+    if not record_access.can_read(where):
+        return None
     try:
-        record = json.loads(record_access.read_text(Path(study) / "stopping.json",
-                                                    encoding="utf-8"))
+        record = json.loads(record_access.read_text(where, encoding="utf-8"))
     except (OSError, ValueError):
         return None
     if not isinstance(record, dict) or not record.get("targets"):
