@@ -749,8 +749,9 @@ it by both ("Ctrl+C, then SIGTERM"); the GUI's Stop counts as a SIGTERM, so a
 Stop and then two Ctrl-C read "SIGTERM, then Ctrl+C". A stop while a stop
 now ends the study is that one, and says nothing. Where the run's phase
 takes the stop now (a run in production, in a study of runs one after
-another), the study goes on to write its records and comparison, and a
-further stop there ends it at once. A stop now while the study writes its
+another, or a run its stopping rule's round extends in the study's own
+process), the study says so, goes on to write its records and comparison,
+and a further stop there ends it at once. A stop now while the study writes its
 runs' reports again, after its stopping rule's last round, ends it there: the
 run whose report it cut is said stopped, its report not written, and `fastmdx
 resume` writes it. A first

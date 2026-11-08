@@ -964,7 +964,7 @@ _first_stop_signal: int | None = None
 #: How many stops now this process has raised (`_a_stop_now`), and the
 #: signals of the last, so what records a phase it ended as stopped
 #: (`orchestrator._run_phase`) can be told it was one and let it on
-#: (`BatchExplorer._report_again`). Counted, not held: the exception held
+#: (`BatchExplorer._report_again`). Counted, not held: the exception
 #: held its frames, a study's, for the life of the process.
 _stops_now = 0
 _last_stop_now_signals: tuple[int, int] | None = None
@@ -1161,18 +1161,23 @@ def _the_last_stop_now() -> StopNow:
     return StopNow(number, first=first)
 
 
-def _a_stop_now_absorbed(before: int) -> None:
+def _a_stop_now_absorbed(before: int, what: str = "the run") -> None:
     """A stop now raised since ``before`` (`_stops_now`) that what it
-    ended took as its own (a run's phase recorded it, `orchestrator._run_phase`)
-    while the study goes on: no longer under way, so a further stop is a
-    stop now again, and ends the study. Left under way, every further stop
-    was ignored while the study finished, minutes perhaps, and only a kill
-    ended it."""
+    ended took as its own (a run's phase recorded it, `orchestrator._run_phase`;
+    a round's extension, `resume.extend_study`) while the study goes on: no
+    longer under way, so a further stop is a stop now again, and ends the
+    study, and said so (its line had said the study ends at once). Left
+    under way, every further stop was ignored while the study finished,
+    minutes perhaps, and only a kill ended it."""
     if _stops_now == before:
         return
-    for listener in list(_LISTENING):
-        if isinstance(listener, _StopInTheRounds):
-            listener.now_under_way = False
+    under_way = [listener for listener in list(_LISTENING)
+                 if isinstance(listener, _StopInTheRounds) and listener.now_under_way]
+    for listener in under_way:
+        listener.now_under_way = False
+    if under_way:
+        _say_stop(f"Stopped at once: {what} ends where `fastmdx resume` carries it on, and the "
+                  "study writes its records and comparison. A further stop ends it at once.")
 
 
 def stop_now_said(number: int) -> str:

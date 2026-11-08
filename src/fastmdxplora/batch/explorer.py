@@ -2631,11 +2631,18 @@ class BatchExplorer:
         print(f"\nRunning until determined\n{'=' * 40}")
         side_by_side = self.mode == "parallel" and len(runs) > 1
         earlier = len(self._earlier_rounds())
+        from fastmdxplora.simulation import runner as _runner
+
+        before = _runner._stops_now
         judged = run_until_known(
             runs, targets, stop_when, record_in=self.output_dir,
             extend_all=self._extend_runs, earlier_rounds=self._earlier_rounds(),
             extend_to=lambda some, total: self._extend_runs(some, None, total_ns=total),
             at_once=min(self._resolve_workers(), len(runs)) if side_by_side else 1)
+        # A stop now its round's extension took, here in the study's process
+        # (`resume.extend_study`), the round said stopped: the study goes on
+        # to finish, and a further stop ends it.
+        _runner._a_stop_now_absorbed(before, "the study's round")
         listens = getattr(self, "_listens", None)
         if listens is not None:
             # The rule's last round judged, every run ended: a first stop now

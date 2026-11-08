@@ -2924,6 +2924,8 @@ def test_a_third_stop_as_a_serial_study_finishes_ends_it(tmp_path):
         printed, logged = _ended(ran, 120, "the study")
     assert (tmp_path / "absorbed-1").exists(), logged[-2000:]
     assert ran.returncode == 130, (ran.returncode, printed[-2000:], logged[-2000:])
+    # Said as the study goes on, where "the study ends at once" was all.
+    assert "Stopped at once: the run ends where `fastmdx resume` carries it on" in logged
     assert "Stopping now: the study ends at once" in logged, logged[-2000:]
     assert json.loads(printed.splitlines()[-1]) == {"stopped now": "StopNow"}
     study = tmp_path / "study-0"
@@ -2935,6 +2937,53 @@ def test_a_third_stop_as_a_serial_study_finishes_ends_it(tmp_path):
     assert re.search(r"^Batch stopped: 0 ok, 1 error\(s\), 1 skipped, 2 total$", printed,
                      re.M), printed[-2000:]
     assert not ran.left_behind
+
+
+def test_a_stop_now_a_round_s_extension_took_lets_a_further_stop_end_the_study(
+        tmp_path, monkeypatch):
+    """A stop now in a round's extension run in the study's own process,
+    taken by its phase (`resume.extend_study`), the round said stopped: the
+    study went on to finish with every further stop ignored, nothing said.
+    It says the study goes on, and a further stop ends it."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner, stopping
+
+    said: list[str] = []
+    monkeypatch.setattr(runner, "_say_stop", said.append)
+    run = tmp_path / "study"
+    run.mkdir()
+
+    def a_round(*_args, **_kwargs):
+        # The extension's production, its stop now taken as its phase takes it.
+        with runner._StopRequests(folder=run) as production:
+            production._note(signal.SIGINT, None)
+            with pytest.raises(runner.StopNow):
+                production._note(signal.SIGINT, None)
+        return {"rounds": [], "outcome": "stopped"}
+
+    monkeypatch.setattr(stopping, "run_until_known", a_round)
+    monkeypatch.setattr(BatchExplorer, "_resolve_workers", lambda self: 1)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.012, "independent_starts": "not_required"}
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir = run
+    batch.results = [RunResult(run_id=name, system="tri", status="ok", output_dir=run / name,
+                               sweep_values={}, phases=[]) for name in ("a", "b")]
+    batch._raw = {"simulation": {"stop_when": stop_when}}
+    batch.resume, batch.is_single, batch.mode = False, False, "sequential"
+    runner._listen_afresh()
+    raised = False
+    with runner.listening_for_the_study(run) as study:
+        batch._listens = study
+        batch._run_until_known(stopping.targets_of(stop_when))
+        try:
+            study._note(signal.SIGINT, None)
+        except runner.StopNow:
+            raised = True
+    runner._listen_afresh()
+    assert raised, said
+    assert any(line.startswith("Stopped at once: the study's round ends where") for line in said)
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
