@@ -2175,6 +2175,12 @@ class BatchExplorer:
         finally:
             self._forget_this_process_s_records()
 
+    def _what_follows(self) -> str:
+        """What the study does once a stop now was taken where it landed: a
+        study of one has no comparison, and writes its run's report."""
+        return ("the study finishes" if getattr(self, "is_single", False)
+                else "the study writes its records and comparison")
+
     def _stop_asked(self) -> bool:
         """Whether the study was asked to stop (`runner._StopInTheStudy`)."""
         listens = getattr(self, "_listens", None)
@@ -2656,7 +2662,7 @@ class BatchExplorer:
         # A stop now its round's extension took, here in the study's process
         # (`resume.extend_study`), the round said stopped: the study goes on
         # to finish, and a further stop ends it.
-        _runner._a_stop_now_absorbed(before, "the study's round")
+        _runner._a_stop_now_absorbed(before, "the study's round", next_=self._what_follows())
         listens = getattr(self, "_listens", None)
         if listens is not None:
             # The rule's last round judged, every run ended: a first stop now
@@ -3910,7 +3916,7 @@ class BatchExplorer:
                 )
                 # A stop now its phase took, the study going on to finish:
                 # a further stop ends the study (`runner._a_stop_now_absorbed`).
-                _runner._a_stop_now_absorbed(before)
+                _runner._a_stop_now_absorbed(before, next_=self._what_follows())
             except StopNow as now:
                 # Stopped now outside its phases (each records its own): said
                 # stopped, the others not started, as the study ends.

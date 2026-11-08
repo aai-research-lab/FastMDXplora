@@ -1161,7 +1161,8 @@ def _the_last_stop_now() -> StopNow:
     return StopNow(number, first=first)
 
 
-def _a_stop_now_absorbed(before: int, what: str = "the run") -> None:
+def _a_stop_now_absorbed(before: int, what: str = "the run", *,
+                         next_: str = "the study writes its records and comparison") -> None:
     """A stop now raised since ``before`` (`_stops_now`) that what it
     ended took as its own (a run's phase recorded it, `orchestrator._run_phase`;
     a round's extension, `resume.extend_study`) while the study goes on: no
@@ -1176,8 +1177,8 @@ def _a_stop_now_absorbed(before: int, what: str = "the run") -> None:
     for listener in under_way:
         listener.now_under_way = False
     if under_way:
-        _say_stop(f"Stopped at once: {what} ends where `fastmdx resume` carries it on, and the "
-                  "study writes its records and comparison. A further stop ends it at once.")
+        _say_stop(f"Stopped at once: {what} ends where `fastmdx resume` carries it on, and "
+                  f"{next_}. A further stop ends it at once.")
 
 
 def stop_now_said(number: int) -> str:

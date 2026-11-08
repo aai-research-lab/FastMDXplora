@@ -2949,8 +2949,9 @@ def test_a_third_stop_as_a_serial_study_finishes_ends_it(tmp_path):
     assert not ran.left_behind
 
 
+@pytest.mark.parametrize("single", [False, True])
 def test_a_stop_now_a_round_s_extension_took_lets_a_further_stop_end_the_study(
-        tmp_path, monkeypatch):
+        single, tmp_path, monkeypatch):
     """A stop now in a round's extension run in the study's own process,
     taken by its phase (`resume.extend_study`), the round said stopped: the
     study went on to finish with every further stop ignored, nothing said.
@@ -2981,7 +2982,11 @@ def test_a_stop_now_a_round_s_extension_took_lets_a_further_stop_end_the_study(
     batch.results = [RunResult(run_id=name, system="tri", status="ok", output_dir=run / name,
                                sweep_values={}, phases=[]) for name in ("a", "b")]
     batch._raw = {"simulation": {"stop_when": stop_when}}
-    batch.resume, batch.is_single, batch.mode = False, False, "sequential"
+    batch.resume, batch.is_single, batch.mode = False, single, "sequential"
+    if single:
+        # A study of one, its run's report written again after its round.
+        batch.results = batch.results[:1]
+        monkeypatch.setattr(BatchExplorer, "_report_again", staticmethod(lambda _run: None))
     runner._listen_afresh()
     raised = False
     with runner.listening_for_the_study(run) as study:
@@ -2993,7 +2998,10 @@ def test_a_stop_now_a_round_s_extension_took_lets_a_further_stop_end_the_study(
             raised = True
     runner._listen_afresh()
     assert raised, said
-    assert any(line.startswith("Stopped at once: the study's round ends where") for line in said)
+    line = next(line for line in said if line.startswith("Stopped at once: the study's round"))
+    # A study of one has no comparison: it finishes.
+    assert ("the study finishes." in line) is single, line
+    assert ("records and comparison" in line) is not single, line
 
 
 def test_a_stop_as_a_stopped_study_s_summary_is_said_is_that_one(tmp_path, capsys):
