@@ -908,6 +908,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   the preparation the windows share, says what the study does then. The
   price of carrying a study on whose rule has rounds to come is a floor, with
   the ceiling its rule may extend the runs to.
+- A second stop in the report phase of a run's report written again, after
+  the rule's last round, stops the study: its phase took the stop now, and
+  the study said "Stopping now", then ended "Batch complete", exit 0, the
+  report removed and never written. It exits 130, the run said stopped with
+  its report not written, and `fastmdx resume` named to write it. Any stop
+  after a stop now is that one and says nothing, the study listening until
+  it ends: outside a parallel study's pool a third was another stop now,
+  said twice, that cut the study's summary, and a fourth SIGTERM ended the
+  process (143). A first stop once the rule's last round is judged says the
+  study finishes. A resume whose worker is killed leaves a cut round said as
+  it ended, and otherwise says the rule was not applied "again". A stop now
+  in a resume is named by both its stops. Workers a stop now ended are not
+  said ended abruptly. `docs/production.md` says the mixed stop now.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
