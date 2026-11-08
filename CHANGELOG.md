@@ -890,12 +890,24 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   runs are judged records the round stopped when asked; one while its
   comparison is built exits 130, where the signal ended it (143). The rule's
   record and the batch manifest are written whole or not at all. "Stopping
-  now" names a study of one kept in a folder named `runs` by its records,
+  now" names a study of one in a folder named `runs` by its records,
   not the folder above. A study whose worker was killed reads "Batch
   failed" and failed in the GUI, and `fastmdx resume` of it exits 1 as
   `fastmdx explore` does, not 130; its saved survivor says it saved, and
   the fix says each run's stop, not "a refusal that has not been given a
   code yet".
+- A third stop as a parallel study's workers end after a stop now is the
+  stop under way, and says nothing: it was taken as another, and every run,
+  those in production too, was recorded not started. A run begun is read
+  from its own records. The count of stops is the study's: a run's report
+  written again after the rule's last round forgot the first, and the second
+  SIGTERM was dropped, the study ending "Batch complete", exit 0. A Ctrl-C
+  then a SIGTERM are recorded as the two. A killed worker with no stop asked
+  has its rule's record say the worker ended and the rule was not applied,
+  not "Stopped when asked". A first stop after every run has ended, or during
+  the preparation the windows share, says what the study does then. The
+  price of carrying a study on whose rule has rounds to come is a floor, with
+  the ceiling its rule may extend the runs to.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
