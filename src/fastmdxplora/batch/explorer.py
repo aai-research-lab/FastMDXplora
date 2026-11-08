@@ -2511,6 +2511,9 @@ class BatchExplorer:
         write the study's report again with the record of how long it ran."""
         from fastmdxplora.simulation.stopping import (RECORD, STOPPED_BEFORE_THE_RULE,
                                                       STOPPED_BEFORE_THE_RULE_AGAIN,
+                                                      WORKER_ENDED_BEFORE_THE_RULE,
+                                                      WORKER_ENDED_BEFORE_THE_RULE_AGAIN,
+                                                      round_ended, round_not_carried_on,
                                                       run_until_known)
 
         stop_when = (self._raw.get("simulation") or {}).get("stop_when") or {}
@@ -2529,6 +2532,8 @@ class BatchExplorer:
                 record = {}
             if said == STOPPED_BEFORE_THE_RULE and record.get("rounds"):
                 said = STOPPED_BEFORE_THE_RULE_AGAIN
+            if said == WORKER_ENDED_BEFORE_THE_RULE and record.get("rounds"):
+                said = WORKER_ENDED_BEFORE_THE_RULE_AGAIN
             record.update({"outcome": outcome, "said": said})
             record.setdefault("rounds", [])
             from fastmdxplora.orchestrator import _put_in_place
@@ -2543,10 +2548,19 @@ class BatchExplorer:
         # A worker that ended abruptly, no stop asked: its saved survivor is
         # no stop asked, and the record says the worker ended, as the exit
         # code (1) and the summary ("Batch failed") do.
-        if (any(getattr(result, "error_type", None) == WORKER_ENDED for result in self.results)
-                and not self._stop_asked()):
-            from fastmdxplora.simulation.stopping import WORKER_ENDED_BEFORE_THE_RULE
-
+        lost = next((result for result in self.results
+                     if getattr(result, "error_type", None) == WORKER_ENDED), None)
+        if lost is not None and not self._stop_asked():
+            if (getattr(self, "resume", False) and self._earlier_rounds()
+                    and round_ended(self.output_dir, resuming=True) is not None):
+                # Resumed after a round that failed, was stopped or was cut:
+                # the round says how it ended, never "Not applied" over it.
+                round_not_carried_on(self.output_dir, lost.run_id,
+                                     {"ok": False, "stage": "its resume",
+                                      "error": lost.message or "its worker ended abruptly"})
+                print(f"The stopping rule's round is not carried on: {lost.run_id}'s "
+                      "worker ended abruptly.")
+                return
             ended("not_applied", WORKER_ENDED_BEFORE_THE_RULE)
             return
         # A run stopped, or a stop asked before a run began (its first
@@ -2567,8 +2581,6 @@ class BatchExplorer:
         missed = [result for result in self.results
                   if result not in finished and result.run_id in judged]
         if self.resume and missed:
-            from fastmdxplora.simulation.stopping import round_ended, round_not_carried_on
-
             if round_ended(self.output_dir, resuming=True) is not None:
                 # Resumed after a round that failed, was stopped or was cut,
                 # and a run not carried on: the round is not carried on, and

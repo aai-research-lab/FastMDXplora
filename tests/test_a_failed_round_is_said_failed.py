@@ -2640,6 +2640,39 @@ def test_a_killed_worker_s_rule_says_the_worker_ended_not_stopped_when_asked(tmp
     assert "Resuming the study carries its runs on" in record["said"], record
 
 
+@pytest.mark.parametrize("decision", ["extend", "stop"])
+def test_a_resume_whose_worker_is_killed_leaves_its_rounds_said(decision, tmp_path):
+    """A resume of a study with judged rounds whose worker is killed: "Not
+    applied ... before the rule was applied" was written over a cut round,
+    so it was no longer one to carry on, and beside a judged round. A cut
+    round is left to say how it ended; otherwise the sentence says "again"."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.simulation import stopping
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.012}
+    (study / "stopping.json").write_text(json.dumps({
+        "targets": [{"analysis": "rmsd", "standard_error": 1e-6}], "max_duration_ns": 0.012,
+        "runs": ["a", "b", "c"], "outcome": "running",
+        "rounds": [{"round": 1, "decision": decision, "more_ns": 0.003,
+                    "production_ns": 0.006}]}))
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir, batch.results = study, results
+    batch._raw = {"simulation": {"stop_when": stop_when}}
+    batch.resume, batch.is_single = True, False
+    batch._run_until_known(stopping.targets_of(stop_when))
+    record = json.loads((study / "stopping.json").read_text())
+    if decision == "extend":
+        assert record["outcome"] == "stopped", record
+        assert stopping.round_ended(study, resuming=True) is not None
+    else:
+        assert record["outcome"] == "not_applied", record
+        assert record["said"].startswith("Not applied: a worker of the study ended abruptly")
+        assert "before the rule was applied again." in record["said"], record
+    assert len(record["rounds"]) == 1, record
+
+
 @pytest.mark.parametrize("where", ["study", "production"])
 def test_a_stop_after_a_stop_now_is_that_one(where, monkeypatch):
     """A third stop after a stop now, outside a parallel study's pool: taken
