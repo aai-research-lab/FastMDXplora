@@ -3507,7 +3507,8 @@ def test_a_floor_of_nothing_is_not_priced_as_no_simulation():
 
     assert Price(production_ns=0.0, lower_bound=False).as_text() == "no simulation"
     said = Price(production_ns=0.0, lower_bound=True).as_text()
-    assert said != "no simulation" and "stopping rule's rounds" in said, said
+    # "Costs only what its stopping rule's rounds run.", short.
+    assert said == "only what its stopping rule's rounds run", said
 
 
 def test_a_run_never_started_is_priced_at_its_study_s_plan(tmp_path):
