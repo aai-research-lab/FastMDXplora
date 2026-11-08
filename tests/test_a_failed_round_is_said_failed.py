@@ -5066,18 +5066,41 @@ def _quiet(monkeypatch) -> None:
 
 def _written_on(study: Path, changed: str) -> None:
     """Every process record and lock of the study and its runs said written
-    on another boot, machine or container (``changed``)."""
-    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    on another boot, machine or container (``changed``). A process still
+    holding one stamps it (`orchestrator.stamp_alive`, a read and a put):
+    a stamp that read before this write and put after it put the old field
+    back, and the study read as this machine's. Where its heartbeat is short
+    (`orchestrator.HEARTBEAT_ENV`), each is written again past two
+    heartbeats until it stays, a bounded number of times."""
+    import os
+    import time
+
+    from fastmdxplora.orchestrator import HEARTBEAT_ENV, RUN_PROCESS_FILE
     from fastmdxplora.simulation.resume import CARRYING_ON_FILE
 
-    for name in (RUN_PROCESS_FILE, CARRYING_ON_FILE):
-        for path in study.rglob(name):
+    try:
+        beat = float(os.environ.get(HEARTBEAT_ENV) or "")
+    except ValueError:
+        beat = None
+    paths = [path for name in (RUN_PROCESS_FILE, CARRYING_ON_FILE)
+             for path in study.rglob(name)]
+    for _ in range(11 if beat is not None and beat <= 5 else 1):
+        written = []
+        for path in paths:
             try:
                 record = json.loads(path.read_text())
-            except ValueError:
+            except (OSError, ValueError):
+                continue
+            if record.get(changed) == "another-" + changed:
                 continue
             record[changed] = "another-" + changed
             path.write_text(json.dumps(record))
+            written.append(path)
+        if not written or beat is None or beat > 5:
+            return
+        # A stamp read before the write has put by then.
+        time.sleep(2 * beat + 0.2)
+    raise AssertionError(f"{changed} put back by the study's heartbeat each of ten times")
 
 
 def _a_namespace_is_said() -> None:
@@ -6004,13 +6027,17 @@ def test_a_study_held_in_a_long_phase_elsewhere_reads_going(tmp_path, monkeypatc
     # Its heartbeat every half second (`orchestrator.HEARTBEAT_ENV`).
     monkeypatch.setenv("FASTMDX_HEARTBEAT_SECONDS", "0.5")
     hold = tmp_path / "hold"
+    # Its heartbeat's first stamp once held reads its record before the
+    # host is written into it, and puts it after (`_written_on`).
     process = _held_study(["fastmdxplora.cli.main", "explore", "-c", str(config)], tmp_path,
-                          hold, call="fastmdxplora.analysis.orchestrator:get_analysis_class")
+                          hold, call="fastmdxplora.analysis.orchestrator:get_analysis_class",
+                          stamp_race="1")
     study = tmp_path / "study"
     # The hour, scaled to 4 s: eight heartbeats.
     monkeypatch.setattr(resume, "ANOTHER_HOST_QUIET_SECONDS", 4)
     try:
-        _until_held(process, hold, ["call"])
+        # Held, and a stamp of its record read, to be put after the write.
+        _until_held(process, hold, ["call", "stamp"])
         _written_on(study, "host")
         status = json.loads((study / "simulation" / "live_status.json").read_text())
         status["last_update_timestamp"] = "2000-01-01T00:00:00+00:00"

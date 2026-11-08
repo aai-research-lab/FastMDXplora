@@ -12,6 +12,12 @@ which inherit both), with ``FASTMDX_TEST_HOLD`` naming a folder:
   (comma separated) limits it to those runs' pieces.
 - ``FASTMDX_TEST_HOLD_CALL`` (``module:function``): as that function is first
   called, ``call.held`` is written and it waits the same way.
+- ``FASTMDX_TEST_HOLD_STAMP_RACE``: once ``call.held`` is written, the
+  heartbeat's first stamp of a process record (`orchestrator.stamp_alive`),
+  having read the record, writes ``stamp.held`` and waits until another
+  writer changes it (at most 30 s), then puts back what it read: the
+  read-modify-write of a stamp that read before a test's write to the record
+  and put after it.
 
 Nothing is held without ``FASTMDX_TEST_HOLD``; a study run by a person never
 has it.
@@ -79,6 +85,37 @@ def _install():
             return real_call(*args, **kwargs)
 
         setattr(module, name, holding)
+
+    if os.environ.get("FASTMDX_TEST_HOLD_STAMP_RACE"):
+        import sys
+
+        from fastmdxplora import orchestrator
+
+        real_ticks = orchestrator.process_start_ticks
+        raced = set()
+
+        def ticks(pid):
+            # Called by `stamp_alive` between its read and its put.
+            import time
+
+            frame = sys._getframe(1)
+            path = frame.f_locals.get("path")
+            if (frame.f_code.co_name == "stamp_alive" and path is not None
+                    and not raced and (folder / "call.held").exists()):
+                raced.add(str(path))
+                read = frame.f_locals.get("text")
+                (folder / "stamp.held").write_text(str(os.getpid()))
+                until = time.monotonic() + 30
+                while time.monotonic() < until:
+                    try:
+                        if path.read_text(encoding="utf-8") != read:
+                            break
+                    except OSError:
+                        break
+                    time.sleep(0.01)
+            return real_ticks(pid)
+
+        orchestrator.process_start_ticks = ticks
 
 
 if _FOLDER:
