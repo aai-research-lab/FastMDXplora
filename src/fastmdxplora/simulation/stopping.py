@@ -802,10 +802,16 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
         with _StopInTheRounds(folder=record_in) as heard:
             def say(text: str) -> None:
                 record = current.get("record")
-                if isinstance(record, dict) and record.get("outcome") not in (None, "running"):
+                rounds = record.get("rounds") if isinstance(record, dict) else None
+                last = rounds[-1] if isinstance(rounds, list) and rounds else {}
+                outcome = record.get("outcome") if isinstance(record, dict) else None
+                if (outcome in ("met", "ceiling", "rounds")
+                        or (outcome == "stopped" and isinstance(last, dict)
+                            and last.get("stopped_by") == "no mean")):
                     # Its decision made, and said now: a first stop ends no
                     # round, and says the study finishes, not that a resume
-                    # carries it on.
+                    # carries it on. Not a round that failed or was stopped,
+                    # which a resume carries on.
                     heard.decided = True
                 told(text)
 
