@@ -1317,7 +1317,8 @@ class _StopInTheStudy(_StopInTheRounds):
     its production (``in_a_run``), that run's phase ends there as the stop
     it is, which `fastmdx resume` runs again: a Ctrl-C as one with no
     listener (a KeyboardInterrupt), a SIGTERM as a pool worker's
-    (`RunStopped`). A second is obeyed at once (:class:`StopNow`)."""
+    (`RunStopped`). A second is obeyed at once (:class:`StopNow`). Not asked
+    by the GUI in this process (`_listener_for`)."""
 
     #: A run of the study is going in this process (one after another).
     in_a_run = False
@@ -1348,20 +1349,6 @@ class _StopInTheStudy(_StopInTheRounds):
                   f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
         self._restore()
         _stop_now(number)
-
-    def ask_here(self) -> str:
-        """Asked to stop without a signal (the GUI in this process), as a
-        first SIGTERM asks: no further run starts."""
-        import signal as _signal
-
-        if self.signal is not None:
-            return "Stopping: asked already."
-        self.signal, self.asked_here = _signal.SIGTERM, True
-        _a_stop_asked_here()
-        _say_stop("Stop asked from the GUI: no further run starts, and the study ends "
-                  "where `fastmdx resume` carries it on.")
-        return ("Stopping: no further run starts, and `fastmdx resume` carries the "
-                "study on.")
 
 
 def _the_study_heard(listener: Any) -> None:
@@ -1449,6 +1436,11 @@ def _listener_for(root: Any) -> Any:
         return there == here or there.startswith(here.rstrip(_os.sep) + _os.sep)
 
     for listener in reversed(list(_LISTENING)):
+        # The study's own (`_StopInTheStudy`) hears signals only: the GUI in
+        # the run's process is refused outside production, as it was, and
+        # says where to stop the run, never "Stopping" where nothing stops.
+        if isinstance(listener, _StopInTheStudy):
+            continue
         if within(getattr(listener, "folder", None)):
             return listener
     return None
