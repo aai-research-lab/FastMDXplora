@@ -2434,8 +2434,9 @@ def test_a_second_sigterm_is_recorded_as_sigterm(tmp_path, monkeypatch):
 
 
 def test_a_ctrl_c_then_a_sigterm_is_recorded_as_the_two(tmp_path, monkeypatch):
-    """A Ctrl-C, then a SIGTERM, stopped now: recorded "a second SIGTERM",
-    named by the last alone."""
+    """A Ctrl-C, then a SIGTERM, stopped now: it was recorded "a second
+    SIGTERM", named by the last alone. It is recorded by both, "Ctrl+C,
+    then SIGTERM"."""
     from fastmdxplora.orchestrator import FastMDXplora
     from fastmdxplora.simulation import runner
 

@@ -743,7 +743,14 @@ interval checkpoint stands. `FASTMDX_STOP_GRACE_SECONDS` sets the 20 for a
 platform that allows more or less. A second stop of the same kind is
 obeyed at once: a second SIGTERM, though one within two seconds of the
 first is the same request arriving twice, as it does when sent to a whole
-process group, and counts once; a second Ctrl-C, however quick. A first
+process group, and counts once; a second Ctrl-C, however quick. A SIGTERM
+more than two seconds after a Ctrl-C is a stop now too, and the study records
+it by both ("Ctrl+C, then SIGTERM"); the GUI's Stop counts as a SIGTERM, so a
+Stop and then two Ctrl-C read "SIGTERM, then Ctrl+C". Any stop after a stop
+now is that one, and says nothing. A stop now while the study writes its
+runs' reports again, after its stopping rule's last round, ends it there: the
+run whose report it cut is said stopped, its report not written, and `fastmdx
+resume` writes it. A first
 Ctrl-C after a SIGTERM (a scheduler's, the GUI's Stop, a broken pool's)
 asks the stop already under way, and says so once, on the terminal ("Ctrl+C
 received: the stop asked already is under way ... Press Ctrl+C again to stop
