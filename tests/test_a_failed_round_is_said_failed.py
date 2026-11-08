@@ -3178,6 +3178,36 @@ def test_a_stop_now_as_a_record_is_put_in_place_leaves_no_temporary(tmp_path, mo
     assert where.read_text() == "as before\n"
 
 
+def test_a_run_its_round_stopped_reads_stopped_after_a_stop_now(tmp_path, monkeypatch):
+    """A resume stopped now in its round: the batch manifest said a run "ok,
+    The study finished; there is nothing to carry on." (its own resume, before
+    the round) beside a round and pages saying it was stopped in the round."""
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner
+    from fastmdxplora.simulation.resume import NOTHING_TO_CARRY_ON
+
+    study = tmp_path / "study"
+    (study / "runs" / "b").mkdir(parents=True)
+    batch = object.__new__(explorer.BatchExplorer)
+    batch.output_dir, batch.run_specs, batch.is_single = study, [], False
+    batch.results = [RunResult(run_id="b", system="tri", status="ok",
+                               output_dir=study / "runs" / "b", sweep_values={}, phases=[],
+                               message=NOTHING_TO_CARRY_ON)]
+    batch._holding_its_record = True
+    monkeypatch.setattr(explorer.BatchExplorer, "_stopping_rule", lambda self: object())
+    monkeypatch.setattr(explorer.BatchExplorer, "_the_rule_stopped_before_it_was_applied",
+                        lambda self: None)
+    monkeypatch.setattr(explorer.BatchExplorer, "_write_batch_manifest", lambda self: None)
+    monkeypatch.setattr(explorer.BatchExplorer, "_print_summary", lambda self: None)
+    monkeypatch.setattr(exploration, "runs_of_a_study",
+                        lambda _root: [{"run_id": "b", "state": "stopped"}])
+    batch._stopped_now(runner.StopNow(signal.SIGINT))
+    result = batch.results[0]
+    assert (result.status, result.error_type) == ("error", "StoppedInTheRounds"), result
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

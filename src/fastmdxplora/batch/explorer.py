@@ -2220,6 +2220,12 @@ class BatchExplorer:
                                 for result in self.results]
             if self._stopping_rule() is not None:
                 self._the_rule_stopped_before_it_was_applied()
+                if not self.is_single:
+                    # A run its round's extension was stopped in, read as its
+                    # records say: a resume stopped now in its round said the
+                    # run "ok, nothing to carry on" beside a round saying it
+                    # stopped.
+                    self._the_runs_as_their_records_say()
             # A run's live record a worker ended by the signal left going (an
             # extension in its round, side by side): read interrupted beside
             # a study said stopped.
