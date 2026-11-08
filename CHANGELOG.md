@@ -917,12 +917,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study is that one and says nothing, the study listening until it ends:
   outside a parallel study's pool a third was another stop now, said twice,
   that cut the study's summary, and a fourth SIGTERM ended the process
-  (143). Where a run's phase took the stop now and the study goes on to
-  finish, a further stop ends it at once, exit 130. A first stop once the
-  rule has decided, or its last round is judged, says the study finishes. A
-  resume whose worker is killed leaves a cut round said as it ended, and
-  otherwise says the rule was not applied "again"; after a round stopped
-  when asked it exits 1, as `fastmdx explore` does, not 130. A stop now in a
+  (143). Where a run's phase, or a round's extension in the study's own
+  process, took the stop now and the study goes on to finish, the study says
+  so, and a further stop ends it at once, exit 130. A first stop once the
+  rule has decided (not a round that failed), or its last round is judged,
+  says the study finishes. A resume whose worker is killed leaves a cut round
+  said as it ended, and otherwise says the rule was not applied "again";
+  after a round stopped when asked it exits 1, as `fastmdx explore` does, not
+  130, where the killed worker's run is recorded ended with its worker. A cut
+  report's config is put back whole. A resume priced at nothing with its
+  rule's rounds to come no longer says "Costs no simulation". A stop now in a
   resume is named by both its stops. Workers a stop now ended are not said
   ended abruptly. `docs/production.md` says the mixed stop now.
 - A stop's lines (the first stop, the stop under way, stopping now) are
