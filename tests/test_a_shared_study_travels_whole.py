@@ -5027,8 +5027,11 @@ def test_a_latest_version_s_metadata_in_another_form_is_not_the_last(odd):
     assert zenodo._not_the_last({"id": 9, "metadata": odd})
 
 
-def test_the_copy_refusal_says_how_the_copy_may_carry_on_the_record(tmp_path, unsteady,
-                                                                    capsys):
+def test_the_copy_refusal_says_no_way_two_copies_could_each_follow(tmp_path, unsteady,
+                                                                   capsys):
+    """Code review of the sixty-ninth commit: the way said for a copy to carry
+    on the original's record, followed for one copy, let a second copy of the
+    same folder take it too."""
     import shutil
 
     study = _study(tmp_path / "study")
@@ -5037,8 +5040,9 @@ def test_the_copy_refusal_says_how_the_copy_may_carry_on_the_record(tmp_path, un
     shutil.copytree(study, copy)
     capsys.readouterr()
     assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
-    assert (f"move {study.resolve() / 'shared_to.json'} over {copy / 'shared_to.json'})"
-            in capsys.readouterr().err)
+    said = capsys.readouterr().err
+    assert "share it from its own folder." in said and "move " not in said
+    assert f"delete {study.resolve() / 'shared_to.json'}" not in said
 
 
 def test_a_copy_is_told_by_its_record_s_concept_after_the_original_went_on(tmp_path,
@@ -5118,7 +5122,7 @@ def test_a_copy_made_while_only_the_draft_asked_for_is_named_is_refused(
     capsys.readouterr()
     assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
     said = capsys.readouterr().err
-    assert f'both name the draft asked for as "{kept["asked_as"]}"' in said
+    assert f'that one is shared as the draft asked for as "{kept["asked_as"]}"' in said
     assert not any(c[0] in ("PUT", "POST", "DELETE") for c in unsteady.calls)
     assert _share_to_zenodo(study, tmp_path / "a.zip") == 0
 
@@ -5135,7 +5139,8 @@ def test_the_copy_refusal_names_the_draft_not_its_concept(tmp_path, unsteady, ca
     capsys.readouterr()
     assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
     said = capsys.readouterr().err
-    assert "both name the draft or record 7 on zenodo-sandbox" in said and "c7" not in said
+    assert "that one is shared as the draft or record 7 on zenodo-sandbox" in said
+    assert "c7" not in said
 
 
 def test_a_tiny_or_nearly_whole_download_s_amount_is_said_as_it_is():
@@ -5265,7 +5270,8 @@ def test_a_copy_made_while_only_the_draft_asked_for_is_named_is_refused_after_a_
     unsteady.calls.clear()
     capsys.readouterr()
     assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
-    assert f'the draft asked for as "{asked}"' in capsys.readouterr().err
+    # Named as the original is shared now: its draft of a new version.
+    assert "that one is shared as the draft or record 8" in capsys.readouterr().err
     assert not any(c[0] in ("PUT", "POST", "DELETE") for c in unsteady.calls)
 
 
@@ -5281,34 +5287,23 @@ def test_a_download_just_begun_is_said_in_bytes():
     assert _got(50_000, 5_000_000_000) == ", with 50.0 kB of 5000.0 MB downloaded"
 
 
-def test_the_copy_refusal_s_remedy_to_carry_on_the_record_followed_makes_no_second(
+def test_two_copies_of_one_study_are_each_refused_while_it_holds_its_record(
         tmp_path, unsteady, capsys):
-    """Code review of the sixty-seventh commit: the remedy said, deleting the
-    original's shared_to.json, left a copy that named only the title its
-    draft was asked for under to make a second draft."""
+    """Code review of the sixty-ninth commit: of two copies of a study, the
+    one left after the other was given the original's shared_to.json, as the
+    refusal said, took the record too."""
     import shutil
 
-    unsteady.faults = {"POST": ["made late"]}
     study = _study(tmp_path / "study")
-    zenodo._LOOKS_S, looks = (1.0,), zenodo._LOOKS_S
-    try:
-        assert _share_to_zenodo(study, tmp_path / "a.zip") == 2
-    finally:
-        zenodo._LOOKS_S = looks
-    copy = tmp_path / "copy"
-    shutil.copytree(study, copy)
-    unsteady.drafts[0]["hidden"] = 0
     assert _share_to_zenodo(study, tmp_path / "a.zip") == 0
-    capsys.readouterr()
-    assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
-    assert "move " in capsys.readouterr().err
-    # As said: the original's shared_to.json moved over the copy's.
-    (study / "shared_to.json").replace(copy / "shared_to.json")
+    copies = [tmp_path / "b", tmp_path / "c"]
+    for copy in copies:
+        shutil.copytree(study, copy)
     unsteady.calls.clear()
-    assert _share_to_zenodo(copy, tmp_path / "a.zip") == 0
-    assert json.loads((copy / "shared_to.json").read_text())["zenodo-sandbox"]["id"] == "7"
-    assert not any(c[0] == "POST" and c[1] == "/api/deposit/depositions"
-                   for c in unsteady.calls)
+    for copy in copies:
+        assert _share_to_zenodo(copy, tmp_path / "a.zip") == 2
+    assert not any(c[0] in ("PUT", "POST", "DELETE") for c in unsteady.calls)
+    assert _share_to_zenodo(study, tmp_path / "a.zip") == 0
 
 
 def test_a_copy_refusal_names_the_record_before_a_title_no_longer_on_zenodo(
@@ -5331,7 +5326,7 @@ def test_a_copy_refusal_names_the_record_before_a_title_no_longer_on_zenodo(
     capsys.readouterr()
     assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
     said = capsys.readouterr().err
-    assert "both name versions of the record c7" in said and "asked for as" not in said
+    assert "that one is shared as the draft or record 104" in said and "asked for as" not in said
 
 
 def test_a_download_that_got_nothing_says_so_in_bytes():
