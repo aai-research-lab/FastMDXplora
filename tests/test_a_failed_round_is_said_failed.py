@@ -3352,16 +3352,13 @@ def test_a_sigterm_after_a_stopped_resume_s_summary_is_stopped_when_asked(tmp_pa
     assert "fastmdx: stopped when asked" in said, said[-2000:]
 
 
-@pytest.mark.parametrize("path", ["resume_from", "budget_hours"])
 def test_a_stop_in_explore_s_work_between_studies_is_stopped_when_asked(
-        path, tmp_path, monkeypatch, capsys):
-    """`fastmdx explore` carrying a study on (`simulation.resume_from`) or
-    run in stages (`budget_hours`), stopped between its studies (the join,
-    the pricing): a traceback, the process ended by the signal. Said as
-    `fastmdx resume` says it, 130."""
+        tmp_path, monkeypatch, capsys):
+    """`fastmdx explore` carrying a study on (`simulation.resume_from`),
+    stopped between its studies (the join): a traceback, the process ended
+    by the signal. Said as `fastmdx resume` says it, 130."""
     import importlib
 
-    from fastmdxplora import agent
     from fastmdxplora.simulation import resume
 
     cli = importlib.import_module("fastmdxplora.cli.main")
@@ -3372,12 +3369,8 @@ def test_a_stop_in_explore_s_work_between_studies_is_stopped_when_asked(
     (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
     config = {"systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
               "output": str(tmp_path / "study")}
-    if path == "resume_from":
-        monkeypatch.setattr(resume, "study_to_continue", lambda _config: tmp_path / "study")
-        monkeypatch.setattr(resume, "extend_study", stopped)
-    else:
-        config["budget_hours"] = 1.0
-        monkeypatch.setattr(agent, "run_in_stages", stopped)
+    monkeypatch.setattr(resume, "study_to_continue", lambda _config: tmp_path / "study")
+    monkeypatch.setattr(resume, "extend_study", stopped)
     (tmp_path / "study.yml").write_text(yaml.safe_dump(config))
     try:
         code = cli.main(["explore", "-c", str(tmp_path / "study.yml")])

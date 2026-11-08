@@ -2010,8 +2010,8 @@ def _cmd_explore(args: argparse.Namespace) -> int:
                                       checkpoint_interval_steps=simulation.get(
                                           "checkpoint_interval_steps"))
         except KeyboardInterrupt:
-            # Between its studies (the join), as `fastmdx resume` says it: a
-            # traceback, the process ended by the signal.
+            # Between its studies (the join): said as `fastmdx resume` says
+            # it; before, a traceback, the process ended by the signal.
             return _said_stopped_when_asked(resume_from)
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
@@ -2073,13 +2073,8 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
         output = Path(config.get("output") or args.output_dir
                       or default_output_name(system_of(config)))
-        try:
-            with _then_quiet_once_stopped():
-                staged = run_in_stages(config, output, budget_hours=float(budget))
-        except KeyboardInterrupt:
-            # Between its studies (its pricing), or in one, as `fastmdx
-            # resume` says it: a traceback, the process ended by the signal.
-            return _said_stopped_when_asked(output)
+        with _then_quiet_once_stopped():
+            staged = run_in_stages(config, output, budget_hours=float(budget))
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
