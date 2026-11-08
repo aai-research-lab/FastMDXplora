@@ -1411,6 +1411,26 @@ class _StopInTheRounds(_StopRequests):
                 "and `fastmdx resume` carries it on.")
 
 
+#: Set by the CLI's command (`cli.main.main`) while it runs: a study that
+#: heard a stop leaves a quiet listener behind it (`_quiet_once_stopped`).
+_QUIET_ONCE_STOPPED = False
+
+
+def _quiet_once_stopped() -> None:
+    """SIGINT and SIGTERM ignored for the rest of the command, its study
+    stopped and recorded: a stop after its summary is the stop under way."""
+    import signal as _signal
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for number in (_signal.SIGINT, _signal.SIGTERM):
+        try:
+            _signal.signal(number, _signal.SIG_IGN)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+
+
 class _StopInTheStudy(_StopInTheRounds):
     """SIGTERM and SIGINT to a study's own process for the whole of it
     (`BatchExplorer.run`), wherever nothing nearer listens: its first
@@ -1470,6 +1490,12 @@ class _StopInTheStudy(_StopInTheRounds):
                   f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
         self._listening_on_until_it_ends()
         _stop_now(number)
+
+    def __exit__(self, *exc: Any) -> bool:
+        super().__exit__(*exc)
+        if _QUIET_ONCE_STOPPED and self.signal is not None:
+            _quiet_once_stopped()
+        return False
 
 
 def _the_study_heard(listener: Any) -> None:

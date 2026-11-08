@@ -2996,6 +2996,158 @@ def test_a_stop_now_a_round_s_extension_took_lets_a_further_stop_end_the_study(
     assert any(line.startswith("Stopped at once: the study's round ends where") for line in said)
 
 
+def test_a_stop_as_a_stopped_study_s_summary_is_said_is_that_one(tmp_path, capsys):
+    """A stop as the summary of a study asked to stop was said: taken as a
+    stop now, it said "Stopping now" and the summary again."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.simulation import runner
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir, batch.results = study, results
+    batch._listens = runner._StopInTheStudy(folder=study)
+    batch._listens.signal = signal.SIGTERM
+    batch._print_summary()
+    assert batch._listens.now_under_way
+    assert capsys.readouterr().out.count("Batch failed") == 1
+
+
+def test_a_stop_after_a_stopped_study_s_listener_ends_is_quiet_until_the_command_returns(
+        monkeypatch):
+    """A stop after a stopped study's listener ended, as the command said its
+    last lines: a SIGTERM ended the process (143), a Ctrl-C by the signal.
+    Ignored until `fastmdx explore` returns; Python's handlers then put back."""
+    import importlib
+
+    from fastmdxplora.simulation import runner
+
+    # The module, not the `main` the package gives by that name.
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    said: list[str] = []
+    monkeypatch.setattr(runner, "_say_stop", said.append)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    seen = {}
+
+    def a_command(_argv):
+        runner._listen_afresh()
+        with runner._StopInTheStudy(folder=None) as study:
+            study.stage = "finishing"
+            study._note(signal.SIGTERM, None)
+        runner._listen_afresh()
+        seen["after the study"] = (signal.getsignal(signal.SIGTERM),
+                                   signal.getsignal(signal.SIGINT))
+        return 130
+
+    monkeypatch.setattr(cli, "_main", a_command, raising=False)
+    try:
+        assert cli.main(["explore", "-c", "study.yml"]) == 130
+        assert seen["after the study"] == (signal.SIG_IGN, signal.SIG_IGN), seen
+        assert (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)) == before
+        # Not for a command that goes on after its study (the GUI).
+        assert cli.main(["gui"]) == 130
+        assert seen["after the study"] == before, seen
+    finally:
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+
+
+def test_a_stopped_explore_s_dashboard_still_ends_on_ctrl_c(monkeypatch, capsys):
+    """`fastmdx explore --dashboard` after a study that heard a stop: its GUI
+    waited for a Ctrl-C with SIGINT and SIGTERM ignored, for ever; only a
+    kill ended it. The docs say it waits for Ctrl-C."""
+    import importlib
+    import os
+    import time
+    from types import SimpleNamespace
+
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    ended = []
+
+    class Session:
+        url = "http://127.0.0.1:0"
+
+        def wait_forever(self):
+            # A Ctrl-C to the process, as a terminal sends it.
+            os.kill(os.getpid(), signal.SIGINT)
+            until = time.monotonic() + 3
+            while time.monotonic() < until:
+                time.sleep(0.05)
+
+        def stop(self):
+            ended.append(True)
+
+    def a_command(_argv):
+        runner._listen_afresh()
+        with runner._StopInTheStudy(folder=None) as study:
+            study.stage = "finishing"
+            study._note(signal.SIGTERM, None)
+        runner._listen_afresh()
+        cli._finish_dashboard_for_command(
+            Session(), SimpleNamespace(dashboard_stop_on_complete=False), 130)
+        return 130
+
+    monkeypatch.setattr(cli, "_main", a_command, raising=False)
+    try:
+        assert cli.main(["explore", "-s", "p.pdb", "--dashboard"]) == 130
+    finally:
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    assert "GUI stopped." in capsys.readouterr().out
+    assert ended == [True]
+
+
+_A_COMMAND_RUN_AS_THE_CONSOLE_SCRIPT = """
+import importlib, signal, sys, time
+from fastmdxplora.simulation import runner
+
+# The module, not the `main` the package gives by that name.
+cli = importlib.import_module("fastmdxplora.cli.main")
+
+def a_command(_argv):
+    with runner._StopInTheStudy(folder=None) as study:
+        study.stage = "finishing"
+        study._note(signal.SIGTERM, None)
+    print("Manifest:", flush=True)
+    return 130
+
+cli._main = a_command
+sys.argv = ["fastmdx", "explore", "-c", "study.yml"]
+rc = cli.main()
+# The interpreter's shutdown, some 600 ms after a study.
+time.sleep(1.5)
+sys.exit(rc)
+"""
+
+
+def test_a_stop_as_the_console_script_ends_is_the_stop_under_way(tmp_path):
+    """A stop just after "Manifest:" of a stopped study run as the console
+    script: `main` put Python's handlers back as it returned, and a SIGTERM
+    in the shutdown that followed ended the process (143), a Ctrl-C by the
+    signal. It exits 130."""
+    import os
+    import sys
+
+    script = tmp_path / "command.py"
+    script.write_text(_A_COMMAND_RUN_AS_THE_CONSOLE_SCRIPT)
+    ran = subprocess.Popen([sys.executable, str(script)], cwd=tmp_path,
+                           env={**os.environ, "PYTHONPATH": _source()},
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                           start_new_session=True)
+    try:
+        line = ran.stdout.readline()
+        assert line.startswith("Manifest:"), (line, ran.stderr.read()[-2000:]
+                                              if ran.poll() is not None else "")
+        for number in (signal.SIGTERM, signal.SIGINT):
+            os.kill(ran.pid, number)
+    finally:
+        printed, said = _ended(ran, 60, "the command")
+    assert ran.returncode == 130, (ran.returncode, said[-2000:])
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

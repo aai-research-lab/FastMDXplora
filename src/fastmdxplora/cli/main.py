@@ -1959,6 +1959,8 @@ def _finish_dashboard_for_command(session, args: argparse.Namespace, rc: int = 0
     ended = {0: "complete", 130: "stopped"}.get(rc, "ended with an error")
     print(f"Exploration {ended}. The GUI is still running at: {session.url}")
     print("Press Ctrl+C to stop the GUI.")
+    # A Ctrl-C ends the wait, whatever the study left it as.
+    _listening_as_the_command_began()
     try:
         session.wait_forever()
     except KeyboardInterrupt:
@@ -4008,6 +4010,66 @@ def _choose_model() -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """The command, with a stop after its study's listener has ended (its
+    summary said, the command's last lines) taken as the stop under way
+    (`runner._quiet_once_stopped`): a fourth SIGTERM there ended the
+    process (143), and a Ctrl-C by the signal, the study stopped and
+    recorded. Anything that waits for the person after the study (its GUI,
+    `--dashboard`) puts the command's handlers back first
+    (`_listening_as_the_command_began`). Run as the console script (no
+    ``argv``) the process then ends, and they are left as they are: put
+    back, a stop in its shutdown (some 600 ms) still ended it by the signal.
+    Called in a process that goes on (a notebook, a test), they are put
+    back as it returns."""
+    import signal
+
+    from fastmdxplora.simulation import runner
+
+    before = {}
+    for number in (signal.SIGINT, signal.SIGTERM):
+        try:
+            before[number] = signal.getsignal(number)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+    given = list(sys.argv[1:] if argv is None else argv)
+    # Only a command that runs a study and then ends: not the GUI, the
+    # Agent or a server, which go on after a study they ran.
+    runner._QUIET_ONCE_STOPPED = bool(
+        next((word for word in given if not word.startswith("-")), None)
+        in ("explore", "resume"))
+    _COMMAND_S_HANDLERS.clear()
+    _COMMAND_S_HANDLERS.update(before)
+    try:
+        return _main(argv)
+    finally:
+        if argv is not None:
+            _listening_as_the_command_began()
+        _COMMAND_S_HANDLERS.clear()
+
+
+#: SIGINT's and SIGTERM's handlers as the command began (`main`).
+_COMMAND_S_HANDLERS: dict[int, Any] = {}
+
+
+def _listening_as_the_command_began() -> None:
+    """The command's own SIGINT and SIGTERM handlers put back, where a
+    stopped study left them ignored (`runner._quiet_once_stopped`), and no
+    later study leaves them so: before anything that waits for a Ctrl-C
+    (`explore --dashboard` waited for ever, Ctrl-C and SIGTERM ignored)."""
+    import signal
+
+    from fastmdxplora.simulation import runner
+
+    runner._QUIET_ONCE_STOPPED = False
+    for number, handler in _COMMAND_S_HANDLERS.items():
+        try:
+            if signal.getsignal(number) is signal.SIG_IGN and handler is not None:
+                signal.signal(number, handler)
+        except (ValueError, OSError, TypeError):  # pragma: no cover
+            pass
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     # Ensure the CLI can emit its Unicode output (box-drawing banner, "→",
     # "—") regardless of the platform's locale. On machines whose default
     # stdio encoding is ASCII, printing these would otherwise raise

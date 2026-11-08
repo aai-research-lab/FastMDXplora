@@ -4349,6 +4349,11 @@ class BatchExplorer:
 
     # ------------------------------------------------------------------
     def _print_summary(self) -> None:
+        listens = getattr(self, "_listens", None)
+        if listens is not None and listens.signal is not None:
+            # Asked to stop, and these its last lines: a further stop is that
+            # one. Taken as a stop now, it said the summary twice.
+            listens.now_under_way = True
         ok = sum(1 for r in self.results if r.status == "ok")
         err = sum(1 for r in self.results if r.status == "error")
         skipped = sum(1 for r in self.results if r.status == "skipped")
