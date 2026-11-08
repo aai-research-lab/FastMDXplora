@@ -3156,6 +3156,28 @@ def test_a_stop_as_the_console_script_ends_is_the_stop_under_way(tmp_path):
     assert ran.returncode == 130, (ran.returncode, said[-2000:])
 
 
+def test_a_stop_now_as_a_record_is_put_in_place_leaves_no_temporary(tmp_path, monkeypatch):
+    """A stop now as a record was written whole (`_put_in_place`): its
+    temporary, of this process, was left beside it, which no later write
+    of this process removes."""
+    import os
+
+    from fastmdxplora import orchestrator
+    from fastmdxplora.simulation import runner
+
+    where = tmp_path / "resolved_config.yml"
+    where.write_text("as before\n")
+
+    def stopped_now(*_args, **_kwargs):
+        raise runner.StopNow(signal.SIGINT)
+
+    monkeypatch.setattr(os, "replace", stopped_now)
+    with pytest.raises(runner.StopNow):
+        orchestrator._put_in_place(where, "cut\n")
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["resolved_config.yml"]
+    assert where.read_text() == "as before\n"
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

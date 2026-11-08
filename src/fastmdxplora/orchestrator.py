@@ -2001,7 +2001,10 @@ def _put_in_place(path: Path, text: str) -> None:
             os.fchmod(stream.fileno(), 0o666 & ~_umask())
             stream.write(text)
         os.replace(name, path)
-    except OSError:
+    except BaseException:
+        # A stop now (a KeyboardInterrupt) too: its temporary, of this
+        # process, was left beside the record (`_clear_cut_temporaries`
+        # passes over a live process's own).
         try:
             os.unlink(name)
         except OSError:
