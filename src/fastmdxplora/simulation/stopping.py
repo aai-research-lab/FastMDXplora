@@ -783,7 +783,7 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
     """`_run_until_known`, a stop asked while it judges and extends the runs
     noted (`runner._StopInTheRounds`), never raised where the round would
     read cut, and each run's extension recorded as it begins."""
-    from fastmdxplora.simulation.runner import _StopInTheRounds
+    from fastmdxplora.simulation.runner import StopNow, _StopInTheRounds
 
     current: dict[str, Any] = {}
 
@@ -799,10 +799,36 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
     _BEGINNING.append(begun)
     try:
         with _StopInTheRounds(folder=record_in) as heard:
-            return _run_until_known(runs, targets, stop_when, record_in=record_in,
-                                    heard=heard, current=current, **given)
+            try:
+                return _run_until_known(runs, targets, stop_when, record_in=record_in,
+                                        heard=heard, current=current, **given)
+            except StopNow:
+                _stopped_now_outside_an_extension(current)
+                raise
     finally:
         _BEGINNING.remove(begun)
+
+
+def _stopped_now_outside_an_extension(current: dict[str, Any]) -> None:
+    """The record of rounds stopped now (`runner.StopNow`) where no
+    extension was going (its runs judged), and so not said yet: stopped
+    when asked, in a round of its own at the length the runs were being
+    judged at. It was left "running"."""
+    record, write = current.get("record"), current.get("write")
+    if not isinstance(record, dict) or write is None or record.get("outcome") != "running":
+        return
+    production = current.get("judging")
+    rounds = record.setdefault("rounds", [])
+    if isinstance(production, (int, float)) or not rounds or not isinstance(rounds[-1], dict):
+        entry: dict[str, Any] = {"verdicts": []}
+        if isinstance(production, (int, float)):
+            entry["production_ns"] = round(float(production), 9)
+        rounds.append(entry)
+    else:
+        # Between its pieces: the round going is the one stopped.
+        entry = rounds[-1]
+    _the_round_stopped(record, entry, None, {"stopped": True})
+    write()
 
 
 def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict[str, Any],
@@ -846,25 +872,29 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
         "outcome": "running"}
 
     def write() -> None:
-        (record_in / RECORD).write_text(json.dumps(record, indent=2), encoding="utf-8")
+        from fastmdxplora.orchestrator import _put_in_place
+
+        # Whole or not at all: a stop now may land as it is written.
+        _put_in_place(record_in / RECORD, json.dumps(record, indent=2))
 
     current = {} if current is None else current
     current["write"] = write
+    current["record"] = record
 
     def asked() -> bool:
         return bool(heard is not None and heard.requested)
 
     def extended(entry: dict[str, Any], tried: list[Path], extend: Any) -> list[dict[str, Any]]:
         """``extend()``'s answers; at a stop obeyed at once (a second stop,
-        raised as KeyboardInterrupt), the round said stopped when asked, its
-        record written, before the study ends: it was left "running", and
-        every page read the study interrupted."""
-        from fastmdxplora.simulation.runner import stopped_now
+        `runner.StopNow`), the round said stopped when asked, its record
+        written, before the study ends: it was left "running", and every
+        page read the study interrupted."""
+        from fastmdxplora.simulation.runner import StopNow
 
         try:
             return list(extend())
-        except KeyboardInterrupt:
-            if not stopped_now():
+        except KeyboardInterrupt as stopped:
+            if not isinstance(stopped, StopNow):
                 # Not a stop asked (no listener heard it): the round is cut,
                 # as a kill leaves it.
                 raise
@@ -996,7 +1026,11 @@ def _run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dic
         return {**record, "nothing_run": True}
     for _ in range(MOST_ROUNDS):
         production = min(production_of(run) for run in runs)
+        # Judged at this length: a stop now while the runs are judged is
+        # said in a round of its own (`run_until_known`).
+        current["judging"] = production
         verdicts = judge(runs, targets, production)
+        current.pop("judging", None)
         entry: dict[str, Any] = {"production_ns": round(production, 9),
                                  "verdicts": [v.as_record() for v in verdicts]}
         record["rounds"].append(entry)

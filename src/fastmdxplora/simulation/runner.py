@@ -960,23 +960,44 @@ _first_stop_at: float | None = None
 _ctrl_c_heard = False
 
 
-#: Set as a second stop is obeyed at once (`_stop_now`): the
-#: KeyboardInterrupt it raises is a stop asked, which the study's rounds
-#: record as such, not a cut (`stopping._run_until_known`).
-_stopped_now = False
+class StopNow(KeyboardInterrupt):
+    """A second stop obeyed at once (`_stop_now`), carrying the signal that
+    asked it: a stop asked, which a run's phase, its study's rounds and the
+    study record as such, named by that signal (a second SIGTERM was
+    recorded as Ctrl+C). A KeyboardInterrupt, so what no listener here
+    handles ends as one did; a bare KeyboardInterrupt, which no listener
+    heard, is not a stop asked, and keeps its meaning (a round it reaches
+    is cut, as a kill leaves it)."""
+
+    def __init__(self, number: int) -> None:
+        super().__init__(number)
+        self.number = int(number)
+
+    @property
+    def signal_name(self) -> str:
+        import signal as _signal
+
+        try:
+            return _signal.Signals(self.number).name
+        except ValueError:
+            return f"signal {self.number}"
+
+
+def stop_said(stopped: BaseException) -> str:
+    """How a stop that ended something is named to a person: "Ctrl+C" for
+    SIGINT, or a bare KeyboardInterrupt, else its signal."""
+    import signal as _signal
+
+    if isinstance(stopped, StopNow) and stopped.number != _signal.SIGINT:
+        return stopped.signal_name
+    return "Ctrl+C"
 
 
 def _listen_afresh() -> None:
     """Forget an earlier stop: a new run, or its production, is starting."""
-    global _first_stop_at, _ctrl_c_heard, _stopped_now
+    global _first_stop_at, _ctrl_c_heard
     _first_stop_at = None
     _ctrl_c_heard = False
-    _stopped_now = False
-
-
-def stopped_now() -> bool:
-    """Whether this process was asked to stop now (a second stop)."""
-    return _stopped_now
 
 
 def _a_stop_asked_here() -> None:
@@ -1033,7 +1054,10 @@ def _say_stop(text: str) -> None:
 def _the_study_of(folder: Any) -> str:
     """The study a listener's folder is of, as `fastmdx resume` takes it: a
     run of a study of several (``runs/<run>``), or a piece of one
-    (``segment-NNN``), is resumed by its study."""
+    (``segment-NNN``), is resumed by its study. Decided by the study's own
+    records, its batch manifest naming the run, never by a folder's name: a
+    study of one run is its own folder, and one kept in a folder named
+    ``runs`` was taken for a run of the folder above."""
     from pathlib import Path as _Path
 
     if not folder:
@@ -1041,24 +1065,36 @@ def _the_study_of(folder: Any) -> str:
     here = _Path(folder)
     if here.name.startswith("segment-"):
         here = here.parent
-    if here.parent.name == "runs":
+    if here.parent.name == "runs" and _names_the_run(here.parent.parent, here.name):
         here = here.parent.parent
     return str(here)
 
 
+def _names_the_run(study: Any, run: str) -> bool:
+    """Whether ``study``'s batch manifest names ``run`` among its runs, planned
+    or ended."""
+    try:
+        manifest = json.loads((Path(study) / "batch_manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    named = [entry for key in ("planned", "runs")
+             for entry in (manifest.get(key) if isinstance(manifest.get(key), list) else [])]
+    return any(isinstance(entry, dict) and str(entry.get("run_id")) == run for entry in named)
+
+
 def _stop_now(number: int) -> None:
     """A second stop obeyed at once. In the study's own process it is raised
-    as a KeyboardInterrupt, whatever the signal, so the study's records say
-    it stopped when asked before it ends (a SIGTERM ended it there and then,
-    its round's record left "running"); a pool worker ends as the signal
-    would end it, its parent saying the rest."""
+    as :class:`StopNow`, whatever the signal, so the study's records say it
+    stopped when asked, by that signal, before it ends (a SIGTERM ended it
+    there and then, its round's record left "running"); a pool worker ends
+    as the signal would end it, its parent saying the rest."""
     import os as _os
     import signal as _signal
 
-    global _stopped_now
-    _stopped_now = True
     if number == _signal.SIGINT or not _IN_A_POOL_WORKER:
-        raise KeyboardInterrupt
+        raise StopNow(number)
     _os.kill(_os.getpid(), number)
 
 
@@ -1214,6 +1250,7 @@ class _StopRequests:
         if self in _LISTENING:
             _LISTENING.remove(self)
         self._restore()
+        _the_study_heard(self)
         return False
 
     def ask_here(self) -> str:
@@ -1264,6 +1301,93 @@ class _StopInTheRounds(_StopRequests):
                   "extends has answered, where `fastmdx resume` carries it on.")
         return ("Stopping: the study's round ends once the run it extends has answered, "
                 "and `fastmdx resume` carries it on.")
+
+
+class _StopInTheStudy(_StopInTheRounds):
+    """SIGTERM and SIGINT to a study's own process for the whole of it
+    (`BatchExplorer.run`), wherever nothing nearer listens: its first
+    pieces, between its runs, before and after its rounds, while its
+    comparison and summary are written. A second stop at any of these ended
+    the process (a SIGTERM's 143) with its records left "running". A stop a
+    nearer listener noted is noted here as it ends (`_the_study_heard`).
+
+    A first stop noted where no run is going: no further run starts, and a
+    production or a round begun after it stops at once where it can be
+    carried on (`_StopRequests.__enter__`). Where a run is going outside
+    its production (``in_a_run``), that run's phase ends there as the stop
+    it is, which `fastmdx resume` runs again: a Ctrl-C as one with no
+    listener (a KeyboardInterrupt), a SIGTERM as a pool worker's
+    (`RunStopped`). A second is obeyed at once (:class:`StopNow`)."""
+
+    #: A run of the study is going in this process (one after another).
+    in_a_run = False
+
+    def _note(self, number: int, _frame: Any) -> None:
+        import signal as _signal
+
+        heard = _a_stop_heard(number)
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == _signal.SIGINT:
+                _say_stop(CTRL_C_UNDER_WAY)
+            return
+        if heard == "first":
+            self.signal = number
+            if self.in_a_run:
+                _say_stop(f"{self.name} received: the run ends in the phase it is in, which "
+                          f"`fastmdx resume` runs again, and no further run starts. "
+                          f"{stop_now_said(number)}")
+                if number == _signal.SIGINT:
+                    raise KeyboardInterrupt
+                from fastmdxplora.refusals import RunStopped
+
+                raise RunStopped(self.name)
+            _say_stop(f"{self.name} received: no further run starts, and the study ends "
+                      f"where `fastmdx resume` carries it on. {stop_now_said(number)}")
+            return
+        _say_stop(f"Stopping now: the study ends at once; `fastmdx resume "
+                  f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
+        self._restore()
+        _stop_now(number)
+
+    def ask_here(self) -> str:
+        """Asked to stop without a signal (the GUI in this process), as a
+        first SIGTERM asks: no further run starts."""
+        import signal as _signal
+
+        if self.signal is not None:
+            return "Stopping: asked already."
+        self.signal, self.asked_here = _signal.SIGTERM, True
+        _a_stop_asked_here()
+        _say_stop("Stop asked from the GUI: no further run starts, and the study ends "
+                  "where `fastmdx resume` carries it on.")
+        return ("Stopping: no further run starts, and `fastmdx resume` carries the "
+                "study on.")
+
+
+def _the_study_heard(listener: Any) -> None:
+    """A stop ``listener`` noted, noted by the study it is of as that listener
+    ends (`_StopInTheStudy`), where the study has none: what the study does
+    after it (its next run, its rounds) is asked to stop as well."""
+    number = getattr(listener, "signal", None)
+    if number is None or number < 0 or isinstance(listener, _StopInTheStudy):
+        return
+    study = next((one for one in reversed(list(_LISTENING))
+                  if isinstance(one, _StopInTheStudy)), None)
+    if study is not None and study.signal is None:
+        study.signal, study.asked_here = number, bool(getattr(listener, "asked_here", False))
+
+
+def listening_for_the_study(folder: Any) -> Any:
+    """The listener for the whole of the study at ``folder`` (`_StopInTheStudy`),
+    as a context; one that listens for nothing in a worker of a parallel
+    study's pool, whose own listener stops its run, and within what listens
+    already (a run's extension in its study's round, whose listener notes a
+    stop in its join and stops its production at its first frame)."""
+    from contextlib import nullcontext
+
+    if _IN_A_POOL_WORKER or _LISTENING:
+        return nullcontext(None)
+    return _StopInTheStudy(folder=folder)
 
 
 def a_stop_asked_in_the_rounds() -> bool:

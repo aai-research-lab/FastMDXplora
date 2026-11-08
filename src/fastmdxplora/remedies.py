@@ -608,14 +608,21 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
             continue
         refusal = _refusal_of_run(run)
         if run.get("error_type") == "Stopped" or _retryable(refusal):
-            stopped.append((run_id, folder, str(refusal.get("code") or "simulation.run.stopped")))
+            code = str(refusal.get("code") or "")
+            # Stopped with no refusal of its own (no phase recorded it: a
+            # broken pool's survivor, a run stopped at once): a stop, never
+            # "a refusal that has not been given a code yet".
+            stopped.append((run_id, folder, code if _retryable(refusal) else STOPPED_REFUSAL))
             continue
         if index is not None:
             windows[index] = (run_id, folder, refusal)
             continue
         remedies.append(remedy_for(refusal, study=folder, where=run_id))
     if stopped or unstarted or ended:
-        code = next((c for _, _, c in stopped if known(c)), "simulation.run.stopped")
+        # A run ended with its worker is carried on from its last checkpoint,
+        # as a run whose process is gone is.
+        code = next((c for _, _, c in stopped if c != STOPPED_REFUSAL),
+                    STOPPED_REFUSAL if stopped or not ended else INTERRUPTED_CODE)
         names = ([run_id for run_id, _, _ in stopped] + [run_id for run_id, _ in ended]
                  + [run_id for run_id, _ in unstarted])
         parts = []
@@ -628,9 +635,10 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
                          "while running")
         if unstarted:
             parts.append(f"{_counted(len(unstarted), 'run')} did not start")
-        why = ", ".join(parts[:-1]) + (" and " if len(parts) > 1 else "") + parts[-1]
+        why = ", ".join(parts[:-1]) + ((", and " if len(parts) > 2 else " and ")
+                                       if len(parts) > 1 else "") + parts[-1]
         why = why[0].upper() + why[1:] + "."
-        if code != "simulation.run.stopped":
+        if code not in (STOPPED_REFUSAL, INTERRUPTED_CODE):
             why += f" {code_for(code).summary}"
         remedy = _resume(code, why, "the study",
                          [folder for _, folder, _ in stopped] + [f for _, f in ended]

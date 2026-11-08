@@ -25,6 +25,7 @@ import io
 import json
 import re
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -1633,7 +1634,7 @@ def run(spec, run_out, *_args, **_kwargs):
     out = Path(run_out)
     out.mkdir(parents=True, exist_ok=True)
     _say(here / f"started-{seed}", str(os.getpid()))
-    if role not in ("save", "hold", "listen"):
+    if role not in ("save", "hold", "listen", "going"):
         _say(here / f"ready-{seed}", "")
     status, message = "ok", ""
     if role == "die":
@@ -1669,10 +1670,15 @@ def run(spec, run_out, *_args, **_kwargs):
         finally:
             _release_run_process(out)
         status, message = "error", "stopped"
-    elif role in ("save", "hold"):
+    elif role in ("save", "hold", "going"):
         # Running, its run's record held: asked to stop, "save" saves (for
-        # SAVE seconds) and gives the record back; "hold" never stops.
+        # SAVE seconds) and gives the record back; "hold" never stops, nor
+        # "going", whose live record says it is in production.
         _hold_run_process(out)
+        if role == "going":
+            (out / "simulation").mkdir(parents=True, exist_ok=True)
+            _say(out / "simulation" / "live_status.json", json.dumps(
+                {"status": "running", "stage": "production"}))
         explorer._running_a_run = role == "save"
         _say(here / f"ready-{seed}", "")
         try:
@@ -1694,7 +1700,7 @@ def run(spec, run_out, *_args, **_kwargs):
 def extend(run, *_args, **_kwargs):
     # A run's extension in the study's round, as `explorer._extend_one` is
     # called: "carry" runs for 40 s unless asked to stop; "die" ends its
-    # worker once "carry" has begun.
+    # worker once "carry" has begun; "answer" answers by itself, at once.
     from fastmdxplora.batch import explorer
     from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
     from fastmdxplora.refusals import RunStopped
@@ -1703,6 +1709,11 @@ def extend(run, *_args, **_kwargs):
     name = Path(run).name
     role = json.loads(os.environ["ROLES"])[name]
     _say(here / f"started-{name}", str(os.getpid()))
+    if role == "answer":
+        _until(lambda: (here / "ready-a").exists())
+        _say(here / f"ready-{name}", "")
+        _say(here / f"finished-{name}", "")
+        return {"ok": True}
     if role == "die":
         _until(lambda: (here / "ready-a").exists())
         os.kill(os.getpid(), signal.SIGKILL)
@@ -1725,7 +1736,7 @@ def extend(run, *_args, **_kwargs):
 """
 
 _A_STUDY_OF_STAND_INS = """
-import json, logging, os, sys
+import json, logging, os, sys, time
 from pathlib import Path
 
 sys.path.insert(0, os.environ["STAND_IN"])
@@ -1787,6 +1798,9 @@ if __name__ == "__main__" and os.environ.get("ROUND"):
         def submit(self, *args, **kwargs):
             handed.append(1)
             if len(handed) == 3:
+                # Handed out with no stop asked before: `hand_one`'s first
+                # look let it through.
+                (here / "handed-3").write_text("")
                 runner.stop_what_listens_here()
                 return Future()
             return real(self, *args, **kwargs)
@@ -1804,7 +1818,22 @@ elif __name__ == "__main__":
                     or name.endswith(".new")):
                 (here / name).unlink()
         study = explorer.BatchExplorer(config_data=config, output_dir=here / f"study-{repeat}")
-        results = study._run_parallel(None, None)
+        if os.environ.get("WHOLE"):
+            # The whole study, its records, comparison and summary too.
+            if os.environ.get("COMPARING"):
+                def comparing(self):
+                    # A comparison that takes a while to build.
+                    stand_in._say(here / "comparing", "")
+                    time.sleep(60)
+
+                explorer.BatchExplorer._maybe_build_comparison = comparing
+            try:
+                results = study.run()
+            except KeyboardInterrupt as stopped:
+                print(json.dumps({"stopped now": type(stopped).__name__}), flush=True)
+                sys.exit(130)
+        else:
+            results = study._run_parallel(None, None)
         print(json.dumps({result.run_id: [result.status, result.message, result.error_type]
                           for result in results}), flush=True)
 """
@@ -2235,6 +2264,9 @@ if __name__ == "__main__":
     config = {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
               "sweep": {"simulation.random_seed": [1, 2]}, "execution": {"mode": "sequential"}}
     study = explorer.BatchExplorer(config_data=config, output_dir=here / "study")
+    # Its plan, as the study writes it before its runs: its runs' study.
+    (here / "study").mkdir()
+    study._write_batch_manifest(round_said=False)
     threading.Thread(target=the_gui_then_ctrl_c, daemon=True).start()
     study._run_sequential(None, None)
     print("ended", flush=True)
@@ -2282,34 +2314,163 @@ def test_a_serial_study_stopped_now_names_the_study_to_resume(tmp_path):
     assert f"`fastmdx resume {tmp_path / 'study'}`" in line, terminal[-2000:]
 
 
+def test_stopping_now_names_a_study_of_one_kept_in_a_folder_named_runs(tmp_path, monkeypatch):
+    """A study of one run is its own folder: one kept at `.../runs/one2` was
+    taken for a run of a study of several by its folder's name, and "Stopping
+    now" named the folder above, which is no study to resume. Decided by the
+    study's own records: a run its study's batch manifest names is resumed
+    by that study."""
+    from fastmdxplora.simulation import runner
+
+    one = tmp_path / "runs" / "one2"
+    one.mkdir(parents=True)
+    study = tmp_path / "study"
+    (study / "runs" / "r1").mkdir(parents=True)
+    (study / "batch_manifest.json").write_text(json.dumps({
+        "planned": [{"run_id": "r1", "system": "tri", "sweep_values": {}}], "runs": []}))
+    said: list[str] = []
+    monkeypatch.setattr(runner, "_say_stop", said.append)
+    for folder, resumed in ((one, one), (one / "segment-001", one),
+                            (study / "runs" / "r1", study),
+                            (study / "runs" / "r1" / "segment-002", study)):
+        for listener in (runner._StopRequests(folder=folder),
+                         runner._StopInTheRounds(folder=folder)):
+            runner._listen_afresh()
+            said.clear()
+            listener._note(signal.SIGINT, None)
+            with pytest.raises(KeyboardInterrupt):
+                listener._note(signal.SIGINT, None)
+            runner._listen_afresh()
+            assert f"`fastmdx resume {resumed}` carries it on" in said[-1], (folder, said)
+
+
+def test_a_second_sigterm_is_recorded_as_sigterm(tmp_path, monkeypatch):
+    """A second SIGTERM (a scheduler's, the GUI's Stop twice) to a study of
+    runs one after another stops it now, and its run was recorded "stopped
+    by Ctrl+C", with `signal: SIGINT`: a key nobody pressed."""
+    from fastmdxplora.orchestrator import FastMDXplora
+    from fastmdxplora.simulation import runner
+
+    pdb = tmp_path / "p.pdb"
+    pdb.write_text("END\n", encoding="utf-8")
+    study = FastMDXplora(system=str(pdb), output_dir=str(tmp_path / "run"))
+    # The second taken as a second request, however soon.
+    monkeypatch.setattr(runner, "STOP_REPEAT_SECONDS", 0.0)
+    monkeypatch.setattr(runner, "_say_stop", lambda text: None)
+
+    def in_production(**_kwargs):
+        with runner._StopRequests(folder=tmp_path / "run") as stop:
+            stop._note(signal.SIGTERM, None)
+            stop._note(signal.SIGTERM, None)
+
+    monkeypatch.setattr(FastMDXplora, "_resolve_phase_runner",
+                        staticmethod(lambda phase: in_production))
+    result = study._run_phase("simulation", {})
+    runner._listen_afresh()
+    assert result.message.startswith(
+        "The run was stopped by a second SIGTERM in its simulation phase"), result.message
+    assert result.refusal["details"]["signal"] == "SIGTERM", result.refusal
+
+
+def test_a_parallel_study_stopped_now_records_where_it_stopped(tmp_path):
+    """A second SIGTERM to a study of runs side by side, its runs in
+    production: it exited, its batch manifest listing no run, its runs read
+    interrupted and waiting, no fix and no summary. Each run going is said
+    stopped, the others not started, the summary printed, and the GUI reads
+    the study Stopped, with `fastmdx resume` to carry it on."""
+    import os
+    import time
+
+    from fastmdxplora.gui.exploration import runs_of_a_study
+    from fastmdxplora.gui.workspace import study_state
+    from fastmdxplora.remedies import remedies_of
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "going", "2": "going"}, seeds=4, WHOLE="1")
+    try:
+        _until(lambda: all((tmp_path / f"ready-{seed}").exists() for seed in "12")
+               or ran.poll() is not None, 120)
+        os.kill(ran.pid, signal.SIGTERM)
+        # Later than the same request delivered twice.
+        time.sleep(2.5)
+        os.kill(ran.pid, signal.SIGTERM)
+    finally:
+        printed, logged = _ended(ran, 120, "the study")
+    study = tmp_path / "study-0"
+    assert re.search(r"^Batch stopped: 0 ok, 2 error\(s\), 2 skipped, 4 total$", printed,
+                     re.M), printed[-2000:] + logged[-2000:]
+    runs = {run["run_id"]: run for run in json.loads(
+        (study / "batch_manifest.json").read_text())["runs"]}
+    for seed in (1, 2):
+        run = runs[f"tri__random-seed-{seed}"]
+        assert run["error_type"] == "Stopped", run
+        assert run["message"].startswith("Stopped at once when asked (SIGTERM twice)"), run
+    for seed in (3, 4):
+        assert runs[f"tri__random-seed-{seed}"]["message"].startswith(
+            "Not started: the study was asked to stop."), runs
+    states = {run["run_id"]: run["state"] for run in runs_of_a_study(study) or []}
+    assert states == {"tri__random-seed-1": "stopped", "tri__random-seed-2": "stopped",
+                      "tri__random-seed-3": "not started",
+                      "tri__random-seed-4": "not started"}, states
+    assert study_state(study) == "stopped"
+    fix = remedies_of(study)[0]
+    assert fix.code == "simulation.run.stopped" and "resume" in fix.command, fix
+    assert not ran.left_behind
+
+
+def test_a_second_sigterm_as_the_comparison_is_built_exits_130(tmp_path):
+    """A second SIGTERM after the runs had ended, while the study built its
+    comparison, with no listener there: the process ended by the signal
+    (143), no summary. Heard by the study's own listener, it stops now, and
+    says the study stopped."""
+    import os
+    import time
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "ok", "2": "ok"}, seeds=2, WHOLE="1",
+                                COMPARING="1")
+    try:
+        _until(lambda: (tmp_path / "comparing").exists() or ran.poll() is not None, 120)
+        os.kill(ran.pid, signal.SIGTERM)
+        time.sleep(2.5)
+        os.kill(ran.pid, signal.SIGTERM)
+    finally:
+        printed, logged = _ended(ran, 120, "the study")
+    assert ran.returncode == 130, (ran.returncode, logged[-2000:])
+    assert "Stopping now: the study ends at once" in logged, logged[-2000:]
+    assert re.search(r"^Batch stopped: 2 ok", printed, re.M), printed[-2000:]
+    assert json.loads(printed.splitlines()[-1]) == {"stopped now": "StopNow"}
+    assert not ran.left_behind
+
+
 def test_a_stop_as_an_extension_is_handed_out_cancels_it(tmp_path):
     """A stop asked as the third of four extensions was handed to the pool,
     before a worker took it: it is called back, never begun, and the round
-    answers for the two begun."""
+    answers for the two begun. The worker is freed by an extension that
+    answers by itself, so no stop is asked before the hand-out (a stop asked
+    before it is refused by `hand_one`'s first look, and never reached the
+    call back); the stop is asked inside the hand-out
+    (`_A_STUDY_OF_STAND_INS`'s STOP_AT_HAND_OUT), whose future no worker
+    ever takes: not called back, the round waits on it."""
     import os
-    import signal
     import sys
 
     (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
     (tmp_path / "stand_in.py").write_text(_STAND_IN)
     script = tmp_path / "study.py"
     script.write_text(_A_STUDY_OF_STAND_INS)
+    roles = {"a": "carry", "b": "answer", "c": "carry", "d": "carry"}
     env = {**os.environ, "PYTHONPATH": _source(), "STAND_IN": str(tmp_path), "ROUND": "1",
-           "ROLES": json.dumps({name: "carry" for name in "abcd"}), "STOP_AT_HAND_OUT": "1"}
+           "ROLES": json.dumps(roles), "STOP_AT_HAND_OUT": "1"}
     ran = subprocess.Popen([sys.executable, str(script)], cwd=tmp_path, env=env,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                            start_new_session=True)
-    try:
-        _until(lambda: all((tmp_path / f"ready-{name}").exists() for name in "ab")
-               or ran.poll() is not None, 120)
-        # The first to answer frees a worker, and the third is handed out.
-        os.kill(ran.pid, signal.SIGTERM)
-    finally:
-        printed, logged = _ended(ran, 120, "the round")
+    printed, logged = _ended(ran, 120, "the round")
     begun = sorted(path.name.split("-", 1)[1] for path in tmp_path.glob("started-*"))
     assert begun == ["a", "b"], (begun, logged[-1500:])
+    assert (tmp_path / "handed-3").exists(), logged[-1500:]
     answers = json.loads(printed.splitlines()[-1])
-    assert len(answers) == 2, answers
+    # The one carrying stopped by the stop asked at the hand-out, the one
+    # that answered by itself finished, and the third never begun.
+    assert answers == [{"ok": False, "stopped": True}, {"ok": True}], answers
     assert not ran.left_behind
 
 
@@ -2376,18 +2537,104 @@ def test_a_study_whose_runs_ended_with_their_workers_is_fixed_by_resume(tmp_path
     study = tmp_path / "study"
     for name in ("a", "b", "c"):
         (study / "runs" / name).mkdir(parents=True)
+    for name in ("a", "b"):
+        # Each saved a checkpoint before its pool broke.
+        (study / "runs" / name / "simulation").mkdir()
+        (study / "runs" / name / "simulation" / "checkpoint.chk").write_bytes(b"chk")
     (study / "batch_manifest.json").write_text(json.dumps({
         "planned": [{"run_id": name, "options": {"simulation": {"production_steps": 300}}}
                     for name in "abc"],
         "runs": [
-            {"run_id": "a", "status": "error", "error_type": "Stopped", "message": "stopped"},
+            # The survivor, saved where it can be carried on, and its phases
+            # not recorded (`_as_its_records_say`): no refusal of its own.
+            {"run_id": "a", "status": "error", "error_type": "Stopped", "phases": [],
+             "message": "Saved where it can be carried on: a worker of the study ended "
+                        "abruptly"},
             {"run_id": "b", "status": "error", "error_type": "WorkerEnded",
              "message": "Its worker ended abruptly"},
             {"run_id": "c", "status": "skipped", "message": "Not started: its pool broke."}]}))
     fixes = remedies_of(study)
     assert fixes and all("choice is yours" not in fix.fix for fix in fixes), fixes
     assert "fastmdx resume" in fixes[0].command, fixes
-    assert "ended with its worker" in fixes[0].why and "did not start" in fixes[0].why, fixes
+    # The whole line, as the CLI and the GUI say it: a stop's code, never "a
+    # refusal that has not been given a code yet".
+    assert fixes[0].code == "simulation.run.stopped", fixes[0]
+    assert fixes[0].why == ("1 run stopped where it can be carried on, 1 run ended with its "
+                            "worker, killed while running, and 1 run did not start."), fixes[0]
+    assert fixes[0].fix.startswith("Carry them on from where they stopped. The run that did "
+                                   "not start is run."), fixes[0]
+
+
+def _a_killed_worker_s_study(tmp_path: Path) -> tuple[Path, list]:
+    """A study of three whose second run's worker was killed: its survivor
+    saved, the killed run ended with its worker, one never started."""
+    from fastmdxplora.orchestrator import RunResult
+
+    study = tmp_path / "study"
+    for name in "abc":
+        (study / "runs" / name).mkdir(parents=True)
+    results = [
+        RunResult(run_id="a", system="tri", status="error", output_dir=study / "runs" / "a",
+                  sweep_values={}, phases=[], error_type="Stopped",
+                  message="Saved where it can be carried on: a worker of the study ended "
+                          "abruptly"),
+        RunResult(run_id="b", system="tri", status="error", output_dir=study / "runs" / "b",
+                  sweep_values={}, phases=[], error_type="WorkerEnded",
+                  message="Its worker ended abruptly"),
+        RunResult(run_id="c", system="tri", status="skipped", output_dir=study / "runs" / "c",
+                  sweep_values={}, phases=[],
+                  message="Not started: a worker of the study ended abruptly")]
+    (study / "batch_manifest.json").write_text(json.dumps({
+        "planned": [{"run_id": name, "system": "tri", "sweep_values": {}} for name in "abc"],
+        "runs": [result.to_dict() for result in results]}, default=str))
+    return study, results
+
+
+def test_a_killed_worker_s_study_is_said_failed_not_stopped(tmp_path, capsys):
+    """No stop was asked of a study whose worker was killed: its survivor,
+    saved where it can be carried on, made it read "Batch stopped" and
+    the GUI Stopped, while it exits 1 and the docs say a run of it failed."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.cli.main import _stopped_when_asked
+    from fastmdxplora.gui.workspace import study_state
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir, batch.results = study, results
+    batch._print_summary()
+    printed = capsys.readouterr().out
+    assert re.search(r"^Batch failed: 0 ok, 2 error\(s\), 1 skipped, 3 total$", printed,
+                     re.M), printed
+    assert not _stopped_when_asked(results)
+    assert study_state(study) == "failed"
+
+
+def test_resume_of_a_killed_worker_s_study_exits_1_as_explore_does(tmp_path, monkeypatch,
+                                                                   capsys):
+    """`fastmdx resume` with a worker killed exited 130, a stop asked, where
+    `fastmdx explore` for the same ending exits 1."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.cli.main import _cmd_resume
+    from fastmdxplora.simulation.resume import resume_batch
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    (study / "resolved_config.yml").write_text(yaml.safe_dump({"systems": []}))
+
+    class Ran:
+        def __init__(self, **_given):
+            pass
+
+        def run(self):
+            return list(results)
+
+    monkeypatch.setattr(explorer, "BatchExplorer", Ran)
+    answer = resume_batch(study)
+    assert not answer.get("ok") and not answer.get("stopped"), answer
+    monkeypatch.setattr("fastmdxplora.simulation.resume.resume_study",
+                        lambda study, **_given: answer)
+    assert _cmd_resume(SimpleNamespace(study=str(study), json=False)) == 1
 
 
 def test_a_run_never_started_is_priced_at_its_study_s_plan(tmp_path):
@@ -2436,16 +2683,15 @@ def test_a_round_stopped_now_says_it_stopped_when_asked(tmp_path, monkeypatch):
     stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
                  "max_duration_ns": 0.01}
 
-    from fastmdxplora.simulation import runner
+    from fastmdxplora.simulation.runner import StopNow
 
     def stopped_now(runs, more):
         for run in runs:
             stopping.extension_begins(run)
         # As a second stop raises it (`runner._stop_now`).
-        monkeypatch.setattr(runner, "_stopped_now", True)
-        raise KeyboardInterrupt
+        raise StopNow(signal.SIGTERM)
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(StopNow):
         stopping.run_until_known(runs, stopping.targets_of(stop_when), stop_when,
                                  record_in=tmp_path, extend_all=stopped_now,
                                  say=lambda said: None, production_of=lambda run: 0.002)
@@ -2453,6 +2699,34 @@ def test_a_round_stopped_now_says_it_stopped_when_asked(tmp_path, monkeypatch):
     assert record["outcome"] == "stopped", record
     assert record["rounds"][-1]["stopped_by"] == "asked", record["rounds"][-1]
     assert record["said"].startswith("Stopped when asked, while extending a and b"), record
+
+
+def test_a_round_stopped_now_as_its_runs_are_judged_says_so(tmp_path, monkeypatch):
+    """A stop now while the rule judged the runs (their analyses), no
+    extension going: its record was left "running"."""
+    from fastmdxplora.simulation import stopping
+    from fastmdxplora.simulation.runner import StopNow
+
+    runs = [tmp_path / "a", tmp_path / "b"]
+    for run in runs:
+        run.mkdir()
+
+    def judged(runs, targets, production):
+        raise StopNow(signal.SIGTERM)
+
+    monkeypatch.setattr(stopping, "judge", judged)
+    monkeypatch.setattr(stopping, "_swept", lambda *args, **kwargs: None)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.01}
+    with pytest.raises(StopNow):
+        stopping.run_until_known(runs, stopping.targets_of(stop_when), stop_when,
+                                 record_in=tmp_path, say=lambda said: None,
+                                 production_of=lambda run: 0.002)
+    record = json.loads((tmp_path / "stopping.json").read_text())
+    assert record["outcome"] == "stopped", record
+    assert record["rounds"][-1]["stopped_by"] == "asked", record
+    assert record["rounds"][-1]["production_ns"] == 0.002, record
+    assert record["said"].startswith("Stopped when asked, while the runs were judged"), record
 
 
 def test_the_gui_s_line_says_how_the_study_ended(capsys):

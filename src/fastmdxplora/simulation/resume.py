@@ -3357,12 +3357,16 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     did = (RESUMED_NOTHING if quiet and getattr(batch, "_rule_ran_nothing", False)
            else RESUMED_JUDGED if quiet and not getattr(batch, "_rule_extended", True)
            else RESUMED_RUNS)
-    from fastmdxplora.batch.explorer import STOPPED_IN_THE_ROUNDS, _was_stopped
+    from fastmdxplora.batch.explorer import (STOPPED_IN_THE_ROUNDS, WORKER_ENDED,
+                                             _was_stopped)
 
     # A run stopped when asked, in the round it carried on or not: a stop
-    # asked, which the CLI exits 130 for.
+    # asked, which the CLI exits 130 for. Not where a worker ended abruptly
+    # (killed): no stop was asked, its saved survivor aside, and it exits 1
+    # as `fastmdx explore` does (`ended_by_a_stop_asked`).
     stopped = any(_was_stopped(r) or getattr(r, "error_type", None) == STOPPED_IN_THE_ROUNDS
-                  for r in results)
+                  for r in results) and not any(
+        getattr(r, "error_type", None) == WORKER_ENDED for r in results)
     answer = {**base, "ok": not failed and ended is None, "did": did,
               "runs": listed, **({"refused": refused} if refused else {}),
               **({"stopped": True} if stopped else {})}

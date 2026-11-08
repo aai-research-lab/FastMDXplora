@@ -2325,14 +2325,9 @@ def _stopped_when_asked(results: list[Any]) -> bool:
     """Whether a study ended because it was asked to stop (Ctrl+C, SIGTERM,
     the GUI's Stop): a run of it stopped, and none ended in an error of its
     own (that is the exit code of an error, 1)."""
-    from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
-                                             STOPPED_IN_THE_ROUNDS, _was_stopped)
+    from fastmdxplora.batch.explorer import ended_by_a_stop_asked
 
-    stopped = [run for run in results if _was_stopped(run)]
-    erred = [run for run in results if run.status == "error" and not _was_stopped(run)
-             and getattr(run, "error_type", None) not in (
-                 STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS)]
-    return bool(stopped) and not erred
+    return ended_by_a_stop_asked(results)
 
 
 def _share_args(parser: argparse.ArgumentParser) -> None:

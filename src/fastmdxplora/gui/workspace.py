@@ -1309,8 +1309,12 @@ def _how_far(base: Path, batch: Any, card: dict[str, Any],
 
 
 def _stopped_in(batch: dict[str, Any]) -> bool:
-    return any(isinstance(run, dict) and run.get("error_type") == "Stopped"
-               for run in batch.get("runs") or [])
+    """Whether a study of several was stopped: a run of it stopped, and no
+    worker of it ended abruptly (killed), which is a run failed, its saved
+    survivor no stop asked."""
+    runs = [run for run in batch.get("runs") or [] if isinstance(run, dict)]
+    return (any(run.get("error_type") == "Stopped" for run in runs)
+            and not any(run.get("error_type") == "WorkerEnded" for run in runs))
 
 
 def _when(base: Path, manifest: Any) -> str:

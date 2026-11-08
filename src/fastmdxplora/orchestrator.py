@@ -1434,7 +1434,7 @@ class FastMDXplora:
             # and it read Running until a day of silence. It is the same
             # stop, recorded as one, so `fastmdx resume` carries it on.
             error = (stopped.as_error() if isinstance(stopped, RunStopped)
-                     else _stopped_by_ctrl_c(phase))
+                     else _stopped_by_ctrl_c(phase, stopped))
             return PhaseResult(
                 name=phase,
                 status="error",
@@ -1896,14 +1896,21 @@ def record_is_from_elsewhere(record: dict) -> bool:
     return False
 
 
-def _stopped_by_ctrl_c(phase: str) -> StudyError:
-    """A phase ended by Ctrl+C, as the retryable stop it is."""
-    from fastmdxplora.simulation.runner import STOPPED_CODE
+def _stopped_by_ctrl_c(phase: str, stopped: BaseException | None = None) -> StudyError:
+    """A phase ended by Ctrl+C, or by the signal of a stop now
+    (`runner.StopNow`: a second SIGTERM was recorded as Ctrl+C), as the
+    retryable stop it is."""
+    import signal
 
+    from fastmdxplora.simulation.runner import STOPPED_CODE, StopNow, stop_said
+
+    said = stop_said(stopped) if stopped is not None else "Ctrl+C"
+    name = (stopped.signal_name if isinstance(stopped, StopNow) else
+            signal.Signals.SIGINT.name)
     return StudyError(
-        f"The run was stopped by Ctrl+C in its {phase} phase, before it "
-        "finished; `fastmdx resume` carries it on.",
-        code=STOPPED_CODE, signal="SIGINT", checkpoint_on_frame=False)
+        f"The run was stopped by {said if said == 'Ctrl+C' else 'a second ' + said} in "
+        f"its {phase} phase, before it finished; `fastmdx resume` carries it on.",
+        code=STOPPED_CODE, signal=name, checkpoint_on_frame=False)
 
 
 def _was_a_stop(result: Any) -> bool:
