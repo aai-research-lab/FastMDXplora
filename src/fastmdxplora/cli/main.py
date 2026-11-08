@@ -30,6 +30,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any, Sequence
 
 from fastmdxplora import (
@@ -1993,11 +1994,12 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if resume_from is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.simulation.resume import extend_study
 
-        answer = extend_study(resume_from,
-                              total_ns=simulation.get("duration_ns"),
-                              more_ns=simulation.get("extra_ns"),
-                              checkpoint_interval_steps=simulation.get(
-                                  "checkpoint_interval_steps"))
+        with _then_quiet_once_stopped():
+            answer = extend_study(resume_from,
+                                  total_ns=simulation.get("duration_ns"),
+                                  more_ns=simulation.get("extra_ns"),
+                                  checkpoint_interval_steps=simulation.get(
+                                      "checkpoint_interval_steps"))
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
             return 1
@@ -2058,7 +2060,8 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
         output = Path(config.get("output") or args.output_dir
                       or default_output_name(system_of(config)))
-        staged = run_in_stages(config, output, budget_hours=float(budget))
+        with _then_quiet_once_stopped():
+            staged = run_in_stages(config, output, budget_hours=float(budget))
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
@@ -2109,15 +2112,16 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if _dashboard_requested(args) and not getattr(args, "dry_run", False):
         session = _start_dashboard_for_command(args, dashboard_output_dir)
     try:
-        results = fmdx.explore(
-            dry_run=getattr(args, "dry_run", False),
-            force=getattr(args, "force", False),
-            **({"keep_previous": True} if getattr(args, "rerun", False) else {}),
-            # Passed only when given, so an explore that takes no such
-            # argument is called as it always was.
-            **({"rerun_windows": args.rerun_windows}
-               if getattr(args, "rerun_windows", None) else {}),
-        )
+        with _then_quiet_once_stopped():
+            results = fmdx.explore(
+                dry_run=getattr(args, "dry_run", False),
+                force=getattr(args, "force", False),
+                **({"keep_previous": True} if getattr(args, "rerun", False) else {}),
+                # Passed only when given, so an explore that takes no such
+                # argument is called as it always was.
+                **({"rerun_windows": args.rerun_windows}
+                   if getattr(args, "rerun_windows", None) else {}),
+            )
     except KeyboardInterrupt:
         if session is not None:
             session.stop()
@@ -3392,14 +3396,15 @@ def _cmd_resume(args: argparse.Namespace) -> int:
     # Asked for only where the person gave it (`--taken-over`).
     taken = {"taken_over": True} if getattr(args, "taken_over", False) else {}
     try:
-        if getattr(args, "json", False):
-            # What the runs print goes to stderr, so the answer on stdout is
-            # the one line of JSON a program reads; it followed every phase's
-            # progress there, and no JSON reader read it.
-            with _stdout_on_stderr():
+        with _then_quiet_once_stopped():
+            if getattr(args, "json", False):
+                # What the runs print goes to stderr, so the answer on stdout
+                # is the one line of JSON a program reads; it followed every
+                # phase's progress there, and no JSON reader read it.
+                with _stdout_on_stderr():
+                    answer = resume_study(args.study, **taken)
+            else:
                 answer = resume_study(args.study, **taken)
-        else:
-            answer = resume_study(args.study, **taken)
     except KeyboardInterrupt:
         # A Ctrl+C obeyed at once: said as the study then stands, never a
         # traceback; one heard after its last record was written leaves it
@@ -4036,7 +4041,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Agent or a server, which go on after a study they ran.
     runner._QUIET_ONCE_STOPPED = bool(
         next((word for word in given if not word.startswith("-")), None)
-        in ("explore", "resume"))
+        in ("explore", "xplore", "resume"))
+    runner._A_STUDY_HEARD_A_STOP = False
     _COMMAND_S_HANDLERS.clear()
     _COMMAND_S_HANDLERS.update(before)
     try:
@@ -4044,7 +4050,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if argv is not None:
             _listening_as_the_command_began()
+        runner._A_STUDY_HEARD_A_STOP = False
         _COMMAND_S_HANDLERS.clear()
+
+
+@contextmanager
+def _then_quiet_once_stopped():
+    """The command's work (its studies and what runs between them), then
+    quiet where one of them heard a stop (`runner._quiet_if_a_study_heard_a_stop`)."""
+    from fastmdxplora.simulation import runner
+
+    try:
+        yield
+    finally:
+        runner._quiet_if_a_study_heard_a_stop()
 
 
 #: SIGINT's and SIGTERM's handlers as the command began (`main`).

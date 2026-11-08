@@ -1413,8 +1413,22 @@ class _StopInTheRounds(_StopRequests):
 
 
 #: Set by the CLI's command (`cli.main.main`) while it runs: a study that
-#: heard a stop leaves a quiet listener behind it (`_quiet_once_stopped`).
+#: heard a stop notes it (`_A_STUDY_HEARD_A_STOP`), and once the command's
+#: work is done (`_quiet_if_a_study_heard_a_stop`) a further stop is the
+#: stop under way (`_quiet_once_stopped`).
 _QUIET_ONCE_STOPPED = False
+#: A study of the command heard a stop (`_StopInTheStudy.__exit__`).
+_A_STUDY_HEARD_A_STOP = False
+
+
+def _quiet_if_a_study_heard_a_stop() -> None:
+    """Quiet for the rest of the command (`_quiet_once_stopped`), where one
+    of its studies heard a stop: called once the command's work is done
+    (`cli.main._then_quiet_once_stopped`), not as each study ends. As a
+    study ended, the work after it (a resume's join, a budget's pricing,
+    a second study) ran with SIGINT and SIGTERM ignored."""
+    if _QUIET_ONCE_STOPPED and _A_STUDY_HEARD_A_STOP:
+        _quiet_once_stopped()
 
 
 def _quiet_once_stopped() -> None:
@@ -1493,9 +1507,10 @@ class _StopInTheStudy(_StopInTheRounds):
         _stop_now(number)
 
     def __exit__(self, *exc: Any) -> bool:
+        global _A_STUDY_HEARD_A_STOP
         super().__exit__(*exc)
         if _QUIET_ONCE_STOPPED and self.signal is not None:
-            _quiet_once_stopped()
+            _A_STUDY_HEARD_A_STOP = True
         return False
 
 

@@ -3038,9 +3038,12 @@ def test_a_stop_after_a_stopped_study_s_listener_ends_is_quiet_until_the_command
 
     def a_command(_argv):
         runner._listen_afresh()
-        with runner._StopInTheStudy(folder=None) as study:
-            study.stage = "finishing"
-            study._note(signal.SIGTERM, None)
+        # The command's work, as `_cmd_explore` runs it (before, the study
+        # left it quiet itself).
+        with getattr(cli, "_then_quiet_once_stopped", contextlib.nullcontext)():
+            with runner._StopInTheStudy(folder=None) as study:
+                study.stage = "finishing"
+                study._note(signal.SIGTERM, None)
         runner._listen_afresh()
         seen["after the study"] = (signal.getsignal(signal.SIGTERM),
                                    signal.getsignal(signal.SIGINT))
@@ -3048,9 +3051,12 @@ def test_a_stop_after_a_stopped_study_s_listener_ends_is_quiet_until_the_command
 
     monkeypatch.setattr(cli, "_main", a_command, raising=False)
     try:
-        assert cli.main(["explore", "-c", "study.yml"]) == 130
-        assert seen["after the study"] == (signal.SIG_IGN, signal.SIG_IGN), seen
-        assert (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)) == before
+        for command in ("explore", "xplore", "resume"):
+            seen.clear()
+            assert cli.main([command, "-c", "study.yml"]) == 130
+            assert seen["after the study"] == (signal.SIG_IGN, signal.SIG_IGN), (command, seen)
+            assert (signal.getsignal(signal.SIGTERM),
+                    signal.getsignal(signal.SIGINT)) == before, command
         # Not for a command that goes on after its study (the GUI).
         assert cli.main(["gui"]) == 130
         assert seen["after the study"] == before, seen
@@ -3090,9 +3096,10 @@ def test_a_stopped_explore_s_dashboard_still_ends_on_ctrl_c(monkeypatch, capsys)
 
     def a_command(_argv):
         runner._listen_afresh()
-        with runner._StopInTheStudy(folder=None) as study:
-            study.stage = "finishing"
-            study._note(signal.SIGTERM, None)
+        with getattr(cli, "_then_quiet_once_stopped", contextlib.nullcontext)():
+            with runner._StopInTheStudy(folder=None) as study:
+                study.stage = "finishing"
+                study._note(signal.SIGTERM, None)
         runner._listen_afresh()
         cli._finish_dashboard_for_command(
             Session(), SimpleNamespace(dashboard_stop_on_complete=False), 130)
@@ -3109,17 +3116,18 @@ def test_a_stopped_explore_s_dashboard_still_ends_on_ctrl_c(monkeypatch, capsys)
 
 
 _A_COMMAND_RUN_AS_THE_CONSOLE_SCRIPT = """
-import importlib, signal, sys, time
+import contextlib, importlib, signal, sys, time
 from fastmdxplora.simulation import runner
 
 # The module, not the `main` the package gives by that name.
 cli = importlib.import_module("fastmdxplora.cli.main")
 
 def a_command(_argv):
-    with runner._StopInTheStudy(folder=None) as study:
-        study.stage = "finishing"
-        study._note(signal.SIGTERM, None)
-    print("Manifest:", flush=True)
+    with getattr(cli, "_then_quiet_once_stopped", contextlib.nullcontext)():
+        with runner._StopInTheStudy(folder=None) as study:
+            study.stage = "finishing"
+            study._note(signal.SIGTERM, None)
+        print("Manifest:", flush=True)
     return 130
 
 cli._main = a_command
@@ -3149,6 +3157,10 @@ def test_a_stop_as_the_console_script_ends_is_the_stop_under_way(tmp_path):
         line = ran.stdout.readline()
         assert line.startswith("Manifest:"), (line, ran.stderr.read()[-2000:]
                                               if ran.poll() is not None else "")
+        # Once `main` has returned, in the shutdown that follows.
+        import time
+
+        time.sleep(0.6)
         for number in (signal.SIGTERM, signal.SIGINT):
             os.kill(ran.pid, number)
     finally:
@@ -3206,6 +3218,47 @@ def test_a_run_its_round_stopped_reads_stopped_after_a_stop_now(tmp_path, monkey
     batch._stopped_now(runner.StopNow(signal.SIGINT))
     result = batch.results[0]
     assert (result.status, result.error_type) == ("error", "StoppedInTheRounds"), result
+
+
+def test_a_stop_between_a_command_s_studies_ends_it_once_the_first_heard_one(
+        tmp_path, monkeypatch, capsys):
+    """`fastmdx resume` of a study of one: its segment's study, then the
+    join, then its analyses' study. A stop the segment's study heard as it
+    finished left SIGINT and SIGTERM ignored for the join: a Ctrl-C there
+    did nothing. It ends the command, "stopped when asked", 130."""
+    import importlib
+    import os
+    import time
+
+    from fastmdxplora.simulation import resume, runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    study = tmp_path / "study"
+    study.mkdir()
+
+    def carried_on(_study, **_given):
+        with runner.listening_for_the_study(study) as listens:
+            listens.stage = "finishing"
+            listens._note(signal.SIGTERM, None)
+        # The join, a Ctrl-C to the process as it goes.
+        os.kill(os.getpid(), signal.SIGINT)
+        until = time.monotonic() + 2
+        while time.monotonic() < until:
+            time.sleep(0.05)
+        return {"ok": True, "did": "continued"}
+
+    monkeypatch.setattr(resume, "resume_study", carried_on)
+    runner._listen_afresh()
+    try:
+        code = cli.main(["resume", str(study)])
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    assert code == 130, capsys.readouterr()
+    assert "stopped when asked" in capsys.readouterr().err
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
