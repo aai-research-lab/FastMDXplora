@@ -333,6 +333,33 @@ def _not_started_by_a_stop(result: Any) -> bool:
             and str(getattr(result, "message", "") or "").startswith(NOT_STARTED_BY_A_STOP))
 
 
+def _begun_here(folder: Path) -> bool:
+    """Whether a run of the study has records of its own: begun."""
+    return any((Path(folder) / name).exists()
+               for name in ("manifest.json", "resolved_config.yml",
+                            "simulation/live_status.json"))
+
+
+def _stopped_at_once_said(now: BaseException, folder: Path, study: Path) -> str:
+    """What a run stopped at once says: the two stops it took, and what
+    carries it on, from its last checkpoint only where it wrote one (one
+    stopped before its first checkpoint was told of a checkpoint it did not
+    have)."""
+    from fastmdxplora.remedies import _checkpoint_written
+    from fastmdxplora.simulation.runner import StopNow
+
+    asked = now.said() if isinstance(now, StopNow) else "Ctrl+C twice"
+    try:
+        written = bool(_checkpoint_written(Path(folder)))
+    except Exception:  # noqa: BLE001 - said without it
+        written = False
+    if written:
+        return (f"Stopped at once when asked ({asked}): `fastmdx resume {study}` carries it "
+                "on from its last checkpoint.")
+    return (f"Stopped at once when asked ({asked}), before its first checkpoint: "
+            f"`fastmdx resume {study}` runs it again.")
+
+
 def _said_stopped(folder: Path, said: str) -> None:
     """A run's own live records (its pieces' too) left going by a worker a
     stop now ended mid-step, said stopped, with what carries it on: the GUI
@@ -397,6 +424,8 @@ class _StudyStop:
         #: (`runner.stop_what_listens_here`).
         self.folder = folder
         self.signal: int | None = None
+        #: Stopped now: further stops are that one (`_heard`).
+        self.now_under_way = False
         self._previous: dict[int, Any] = {}
 
     @property
@@ -436,8 +465,10 @@ class _StudyStop:
         if pending is None or self.signal is not None:
             return
         self.signal = pending.signal
-        runner._first_stop_at = time.monotonic()
-        runner._ctrl_c_heard = pending.signal == signal.SIGINT and not pending.asked_here
+        if runner._first_stop_at is None:
+            runner._first_stop_at = time.monotonic()
+            runner._ctrl_c_heard = pending.signal == signal.SIGINT and not pending.asked_here
+            runner._first_stop_signal = pending.signal
 
     def _pass_on(self, number: int, *, now: bool = False) -> None:
         import signal
@@ -474,6 +505,12 @@ class _StudyStop:
         from fastmdxplora.simulation.runner import (CTRL_C_UNDER_WAY, _a_stop_heard,
                                                     stop_grace_seconds, stop_now_said)
 
+        if self.now_under_way:
+            # Stopped now already, its workers ending (`_shut_down`) and its
+            # runs read from their records: a further stop is that one, and
+            # says nothing. Raised again, it left the study before its runs
+            # were read, and each was said not started.
+            return
         heard = _a_stop_heard(number)
         if heard == "again" or (heard == "first" and self.signal is not None):
             if number == signal.SIGINT:
@@ -494,12 +531,13 @@ class _StudyStop:
                 "Stopping now: each run in progress ends at once, and no further run starts; "
                 "`fastmdx resume %s` carries the runs on from their last checkpoints.",
                 self.folder or "")
-        self._restore()
+        # Listening on, silent, until the pool has ended (`__exit__`).
+        self.now_under_way = True
         # Raised whatever the signal, so the study's records say it stopped
         # when asked, by this signal, before it ends (`runner._stop_now`).
-        from fastmdxplora.simulation.runner import StopNow
+        from fastmdxplora.simulation import runner
 
-        raise StopNow(number)
+        raise runner.StopNow(number, first=runner._first_stop_signal)
 
     def _restore(self) -> None:
         import signal
@@ -2067,8 +2105,8 @@ class BatchExplorer:
             with listening_for_the_study(self.output_dir) as self._listens:
                 try:
                     return self._run_every_run()
-                except StopNow:
-                    self._stopped_now()
+                except StopNow as now:
+                    self._stopped_now(now)
                     raise
         finally:
             self._forget_this_process_s_records()
@@ -2078,7 +2116,7 @@ class BatchExplorer:
         listens = getattr(self, "_listens", None)
         return bool(listens is not None and listens.signal is not None)
 
-    def _stopped_now(self) -> None:
+    def _stopped_now(self, now: BaseException) -> None:
         """A study stopped now (`runner.StopNow`) where nothing nearer recorded
         it: each run not ended said not started, its rule's record said
         stopped when asked (where its round did not say so already), the
@@ -2094,10 +2132,14 @@ class BatchExplorer:
         try:
             said = {result.run_id for result in self.results}
             order = {spec.run_id: i for i, spec in enumerate(self.run_specs)}
+            left = [spec for spec in self.run_specs if spec.run_id not in said]
+            # A run with records of its own (begun) is read from them, never
+            # said not started: one in production had its checkpoints.
+            begun = [spec for spec in left if not self.is_single
+                     and _begun_here(self._run_output_dir(spec))]
             self.results = sorted(
-                [*self.results,
-                 *self._not_started([spec for spec in self.run_specs
-                                     if spec.run_id not in said])],
+                [*self.results, *[self._stopped_at_once(spec, now) for spec in begun],
+                 *self._not_started([spec for spec in left if spec not in begun])],
                 key=lambda result: order.get(result.run_id, 0))
             if self._stopping_rule() is not None:
                 self._the_rule_stopped_before_it_was_applied()
@@ -2200,7 +2242,14 @@ class BatchExplorer:
         _hold_run_process(self.output_dir, rewrite=True)
         self._holding_its_record = True
 
-        shared = self._maybe_prepare_once(include, exclude)
+        listens = getattr(self, "_listens", None)
+        if listens is not None:
+            listens.stage = "preparation"
+        try:
+            shared = self._maybe_prepare_once(include, exclude)
+        finally:
+            if listens is not None:
+                listens.stage = None
         if shared is not None:
             # The windows read the system that was just prepared, so none of
             # them prepares one of its own. Which of the two lists says so
@@ -2271,6 +2320,9 @@ class BatchExplorer:
             if not self.is_single:
                 self._the_runs_as_their_records_say()
 
+        if listens is not None:
+            # Every run and round ended: a first stop now ends nothing.
+            listens.stage = "finishing"
         # One run of a study of several analysed again: the study's
         # comparison of its runs read this run's analyses before.
         campaign = campaign_of(self.output_dir) if self.is_single else None
@@ -2458,6 +2510,15 @@ class BatchExplorer:
         if getattr(self, "_past", None):
             # No run carried on, nor any round judged: said by the summary's
             # last lines (`round_ended`).
+            return
+        # A worker that ended abruptly, no stop asked: its saved survivor is
+        # no stop asked, and the record says the worker ended, as the exit
+        # code (1) and the summary ("Batch failed") do.
+        if (any(getattr(result, "error_type", None) == WORKER_ENDED for result in self.results)
+                and not self._stop_asked()):
+            from fastmdxplora.simulation.stopping import WORKER_ENDED_BEFORE_THE_RULE
+
+            ended("not_applied", WORKER_ENDED_BEFORE_THE_RULE)
             return
         # A run stopped, or a stop asked before a run began (its first
         # pieces, between runs): stopped before the rule, never "Not
@@ -3642,11 +3703,9 @@ class BatchExplorer:
         from dataclasses import replace
 
         from fastmdxplora.orchestrator import RunResult
-        from fastmdxplora.simulation.runner import stop_said
 
         folder = self._run_output_dir(spec)
-        said = (f"Stopped at once when asked ({stop_said(now)} twice): `fastmdx resume "
-                f"{self.output_dir}` carries it on from its last checkpoint.")
+        said = _stopped_at_once_said(now, folder, self.output_dir)
         result = RunResult(run_id=spec.run_id, system=spec.system, status="error",
                            output_dir=folder, sweep_values=spec.sweep_values, phases=[],
                            message=said, error_type=STOPPED_ERROR_TYPE)
@@ -3697,7 +3756,7 @@ class BatchExplorer:
         results: list[RunResult] = []
         n = len(self.run_specs)
         from fastmdxplora.orchestrator import RunResult
-        from fastmdxplora.simulation.runner import StopNow, stop_said
+        from fastmdxplora.simulation.runner import StopNow
 
         for i, spec in enumerate(self.run_specs, start=1):
             run_out = self._run_output_dir(spec)
@@ -3727,8 +3786,7 @@ class BatchExplorer:
                 results.append(RunResult(
                     run_id=spec.run_id, system=spec.system, status="error",
                     output_dir=run_out, sweep_values=spec.sweep_values, phases=[],
-                    message=(f"Stopped at once when asked ({stop_said(now)} twice): "
-                             f"`fastmdx resume {self.output_dir}` carries it on."),
+                    message=_stopped_at_once_said(now, Path(run_out), self.output_dir),
                     error_type=STOPPED_ERROR_TYPE))
                 results.extend(self._not_started(self.run_specs[i:]))
                 self.results = results

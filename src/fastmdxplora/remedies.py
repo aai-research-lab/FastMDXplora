@@ -832,11 +832,40 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
         # its own ran it alone and left its study's round unjudged.
         study = campaign_of(study) or study
     said = _command(["resume", str(study)]) if study else {"command": RESUME, "argv": ()}
+    # Its rule's rounds still to come may extend its runs past their plan:
+    # the price is a floor, and the ceiling is said.
+    ceiling = _the_rule_may_extend(study) if study is not None else None
+    if cost is not None and ceiling is not None:
+        cost = replace(cost, lower_bound=True)
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    rounds = (f" Its stopping rule may then extend the runs, up to its "
+              f"{length_said(ceiling)} ceiling." if ceiling is not None else "")
     return Remedy(code=code, where=where, why=why,
                   fix=(f"{family} Production already written is kept, and the "
                        "analyses run over the whole." if written or not folders
-                       else family) + unpriced,
+                       else family) + rounds + unpriced,
                   **said, price=cost)
+
+
+def _the_rule_may_extend(study: Path) -> float | None:
+    """The ceiling of a study whose stopping rule has rounds still to come
+    (not determined, nor at its ceiling): its runs may be extended past
+    their plan, up to it. None where it has no rule, or its rule ended."""
+    try:
+        record = json.loads(record_access.read_text(Path(study) / "stopping.json",
+                                                    encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or not record.get("targets"):
+        return None
+    if str(record.get("outcome") or "running") not in ("running", "stopped", "not_applied"):
+        return None
+    try:
+        ceiling = float(record["max_duration_ns"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return ceiling if ceiling > 0 else None
 
 
 def _checkpoint_written(folder: Path) -> bool | None:

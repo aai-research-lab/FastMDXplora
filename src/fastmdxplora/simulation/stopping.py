@@ -1160,6 +1160,11 @@ _EXTENDING_FAILED = "Stopped: extending "
 #: keeps its rounds under it.
 STOPPED_BEFORE_THE_RULE = ("Stopped when asked, before the rule was applied. Resuming the "
                            "study applies it.")
+#: A worker of a parallel study ended abruptly (killed) with no stop asked,
+#: before the rule was applied: not "stopped when asked", which no one asked.
+WORKER_ENDED_BEFORE_THE_RULE = (
+    "Not applied: a worker of the study ended abruptly (killed, out of memory, say) "
+    "before the rule was applied. Resuming the study carries its runs on and applies it.")
 #: The same, where the record keeps the rounds judged before it was resumed.
 STOPPED_BEFORE_THE_RULE_AGAIN = ("Stopped when asked, before the rule was applied again. "
                                  "Resuming the study applies it.")

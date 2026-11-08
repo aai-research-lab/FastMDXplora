@@ -1897,19 +1897,24 @@ def record_is_from_elsewhere(record: dict) -> bool:
 
 
 def _stopped_by_ctrl_c(phase: str, stopped: BaseException | None = None) -> StudyError:
-    """A phase ended by Ctrl+C, or by the signal of a stop now
-    (`runner.StopNow`: a second SIGTERM was recorded as Ctrl+C), as the
-    retryable stop it is."""
+    """A phase ended by Ctrl+C, or by the signals of a stop now
+    (`runner.StopNow`: a second SIGTERM was recorded as Ctrl+C, and a Ctrl-C
+    then a SIGTERM by the last alone), as the retryable stop it is."""
     import signal
 
-    from fastmdxplora.simulation.runner import STOPPED_CODE, StopNow, stop_said
+    from fastmdxplora.simulation.runner import STOPPED_CODE, StopNow
 
-    said = stop_said(stopped) if stopped is not None else "Ctrl+C"
     name = (stopped.signal_name if isinstance(stopped, StopNow) else
             signal.Signals.SIGINT.name)
+    if not isinstance(stopped, StopNow) or stopped.said() == "Ctrl+C twice":
+        said = "Ctrl+C"
+    elif stopped.first == stopped.number:
+        said = f"a second {stopped.signal_name}"
+    else:
+        said = f"{stopped.said()},"
     return StudyError(
-        f"The run was stopped by {said if said == 'Ctrl+C' else 'a second ' + said} in "
-        f"its {phase} phase, before it finished; `fastmdx resume` carries it on.",
+        f"The run was stopped by {said} in its {phase} phase, before it finished; "
+        "`fastmdx resume` carries it on.",
         code=STOPPED_CODE, signal=name, checkpoint_on_frame=False)
 
 

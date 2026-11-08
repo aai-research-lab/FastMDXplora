@@ -1769,6 +1769,7 @@ if __name__ == "__main__" and os.environ.get("DEATHS_SEEN_ON_WAKING"):
 
     process._ExecutorManagerThread.wait_result_broken_or_wakeup = deaths_seen_on_waking
 
+real_execute_run = explorer._execute_run
 explorer._execute_run = stand_in.run
 explorer._extend_one = stand_in.extend
 if os.environ.get("HOW"):
@@ -1824,6 +1825,32 @@ elif __name__ == "__main__":
                 def comparing(self):
                     # A comparison that takes a while to build.
                     stand_in._say(here / "comparing", "")
+                    if os.environ.get("REPORT_AGAIN"):
+                        # Once the first stop is heard, a run's report written
+                        # again (`_report_again`), through the real
+                        # `_execute_run`, held where it writes it.
+                        until = time.monotonic() + 60
+                        while not (here / "first-sent").exists() and time.monotonic() < until:
+                            time.sleep(0.02)
+                        import fastmdxplora
+
+                        class Held:
+                            def __init__(self, **_given):
+                                pass
+
+                            def explore(self, **_given):
+                                stand_in._say(here / "held", "")
+                                until = time.monotonic() + 60
+                                while time.monotonic() < until:
+                                    time.sleep(0.05)
+                                return []
+
+                        fastmdxplora.FastMDXplora = Held
+                        spec = self.run_specs[0]
+                        # Its output on the terminal, as `_report_again`'s is.
+                        real_execute_run(spec.to_dict(), str(self._run_output_dir(spec)),
+                                         None, None, False, None, quiet=False)
+                        return
                     time.sleep(60)
 
                 explorer.BatchExplorer._maybe_build_comparison = comparing
@@ -2314,8 +2341,8 @@ def test_a_serial_study_stopped_now_names_the_study_to_resume(tmp_path):
     assert f"`fastmdx resume {tmp_path / 'study'}`" in line, terminal[-2000:]
 
 
-def test_stopping_now_names_a_study_of_one_kept_in_a_folder_named_runs(tmp_path, monkeypatch):
-    """A study of one run is its own folder: one kept at `.../runs/one2` was
+def test_stopping_now_names_a_study_of_one_in_a_folder_named_runs(tmp_path, monkeypatch):
+    """A study of one run is its own folder: one at `.../runs/one2` was
     taken for a run of a study of several by its folder's name, and "Stopping
     now" named the folder above, which is no study to resume. Decided by the
     study's own records: a run its study's batch manifest names is resumed
@@ -2372,6 +2399,31 @@ def test_a_second_sigterm_is_recorded_as_sigterm(tmp_path, monkeypatch):
     assert result.refusal["details"]["signal"] == "SIGTERM", result.refusal
 
 
+def test_a_ctrl_c_then_a_sigterm_is_recorded_as_the_two(tmp_path, monkeypatch):
+    """A Ctrl-C, then a SIGTERM, stopped now: recorded "a second SIGTERM",
+    named by the last alone."""
+    from fastmdxplora.orchestrator import FastMDXplora
+    from fastmdxplora.simulation import runner
+
+    pdb = tmp_path / "p.pdb"
+    pdb.write_text("END\n", encoding="utf-8")
+    study = FastMDXplora(system=str(pdb), output_dir=str(tmp_path / "run"))
+    monkeypatch.setattr(runner, "STOP_REPEAT_SECONDS", 0.0)
+    monkeypatch.setattr(runner, "_say_stop", lambda text: None)
+
+    def in_production(**_kwargs):
+        with runner._StopRequests(folder=tmp_path / "run") as stop:
+            stop._note(signal.SIGINT, None)
+            stop._note(signal.SIGTERM, None)
+
+    monkeypatch.setattr(FastMDXplora, "_resolve_phase_runner",
+                        staticmethod(lambda phase: in_production))
+    result = study._run_phase("simulation", {})
+    runner._listen_afresh()
+    assert result.message.startswith(
+        "The run was stopped by Ctrl+C, then SIGTERM, in its simulation phase"), result.message
+
+
 def test_a_parallel_study_stopped_now_records_where_it_stopped(tmp_path):
     """A second SIGTERM to a study of runs side by side, its runs in
     production: it exited, its batch manifest listing no run, its runs read
@@ -2415,6 +2467,133 @@ def test_a_parallel_study_stopped_now_records_where_it_stopped(tmp_path):
     fix = remedies_of(study)[0]
     assert fix.code == "simulation.run.stopped" and "resume" in fix.command, fix
     assert not ran.left_behind
+
+
+@pytest.mark.parametrize("how", ["ctrl_c", "sigterm"])
+def test_a_third_stop_as_a_parallel_study_ends_its_workers_leaves_its_runs_as_they_are(
+        how, tmp_path):
+    """A third stop just after the second (stop now), as the pool's workers
+    end: it was taken as another stop now, raised before the runs were read,
+    and every run, those in production too, was recorded "not started". It
+    is the stop under way, and says nothing while the workers end; heard
+    once they have, the runs read from their records are said as they are."""
+    import os
+    import time
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "going", "2": "going"}, seeds=4, WHOLE="1")
+    try:
+        _until(lambda: all((tmp_path / f"ready-{seed}").exists() for seed in "12")
+               or ran.poll() is not None, 120)
+        if how == "ctrl_c":
+            # As a terminal sends it, to the whole group; the second and third
+            # 10 ms apart, however quick.
+            os.killpg(ran.pid, signal.SIGINT)
+            time.sleep(0.5)
+            os.killpg(ran.pid, signal.SIGINT)
+            time.sleep(0.01)
+            os.killpg(ran.pid, signal.SIGINT)
+        else:
+            os.kill(ran.pid, signal.SIGTERM)
+            time.sleep(2.5)
+            os.kill(ran.pid, signal.SIGTERM)
+            time.sleep(0.01)
+            os.kill(ran.pid, signal.SIGTERM)
+    finally:
+        printed, logged = _ended(ran, 120, "the study")
+    study = tmp_path / "study-0"
+    runs = {run["run_id"]: run for run in json.loads(
+        (study / "batch_manifest.json").read_text())["runs"]}
+    said = "Ctrl+C twice" if how == "ctrl_c" else "SIGTERM twice"
+    for seed in (1, 2):
+        run = runs[f"tri__random-seed-{seed}"]
+        assert run["error_type"] == "Stopped", (run, logged[-2000:])
+        assert run["message"].startswith(f"Stopped at once when asked ({said})"), run
+    for seed in (3, 4):
+        assert runs[f"tri__random-seed-{seed}"]["message"].startswith(
+            "Not started: the study was asked to stop."), runs
+    assert re.search(r"^Batch stopped: 0 ok, 2 error\(s\), 2 skipped, 4 total$", printed,
+                     re.M), printed[-2000:]
+    assert not ran.left_behind
+
+
+def test_a_second_sigterm_after_a_report_written_again_stops_now(tmp_path):
+    """After the rule's last round, a run's report written again goes through
+    `_execute_run`, which forgot the study's first stop: the second SIGTERM
+    was taken as a first, said nothing, and the study ended "Batch complete",
+    exit 0. The count is the study's."""
+    import os
+    import time
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "ok", "2": "ok"}, seeds=2, WHOLE="1",
+                                COMPARING="1", REPORT_AGAIN="1")
+    try:
+        _until(lambda: (tmp_path / "comparing").exists() or ran.poll() is not None, 120)
+        os.kill(ran.pid, signal.SIGTERM)
+        (tmp_path / "first-sent").write_text("")
+        # Held in the report written again, past the count's reset.
+        _until(lambda: (tmp_path / "held").exists() or ran.poll() is not None, 60)
+        time.sleep(2.5)
+        os.kill(ran.pid, signal.SIGTERM)
+    finally:
+        printed, logged = _ended(ran, 120, "the study")
+    assert ran.returncode == 130, (ran.returncode, logged[-2000:])
+    assert "Stopping now: the study ends at once" in logged, logged[-2000:]
+    assert json.loads(printed.splitlines()[-1]) == {"stopped now": "StopNow"}
+    assert not ran.left_behind
+
+
+def test_a_killed_worker_s_rule_says_the_worker_ended_not_stopped_when_asked(tmp_path):
+    """A worker killed, no stop asked: the study's rule's record said
+    "Stopped when asked, before the rule was applied", and its GUI card
+    with it, beside "Batch failed" and a Failed badge."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.simulation import stopping
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    stop_when = {"measures": [{"analysis": "rmsd", "standard_error": 1e-6}],
+                 "max_duration_ns": 0.01}
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir, batch.results = study, results
+    batch._raw = {"simulation": {"stop_when": stop_when}}
+    batch.resume, batch.is_single = False, False
+    batch._run_until_known(stopping.targets_of(stop_when))
+    record = json.loads((study / "stopping.json").read_text())
+    assert record["outcome"] == "not_applied", record
+    assert record["said"].startswith(
+        "Not applied: a worker of the study ended abruptly"), record
+    assert "Resuming the study carries its runs on" in record["said"], record
+
+
+def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
+    """A first stop after every run ended (its comparison), or during the
+    preparation its windows share, said the study ends where `fastmdx
+    resume` carries it on; the study then finished, nothing to resume."""
+    from fastmdxplora.simulation import runner
+
+    said: list[str] = []
+    monkeypatch.setattr(runner, "_say_stop", said.append)
+    for stage, line in (("finishing", "every run has ended, and the study finishes"),
+                        ("preparation", "the shared preparation goes on to its end")):
+        runner._listen_afresh()
+        listener = runner._StopInTheStudy(folder=None)
+        listener.stage = stage
+        listener._note(signal.SIGTERM, None)
+        runner._listen_afresh()
+        assert line in said[-1] and "carries it on" not in said[-1], said[-1]
+
+
+def test_a_resume_with_rounds_to_come_is_priced_as_a_floor(tmp_path):
+    """The price of carrying a study on counted its plan alone, where its
+    rule's rounds may extend its runs to the ceiling."""
+    from fastmdxplora.remedies import remedies_of
+
+    study, _results = _a_killed_worker_s_study(tmp_path)
+    (study / "stopping.json").write_text(json.dumps({
+        "targets": [{"analysis": "rmsd", "standard_error": 1e-6}], "max_duration_ns": 0.012,
+        "runs": ["a", "b", "c"], "rounds": [], "outcome": "running"}))
+    fix = remedies_of(study)[0]
+    assert fix.price is not None and fix.price.lower_bound, fix
+    assert "Its stopping rule may then extend the runs, up to its 12 ps ceiling." in fix.fix, fix
 
 
 def test_a_second_sigterm_as_the_comparison_is_built_exits_130(tmp_path):

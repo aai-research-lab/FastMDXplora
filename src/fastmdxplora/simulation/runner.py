@@ -958,6 +958,9 @@ STOP_REPEAT_SECONDS = 2.0
 _first_stop_at: float | None = None
 #: Whether a Ctrl-C (SIGINT) was among the stops heard.
 _ctrl_c_heard = False
+#: The signal of the first stop heard (SIGTERM for the GUI's Stop), so a
+#: stop now is named by both it took (`StopNow.said`).
+_first_stop_signal: int | None = None
 
 
 class StopNow(KeyboardInterrupt):
@@ -969,18 +972,34 @@ class StopNow(KeyboardInterrupt):
     heard, is not a stop asked, and keeps its meaning (a round it reaches
     is cut, as a kill leaves it)."""
 
-    def __init__(self, number: int) -> None:
+    def __init__(self, number: int, first: int | None = None) -> None:
         super().__init__(number)
         self.number = int(number)
+        #: The first of the two stops it took (a Ctrl-C, then a SIGTERM).
+        self.first = int(first) if first is not None else self.number
 
     @property
     def signal_name(self) -> str:
-        import signal as _signal
+        return _signal_said(self.number, ctrl_c=False)
 
-        try:
-            return _signal.Signals(self.number).name
-        except ValueError:
-            return f"signal {self.number}"
+    def said(self) -> str:
+        """The two stops it took, as a person reads them: "SIGTERM twice",
+        "Ctrl+C twice", or "Ctrl+C, then SIGTERM" where they differed (a
+        Ctrl-C then a SIGTERM was named by the last alone)."""
+        if self.first == self.number:
+            return f"{_signal_said(self.number)} twice"
+        return f"{_signal_said(self.first)}, then {_signal_said(self.number)}"
+
+
+def _signal_said(number: int, *, ctrl_c: bool = True) -> str:
+    import signal as _signal
+
+    if ctrl_c and number == _signal.SIGINT:
+        return "Ctrl+C"
+    try:
+        return _signal.Signals(number).name
+    except ValueError:
+        return f"signal {number}"
 
 
 def stop_said(stopped: BaseException) -> str:
@@ -994,10 +1013,18 @@ def stop_said(stopped: BaseException) -> str:
 
 
 def _listen_afresh() -> None:
-    """Forget an earlier stop: a new run, or its production, is starting."""
-    global _first_stop_at, _ctrl_c_heard
+    """Forget an earlier stop: a new run, or its production, is starting.
+    Not where the study in this process has heard one (`_StopInTheStudy`):
+    the count is the study's, never reset inside it, so a second stop is
+    obeyed at once wherever it lands (a run's report written again after
+    the rule's last round forgot the first, and the second was dropped)."""
+    global _first_stop_at, _ctrl_c_heard, _first_stop_signal
+    if any(isinstance(listener, _StopInTheStudy) and listener.signal is not None
+           for listener in list(_LISTENING)):
+        return
     _first_stop_at = None
     _ctrl_c_heard = False
+    _first_stop_signal = None
 
 
 def _a_stop_asked_here() -> None:
@@ -1007,10 +1034,13 @@ def _a_stop_asked_here() -> None:
     stopped a run at once, before its frame."""
     import time
 
-    global _first_stop_at, _ctrl_c_heard
+    global _first_stop_at, _ctrl_c_heard, _first_stop_signal
     if _first_stop_at is None:
+        import signal as _signal
+
         _first_stop_at = time.monotonic()
         _ctrl_c_heard = False
+        _first_stop_signal = _signal.SIGTERM
 
 
 #: Said where a Ctrl-C is the stop under way (`_a_stop_heard`'s "again"
@@ -1056,7 +1086,7 @@ def _the_study_of(folder: Any) -> str:
     run of a study of several (``runs/<run>``), or a piece of one
     (``segment-NNN``), is resumed by its study. Decided by the study's own
     records, its batch manifest naming the run, never by a folder's name: a
-    study of one run is its own folder, and one kept in a folder named
+    study of one run is its own folder, and one in a folder named
     ``runs`` was taken for a run of the folder above."""
     from pathlib import Path as _Path
 
@@ -1094,7 +1124,7 @@ def _stop_now(number: int) -> None:
     import signal as _signal
 
     if number == _signal.SIGINT or not _IN_A_POOL_WORKER:
-        raise StopNow(number)
+        raise StopNow(number, first=_first_stop_signal)
     _os.kill(_os.getpid(), number)
 
 
@@ -1121,12 +1151,13 @@ def _a_stop_heard(number: int | None = None) -> str:
     import signal as _signal
     import time
 
-    global _first_stop_at, _ctrl_c_heard
+    global _first_stop_at, _ctrl_c_heard, _first_stop_signal
     now = time.monotonic()
     ctrl_c = number == _signal.SIGINT
     if _first_stop_at is None:
         _first_stop_at = now
         _ctrl_c_heard = ctrl_c
+        _first_stop_signal = number
         return "first"
     if ctrl_c:
         if _ctrl_c_heard:
@@ -1207,11 +1238,14 @@ class _StopRequests:
             self.signal, self.asked_here = pending.signal, pending.asked_here
             self.before_it_began = True
             # Still the one stop: a Ctrl-C now is it under way.
-            global _first_stop_at, _ctrl_c_heard
+            global _first_stop_at, _ctrl_c_heard, _first_stop_signal
             import time
 
-            _first_stop_at = time.monotonic()
-            _ctrl_c_heard = pending.signal == _signal.SIGINT and not pending.asked_here
+            if _first_stop_at is None:
+                # Counted afresh; left as it is where the study counts it already.
+                _first_stop_at = time.monotonic()
+                _ctrl_c_heard = pending.signal == _signal.SIGINT and not pending.asked_here
+                _first_stop_signal = pending.signal
             #: The study whose round noted it: its resume carries the round on.
             self.study = pending.folder
         return self
@@ -1322,6 +1356,11 @@ class _StopInTheStudy(_StopInTheRounds):
 
     #: A run of the study is going in this process (one after another).
     in_a_run = False
+    #: What the study is doing where no run goes, as a first stop says what
+    #: it does: "preparation" (one preparation shared by its windows, which
+    #: goes on), "finishing" (every run ended: its reports and comparison
+    #: are written, and nothing is left to resume), or None (between runs).
+    stage: str | None = None
 
     def _note(self, number: int, _frame: Any) -> None:
         import signal as _signal
@@ -1342,8 +1381,14 @@ class _StopInTheStudy(_StopInTheRounds):
                 from fastmdxplora.refusals import RunStopped
 
                 raise RunStopped(self.name)
-            _say_stop(f"{self.name} received: no further run starts, and the study ends "
-                      f"where `fastmdx resume` carries it on. {stop_now_said(number)}")
+            _say_stop(f"{self.name} received: " + {
+                "preparation": "the shared preparation goes on to its end, and no run "
+                               "starts after it; `fastmdx resume` runs them.",
+                "finishing": "every run has ended, and the study finishes writing its "
+                             "reports and comparison.",
+            }.get(self.stage, "no further run starts, and the study ends where "
+                              "`fastmdx resume` carries it on.")
+                + f" {stop_now_said(number)}")
             return
         _say_stop(f"Stopping now: the study ends at once; `fastmdx resume "
                   f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
