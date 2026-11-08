@@ -934,8 +934,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study, a stop as its summary is said, or once the command's work is done
   and it ends, is the stop under way and is ignored: one after "Manifest:"
   ended the process by the signal (143, or Ctrl-C's), and one as the summary
-  was said printed it twice. Between a command's studies (a resume's join, a
-  budget's pricing) a stop still ends it, 130. The GUI that `explore
+  was said printed it twice. In the work after that study (a resume reading
+  its runs' records, a join, a budget's pricing) a further Ctrl-C or SIGTERM
+  ends the command, "stopped when asked", 130, where a SIGTERM ended it by
+  the signal. Between `explore`'s studies (`simulation.resume_from`,
+  `budget_hours`) a Ctrl-C says "stopped when asked", 130, as `resume` does,
+  not a traceback. The GUI that `explore
   --dashboard` leaves running still ends on Ctrl-C. A study of one says it
   finishes once a stop now was taken, not that it writes a comparison. A run
   its round stopped is read so in the batch manifest of a study stopped now,
