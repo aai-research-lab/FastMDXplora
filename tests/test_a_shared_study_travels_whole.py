@@ -5333,3 +5333,14 @@ def test_a_download_that_got_nothing_says_so_in_bytes():
     from fastmdxplora.sharing.opening import _got
 
     assert _got(0, 5000, "at") == " at 0 bytes of 5.0 kB"
+
+
+def test_a_download_short_of_the_whole_is_said_in_the_unit_below_not_bytes():
+    """Hands-on review of the sixty-ninth commit: a 150 kB file cut at half was
+    said as "75000 of 150000 bytes"."""
+    from fastmdxplora.sharing.opening import _got
+
+    assert _got(75_000, 150_000, "at") == " at 75.0 of 150.0 kB"
+    assert _got(999, 1000, "at") == " at 999 of 1000 bytes"
+    assert _got(12_124_580, 12_124_590, "at") == " at 12124580 of 12124590 bytes"
+    assert _got(12_100_000, 12_124_590, "at") == " at 12100.0 of 12124.6 kB"
