@@ -1464,8 +1464,11 @@ def carried_on_marked(study: str | Path) -> Iterator[None]:
         except (OSError, ValueError):
             return
         if isinstance(record, dict) and change(record):
+            from fastmdxplora.orchestrator import _put_in_place
+
             try:
-                where.write_text(json.dumps(record, indent=2), encoding="utf-8")
+                # Whole or not at all: a stop as it was written cut it short.
+                _put_in_place(where, json.dumps(record, indent=2))
             except OSError:
                 pass
 

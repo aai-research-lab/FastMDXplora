@@ -3387,6 +3387,28 @@ def test_a_stop_in_explore_s_work_between_studies_is_stopped_when_asked(
     assert "fastmdx: stopped when asked" in capsys.readouterr().err
 
 
+def test_a_stop_as_a_resume_marks_its_round_leaves_the_record_whole(tmp_path, monkeypatch):
+    """The rule's record marked as carried on by a resume (`carried_on_marked`)
+    was written in place: a stop as it was written left it cut short."""
+    import os
+
+    from fastmdxplora.simulation import runner, stopping
+
+    record = {"outcome": "stopped", "rounds": [{"decision": "stopped"}]}
+    where = tmp_path / stopping.RECORD
+    where.write_text(json.dumps(record))
+
+    def stopped_now(*_args, **_kwargs):
+        raise runner.StopNow(signal.SIGTERM)
+
+    monkeypatch.setattr(os, "replace", stopped_now)
+    with pytest.raises(runner.StopNow):
+        with stopping.carried_on_marked(tmp_path):
+            pass
+    assert json.loads(where.read_text()) == record
+    assert [path.name for path in tmp_path.iterdir()] == [stopping.RECORD]
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
