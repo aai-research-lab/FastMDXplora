@@ -1351,6 +1351,9 @@ class _StopInTheRounds(_StopRequests):
 
     #: A stop now is under way (`_a_stop_now`): a further stop says nothing.
     now_under_way = False
+    #: The rule's decision is said (`stopping.run_until_known`): every run
+    #: has ended, and a first stop ends no round.
+    decided = False
 
     def _note(self, number: int, _frame: Any) -> None:
         import signal as _signal
@@ -1364,6 +1367,11 @@ class _StopInTheRounds(_StopRequests):
             return
         if heard == "first":
             self.signal = number
+            if self.decided:
+                _say_stop(f"{self.name} received: its stopping rule has decided, every run has "
+                          "ended, and the study finishes writing its reports and comparison. "
+                          f"{stop_now_said(number)}")
+                return
             _say_stop(
                 f"{self.name} received: the study's round ends once the run it extends has "
                 f"answered, where `fastmdx resume` carries it on. {stop_now_said(number)}")

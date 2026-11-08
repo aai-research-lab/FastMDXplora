@@ -797,11 +797,21 @@ def run_until_known(runs: list[Path], targets: list[StopTarget], stop_when: dict
             write()
 
     _BEGINNING.append(begun)
+    told = given.pop("say", print)
     try:
         with _StopInTheRounds(folder=record_in) as heard:
+            def say(text: str) -> None:
+                record = current.get("record")
+                if isinstance(record, dict) and record.get("outcome") not in (None, "running"):
+                    # Its decision made, and said now: a first stop ends no
+                    # round, and says the study finishes, not that a resume
+                    # carries it on.
+                    heard.decided = True
+                told(text)
+
             try:
                 return _run_until_known(runs, targets, stop_when, record_in=record_in,
-                                        heard=heard, current=current, **given)
+                                        heard=heard, current=current, say=say, **given)
             except StopNow:
                 _stopped_now_outside_an_extension(current)
                 raise
