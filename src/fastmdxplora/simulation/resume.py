@@ -3368,7 +3368,8 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     did = (RESUMED_NOTHING if quiet and getattr(batch, "_rule_ran_nothing", False)
            else RESUMED_JUDGED if quiet and not getattr(batch, "_rule_extended", True)
            else RESUMED_RUNS)
-    from fastmdxplora.batch.explorer import (STOPPED_IN_THE_ROUNDS, WORKER_ENDED,
+    from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                             STOPPED_IN_THE_ROUNDS, WORKER_ENDED,
                                              _was_stopped)
 
     # A run stopped when asked, in the round it carried on or not: a stop
@@ -3378,9 +3379,18 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     stopped = any(_was_stopped(r) or getattr(r, "error_type", None) == STOPPED_IN_THE_ROUNDS
                   for r in results) and not any(
         getattr(r, "error_type", None) == WORKER_ENDED for r in results)
+    # A run ended in an error of its own (its worker killed, say), as
+    # `fastmdx explore` counts it: exit 1, whatever its round left the study
+    # as (a round stopped when asked before said 130 beside "Batch failed").
+    erred = any(r.status == "error" and not _was_stopped(r)
+                and getattr(r, "error_type", None) not in (
+                    STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS,
+                    RESUME_REFUSED)
+                for r in results)
     answer = {**base, "ok": not failed and ended is None, "did": did,
               "runs": listed, **({"refused": refused} if refused else {}),
-              **({"stopped": True} if stopped else {})}
+              **({"stopped": True} if stopped else {}),
+              **({"erred": True} if erred else {})}
     if not failed and ended is None and did != RESUMED_NOTHING:
         import json as _json
 

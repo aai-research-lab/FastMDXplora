@@ -3486,10 +3486,12 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         return 0
     # A stop asked (the round stopped when asked, or the resume itself), as
     # `fastmdx explore` says it: interrupted; a resume a run refused ran
-    # nothing, and was not stopped; a round that failed is not a stop.
+    # nothing, and was not stopped; a round that failed is not a stop, nor
+    # a run ended in an error of its own (a worker killed), as `fastmdx
+    # explore` counts it.
     state = (answer.get("round_ended") or {}).get("state")
     return (130 if (state == "stopped" or (answer.get("stopped") and state is None))
-            and not answer.get("refused") else 1)
+            and not answer.get("refused") and not answer.get("erred") else 1)
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

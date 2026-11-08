@@ -3041,6 +3041,45 @@ def test_resume_of_a_killed_worker_s_study_exits_1_as_explore_does(tmp_path, mon
     assert _cmd_resume(SimpleNamespace(study=str(study), json=False)) == 1
 
 
+def test_resume_of_a_stopped_round_whose_worker_is_killed_exits_1(tmp_path, monkeypatch):
+    """A resume whose worker is killed as it carried on a round stopped when
+    asked: its round left stopped as it was, the resume said "Batch
+    failed" and exited 130, a stop asked, which no one asked; `fastmdx
+    explore` exits 1 for a run's own error."""
+    from types import SimpleNamespace
+
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.cli.main import _cmd_resume
+    from fastmdxplora.simulation.resume import resume_batch
+    from fastmdxplora.simulation.stopping import round_ended
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    (study / "resolved_config.yml").write_text(yaml.safe_dump({"systems": []}))
+    said = ("Stopped when asked, while extending a. Resuming the study carries its round on "
+            "from there.")
+    (study / "stopping.json").write_text(json.dumps({
+        "targets": [{"analysis": "rmsd", "standard_error": 1e-6}], "max_duration_ns": 0.012,
+        "independent_starts": "required", "runs": ["a", "b", "c"], "outcome": "stopped",
+        "said": said,
+        "rounds": [{"production_ns": 0.006, "verdicts": [], "decision": "stopped",
+                    "more_ns": 0.003, "stopped_by": "asked", "extended": ["a"],
+                    "started": ["a", "b"], "said": said}]}))
+    assert round_ended(study).state == "stopped"
+
+    class Ran:
+        def __init__(self, **_given):
+            pass
+
+        def run(self):
+            return list(results)
+
+    monkeypatch.setattr(explorer, "BatchExplorer", Ran)
+    answer = resume_batch(study)
+    monkeypatch.setattr("fastmdxplora.simulation.resume.resume_study",
+                        lambda study, **_given: answer)
+    assert _cmd_resume(SimpleNamespace(study=str(study), json=False)) == 1, answer
+
+
 def test_a_run_never_started_is_priced_at_its_study_s_plan(tmp_path):
     """What would carry a study on priced its runs that never started at the
     package's own lengths (hours, for runs of a few ps): at the study's
