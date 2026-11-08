@@ -961,6 +961,10 @@ _ctrl_c_heard = False
 #: The signal of the first stop heard (SIGTERM for the GUI's Stop), so a
 #: stop now is named by both it took (`StopNow.said`).
 _first_stop_signal: int | None = None
+#: The last stop now raised in this process (`_stop_now`), so what records
+#: a phase it ended as stopped (`orchestrator._run_phase`) can be told it
+#: was one and let it on (`BatchExplorer._report_again`).
+_last_stop_now: "StopNow | None" = None
 
 
 class StopNow(KeyboardInterrupt):
@@ -1124,8 +1128,23 @@ def _stop_now(number: int) -> None:
     import signal as _signal
 
     if number == _signal.SIGINT or not _IN_A_POOL_WORKER:
-        raise StopNow(number, first=_first_stop_signal)
+        now = _a_stop_now(number)
+        raise now
     _os.kill(_os.getpid(), number)
+
+
+def _a_stop_now(number: int) -> StopNow:
+    """The :class:`StopNow` to raise for ``number``, noted as the last one
+    (`_last_stop_now`), and every study and round listening here told it is
+    under way: a further stop is that one, and says nothing (a third stop
+    was another stop now, said twice, and cut the study's records as they
+    were written)."""
+    global _last_stop_now
+    _last_stop_now = StopNow(number, first=_first_stop_signal)
+    for listener in list(_LISTENING):
+        if isinstance(listener, _StopInTheRounds):
+            listener.now_under_way = True
+    return _last_stop_now
 
 
 def stop_now_said(number: int) -> str:
@@ -1299,11 +1318,17 @@ class _StopInTheRounds(_StopRequests):
     the run it extends has answered, and a production begun after the stop
     stops at its first frame. A KeyboardInterrupt raised there recorded the
     round cut, or was lost where Python ignores it (in a weakref callback),
-    and the study ran on. A second is obeyed at once."""
+    and the study ran on. A second is obeyed at once, and any after it is
+    that one (``now_under_way``), until it ends."""
+
+    #: A stop now is under way (`_a_stop_now`): a further stop says nothing.
+    now_under_way = False
 
     def _note(self, number: int, _frame: Any) -> None:
         import signal as _signal
 
+        if self.now_under_way:
+            return
         heard = _a_stop_heard(number)
         if heard == "again" or (heard == "first" and self.signal is not None):
             if number == _signal.SIGINT:
@@ -1317,8 +1342,16 @@ class _StopInTheRounds(_StopRequests):
             return
         _say_stop(f"Stopping now: the study's round ends at once; `fastmdx resume "
                   f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
-        self._restore()
+        self._listening_on_until_it_ends()
         _stop_now(number)
+
+    def _listening_on_until_it_ends(self) -> None:
+        """After a stop now, still listening, silent, until this listener
+        ends: Python's own handlers put back, a fourth SIGTERM ended the
+        process (143) and a fourth Ctrl-C raised a bare KeyboardInterrupt.
+        Not in a pool worker, which ends by the signal itself."""
+        if _IN_A_POOL_WORKER:
+            self._restore()
 
 
     def ask_here(self) -> str:
@@ -1365,6 +1398,8 @@ class _StopInTheStudy(_StopInTheRounds):
     def _note(self, number: int, _frame: Any) -> None:
         import signal as _signal
 
+        if self.now_under_way:
+            return
         heard = _a_stop_heard(number)
         if heard == "again" or (heard == "first" and self.signal is not None):
             if number == _signal.SIGINT:
@@ -1392,7 +1427,7 @@ class _StopInTheStudy(_StopInTheRounds):
             return
         _say_stop(f"Stopping now: the study ends at once; `fastmdx resume "
                   f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
-        self._restore()
+        self._listening_on_until_it_ends()
         _stop_now(number)
 
 

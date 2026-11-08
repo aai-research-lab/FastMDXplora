@@ -360,6 +360,27 @@ def _stopped_at_once_said(now: BaseException, folder: Path, study: Path) -> str:
             f"`fastmdx resume {study}` runs it again.")
 
 
+def _its_report_cut(result: Any, now: BaseException, study: Path) -> Any:
+    """A run whose report, written again after the study's runs ended, a
+    stop now cut: said stopped, its report not written, and what writes it."""
+    from dataclasses import replace
+
+    from fastmdxplora.simulation.runner import StopNow
+
+    asked = now.said() if isinstance(now, StopNow) else "Ctrl+C twice"
+    return replace(result, status="error", error_type=STOPPED_ERROR_TYPE, message=(
+        f"Stopped at once when asked ({asked}) as its report was written again: its "
+        f"report is not written. `fastmdx resume {study}` writes it."))
+
+
+def _same_folder(one: Any, other: Any) -> bool:
+    """Whether two paths name the same folder."""
+    try:
+        return Path(one).resolve() == Path(other).resolve()
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def _said_stopped(folder: Path, said: str) -> None:
     """A run's own live records (its pieces' too) left going by a worker a
     stop now ended mid-step, said stopped, with what carries it on: the GUI
@@ -537,7 +558,8 @@ class _StudyStop:
         # when asked, by this signal, before it ends (`runner._stop_now`).
         from fastmdxplora.simulation import runner
 
-        raise runner.StopNow(number, first=runner._first_stop_signal)
+        now = runner._a_stop_now(number)
+        raise now
 
     def _restore(self) -> None:
         import signal
@@ -2141,6 +2163,13 @@ class BatchExplorer:
                 [*self.results, *[self._stopped_at_once(spec, now) for spec in begun],
                  *self._not_started([spec for spec in left if spec not in begun])],
                 key=lambda result: order.get(result.run_id, 0))
+            cut = getattr(now, "report_cut", None)
+            if cut is not None:
+                # Its report written again was cut, what it wrote before
+                # removed: a run ended well, not its report.
+                self.results = [_its_report_cut(result, now, self.output_dir)
+                                if _same_folder(result.output_dir, cut) else result
+                                for result in self.results]
             if self._stopping_rule() is not None:
                 self._the_rule_stopped_before_it_was_applied()
             # A run's live record a worker ended by the signal left going (an
@@ -2714,10 +2743,14 @@ class BatchExplorer:
         rewrote it, but before the round that decided to stop); for a
         replica, from its records as the start its replicas share left
         them. Only the report is recorded as run: a run given `setup_from`
-        was recorded as set up again, at the time of the report."""
+        was recorded as set up again, at the time of the report. A stop now
+        heard as it is written goes on to the study (`runner.StopNow`), the
+        run named on it as ``report_cut``: its phase recorded it stopped,
+        and the study ended "Batch complete", exit 0, its report removed."""
         import yaml
 
         from fastmdxplora import FastMDXplora
+        from fastmdxplora.simulation import runner as _runner
 
         run = Path(run)
         resolved = run / "resolved_config.yml"
@@ -2731,14 +2764,22 @@ class BatchExplorer:
         config = {key: value for key, value in config.items() if key != "exclude_phase"}
         config["output"] = str(run)
         config["include_phase"] = ["report"]
+        before = _runner._last_stop_now
         try:
             FastMDXplora(config_data=config, output_dir=str(run)).explore(force=True)
+        except _runner.StopNow as heard:
+            heard.report_cut = run
+            raise
         except Exception as exc:  # noqa: BLE001 - the runs and the record stand
             logger.warning("The report was not written again: %s", exc)
         finally:
             # The record of what the study ran, not of this one step.
             resolved.write_bytes(kept)
             _only_the_report_recorded(run / "manifest.json", manifest)
+        now = _runner._last_stop_now
+        if now is not None and now is not before:
+            now.report_cut = run
+            raise now
 
     # ------------------------------------------------------------------
     def _maybe_aggregate_members(self) -> None:

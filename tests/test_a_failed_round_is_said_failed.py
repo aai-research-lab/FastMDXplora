@@ -1819,6 +1819,40 @@ elif __name__ == "__main__":
                     or name.endswith(".new")):
                 (here / name).unlink()
         study = explorer.BatchExplorer(config_data=config, output_dir=here / f"study-{repeat}")
+        if os.environ.get("REAL_REPORT"):
+            # Seed 1's report written again in the real report phase, as its
+            # records' shared start now differs from the one it read, held
+            # once it has begun (what it wrote before already removed).
+            import importlib
+
+            # The module, not the phase's `run` the package gives by that name.
+            report_run = importlib.import_module("fastmdxplora.report.run")
+
+            real_aggregate = explorer.BatchExplorer._maybe_aggregate_members
+
+            def aggregate(self):
+                run = self._run_output_dir(self.run_specs[0])
+                (run / "report").mkdir(parents=True, exist_ok=True)
+                (run / "report" / "report.md").write_text("as before")
+                (run / "analysis" / "rmsd").mkdir(parents=True, exist_ok=True)
+                (run / "analysis" / "rmsd" / "options.json").write_text(json.dumps(
+                    {"findings": {"mean": {"start_shared_with_replicas": 5}}}))
+                (run / "resolved_config.yml").write_text(json.dumps(
+                    {"systems": [{"id": "tri", "system": str(here / "tri-ala.pdb")}],
+                     "output": str(run)}))
+                # Every run ended: the report written again runs for real.
+                explorer._execute_run = real_execute_run
+                return real_aggregate(self)
+
+            def held(**_given):
+                stand_in._say(here / "held", "")
+                until = time.monotonic() + 60
+                while time.monotonic() < until:
+                    time.sleep(0.05)
+                return []
+
+            explorer.BatchExplorer._maybe_aggregate_members = aggregate
+            report_run.build_region_highlight_artifacts = held
         if os.environ.get("WHOLE"):
             # The whole study, its records, comparison and summary too.
             if os.environ.get("COMPARING"):
@@ -2542,6 +2576,48 @@ def test_a_second_sigterm_after_a_report_written_again_stops_now(tmp_path):
     assert not ran.left_behind
 
 
+def test_a_second_sigterm_in_a_report_phase_written_again_stops_the_study(tmp_path):
+    """After the runs ended, a second SIGTERM in the real report phase of a
+    run's report written again: the run's phase recorded it stopped, and
+    the study went on, "Batch complete", exit 0, the report it had removed
+    never written. The study stops now, the run said stopped with its
+    report not written, and `fastmdx resume` named to write it."""
+    import os
+    import time
+
+    from fastmdxplora.remedies import remedies_of
+
+    ran = _a_study_of_stand_ins(tmp_path, {"1": "ok", "2": "ok"}, seeds=2, WHOLE="1",
+                                REAL_REPORT="1")
+    try:
+        _until(lambda: (tmp_path / "held").exists() or ran.poll() is not None, 120)
+        if ran.poll() is None:
+            os.kill(ran.pid, signal.SIGTERM)
+            time.sleep(2.5)
+            os.kill(ran.pid, signal.SIGTERM)
+    finally:
+        printed, logged = _ended(ran, 120, "the study")
+    assert (tmp_path / "held").exists(), (printed[-2000:], logged[-3000:])
+    study = tmp_path / "study-0"
+    assert ran.returncode == 130, (ran.returncode, printed[-2000:], logged[-2000:])
+    assert "Stopping now: the study ends at once" in logged, logged[-2000:]
+    run = study / "runs" / "tri__random-seed-1"
+    assert not (run / "report" / "report.md").exists()
+    runs = {entry["run_id"]: entry for entry in json.loads(
+        (study / "batch_manifest.json").read_text())["runs"]}
+    cut = runs["tri__random-seed-1"]
+    assert cut["error_type"] == "Stopped", cut
+    assert cut["message"].startswith(
+        "Stopped at once when asked (SIGTERM twice) as its report was written again: "
+        "its report is not written."), cut
+    assert runs["tri__random-seed-2"]["status"] == "ok", runs
+    assert re.search(r"^Batch stopped: 1 ok, 1 error\(s\)", printed, re.M), printed[-2000:]
+    assert f"fastmdx resume {study}" in printed, printed[-2000:]
+    fix = remedies_of(study)[0]
+    assert "resume" in fix.command, fix
+    assert not ran.left_behind
+
+
 def test_a_killed_worker_s_rule_says_the_worker_ended_not_stopped_when_asked(tmp_path):
     """A worker killed, no stop asked: the study's rule's record said
     "Stopped when asked, before the rule was applied", and its GUI card
@@ -2562,6 +2638,40 @@ def test_a_killed_worker_s_rule_says_the_worker_ended_not_stopped_when_asked(tmp
     assert record["said"].startswith(
         "Not applied: a worker of the study ended abruptly"), record
     assert "Resuming the study carries its runs on" in record["said"], record
+
+
+@pytest.mark.parametrize("where", ["study", "production"])
+def test_a_stop_after_a_stop_now_is_that_one(where, monkeypatch):
+    """A third stop after a stop now, outside a parallel study's pool: taken
+    as another stop now, said "Stopping now" again and raised as the study
+    wrote its records, cutting its summary; Python's own handlers put back,
+    a fourth SIGTERM ended the process (143). It is the stop under way, and
+    says nothing, the study listening until it ends."""
+    from fastmdxplora.simulation import runner
+
+    said: list[str] = []
+    monkeypatch.setattr(runner, "_say_stop", said.append)
+    runner._listen_afresh()
+    with runner._StopInTheStudy(folder=None) as study:
+        if where == "study":
+            study._note(signal.SIGINT, None)
+            with pytest.raises(runner.StopNow):
+                study._note(signal.SIGINT, None)
+        else:
+            with runner._StopRequests(folder=None) as production:
+                production._note(signal.SIGINT, None)
+                with pytest.raises(runner.StopNow):
+                    production._note(signal.SIGINT, None)
+        raised = 0
+        for number in (signal.SIGINT, signal.SIGTERM, signal.SIGTERM):
+            try:
+                study._note(number, None)
+            except runner.StopNow:
+                raised += 1
+        listening = signal.getsignal(signal.SIGTERM) == study._note
+    runner._listen_afresh()
+    assert sum(line.startswith("Stopping now") for line in said) == 1, said
+    assert raised == 0 and listening, (raised, listening)
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
