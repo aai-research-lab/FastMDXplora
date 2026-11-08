@@ -114,7 +114,10 @@ class Price:
 
     def as_text(self) -> str:
         if self.production_ns <= 0 and self.equilibration_ns <= 0:
-            return "no simulation"
+            # A floor of nothing (its stopping rule's rounds to come) is not
+            # "no simulation": the rounds extend the runs.
+            return ("no simulation for its plan, and what its stopping rule's rounds then run"
+                    if self.lower_bound else "no simulation")
         amount = f"{'at least ' if self.lower_bound else ''}{_ns(self.production_ns)} of production"
         if self.equilibration_ns > 0:
             amount += f" and {_ns(self.equilibration_ns)} of equilibration"

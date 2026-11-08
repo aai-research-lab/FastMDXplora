@@ -3287,6 +3287,17 @@ def test_resume_of_a_stopped_round_whose_worker_is_killed_exits_1(tmp_path, monk
     assert _cmd_resume(SimpleNamespace(study=str(study), json=False)) == 1, answer
 
 
+def test_a_floor_of_nothing_is_not_priced_as_no_simulation():
+    """A resume whose plan costs nothing, its stopping rule's rounds still to
+    extend the runs (priced as a floor), said "Costs no simulation." beside
+    "Its stopping rule may then extend the runs"."""
+    from fastmdxplora.remedies import Price
+
+    assert Price(production_ns=0.0, lower_bound=False).as_text() == "no simulation"
+    said = Price(production_ns=0.0, lower_bound=True).as_text()
+    assert said != "no simulation" and "stopping rule's rounds" in said, said
+
+
 def test_a_run_never_started_is_priced_at_its_study_s_plan(tmp_path):
     """What would carry a study on priced its runs that never started at the
     package's own lengths (hours, for runs of a few ps): at the study's
