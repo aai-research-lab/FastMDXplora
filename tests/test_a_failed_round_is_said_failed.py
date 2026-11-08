@@ -2739,6 +2739,28 @@ def test_a_first_stop_after_the_rule_s_last_round_says_the_study_finishes(tmp_pa
     assert stages == ["finishing"], stages
 
 
+def test_a_stop_now_in_a_resume_is_named_by_both_its_stops(tmp_path, monkeypatch):
+    """A stop now carried on through a resume was named by its last signal
+    ("Stopped when asked (SIGTERM)"), or as Ctrl+C in a study of one's
+    rounds, where the study's records name both (`StopNow.said`)."""
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.simulation import resume, runner
+
+    def stopped(*_args, **_kwargs):
+        raise runner.StopNow(signal.SIGTERM, first=signal.SIGINT)
+
+    monkeypatch.setattr(resume, "resume_study", stopped)
+    spec = {"run_id": "r", "system": "tri", "sweep_values": {}}
+    result = explorer._resume_run(spec, str(tmp_path), None, quiet=False,
+                                  quiet_banner=None)
+    assert result.message == ("Stopped at once when asked (Ctrl+C, then SIGTERM) as it "
+                              "was carried on."), result.message
+    said = resume.stopped_in_a_resume(runner.StopNow(signal.SIGTERM))
+    assert said.startswith("Stopped at once when asked (SIGTERM twice) before the resume "
+                           "finished;"), said
+    assert resume.stopped_in_a_resume(KeyboardInterrupt()) == resume.STOPPED_IN_A_RESUME
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

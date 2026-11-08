@@ -2802,12 +2802,12 @@ def _resume_study(study: str | Path, *,
                 # What the carrying on did, where the rule then ran nothing.
                 answer = {**judged, "did": (answer.get("did") if judged.get("did")
                                             == RESUMED_JUDGED else judged.get("did"))}
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as stopped:
         # Ctrl+C outside a production and outside the rule's rounds (a
         # piece's join, the rule about to be applied): a stop asked, said
         # as the study then stands, where it ended in a traceback.
         answer = {**base, "ok": False, "did": RESUMED_NOTHING, "stopped": True,
-                  "error": STOPPED_IN_A_RESUME}
+                  "error": stopped_in_a_resume(stopped)}
         carried = False
     finally:
         marked.__exit__(None, None, None)
@@ -2862,6 +2862,17 @@ def _said_whole_last(root: Path) -> bool:
 #: What a resume of one run stopped by Ctrl+C outside its production says.
 STOPPED_IN_A_RESUME = ("Stopped when asked (Ctrl+C) before the resume finished; "
                        "`fastmdx resume` carries it on from there.")
+
+
+def stopped_in_a_resume(stopped: BaseException) -> str:
+    """`STOPPED_IN_A_RESUME`, named by the stops it took where it was a stop
+    now (`runner.StopNow.said`): a second SIGTERM was said Ctrl+C."""
+    from fastmdxplora.simulation.runner import StopNow
+
+    if not isinstance(stopped, StopNow):
+        return STOPPED_IN_A_RESUME
+    return STOPPED_IN_A_RESUME.replace("Stopped when asked (Ctrl+C)",
+                                       f"Stopped at once when asked ({stopped.said()})")
 
 
 def _its_rule_not_applied(root: Path) -> bool:

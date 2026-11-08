@@ -1169,10 +1169,12 @@ def _resume_run(spec_dict: dict[str, Any], run_out: str,
     except KeyboardInterrupt as stopped:
         # Ctrl+C outside the run's production (its piece's join), or a stop
         # now: a stop asked, as one in production is, never a traceback.
-        from fastmdxplora.simulation.runner import stop_said
+        from fastmdxplora.simulation.runner import StopNow
 
+        said = (f"at once when asked ({stopped.said()})" if isinstance(stopped, StopNow)
+                else "when asked (Ctrl+C)")
         answer = {"ok": False, "stopped": True,
-                  "error": f"Stopped when asked ({stop_said(stopped)}) as it was carried on."}
+                  "error": f"Stopped {said} as it was carried on."}
     except (Exception, RunStopped) as exc:  # noqa: BLE001 -- isolate per-run failures
         from fastmdxplora.refusals import refusal_of
         from fastmdxplora.simulation.runner import STOPPED_CODE
