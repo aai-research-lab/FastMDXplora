@@ -3746,6 +3746,7 @@ def _at_a_budget_s_setup_stage(study: Path) -> str:
         "name": "setup", "status": "error", "refusal": refusal}]}))
     return again
 
+
 def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
     """Setup's stage of a budget study, stopped: its summary said `fastmdx
     resume` carries it on, which ran setup alone and read it finished. Its

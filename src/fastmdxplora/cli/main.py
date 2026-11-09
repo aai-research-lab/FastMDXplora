@@ -1967,7 +1967,8 @@ def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> i
 def _run_again(_args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
     """What runs a study with a budget again, its setup first: the
     person's own command line (`_COMMAND_LINE`), whole, with
-    `--force-overwrite` added where it overwrites nothing yet, as a clause
+    `--force-overwrite` added where none of `--force-overwrite`, `--force`
+    and `--rerun` is there, as a clause
     of a sentence and as the arguments after `fastmdx`. Built from `-c`
     and `--output` alone, it dropped `--budget-hours` and the rest, and ran
     another study, unpriced. Where there is no command line (called from
