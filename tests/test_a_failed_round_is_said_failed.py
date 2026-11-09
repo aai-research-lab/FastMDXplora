@@ -4445,6 +4445,28 @@ def test_a_first_sigterm_in_a_budget_s_pricing_is_a_stop(tmp_path, monkeypatch, 
     assert found and found[0].argv == ("explore", "-c", str(config), "--force-overwrite"), found
 
 
+def test_a_budget_study_with_a_dashboard_starts_its_gui(tmp_path, monkeypatch):
+    """`fastmdx explore --dashboard` of a study with a budget ran it in
+    stages and started no GUI."""
+    import importlib
+
+    from fastmdxplora import cost
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    monkeypatch.setattr(cost, "measure_prepared_system", lambda *_a, **_k: None)
+    config, stages = _a_budget_study(tmp_path, monkeypatch)
+    seen = []
+    monkeypatch.setattr(cli, "_start_dashboard_for_command",
+                        lambda _args, where: seen.append(("started", Path(where))) or "s")
+    monkeypatch.setattr(cli, "_finish_dashboard_for_command",
+                        lambda session, _args, rc=0: seen.append(("finished", session, rc)))
+    assert cli.main(["explore", "-c", str(config), "--dashboard"]) == 0
+    assert seen == [("started", tmp_path / "study"), ("finished", "s", 0)], seen
+    assert [phases for phases, _ in stages][-1] == ["simulation", "analysis", "report"]
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as

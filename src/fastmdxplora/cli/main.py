@@ -2114,9 +2114,6 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     # for the ceiling, whichever door the study came through.
     budget = config.get("budget_hours")
     if budget is not None and not getattr(args, "dry_run", False):
-        from fastmdxplora.agent import run_in_stages
-        from fastmdxplora.agent.staged import StagedRun
-
         from fastmdxplora.naming import default_output_name, system_of
 
         output = Path(config.get("output") or args.output_dir
@@ -2127,41 +2124,17 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         removed = _removed_before_its_price(args, output)
         if removed is not None:
             return removed
-        staged = StagedRun(output_dir=output)
-        # A study whose folder was not named is run again in this one.
-        unnamed = None if named_its_output else output
+        # Watched as a study with no budget is (`--dashboard`): it started no GUI.
+        session = (_start_dashboard_for_command(args, dashboard_output_dir)
+                   if _dashboard_requested(args) else None)
         try:
-            with _then_quiet_once_stopped():
-                said, argv = _run_again(args, unnamed)
-                staged = run_in_stages(config, output, budget_hours=float(budget),
-                                       staged=staged,
-                                       force=bool(getattr(args, "force", False)),
-                                       keep_previous=bool(getattr(args, "rerun", False)),
-                                       again=said, again_argv=argv)
-        except KeyboardInterrupt as stop:
-            # Said as `fastmdx resume` says it once the simulation began;
-            # before, a traceback, the process ended by the signal.
-            if not staged.simulating:
-                return _said_stopped_before_its_simulation(args, unnamed)
-            return _said_stopped_when_asked(output, stop)
-        if getattr(staged, "stopped", False):
-            # Stopped in setup's study (a SIGTERM, the GUI's Stop): it was
-            # refused for want of a particle count, or priced and run on.
-            return _said_stopped_before_its_simulation(args, unnamed)
-        for note in staged.notes:
-            print(f"  {note}")
-        if staged.refusal is not None:
-            print(f"\n  \u2717 {staged.refusal.message}")
-            if staged.setup_done:
-                print("\nSetup's output is kept, so a shorter study can reuse it.")
-            return 2
-        # Its study stopped when asked exits 130, as without a budget (0).
-        results = getattr(staged, "results", None)
-        rc = _the_study_s_exit(results, output, args)[0] if results else 0
-        failed = _analyses_asked_for_that_failed(config, _runs_in(output))
-        if failed:
-            _say_failed(failed)
-            return rc or 1
+            rc = _explore_with_a_budget(args, config, float(budget), output,
+                                        named_its_output)
+        except BaseException:
+            if session is not None:
+                session.stop()
+            raise
+        _finish_dashboard_for_command(session, args, rc)
         return rc
 
     held = _refused_as_held(args, config)
@@ -2250,6 +2223,51 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             print(ended.said)
             print(ended.carry_on)
     _finish_dashboard_for_command(session, args, rc)
+    return rc
+
+
+def _explore_with_a_budget(args: argparse.Namespace, config: dict[str, Any], budget: float,
+                           output: Path, named_its_output: bool) -> int:
+    """`fastmdx explore` of a study with a budget: setup, its price, then the
+    rest only if it fits (`agent.run_in_stages`), its exit code."""
+    from fastmdxplora.agent import run_in_stages
+    from fastmdxplora.agent.staged import StagedRun
+
+    staged = StagedRun(output_dir=output)
+    # A study whose folder was not named is run again in this one.
+    unnamed = None if named_its_output else output
+    try:
+        with _then_quiet_once_stopped():
+            said, argv = _run_again(args, unnamed)
+            staged = run_in_stages(config, output, budget_hours=budget,
+                                   staged=staged,
+                                   force=bool(getattr(args, "force", False)),
+                                   keep_previous=bool(getattr(args, "rerun", False)),
+                                   again=said, again_argv=argv)
+    except KeyboardInterrupt as stop:
+        # Said as `fastmdx resume` says it once the simulation began;
+        # before, a traceback, the process ended by the signal.
+        if not staged.simulating:
+            return _said_stopped_before_its_simulation(args, unnamed)
+        return _said_stopped_when_asked(output, stop)
+    if getattr(staged, "stopped", False):
+        # Stopped in setup's study (a SIGTERM, the GUI's Stop): it was
+        # refused for want of a particle count, or priced and run on.
+        return _said_stopped_before_its_simulation(args, unnamed)
+    for note in staged.notes:
+        print(f"  {note}")
+    if staged.refusal is not None:
+        print(f"\n  \u2717 {staged.refusal.message}")
+        if staged.setup_done:
+            print("\nSetup's output is kept, so a shorter study can reuse it.")
+        return 2
+    # Its study stopped when asked exits 130, as without a budget (0).
+    results = getattr(staged, "results", None)
+    rc = _the_study_s_exit(results, output, args)[0] if results else 0
+    failed = _analyses_asked_for_that_failed(config, _runs_in(output))
+    if failed:
+        _say_failed(failed)
+        return rc or 1
     return rc
 
 
