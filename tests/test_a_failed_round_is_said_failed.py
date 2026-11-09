@@ -4165,6 +4165,29 @@ def test_a_budget_s_run_again_is_run_from_where_it_was_typed(tmp_path, monkeypat
     assert spawn.call_args.kwargs.get("cwd") == typed.resolve(), spawn.call_args
 
 
+def test_the_gui_s_stop_says_a_python_budget_s_stop_once(tmp_path):
+    """The GUI's Stop of a budget study run from the Agent or Python, with no
+    command to name, said "stopped before its simulation began" twice."""
+    import os
+
+    from fastmdxplora.agent.staged import AGAIN
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.simulation import runner
+
+    (tmp_path / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    os.environ[runner.RUN_AGAIN_BEFORE_ITS_PRICE] = json.dumps({"said": AGAIN, "argv": []})
+    try:
+        refusal = refusal_of(RunStopped("SIGTERM").as_error()).as_dict()
+    finally:
+        os.environ.pop(runner.RUN_AGAIN_BEFORE_ITS_PRICE, None)
+    (tmp_path / "manifest.json").write_text(json.dumps({"phases": [{
+        "name": "setup", "status": "error", "refusal": refusal}]}))
+    said = exploration.stopped_said(tmp_path)
+    assert said.count("before its simulation began") == 1, said
+    assert "run again from its setup" in said, said
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

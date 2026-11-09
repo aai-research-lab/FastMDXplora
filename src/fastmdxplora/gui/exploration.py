@@ -997,9 +997,13 @@ def stopped_said(where: Any) -> str:
         from fastmdxplora.agent.staged import stopped_before_its_price
 
         again = stopped_before_its_price(Path(where))
-        if again is not None:
+        if again is not None and again.get("argv"):
             return ("Workflow stopped before its simulation began; "
-                    f"{again.get('said') or 'run it again with --force-overwrite'}.")
+                    f"{again.get('said')}.")
+        if again is not None:
+            # No command to name (the Agent, Python): said once, not twice.
+            return ("Workflow stopped before its simulation began, and the study is run "
+                    "again from its setup.")
     return ("Workflow stopped. A run in production ends at its next "
             "frame with a checkpoint there, and `fastmdx resume` "
             "carries it on.")
