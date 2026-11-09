@@ -89,7 +89,11 @@ def tags_of(folder: str | Path) -> dict[str, Any]:
     """A study's tags and note, as kept, none where none were given; and
     ``archived`` True where the person archived it."""
     kept = _kept(folder)
-    tags = [t for t in (kept.get("tags") or []) if _clean(t, TAG_LENGTH)]
+    raw = kept.get("tags")
+    # A file edited by hand may say one tag as a string, or a number:
+    # neither is a list of tags, and a string would be read letter by letter.
+    tags = [t for t in (raw if isinstance(raw, list) else [])
+            if _clean(t, TAG_LENGTH)]
     note = _clean(kept.get("note") or "", NOTE_LENGTH) or ""
     said: dict[str, Any] = {"tags": tags[:MOST_TAGS], "note": note}
     if _archived_at(kept) is not None:

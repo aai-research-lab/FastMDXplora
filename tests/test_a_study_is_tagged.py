@@ -101,6 +101,20 @@ def test_the_cards_carry_them_and_the_tags_used(workspace):
                                   {"tag": "L67S", "studies": 1}]
 
 
+@pytest.mark.parametrize("kept", [5, "wild type", {"a": 1}])
+def test_a_tags_file_edited_by_hand_lists_with_no_tags(workspace, kept):
+    # One study's file saying its tags as a number or a string used to stop
+    # the whole workspace listing, or read the string letter by letter.
+    from fastmdxplora.gui.workspace import studies_in
+    from fastmdxplora.study_tags import TAGS_FILE, tags_of
+
+    (workspace / "wild_type" / TAGS_FILE).write_text(
+        json.dumps({"tags": kept, "note": "kept"}), encoding="utf-8")
+    assert tags_of(workspace / "wild_type") == {"tags": [], "note": "kept"}
+    cards = {card["name"]: card for card in studies_in(workspace)["studies"]}
+    assert cards["wild_type"]["tags"] == []
+
+
 def test_the_server_keeps_them_from_this_computer_alone(workspace):
     import urllib.request
 

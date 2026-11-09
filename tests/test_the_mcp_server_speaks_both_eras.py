@@ -169,6 +169,14 @@ class TestTheWire:
         assert all(m.get("id") != "slow" for m in wire.seen)
         assert wire.read(timeout=0.5) is None
 
+    @pytest.mark.parametrize("request_id", [[1], {"a": 1}, None, True])
+    def test_a_cancellation_of_no_possible_request_is_ignored(self, wire, request_id):
+        # An id no request could have, a list or an object above all, used
+        # to stop the server reading: nothing was answered after it.
+        wire.send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                   "params": {"requestId": request_id}})
+        assert wire.request("tools/list")["result"]["tools"] is not None
+
     @pytest.mark.parametrize("wire", [1], indirect=True)
     def test_a_call_cancelled_while_it_waited_never_runs(self, wire):
         wire.send({"jsonrpc": "2.0", "id": "first", "method": "tools/call",

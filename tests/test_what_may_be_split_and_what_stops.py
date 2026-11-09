@@ -254,6 +254,17 @@ class TestTheWorkerTakesWork(unittest.TestCase):
         self.assertEqual(report.ran, 0)
         self.assertIn("budget", report.stopped_because)
 
+    def test_a_chain_the_budget_refuses_is_not_left_waiting(self):
+        # The budget refuses the first segment, so the rest can never be
+        # released: they are abandoned, as after any other failure, not
+        # left blocked on a parent that will never finish.
+        self.queue.set_budget("small", hours=1)
+        self.queue.submit("small", "simulate", {"system": "a"},
+                          estimate_s=5 * 3600, segments=4)
+        self.assertIsNone(self.queue.claim("small"))
+        counts = self.queue.summary("small")["jobs"]
+        self.assertEqual(counts, {"failed": 1, "abandoned": 3})
+
     def test_an_interrupt_is_recorded_before_it_propagates(self):
         # A job left RUNNING would hold its estimate against the campaign's
         # allowance for good, so the record has to happen even on the way

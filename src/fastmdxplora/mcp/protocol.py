@@ -474,6 +474,10 @@ class Server:
     def _notified(self, method: str, params: dict[str, Any]) -> None:
         if method == "notifications/cancelled":
             request_id = params.get("requestId")
+            if isinstance(request_id, bool) or not isinstance(request_id, (str, int)):
+                # No request has such an id, and a list or an object
+                # cannot be looked up: the line would stop the server.
+                return
             with self._state_lock:
                 if request_id in self._in_flight:
                     self._cancelled.add(request_id)

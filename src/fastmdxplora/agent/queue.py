@@ -293,6 +293,9 @@ class Queue:
                     details={"estimate_hours": job.estimate_s / 3600,
                              "remaining_hours": allowance.remaining_s / 3600},
                 ).as_dict()), time.time(), job.id))
+            # As fail() does: the later segments can never be released.
+            self._abandon_after(
+                job.id, reason="The campaign's budget refused an earlier segment.")
             return None
 
         self._db.execute(
