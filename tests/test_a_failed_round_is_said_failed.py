@@ -4041,6 +4041,67 @@ def test_a_budget_study_not_stopped_resumes_as_before(how, tmp_path, monkeypatch
     assert not any("--force-overwrite" in remedy.command for remedy in remedies.remedies_of(out))
 
 
+def test_a_budget_s_run_again_repeats_the_whole_command_line(tmp_path, monkeypatch, capsys):
+    """The command named to run a budget study stopped in setup again was
+    built from `-c` and `--output` alone: `--budget-hours` and every other
+    flag was lost, and following it ran the study unpriced."""
+    import importlib
+
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    named = {}
+    stopped = _a_setup_stopped("before its count")
+
+    def first(out: Path):
+        named["argv"] = runner.run_again_argv()
+        return stopped(out)
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    line = ["explore", "-c", str(config), "--budget-hours", "1000",
+            "--output", str(tmp_path / "study")]
+    runner._listen_afresh()
+    try:
+        assert cli.main(line) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    import shlex
+
+    whole = shlex.join(["fastmdx", *line, "--force-overwrite"])
+    assert f"`{whole}`" in capsys.readouterr().err
+    assert named["argv"] == [*line, "--force-overwrite"], named
+
+
+def test_a_budget_study_run_from_python_names_no_command(tmp_path, monkeypatch):
+    """From `fastmdx agent --autonomous` or Python, a stop in setup named
+    "run again with --force-overwrite", a flag `fastmdx agent` has not."""
+    from fastmdxplora.agent import staged
+    from fastmdxplora.simulation import runner
+
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    said = {}
+    stopped = _a_setup_stopped("before its count")
+
+    def first(out: Path):
+        said["it"], said["argv"] = runner.run_again_before_its_price(), runner.run_again_argv()
+        return stopped(out)
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    runner._listen_afresh()
+    try:
+        done = staged.run_in_stages(yaml.safe_load(config.read_text()), tmp_path / "study",
+                                    budget_hours=1000)
+    finally:
+        runner._listen_afresh()
+    assert done.stopped
+    assert "--force-overwrite" not in said["it"] and "fastmdx" not in said["it"], said
+    assert "run again from its setup" in said["it"] and said["argv"] == [], said
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

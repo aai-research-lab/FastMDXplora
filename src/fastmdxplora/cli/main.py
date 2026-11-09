@@ -1964,23 +1964,25 @@ def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> i
     return 130
 
 
-def _run_again(args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
-    """What runs a study with a budget again, its setup first: as a clause
-    of a sentence, and as the arguments after `fastmdx` (none without a
-    config to name)."""
+def _run_again(_args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
+    """What runs a study with a budget again, its setup first: the
+    person's own command line (`_COMMAND_LINE`), whole, with
+    `--force-overwrite` added where it overwrites nothing yet, as a clause
+    of a sentence and as the arguments after `fastmdx`. Built from `-c`
+    and `--output` alone, it dropped `--budget-hours` and the rest, and ran
+    another study, unpriced. Where there is no command line (called from
+    Python), no command: the study is said to be run again from its setup."""
     import shlex
 
-    config = getattr(args, "config", None)
-    # Its output named where it was given: without it, a new folder.
-    where = getattr(args, "output_dir", None)
-    to = f" --output {shlex.quote(str(where))}" if where else ""
-    if not config:
-        return ("the same `fastmdx explore` with --force-overwrite runs the study again, "
-                "its setup first"), ()
-    argv = ("explore", "-c", str(Path(config).resolve()),
-            *(("--output", str(Path(where).resolve())) if where else ()), "--force-overwrite")
-    return (f"`fastmdx explore -c {shlex.quote(str(config))}{to} --force-overwrite` runs the "
-            "study again, its setup first"), argv
+    from fastmdxplora.agent.staged import AGAIN
+
+    line = list(_COMMAND_LINE)
+    if not line:
+        return AGAIN, ()
+    if not any(word in ("--force-overwrite", "--force", "--rerun") for word in line):
+        line.append("--force-overwrite")
+    return (f"`{shlex.join(['fastmdx', *line])}` runs the study again, its setup first",
+            tuple(line))
 
 
 def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
@@ -4178,6 +4180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     runner._A_STUDY_HEARD_A_STOP = runner._ITS_STOP_SAID = False
     _COMMAND_S_HANDLERS.clear()
     _COMMAND_S_HANDLERS.update(before)
+    _COMMAND_LINE[:] = given
     try:
         return _main(argv)
     finally:
@@ -4185,6 +4188,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             _listening_as_the_command_began()
         runner._A_STUDY_HEARD_A_STOP = runner._ITS_STOP_SAID = False
         _COMMAND_S_HANDLERS.clear()
+        _COMMAND_LINE.clear()
 
 
 @contextmanager
@@ -4201,6 +4205,8 @@ def _then_quiet_once_stopped():
 
 #: SIGINT's and SIGTERM's handlers as the command began (`main`).
 _COMMAND_S_HANDLERS: dict[int, Any] = {}
+#: The command's own line, as given after `fastmdx` (`main`).
+_COMMAND_LINE: list[str] = []
 
 
 def _listening_as_the_command_began() -> None:

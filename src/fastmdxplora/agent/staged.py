@@ -401,8 +401,9 @@ def _stopped_when_asked(ran: Any) -> bool:
         return False
 
 
-#: What runs it again, where its caller gave nothing.
-AGAIN = "run again with --force-overwrite, the study runs from its setup"
+#: Said where no command line is there to repeat (`fastmdx agent`, Python),
+#: naming no command: `fastmdx agent` has no `--force-overwrite`.
+AGAIN = "it stopped before its simulation began, and is run again from its setup"
 
 
 def _its_records(out: Path) -> list[Path]:
