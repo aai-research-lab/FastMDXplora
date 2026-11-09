@@ -3766,6 +3766,31 @@ def test_a_run_its_budget_s_second_stage_did_not_reach_is_carried_on(tmp_path):
         "include_phase": ["setup"]}
 
 
+def test_a_stop_before_a_budget_s_second_stage_wrote_its_record_runs_it_again(
+        tmp_path, monkeypatch, capsys):
+    """A Ctrl-C as the second stage began, before it wrote its record: told
+    `fastmdx resume` carries it on, which read the study finished."""
+    import importlib
+
+    from fastmdxplora import cost
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+
+    def stopped():
+        raise KeyboardInterrupt
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, second=stopped)
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    try:
+        code = cli.main(["explore", "-c", str(config)])
+    except KeyboardInterrupt:
+        code = "KeyboardInterrupt"
+    said = capsys.readouterr().err
+    assert code == 130, said
+    assert "fastmdx resume" not in said and "--force-overwrite" in said, said
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

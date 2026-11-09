@@ -68,8 +68,9 @@ class StagedRun:
     simulated: bool = False
     refusal: Refusal | None = None
     notes: list[str] = field(default_factory=list)
-    #: The second stage, the simulation onwards, has begun: a run stopped
-    #: before it is carried on by running the study again, its setup first.
+    #: The second stage, the simulation onwards, has written its record: a
+    #: run stopped before is carried on by running the study again, its
+    #: setup first; one stopped after, by `fastmdx resume`.
     simulating: bool = False
     #: Asked to stop in setup's study: nothing was priced or run.
     stopped: bool = False
@@ -339,7 +340,6 @@ def _run_in_stages(
             simulation.get("setup_from") or simulation.get("prepared_from")):
         simulation["setup_from"] = injected = str(simulate_from)
     rest["simulation"] = simulation
-    staged.simulating = True
     try:
         staged.results = runner(config=rest, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
@@ -349,7 +349,9 @@ def _run_in_stages(
         # The record is of the study, not of the second stage: it was
         # written as `exclude_phase: [setup]` with the stage's `setup_from`,
         # so replaying it skipped the setup the study asked for.
-        _record_the_study_s_phases(out, config, after_setup, injected)
+        # Begun once its record is written: before, the study still read
+        # as setup alone, which a resume reads finished.
+        staged.simulating = _record_the_study_s_phases(out, config, after_setup, injected)
     staged.simulated = True
     return staged
 
