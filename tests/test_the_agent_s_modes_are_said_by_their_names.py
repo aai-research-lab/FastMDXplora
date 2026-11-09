@@ -77,3 +77,20 @@ def test_the_rest_of_the_agent_page_says_the_modes_by_their_names():
     # The AI model is said in the Agent's settings and nowhere else in the GUI.
     assert "The engine, the mode and the GPU-hour ceiling are in Settings" not in text
     assert "in **Agent settings**, the one place its AI model is said" in text
+
+
+def test_the_cli_page_names_every_memory_flag():
+    from fastmdxplora.cli.main import _build_parser
+
+    parser = _build_parser()
+    agent = next(action for action in parser._subparsers._group_actions[0].choices.values()
+                 if any("--autonomous" in a.option_strings for a in action._actions))
+    flags = [a.option_strings[0] for a in agent._actions
+             if a.option_strings and (a.dest or "").startswith("memory_")]
+    assert "--learn-from-chats" in flags
+    text = (DOCS / "cli.md").read_text(encoding="utf-8")
+    row = next(line for line in text.splitlines() if line.startswith("| `--add TEXT`"))
+    for flag in flags:
+        assert f"`{flag}" in row, flag
+    assert "agent.md#what-the-agent-remembers-of-you" in row
+    assert "## What the Agent remembers of you" in (DOCS / "agent.md").read_text(encoding="utf-8")
