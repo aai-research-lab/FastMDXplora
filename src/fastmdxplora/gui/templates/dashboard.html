@@ -758,10 +758,14 @@
               </section>
 
               <section class="builder-summary-card builder-code" aria-label="The study in each language">
-                <div class="builder-tabs" role="tablist">
-                  <button type="button" role="tab" aria-selected="true" data-code="yaml">Config</button>
-                  <button type="button" role="tab" aria-selected="false" data-code="command">Command</button>
-                  <button type="button" role="tab" aria-selected="false" data-code="script">Python</button>
+                <div class="builder-code-head">
+                  <div class="builder-tabs" role="tablist">
+                    <button type="button" role="tab" aria-selected="true" data-code="yaml">Config</button>
+                    <button type="button" role="tab" aria-selected="false" data-code="command">Command</button>
+                    <button type="button" role="tab" aria-selected="false" data-code="script">Python</button>
+                  </div>
+                  <button type="button" class="line-btn" id="run-copy-code" disabled aria-label="Copy the config"
+                          title="Copy the config"><!--icon:copy:line-icon--></button>
                 </div>
                 <pre class="mono small builder-code-pane" id="run-config-preview" data-code-pane="yaml"></pre>
                 <pre class="mono small builder-code-pane" id="run-command-preview" data-code-pane="command" hidden></pre>

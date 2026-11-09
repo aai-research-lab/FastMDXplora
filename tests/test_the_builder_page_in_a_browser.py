@@ -94,6 +94,21 @@ def _config(page) -> dict:
     return yaml.safe_load(built["yaml"])
 
 
+def _icon_path(page, name: str) -> str:
+    return page.evaluate("""name => {
+        const icon = document.createElement('div');
+        icon.innerHTML = JSON.parse(document.getElementById('fmx-icons').textContent)[name];
+        return icon.querySelector('path').getAttribute('d');
+    }""", name)
+
+
+def _ready_copy_button(page):
+    button = page.locator("#run-copy-code")
+    assert button.count() == 1
+    page.wait_for_function("() => !document.getElementById('run-copy-code').disabled")
+    return button
+
+
 class TestASettingLeftAlone:
     def test_a_list_without_a_default_starts_unset_and_can_go_back(self, site):
         page = _open(site)
@@ -832,6 +847,115 @@ class TestTheSummary:
         page = _open(site, structure=None)
         page.evaluate("() => window.FastMDXDashboard.navigate('run')")
         page.wait_for_function("() => document.body.classList.contains('panel-collapsed')")
+        page.context.close()
+
+
+class TestCopyingTheShownCode:
+    def test_copying_twice_during_the_tick_keeps_the_pane_name(self, site):
+        page = _open(site)
+        button = _ready_copy_button(page)
+        page.evaluate("""() => {
+            window.__notices = [];
+            window.FastMDXDashboard.toast = message => window.__notices.push(message);
+            Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+                writeText: () => Promise.resolve()
+            }});
+        }""")
+        page.click("#run-copy-code")
+        page.wait_for_function("() => document.getElementById('run-copy-code')"
+                               ".getAttribute('aria-label') === 'Config copied'")
+        page.click("#run-copy-code")
+        page.wait_for_function("() => window.__notices.length === 2")
+        assert page.evaluate("() => window.__notices") == ["Config copied", "Config copied"]
+        assert button.get_attribute("aria-label") == "Config copied"
+        assert page.errors == []
+        page.context.close()
+
+    @pytest.mark.parametrize("code, name", [("command", "command"), ("script", "script")])
+    def test_changing_tab_during_the_tick_keeps_the_new_name(self, site, code, name):
+        page = _open(site)
+        button = _ready_copy_button(page)
+        page.evaluate("""() => {
+            window.__notices = [];
+            window.FastMDXDashboard.toast = message => window.__notices.push(message);
+            Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+                writeText: () => Promise.resolve()
+            }});
+        }""")
+        page.click("#run-copy-code")
+        page.wait_for_function("() => document.getElementById('run-copy-code')"
+                               ".getAttribute('aria-label') === 'Config copied'")
+        page.click(f'.builder-tabs [data-code="{code}"]')
+        page.wait_for_timeout(1900)
+        assert button.get_attribute("aria-label") == f"Copy the {name}"
+        assert button.get_attribute("title") == f"Copy the {name}"
+        page.click("#run-copy-code")
+        page.wait_for_function("() => window.__notices.length === 2")
+        copied = name.capitalize() + " copied"
+        assert page.evaluate("() => window.__notices") == ["Config copied", copied]
+        assert button.get_attribute("aria-label") == copied
+        assert page.errors == []
+        page.context.close()
+
+    def test_each_tab_copies_its_text_and_ticks(self, site):
+        page = _open(site)
+        button = _ready_copy_button(page)
+        page.evaluate("""() => {
+            window.__copied = [];
+            Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+                writeText: text => { window.__copied.push(text); return Promise.resolve(); }
+            }});
+        }""")
+        check_path = _icon_path(page, "check")
+        for code, name, pane_id in (("yaml", "config", "run-config-preview"),
+                                    ("command", "command", "run-command-preview"),
+                                    ("script", "script", "run-script-preview")):
+            page.click(f'.builder-tabs [data-code="{code}"]')
+            assert button.get_attribute("aria-label") == f"Copy the {name}"
+            assert button.get_attribute("title") == f"Copy the {name}"
+            expected = page.locator(f"#{pane_id}").text_content()
+            page.click("#run-copy-code")
+            copied = name.capitalize() + " copied"
+            page.wait_for_function("label => document.getElementById('run-copy-code')"
+                                   ".getAttribute('aria-label') === label", arg=copied)
+            assert page.locator("#run-copy-code svg path").get_attribute("d") == check_path
+            assert page.evaluate("() => window.__copied")[-1] == expected
+        assert page.errors == []
+        page.context.close()
+
+    def test_without_clipboard_api_it_uses_the_existing_textarea_fallback(self, site):
+        page = _open(site)
+        _ready_copy_button(page)
+        page.evaluate("""() => {
+            window.__boxed = [];
+            Object.defineProperty(navigator, 'clipboard', {
+                configurable: true, get: () => undefined
+            });
+            document.execCommand = what => {
+                const box = document.activeElement;
+                const copied = what === 'copy' && box && box.tagName === 'TEXTAREA'
+                    ? box.value : null;
+                window.__boxed.push(copied);
+                return true;
+            };
+        }""")
+        expected = page.locator("#run-config-preview").text_content()
+        check_path = _icon_path(page, "check")
+        page.click("#run-copy-code")
+        page.wait_for_function("() => document.getElementById('run-copy-code')"
+                               ".getAttribute('aria-label') === 'Config copied'")
+        assert page.evaluate("() => window.__boxed") == [expected]
+        assert page.locator("#run-copy-code svg path").get_attribute("d") == check_path
+        assert page.errors == []
+        page.context.close()
+
+    def test_copy_is_disabled_when_the_shown_pane_is_empty(self, site):
+        page = _open(site)
+        button = _ready_copy_button(page)
+        page.evaluate("() => { document.getElementById('run-script-preview').textContent = ''; }")
+        page.click('.builder-tabs [data-code="script"]')
+        assert button.is_disabled()
+        assert page.errors == []
         page.context.close()
 
 
