@@ -5313,6 +5313,7 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .fix-why { color: var(--text-primary); }
 .fix-where { font-weight: 600; }
 .fix-fix, .fix-price { color: var(--text-secondary); }
+.fix-cwd { color: var(--text-secondary); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .fix-command {
     margin: 2px 0 0;
     padding: 6px 8px;

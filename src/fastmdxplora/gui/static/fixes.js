@@ -211,6 +211,8 @@
       item.appendChild(why);
       item.appendChild(withCode(el("div", "fix-fix"), fix.fix || ""));
       if (fix.price_said) item.appendChild(el("div", "fix-price", "Costs " + fix.price_said + "."));
+      // Its paths are as typed: said with the folder it is run from.
+      if (fix.command && fix.cwd) item.appendChild(el("div", "fix-cwd", "In " + fix.cwd + ":"));
       if (fix.command) item.appendChild(el("pre", "fix-command", fix.command));
       // Not run from here where the run would go through a link out of
       // the study (`/api/fixes`, as the POST refuses): said, with no Run.

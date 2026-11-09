@@ -174,11 +174,17 @@ class Remedy:
     #: line, its paths as typed (`agent.staged.stopped_before_its_price`):
     #: "" for the GUI's own folder.
     cwd: str = ""
+    #: Why ``argv`` is not run, where it would not run into this study: the
+    #: folder it is run from is gone. "" where nothing stands in its way.
+    refused: str = ""
 
     def as_text(self, *, with_config: bool = True) -> str:
         text = f"{self.where}: {self.why} Fix: {self.fix}"
         if self.command:
-            text += f" Run: `{self.command}`."
+            text += (f" Run, in `{self.cwd}`: `{self.command}`." if self.cwd
+                     else f" Run: `{self.command}`.")
+        if self.refused:
+            text += f" {self.refused}"
         if self.price is not None:
             text += f" Costs {self.price.as_text()}."
         if with_config and self.config:
@@ -193,7 +199,10 @@ class Remedy:
         """For the console: the refusal, then what fixes it and its price."""
         lines = [f"{self.where}: {self.why}", f"  Fix: {self.fix}"]
         if self.command:
-            lines.append(f"  Run: {self.command}")
+            lines.append(f"  Run, in {self.cwd}: {self.command}" if self.cwd
+                         else f"  Run: {self.command}")
+        if self.refused:
+            lines.append(f"  {self.refused}")
         if self.price is not None:
             lines.append(f"  Costs {self.price.as_text()}.")
         return lines
@@ -205,7 +214,8 @@ class Remedy:
                 "suggestion": self.suggestion,
                 "command": self.command, "argv": list(self.argv), "config": self.config,
                 "decision": self.decision, "covers": list(self.covers),
-                "price": self.price.as_record() if self.price else None}
+                "price": self.price.as_record() if self.price else None,
+                "cwd": self.cwd, "refused": self.refused}
 
 
 # ---------------------------------------------------------------------------
@@ -399,10 +409,11 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         # A study with a budget stopped in its setup stage: a resume of it
         # ran setup alone and read it finished.
         argv = tuple(str(word) for word in again.get("argv") or ())
+        cwd = str(again.get("cwd") or "") if argv else ""
         again_said = dict(fix="Run the study again, its setup first: it stopped before "
                               "its simulation began, so only its setup is recorded.",
                           command="fastmdx " + shlex.join(argv) if argv else "",
-                          argv=argv, cwd=str(again.get("cwd") or "") if argv else "",
+                          argv=argv, cwd=cwd, refused=_why_not_run_into(root, argv, cwd),
                           price=None)
         found = [replace(remedy, **again_said)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
@@ -426,6 +437,18 @@ def remedies_of(study: str | Path) -> list[Remedy]:
                          why=remedy.why if where in remedy.why else f"{remedy.why} {where}")
                  for remedy in found]
     return found
+
+
+def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
+    """Why the command that runs a study again, its setup first, is not run
+    for the study at ``root``: the folder it is run from is gone. "" where
+    it is there."""
+    if not argv:
+        return ""
+    if cwd and not Path(cwd).is_dir():
+        return (f"It is run from {cwd}, where it was first run, and that folder is not "
+                "there now, so it is not run from here.")
+    return ""
 
 
 def _unread(refusal: OSError, root: Path, where: str) -> Remedy:

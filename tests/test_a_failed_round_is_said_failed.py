@@ -4303,6 +4303,43 @@ def test_a_run_a_budget_study_stopped_in_setup_did_not_start_names_its_run_again
     assert "fastmdx resume" not in said[0] and "fastmdx explore" in said[0], said
 
 
+def test_a_fix_run_from_where_it_was_typed_says_that_folder(tmp_path, monkeypatch):
+    """The command that runs a budget study again holds its paths as typed,
+    and is run from where it was typed. Its record (`/api/fixes`, `fastmdx
+    resume --json`), its lines and the terminal text where the GUI does not
+    run it gave no folder; one whose folder is gone was offered as runnable."""
+    import shutil
+
+    from fastmdxplora.batch.explorer import _what_would_fix_it
+    from fastmdxplora.gui import server
+    from fastmdxplora.gui.fixes_view import fixes_payload
+
+    batch, argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    study = batch.output_dir
+    fix = fixes_payload(study)["fixes"][0]
+    assert fix["cwd"] == str(typed) and fix["runnable"] and not fix["refused"], fix
+    assert f"Run, in {typed}: fastmdx explore" in "\n".join(_what_would_fix_it(study))
+    # Not run from the GUI (a link out of the study): the terminal text runs
+    # it from that folder.
+    (tmp_path / "elsewhere").write_text("x")
+    (study / "outlink").symlink_to(tmp_path / "elsewhere")
+    offered = server._fixes_offered(study)["fixes"][0]
+    assert offered["terminal"].startswith(f"cd {typed} && fastmdx explore"), offered
+    assert offered["terminal"] in offered["not_run_here"], offered
+    (study / "outlink").unlink()
+    # The page's fix and the one that would run differ in folder alone: not
+    # the fix shown.
+    shown = {"fixes": [{**fix, "cwd": str(tmp_path)}]}
+    monkeypatch.setattr(server, "_fixes_held", lambda _root: shown)
+    assert not server._the_fix_shown(study, 0)
+    # Its folder gone: shown not runnable, and why.
+    moved = tmp_path / "w2"
+    typed.rename(moved)
+    found = fixes_payload(moved / "st")["fixes"][0]
+    assert not found["runnable"] and "not there now" in found["not_run_here"], found
+    shutil.rmtree(moved)
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as
