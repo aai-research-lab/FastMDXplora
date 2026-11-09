@@ -4403,6 +4403,48 @@ def test_a_budget_s_run_again_names_the_folder_it_ran_in(tmp_path, monkeypatch, 
     assert f"--output {named['out']}" in capsys.readouterr().err
 
 
+def test_a_first_sigterm_in_a_budget_s_pricing_is_a_stop(tmp_path, monkeypatch, capsys):
+    """A first SIGTERM as a budget study timed its prepared system, no stop
+    heard before (the GUI's Stop there, too): the process ended by the
+    signal, nothing said, and its fixes named no way to run it again."""
+    import importlib
+    import os
+
+    from fastmdxplora import cost
+    from fastmdxplora.remedies import remedies_of
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+
+    def first(out: Path):
+        (out / "setup").mkdir(parents=True, exist_ok=True)
+        (out / "setup" / "setup_parameters.json").write_text(
+            json.dumps({"n_atoms_solvated": 2_000}))
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({
+            "phases": [{"name": "setup", "status": "ok"}]}))
+        return []
+
+    config, stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+
+    def priced(*_args, **_kwargs):
+        os.kill(os.getpid(), signal.SIGTERM)
+        raise AssertionError("priced on after a SIGTERM")
+
+    monkeypatch.setattr(cost, "measure_prepared_system", priced)
+    before = signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        code = cli.main(["explore", "-c", str(config)])
+        assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    finally:
+        signal.signal(signal.SIGTERM, before)
+    said = capsys.readouterr().err
+    assert code == 130, said
+    assert f"`fastmdx explore -c {config} --force-overwrite`" in said, said
+    assert [phases for phases, _ in stages] == [["setup"]]
+    found = remedies_of(tmp_path / "study")
+    assert found and found[0].argv == ("explore", "-c", str(config), "--force-overwrite"), found
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as
