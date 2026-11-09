@@ -528,6 +528,26 @@ class TestTheHierarchyIsMadeOnce:
         assert adjusted_rand_score(labels, cut) == 1.0
 
 
+#: glibc's malloc settings read from the environment. A machine that sets
+#: them measures another allocator than CI's and a user's: the one these
+#: peaks were counted on fixed the threshold for a mapping of its own at
+#: 64 MiB and the trim threshold at 256 MiB (``MALLOC_MMAP_THRESHOLD_``,
+#: ``MALLOC_TRIM_THRESHOLD_``), and its subprocesses took them. Counted
+#: with glibc's defaults.
+_MALLOC_SETTINGS = ("MALLOC_ARENA_MAX", "MALLOC_ARENA_TEST", "MALLOC_CHECK_",
+                    "MALLOC_MMAP_MAX_", "MALLOC_MMAP_THRESHOLD_", "MALLOC_PERTURB_",
+                    "MALLOC_TOP_PAD_", "MALLOC_TRIM_THRESHOLD_", "GLIBC_TUNABLES")
+
+
+def _glibc_defaults() -> dict:
+    """This process's environment without glibc's malloc settings
+    (:data:`_MALLOC_SETTINGS`), for a subprocess whose memory is counted."""
+    import os
+
+    return {key: value for key, value in os.environ.items()
+            if key not in _MALLOC_SETTINGS}
+
+
 _PEAK_SCRIPT = r"""
 import json, sys
 import numpy as np
@@ -590,7 +610,7 @@ class TestThePeakIsMeasuredAsResidentMemory:
         src = str(Path(clustering.__file__).resolve().parents[2])
         done = subprocess.run([sys.executable, "-c", _PEAK_SCRIPT, src, str(n),
                                json.dumps(options)], capture_output=True, text=True,
-                              timeout=600, cwd=tmp_path)
+                              timeout=600, cwd=tmp_path, env=_glibc_defaults())
         assert done.returncode == 0, done.stderr[-2000:]
         found = json.loads(done.stdout.strip().splitlines()[-1])
         estimate = clustering.matrix_needed(n, found["methods"], found["features"],
@@ -651,11 +671,22 @@ clustering.give_back_freed()
 with open("/proc/self/clear_refs", "w") as refs:  # the peak counted from here
     refs.write("5")
 before = status("VmRSS")
+# What was held as the map began, and the peak before it, said with a peak
+# over the plan: what ran before the map, or the map itself.
+plot_the_map, at_the_map = clustering._plot_distance_matrix, {}
+
+def the_map(*args, **kwargs):
+    at_the_map.update(held=status("VmRSS") - before, peak=status("VmHWM") - before)
+    return plot_the_map(*args, **kwargs)
+
+clustering._plot_distance_matrix = the_map
 analysis = clustering.Cluster(output_dir=os.path.join(out, "run"), stride=stride, **options)
 result = analysis.run(traj)
 frames = -(-n // stride)
 print(json.dumps({"peak": status("VmHWM") - before, "status": result.status,
                   "message": result.message, "stride": stride, "frames": frames,
+                  "held_at_the_map": at_the_map.get("held"),
+                  "peak_before_the_map": at_the_map.get("peak"),
                   "needed": clustering.memory_needed(frames, analysis.methods,
                                                      analysis.features, analysis.linkage)}))
 """
@@ -671,7 +702,8 @@ def _peak_of_a_run(tmp_path, n: int, room: int | None = None,
     src = str(Path(clustering.__file__).resolve().parents[2])
     done = subprocess.run([sys.executable, "-c", _RUN_SCRIPT, src, str(n), str(tmp_path),
                            json.dumps(room), json.dumps(options or {})],
-                          capture_output=True, text=True, timeout=900, cwd=tmp_path)
+                          capture_output=True, text=True, timeout=900, cwd=tmp_path,
+                          env=_glibc_defaults())
     assert done.returncode == 0, done.stderr[-2000:] + done.stdout[-500:]
     found = json.loads(done.stdout.strip().splitlines()[-1])
     assert found["status"] == "ok", found["message"]
@@ -701,11 +733,21 @@ class TestTheFiguresAreCounted:
         # time, terms in n alone left to the share not planned on
         # (`MEMORY_SHARE`). 153.2 to 161.0 MiB on Python 3.10, 148.1 to
         # 156.4 on 3.11 and 142.1 to 142.6 on 3.13 against 162.5 planned;
-        # DBSCAN's 138.0 to 145.4.
-        assert found["peak"] <= found["needed"] + 4 * 2**20, (
-            found["peak"] / 2**20, found["needed"] / 2**20)
+        # DBSCAN's 138.0 to 145.4. CI's ubuntu-latest 3.10 leg measured
+        # DBSCAN at 169.1 (run 42607047496). Measured again on this
+        # machine with glibc's defaults (`_glibc_defaults`), 6 runs of
+        # DBSCAN and 3 of k-means and average linkage on each Python:
+        # DBSCAN 138.6 to 142.5 on 3.10, 138.1 to 149.0 on 3.11 and 138.3
+        # to 145.4 on 3.13; k-means and average linkage 153.7 to 158.1,
+        # 148.1 to 148.4 and 149.7 to 149.8; against 169.2 planned. Every
+        # peak was the map's: DBSCAN held 7.9 to 8.1 MiB as it began, and
+        # peaked at 122.6 to 138.2 before it. Said with a peak over the
+        # plan, which of the two was over.
+        assert found["peak"] <= found["needed"] + 4 * 2**20, {
+            key: round(value / 2**20, 1) for key, value in found.items()
+            if key in ("peak", "needed", "held_at_the_map", "peak_before_the_map")}
         # And not so far over it that a run that fits is refused: at most
-        # 1.18 times a peak counted (DBSCAN's least, 138.0 MiB).
+        # 1.23 times a peak counted (DBSCAN's least, 138.1 MiB on 3.11).
         assert found["needed"] <= 1.25 * found["peak"], (
             found["peak"] / 2**20, found["needed"] / 2**20)
 
@@ -769,7 +811,6 @@ class TestAnAddressSpaceLimit:
 
     @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
     def test_a_clustering_the_check_allows_finishes(self, tmp_path):
-        import os
         import subprocess
         from pathlib import Path
 
@@ -779,7 +820,7 @@ class TestAnAddressSpaceLimit:
         # and the check does not take 64 MiB of the room for its own (it
         # failed on a loaded machine 4 times of 4: 552 MiB held as the limit
         # was set, 616 at the check).
-        env = {key: value for key, value in os.environ.items()
+        env = {key: value for key, value in _glibc_defaults().items()
                if key not in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")}
         env["OMP_NUM_THREADS"] = "2"
         env["MALLOC_ARENA_MAX"] = "1"
@@ -1243,11 +1284,10 @@ print("EXIT", code, flush=True)
 
 
 def _cli_env() -> dict:
-    """Two threads, as on a machine of two cores, and one malloc arena: what
-    a process holds then is the same from one machine to another."""
-    import os
-
-    env = {key: value for key, value in os.environ.items()
+    """Two threads, as on a machine of two cores, one malloc arena, and
+    glibc's malloc otherwise as it starts (:func:`_glibc_defaults`): what a
+    process holds then is the same from one machine to another."""
+    env = {key: value for key, value in _glibc_defaults().items()
            if key not in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")}
     env.update(OMP_NUM_THREADS="2", MALLOC_ARENA_MAX="1")
     return env
