@@ -949,14 +949,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   what carries it on said it again. In a resume of a study of one it is
   named by its signal, not "(Ctrl+C)" for a SIGTERM. A SIGTERM as such a
   study stops listening no longer ends the process by the signal.
-- A study with `budget_hours` stopped before its simulation began (setup's
-  study, its pricing) exits 130, "stopped when asked", and says that
-  `fastmdx explore -c <config> --force-overwrite` runs it again, setup
-  first, not a traceback; `fastmdx resume` ran nothing there and read the
-  study finished. `--force-overwrite` and `--rerun` now reach both of its
-  stages, where they were refused as setup's output was there. Its study
-  stopped when asked in its simulation exits 130, as without a budget, not
-  0.
+- A study with `budget_hours` stopped in setup's study (a Ctrl-C, a SIGTERM,
+  the GUI's Stop, or a stop heard as that study ended) no longer goes on to
+  its price and simulation, nor is refused for want of a particle count: it
+  exits 130, "stopped when asked", and says that `fastmdx explore -c
+  <config> --force-overwrite` runs it again, setup first, with its
+  `--output` where one was given. A Ctrl-C in its pricing, or any stop there
+  once a study heard one, does the same, not a traceback; a first SIGTERM
+  there still ends the process by the signal. `fastmdx resume` ran setup
+  alone for such a study and read it finished, and setup's summary no
+  longer points to it. `--force-overwrite` and `--rerun` now reach both of
+  its stages where only setup is there; over a study holding more they are
+  refused before anything is changed, naming what would go, since setup
+  runs again before the price is known. A run the second stage did not
+  reach, the study stopped in an earlier run, is now carried on by `fastmdx
+  resume`, where it was read finished with its setup alone. Its study
+  stopped when asked in its simulation exits 130, and one with a run that
+  failed exits 1, as without a budget, where both exited 0.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
