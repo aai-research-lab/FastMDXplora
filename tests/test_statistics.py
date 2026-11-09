@@ -108,6 +108,46 @@ class TestFindingWhereARunSettled:
             assert holed.correlation_frames == pytest.approx(finite.correlation_frames)
             assert holed.drift_in_noise == pytest.approx(finite.drift_in_noise)
 
+    def test_a_shared_start_is_a_frame_of_the_series_as_given(self) -> None:
+        # A replica whose first frames have no value: the start shared with
+        # it and its discard are counted on the same frames.
+        from fastmdxplora.statistics import mean_record, shared_start
+
+        rng = np.random.default_rng(3)
+        relaxation = 3.0 * np.exp(-np.arange(3000) / 150.0)
+        replicas = [1.0 + relaxation + rng.normal(0, 0.2, 3000) for _ in range(3)]
+        replicas[0][:400] = np.nan
+        at = shared_start(replicas)
+        record = mean_record(replicas[0], start_at_least=at)
+        stripped = mean_record(replicas[0][400:], start_at_least=at - 400)
+        assert record["start_shared_with_replicas"] == at
+        assert record["discard"] == stripped["discard"] + 400
+        assert record["discard"] >= at
+
+    def test_a_start_asked_for_is_a_frame_of_the_series_as_given(self) -> None:
+        from fastmdxplora.statistics import mean_record
+
+        rng = np.random.default_rng(7)
+        values = 1.0 + 3.0 * np.exp(-np.arange(2000) / 40.0) + rng.normal(0, 0.2, 2000)
+        values[:200] = np.nan
+        assert mean_record(values)["discard"] < 700
+        record = mean_record(values, start_at_least=700)
+        assert record["discard"] == 700 == record["start_shared_with_replicas"]
+
+    def test_frames_no_replica_has_count_in_the_shared_start(self) -> None:
+        import warnings
+
+        from fastmdxplora.statistics import shared_start
+
+        rng = np.random.default_rng(5)
+        relaxation = 3.0 * np.exp(-np.arange(3000) / 150.0)
+        replicas = [1.0 + relaxation + rng.normal(0, 0.2, 3000) for _ in range(3)]
+        holed = [np.concatenate([np.full(300, np.nan), r]) for r in replicas]
+        with warnings.catch_warnings():
+            # The mean of frames no replica has a value for.
+            warnings.simplefilter("ignore", RuntimeWarning)
+            assert shared_start(holed) == shared_start(replicas) + 300
+
     def test_discard_is_on_the_original_frame_axis_after_nan_frames(self) -> None:
         from fastmdxplora.statistics import mean_record
 
