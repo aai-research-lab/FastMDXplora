@@ -617,7 +617,9 @@ def summarise(
     ``start_at_least`` is a start found elsewhere that this series should not
     average before: replicas from one structure share their relaxation, and
     the start found on their average (:func:`shared_start`) sees it where one
-    run's noise hides it. Never past two thirds of the series.
+    run's noise hides it. A frame of the series as given, frames without a
+    value counted, as the discard is. Never past two thirds of the frames
+    with a value.
 
     The refusal is about independence, not length: a long run of highly
     correlated frames can hold fewer independent samples than a short run of
@@ -636,7 +638,10 @@ def summarise(
         )
 
     discard, raw, _most = detect_equilibration(values)
-    later = min(int(start_at_least), int(values.size * 2 / 3))
+    # The start is a frame of the series as given, as the discard is: the
+    # first frame with a value at or after it.
+    later = min(int(np.searchsorted(finite_frames, int(start_at_least))),
+                int(values.size * 2 / 3))
     if later > discard:
         discard, raw = later, statistical_inefficiency(values[later:])
     equilibrated, reason = _summary(
@@ -932,8 +937,12 @@ def shared_start(series: "list[np.ndarray]") -> int:
     n = min(r.size for r in runs)
     stacked = np.vstack([r[:n] for r in runs])
     average = np.nanmean(stacked, axis=0) if np.isnan(stacked).any() else stacked.mean(axis=0)
-    average = average[np.isfinite(average)]
-    return int(detect_equilibration(average)[0]) if average.size else 0
+    # A frame of the series as given: frames no replica has a value for are
+    # left out of the detection, not out of the count.
+    finite_at = np.flatnonzero(np.isfinite(average))
+    if not finite_at.size:
+        return 0
+    return int(finite_at[int(detect_equilibration(average[finite_at])[0])])
 
 
 def _shortfall_as_summarised(values: np.ndarray, equilibrated: "Equilibrated", target: float,
