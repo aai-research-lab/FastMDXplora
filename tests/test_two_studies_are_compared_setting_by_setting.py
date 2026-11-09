@@ -34,6 +34,13 @@ class TestTheDifferences:
         written_out = {"simulation": {"temperature_K": 310, "timestep_fs": timestep.default}}
         assert differences(short, written_out) == []
 
+    @pytest.mark.parametrize("phase", ["setup", "simulation", "analysis", "report"])
+    def test_an_empty_phase_block_is_no_block(self, phase):
+        # `analysis:` with nothing under it loads as {} and means the
+        # defaults; it was listed as a setting differing from "(not set)".
+        system = {"systems": [{"system": "1UBQ"}]}
+        assert differences({**system, phase: {}}, system) == []
+
     def test_a_number_is_a_number(self):
         assert differences({"simulation": {"duration_ns": 2}},
                            {"simulation": {"duration_ns": 2.0}}) == []

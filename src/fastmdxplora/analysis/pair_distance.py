@@ -201,7 +201,9 @@ class PairDistance(Analysis):
             masses.append(float(mass))
         if masses:
             weights = np.asarray(masses, dtype=np.float64)
-            self.findings.setdefault("centres", {})["mass_weighted"] = True
+            # Both centres are mass-weighted only where neither fell back:
+            # group b is found first, and a's True wrote over its False.
+            self.findings.setdefault("centres", {}).setdefault("mass_weighted", True)
         else:
             weights = np.ones(len(idx), dtype=np.float64)
             self.findings.setdefault("centres", {})["mass_weighted"] = False
@@ -216,6 +218,7 @@ class PairDistance(Analysis):
     def _com_distance(
         self, traj: md.Trajectory, a: np.ndarray, b: np.ndarray
     ) -> np.ndarray:
+        self.findings.pop("centres", None)  # said afresh for these two groups
         delta = self._centres(traj, b) - self._centres(traj, a)
         if traj.unitcell_vectors is not None:
             delta = _minimum_image(delta, traj.unitcell_vectors)

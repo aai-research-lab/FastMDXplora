@@ -21,6 +21,8 @@ from fastmdxplora.batch.sweep import SweepError, text_from_values, values_from_t
     ["a.sdf", "b.sdf"],
     ["name CA, name CB", "protein"],        # a value holding a comma
     ["300", "true"],                         # strings that YAML would read otherwise
+    [1e-05, 0.5],                            # YAML 1.1 reads 1e-05 as a string
+    ["1e5", "x"],                            # a string that reads as a number
 ])
 def test_what_the_form_shows_reads_back_as_what_was_meant(values):
     back = values_from_text(text_from_values(values))
@@ -30,6 +32,22 @@ def test_what_the_form_shows_reads_back_as_what_was_meant(values):
 def test_an_empty_row_has_nothing_to_say():
     with pytest.raises(SweepError):
         values_from_text("  ")
+
+
+@pytest.mark.parametrize("typed, read", [
+    ("1e-3, 2e-3", [0.001, 0.002]),
+    ("[1e0, 2.5E+1]", [1.0, 25.0]),
+])
+def test_a_value_in_scientific_notation_is_a_number(typed, read):
+    assert values_from_text(typed) == read
+
+
+@pytest.mark.parametrize("typed", ["300, 310,", "300,,310", "[300, 310"])
+def test_a_row_that_says_no_value_or_no_list_is_refused(typed):
+    # "300, 310," read as [300, 310, None], a third run at no temperature;
+    # an unclosed bracket was a YAML traceback past the command line.
+    with pytest.raises(SweepError):
+        values_from_text(typed)
 
 
 def test_a_study_opened_in_the_form_keeps_its_sweep(tmp_path):

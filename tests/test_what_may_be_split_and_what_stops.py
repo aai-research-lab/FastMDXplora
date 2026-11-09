@@ -312,6 +312,22 @@ class TestThePiecesAddUpToTheStudy(unittest.TestCase):
                 self.assertEqual(sum(p.steps for p in pieces),
                                  int(100 * 1e6 / 4))
 
+    def test_the_queue_runs_the_production_the_runner_would(self):
+        # The queue writes the steps it planned into each segment, so a
+        # count of its own ran another study: by default a million steps,
+        # 4 ns at 4 fs where the runner runs 2; and 666,666 at 1.5 fs.
+        from fastmdxplora.simulation.runner import plan_stages
+
+        for simulation in ({"timestep_fs": 4}, {"timestep_fs": 1},
+                           {"timestep_fs": 1.5, "duration_ns": 1}, {}):
+            with self.subTest(**simulation):
+                config = dict(self.config, simulation=simulation)
+                runner = plan_stages(duration_ns=simulation.get("duration_ns"),
+                                     timestep_fs=simulation.get("timestep_fs", 2.0),
+                                     nvt_steps=None, npt_steps=None, production_steps=None)
+                pieces = self.plan(config, segments=1)
+                self.assertEqual(sum(p.steps for p in pieces), runner["production_steps"])
+
     def test_only_the_first_segment_equilibrates(self):
         # A segment that re-equilibrated would throw away the production it
         # was meant to continue, and the joined trajectory would hold a

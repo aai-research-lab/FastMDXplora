@@ -159,7 +159,25 @@ def _ps_said(ps: float) -> str:
 
 
 def _ns_said(ns: float) -> str:
-    return f"{ns:.3g} ns" if ns >= 1 else f"{ns * 1000:.3g} ps"
+    """A length in ns to three figures, in ps below 1 ns. Rounded before its
+    unit is chosen, and never with an exponent: `.3g` said a microsecond as
+    "1e+03 ns" and 0.9996 ps of a nanosecond short of it as "1e+03 ps"."""
+    ns = _three_figures(float(ns))
+    if ns >= 1:
+        return f"{_plain(ns)} ns"
+    return f"{_plain(_three_figures(ns * 1000))} ps"
+
+
+def _three_figures(x: float) -> float:
+    if x <= 0 or not math.isfinite(x):
+        return x
+    return round(x, 2 - math.floor(math.log10(x)))
+
+
+def _plain(x: float) -> str:
+    """A number as written, with no exponent and no trailing zeros."""
+    said = f"{x:.6f}".rstrip("0").rstrip(".")
+    return said or "0"
 
 
 def _unwritten_simulation(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -293,9 +311,7 @@ def _steps_to_ns(steps: Any, timestep_fs: Any) -> str:
         ns = int(steps) * float(timestep_fs) / 1e6
     except (TypeError, ValueError):
         return "not recorded"
-    if ns >= 1:
-        return f"{ns:.3g} ns"
-    return f"{ns * 1000:.3g} ps"
+    return _ns_said(ns)
 
 
 def missing_from_methods(setup: dict[str, Any], sim: dict[str, Any]) -> list[str]:
@@ -952,7 +968,7 @@ def methods_paragraphs(
             # Summed over the pieces, whatever the first piece's record
             # holds: a study read from its pieces may have no plan at all.
             total, pieces = extended
-            length = f"{total:.3g} ns" if total >= 1 else f"{total * 1000:.3g} ps"
+            length = _ns_said(total)
             protocol.append(
                 f"Production dynamics were run for {length} in the "
                 f"{production_ensemble.upper()} ensemble, in {pieces} pieces, "

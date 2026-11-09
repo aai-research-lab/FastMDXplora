@@ -86,6 +86,16 @@ class TestTheMachineIsMeasuredNotAssumed(unittest.TestCase):
                              platform_name="CUDA", precision="double",
                              path=self.path)
 
+    def test_a_measurement_that_did_not_say_its_platform_is_not_another_machine(self):
+        # describe_machine writes "unknown" for a platform it was not given,
+        # and "unknown" never equalled "CUDA": the calibration was refused
+        # as stale on every machine, and re-taken before every budget.
+        calibrate(particles=30_000, steps=5_000, seconds=42.0, path=self.path)
+        estimate = estimate_seconds(particles=30_000, steps=5_000,
+                                    platform_name="CUDA", precision="mixed",
+                                    path=self.path)
+        self.assertAlmostEqual(estimate.seconds, 42.0, places=6)
+
     def test_an_unknown_particle_count_is_refused(self):
         # Settled when the system is solvated, so an estimate before setup
         # has nothing to rest on. Inventing one from residue count would be
@@ -424,6 +434,20 @@ class TestTheMachineLearnsFromWhatItHasRun(unittest.TestCase):
                                     platform_name="CUDA", precision="mixed",
                                     path=self.root / "cal.json")
         self.assertAlmostEqual(estimate.seconds, 42.0, places=4)
+
+    def test_the_fit_says_the_platform_its_runs_agree_on(self):
+        from fastmdxplora.cost import calibrate_from_runs, estimate_seconds
+
+        self.run_costing("a", 30_000, 5_000, 42.0)
+        self.run_costing("b", 60_000, 5_000, 84.0)
+        fit = calibrate_from_runs(self.root, path=self.root / "cal.json")
+        self.assertEqual((fit.machine["platform"], fit.machine["precision"]),
+                         ("CUDA", "mixed"))
+        estimate_seconds(particles=30_000, steps=5_000, platform_name="CUDA",
+                         precision="mixed", path=self.root / "cal.json")
+        with self.assertRaises(StudyError):
+            estimate_seconds(particles=30_000, steps=5_000, platform_name="CPU",
+                             precision="mixed", path=self.root / "cal.json")
 
     def test_runs_that_disagree_are_refused_rather_than_averaged(self):
         # Not a noisy measurement. A disagreement this wide says the linear

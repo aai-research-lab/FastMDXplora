@@ -67,6 +67,14 @@ __all__ = [
 ]
 
 
+def _agreed(records: list[dict[str, Any]], key: str) -> str:
+    """The one value every record gives for ``key``, or "" where they
+    differ or any leaves it out."""
+    said = {r.get(key) for r in records}
+    only = next(iter(said)) if len(said) == 1 else None
+    return only if isinstance(only, str) else ""
+
+
 def describe_machine(platform_name: str = "", precision: str = "") -> dict[str, str]:
     """Enough about this machine to notice when it is a different one.
 
@@ -121,7 +129,13 @@ class Calibration:
         """
         for key in ("platform", "precision", "processor", "system"):
             here, there = self.machine.get(key), machine.get(key)
-            if here and there and here != there:
+            # "unknown" is what describe_machine says for a field it was not
+            # given: it says nothing, as an empty field does. Compared as a
+            # value, a calibration taken without a platform never suited a
+            # machine asked about with one, and was re-taken every time.
+            if here in (None, "", "unknown") or there in (None, "", "unknown"):
+                continue
+            if here != there:
                 return False
         return True
 
@@ -691,12 +705,18 @@ def calibrate_from_runs(
         the spread so a reader can decide whether to fit over a narrower
         range of system sizes instead.
     """
-    wanted = describe_machine(platform_name, precision)
     records = [
         r for r in costs_under(root)
         if (not platform_name or r.get("platform") == platform_name)
         and (not precision or r.get("precision") == precision)
     ]
+    # Not asked for, the platform and precision the runs agree on: they
+    # were recorded as "unknown" though every run fitted said which.
+    if not platform_name:
+        platform_name = _agreed(records, "platform")
+    if not precision:
+        precision = _agreed(records, "precision")
+    wanted = describe_machine(platform_name, precision)
     if not records:
         raise StudyError(
             f"No completed runs under {root} to fit from. A run writes "

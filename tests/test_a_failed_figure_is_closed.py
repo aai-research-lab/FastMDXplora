@@ -143,7 +143,8 @@ def test_a_comparison_figure_that_fails(tmp_path, monkeypatch, module, function)
     with pytest.raises(OSError):
         if function == "_trend_plot":
             compare._trend_plot("rmsd", "RMSD", "nm", "mean", "temperature_K",
-                                [(300.0, 0.1, 0.01), (310.0, 0.2, None)], tmp_path / "trend.png")
+                                [(300.0, 0.1, 0.01, "a"), (310.0, 0.2, None, "a")],
+                                tmp_path / "trend.png")
         else:
             compare._overlay_plot("rmsd", "RMSD", "nm",
                                   [("a", np.arange(3.0), None), ("b", np.arange(3.0) + 1, None)],

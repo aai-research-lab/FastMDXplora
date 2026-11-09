@@ -611,3 +611,57 @@ class TestTheOverlaysClock:
         assert _times(root / "runs" / "r-300", 3) is None
         self._manifest(root, "r-300", saving_interval_ps=0)
         assert _times(root / "runs" / "r-300", 3) is None
+
+
+class TestEachSystemHasItsOwnTrend:
+
+    def test_two_flat_systems_are_not_one_rising_trend(self, tmp_path):
+        # Sorted by the swept value alone, A at 300 K and B at 310 K were the
+        # ends: the difference between the systems read as a trend.
+        root = tmp_path / "batch"
+        runs = []
+        rng = np.random.default_rng(5)
+        for system, level in (("A", 0.2), ("B", 0.4)):
+            for T in (300, 310):
+                rid = f"{system}__temperature-K-{T}"
+                folder = root / "runs" / rid / "analysis" / "rmsd"
+                folder.mkdir(parents=True)
+                np.savetxt(folder / "rmsd.dat",
+                           level + 0.0005 * rng.standard_normal(200), fmt="%.8e")
+                runs.append({"run_id": rid, "system_id": system, "system": f"{system}.pdb",
+                             "status": "ok", "output_dir": str(root / "runs" / rid),
+                             "sweep_values": {"setup.temperature_K": T},
+                             "phases": [], "message": ""})
+        (root / "batch_manifest.json").write_text(json.dumps(
+            {"sweep": {"setup.temperature_K": [300, 310]}, "runs": runs}), encoding="utf-8")
+        md = (build_comparison_report(root) / "comparison_report.md").read_text()
+        assert "For `A`, from `temperature_K` 300 to 310" in md
+        assert "For `B`, from `temperature_K` 300 to 310" in md
+        assert "increases" not in md
+
+
+class TestACommaSeparatedSeriesIsCompared:
+
+    def test_sasa_written_as_a_table_is_overlaid(self, tmp_path):
+        # sasa.dat is CSV with a header; np.loadtxt refused it and the
+        # comparison left SASA out without a word.
+        import pandas as pd
+
+        root = _make_batch(tmp_path, temps=(300, 310), analyses=("rmsd",))
+        for T, level in ((300, 30.0), (310, 31.0)):
+            folder = root / "runs" / f"trpcage__temperature-K-{T}" / "analysis" / "sasa"
+            folder.mkdir(parents=True)
+            pd.DataFrame({"frame": range(50), "sasa_nm2": level + np.zeros(50)}).to_csv(
+                folder / "sasa.dat", index=False)
+        out = build_comparison_report(root)
+        assert (out / "overlay_sasa.png").is_file()
+        with (out / "comparison_summary.csv").open() as fh:
+            rows = list(csv.DictReader(fh))
+        assert [float(r["sasa_mean"]) for r in rows] == [30.0, 31.0]
+
+    def test_sasa_by_residue_is_not_read_as_a_series(self, tmp_path):
+        from fastmdxplora.batch.compare import _load_series
+
+        path = tmp_path / "sasa.dat"
+        path.write_text("frame,residue,sasa_nm2\n0,ALA1,1.0\n0,GLY2,2.0\n", encoding="utf-8")
+        assert _load_series(path) is None

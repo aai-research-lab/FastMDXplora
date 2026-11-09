@@ -193,6 +193,12 @@ def surface_classes(topology: md.Topology) -> np.ndarray:
     return classes
 
 
+def _places(table: pd.DataFrame) -> np.ndarray:
+    """Each row's residue by its place in the topology: the long table is
+    written frame by frame, every residue once per frame, in order."""
+    return table.groupby("frame").cumcount().to_numpy()
+
+
 def _sample_std(values: np.ndarray) -> np.ndarray:
     """Each column's sample standard deviation over the frames (ddof=1),
     accumulated in double; NaN where there is a single frame, which has no
@@ -512,6 +518,14 @@ class SASA(Analysis):
         """The summary with ``mean_relative_sasa`` beside its mean area."""
         if self._maxima is None:
             return summary
+        if len(summary) == len(self._maxima):
+            # One row per residue in topology order, as the maxima are: by
+            # place, so two residues the labels do not tell apart (184 and
+            # 184A, their codes unread) each keep their own maximum.
+            joined = summary.copy()
+            joined["mean_relative_sasa"] = (joined["mean_sasa_nm2"].to_numpy()
+                                            / self._maxima["max_asa_nm2"].to_numpy())
+            return joined
         keys = [k for k in ("chain", "residue", "insertion") if k in summary]
         maxima = self._maxima.drop_duplicates(subset=keys)
         if "insertion" in keys:
@@ -560,9 +574,10 @@ class SASA(Analysis):
             ax.set_ylim(bottom=0)
         else:
             # Per-residue heatmap: pivot long-form -> (residue × frame)
-            rows = [c for c in ("chain", "residue", "insertion") if c in result]
-            grid = result.pivot(
-                index=rows, columns="frame", values="sasa_nm2"
+            # By place in the topology: two residues the labels do not tell
+            # apart (184 and 184A, their codes unread) stopped the pivot.
+            grid = result.assign(_place=_places(result)).pivot(
+                index="_place", columns="frame", values="sasa_nm2"
             ).to_numpy()
             im = ax.imshow(
                 grid,
@@ -598,13 +613,19 @@ class SASA(Analysis):
             # has them: grouped by the number alone, the copies of a residue
             # in a structure of several chains were averaged together, and
             # 184 and 184A of one chain with them.
+            # Grouped by place in the topology, the labels carried beside:
+            # by the labels alone, two residues they do not tell apart (184
+            # and 184A where the codes were not read) were one average.
             keys = [key for key in ("chain", "residue", "insertion") if key in result]
             # pandas' std is the sample standard deviation (ddof=1), the
             # same definition average_residue uses.
             summary = (
-                result.groupby(keys, dropna=False)["sasa_nm2"]
-                .agg(mean_sasa_nm2="mean", std_sasa_nm2="std")
-                .reset_index()
+                result.assign(_place=_places(result))
+                .groupby("_place", sort=True)
+                .agg(**{key: (key, "first") for key in keys},
+                     mean_sasa_nm2=("sasa_nm2", "mean"),
+                     std_sasa_nm2=("sasa_nm2", "std"))
+                .reset_index(drop=True)
             )
             self._with_relative(summary).to_csv(
                 path.parent / f"{self.name}_average_per_residue.csv",

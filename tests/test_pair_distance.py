@@ -215,3 +215,27 @@ class TestATriclinicCell:
         assert result[0] == pytest.approx(0.5, abs=1e-4)
         assert "not_a_measurement" in analysis.findings
         assert "0.559" in analysis.findings["not_a_measurement"]
+
+
+def test_one_geometric_centre_is_not_recorded_as_mass_weighted(tmp_path):
+    # Group b, found first, had no elements; group a's mass-weighted centre
+    # then wrote True over b's False, beside a note saying the opposite.
+    top = md.Topology()
+    chain = top.add_chain()
+    weighted = top.add_residue("AAA", chain)
+    top.add_atom("C1", md.element.carbon, weighted)
+    top.add_atom("O1", md.element.oxygen, weighted)
+    bare = top.add_residue("BBB", chain)
+    top.add_atom("X1", None, bare)
+    top.add_atom("X2", None, bare)
+    xyz = np.array([[[0, 0, 0], [1, 0, 0], [3, 0, 0], [4, 0, 0]]] * 3, dtype=np.float32)
+    traj = md.Trajectory(xyz, top, time=[0, 10, 20])
+    analysis = PairDistance(output_dir=tmp_path, selection_a="resname AAA",
+                            selection_b="resname BBB")
+    analysis.compute(traj)
+    assert analysis.findings["centres"]["mass_weighted"] is False
+    # The other way round, both centres mass-weighted, it says so.
+    both = PairDistance(output_dir=tmp_path / "both", selection_a="name C1",
+                        selection_b="name O1")
+    both.compute(traj)
+    assert both.findings["centres"] == {"mass_weighted": True}

@@ -1929,6 +1929,13 @@ def _start_dashboard_for_command(args: argparse.Namespace, output_dir: Path):
         config=config,
     )
     print(f"FastMDXplora GUI running at: {session.url}")
+    if getattr(args, "dashboard_open_browser", False):
+        import webbrowser
+
+        try:
+            webbrowser.open(session.url, new=2)
+        except Exception:  # noqa: BLE001 - best effort, the URL is printed
+            pass
     if session.port_was_changed:
         print(
             f"Requested port {session.requested_port} was busy, "

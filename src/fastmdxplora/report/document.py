@@ -219,12 +219,13 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
     if extended is not None and extended[0] > 0:
         duration, pieces = extended[0], f" in {extended[1]} pieces"
     if isinstance(duration, (int, float)) and duration > 0:
+        from fastmdxplora.report.methods import _ns_said
         from fastmdxplora.simulation.sampling_ask import length_said
 
         # Under 1 ns as every page says it (`length_said`): "1 ps" was said
         # of a 1.2 ps run beside "its 1.2 ps".
         length = (length_said(duration) if duration < 1
-                  else f"{duration:.3g} ns") + pieces
+                  else _ns_said(duration)) + pieces
         said.append(("and was simulated" if said else "The system was simulated")
                     + f" for {length}{at}")
 

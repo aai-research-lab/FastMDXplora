@@ -518,6 +518,66 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A study put in the queue (`submit_study`, and the Agent's campaigns) runs
+  the production the same Config runs directly. The queue counted the steps
+  itself: a million by default whatever the timestep, so 4 ns at 4 fs where
+  the runner runs 2 ns, and 1 ns at 1 fs; and a duration truncated (666,666
+  steps at 1.5 fs, not 666,667). It now counts as `plan_stages` does.
+
+- A chain of segments the budget refuses is abandoned after its first
+  segment, as after any other failure. The first was marked failed and the
+  rest were left blocked on it, waiting for good.
+
+- A calibration taken without saying its platform or precision suits any
+  machine, as an empty field always did. It was saved as "unknown", which
+  matched no platform, so every estimate refused it as stale and a budgeted
+  run timed the machine again. `calibrate_from_runs` with no platform given
+  records the one its runs agree on.
+
+- `fastmdx mcp` keeps reading after a `notifications/cancelled` whose
+  `requestId` is a list or an object. The lookup raised and stopped the
+  server; nothing after it was answered.
+
+- A `study_tags.json` edited by hand to say its tags as a number no longer
+  stops the listing of every study in the workspace (All studies, the
+  Agent, `list_studies` in an AI app); as a string, it is no longer read
+  letter by letter. Either is read as no tags.
+
+- A batch comparison of several systems swept over one setting gives each
+  system its own trend line and its own sentence. The runs were ordered by
+  the swept value alone, so two flat systems read as one setting changing
+  the result by the difference between them.
+
+- SASA and Rg by chain are in a batch comparison. Their `.dat` files are
+  comma-separated with a header, which the comparison could not read, and
+  it left them out without a word.
+
+- `--sweep` reads `1e-5` as the number it is (YAML 1.1 read it as a string,
+  and the axis was refused), refuses `300, 310,` (it added a third run at no
+  temperature), and says what is wrong with an unclosed bracket rather than
+  showing a YAML traceback. A swept value written back for the GUI's form
+  reads back as itself.
+
+- `fastmdx diff` does not list an empty phase block (`analysis:` with
+  nothing under it) as a setting differing from a Config that leaves the
+  block out; both are the defaults.
+
+- `--dashboard-open-browser` opens the live dashboard in the browser. It was
+  read by nothing.
+
+- Per-residue SASA on a structure whose insertion codes were not read (184
+  and 184A labelled alike) draws its heatmap and averages each residue on
+  its own. The heatmap failed with "Index contains duplicate entries", and
+  the average-per-residue table gave the two residues one mean.
+
+- The Methods paragraph, slides and document say a microsecond as "1000 ns",
+  not "1e+03 ns", and a length just under 1 ns as "1 ns", not "1e+03 ps".
+
+- `pair_distance` records its centres as mass-weighted only where both
+  were. Where the second selection had no elements, the first's
+  mass-weighted centre wrote `true` over it, beside a note saying one
+  centre was geometric.
+
 - Every page of the docs names the interface the GUI. Four lines said "the
   browser": where the Agent's attempts are capped, where its API key is
   typed, the one server for `fastmdx gui` and `fastmdx agent`, and the

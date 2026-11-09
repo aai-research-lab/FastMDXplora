@@ -103,12 +103,38 @@ def values_from_text(text: Any) -> list[Any]:
     written = str(text).strip()
     if not written:
         raise SweepError("A sweep axis needs at least one value.")
-    if written.startswith("["):
-        values = yaml.safe_load(written)
-        if not isinstance(values, list):
-            raise SweepError(f"Could not read {written!r} as a list of values.")
-        return values
-    return [yaml.safe_load(part.strip()) for part in written.split(",")]
+    try:
+        if written.startswith("["):
+            values = yaml.load(written, Loader=_ValueLoader)
+            if not isinstance(values, list):
+                raise SweepError(f"Could not read {written!r} as a list of values.")
+            return values
+        parts = [part.strip() for part in written.split(",")]
+        if not all(parts):
+            # "300, 310," would otherwise add a run at None.
+            raise SweepError(f"{written!r} has an empty value between its commas.")
+        return [yaml.load(part, Loader=_ValueLoader) for part in parts]
+    except yaml.YAMLError as exc:
+        raise SweepError(f"Could not read {written!r} as values: {exc}") from exc
+
+
+def _value_loader() -> type:
+    """YAML's safe loader, reading 1e-05 as the number it is: YAML 1.1's
+    numbers need a decimal point, so 1e-05 was the string "1e-05" and the
+    axis was refused. Quoted, it is still a string."""
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    Loader.yaml_implicit_resolvers = {
+        first: list(resolvers)
+        for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()}
+    Loader.add_implicit_resolver(
+        "tag:yaml.org,2002:float",
+        re.compile(r"^[-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)[eE][-+]?[0-9]+$"),
+        list("-+0123456789."))
+    return Loader
 
 
 def text_from_values(values: list[Any]) -> str:
@@ -132,7 +158,7 @@ def _written(value: Any) -> str:
     plain = {True: "true", False: "false", None: "null"}.get(value, str(value)) \
         if isinstance(value, (bool, type(None))) else str(value)
     try:
-        back = yaml.safe_load(plain)
+        back = yaml.load(plain, Loader=_ValueLoader)
         if back == value and type(back) is type(value):
             return plain
     except yaml.YAMLError:
@@ -416,3 +442,6 @@ def normalize_summary_for_validation(data: dict[str, Any]) -> None:
                     suggestion=(f"{phase}.{s}" if (s := _suggestion_only(
                         option, set(valid))) else None),
                 )
+
+
+_ValueLoader = _value_loader()

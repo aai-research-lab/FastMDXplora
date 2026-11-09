@@ -419,8 +419,10 @@ def _simulation_bullets(project_root: Path) -> list[str]:
     bullets: list[str] = []
     duration = r.get("duration_ns_actual") or r.get("duration_ns")
     if isinstance(duration, (int, float)) and duration > 0:
+        from fastmdxplora.report.methods import _ns_said
+
         length = (f"{duration * 1000:.0f} ps" if duration < 1
-                  else f"{duration:.3g} ns")
+                  else _ns_said(duration))
         bullets.append(f"Production: {length}")
 
     # `pressure_bar` is what was asked for and is None when the default was

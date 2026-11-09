@@ -119,6 +119,10 @@ def settings_of(config: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
             for index, inner in enumerate(value):
                 walk(f"{prefix}[{index}]", inner)
+        elif isinstance(value, dict) and prefix in PHASE_SCHEMAS:
+            # An empty phase block (`analysis:` with nothing under it) is
+            # read as no block at all: its defaults are filled in below.
+            return
         else:
             flat[prefix] = value
 

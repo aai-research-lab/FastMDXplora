@@ -78,6 +78,13 @@ def _load_series(dat_path: Path) -> np.ndarray | None:
         return None
     try:
         arr = np.loadtxt(dat_path)
+    except ValueError:
+        # The comma-separated form with a header row (sasa, rg by chain):
+        # np.loadtxt cannot read it, and the run was left out of the
+        # comparison without a word.
+        arr = _load_table_series(dat_path)
+        if arr is None:
+            return None
     except Exception as exc:  # noqa: BLE001
         logger.debug("Could not read %s: %s", dat_path, exc)
         return None
@@ -88,6 +95,28 @@ def _load_series(dat_path: Path) -> np.ndarray | None:
         # Take the last column as the per-frame scalar.
         arr = arr[:, -1]
     return arr.ravel()
+
+
+def _load_table_series(dat_path: Path) -> np.ndarray | None:
+    """The per-frame series of a comma-separated `.dat`: its ``total`` or
+    ``sasa_nm2`` column, or its one column besides ``frame``. None for a
+    table that is not one value per frame (SASA by residue)."""
+    import pandas as pd
+
+    try:
+        table = pd.read_csv(dat_path, comment="#")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Could not read %s: %s", dat_path, exc)
+        return None
+    if "residue" in table.columns:
+        return None
+    for name in ("total", "sasa_nm2"):
+        if name in table.columns:
+            return pd.to_numeric(table[name], errors="coerce").to_numpy(dtype=float)
+    rest = [c for c in table.columns if c != "frame"]
+    if len(rest) != 1:
+        return None
+    return pd.to_numeric(table[rest[0]], errors="coerce").to_numpy(dtype=float)
 
 
 def _run_analysis_dir(run_output_dir: Path, analysis: str) -> Path:
@@ -174,27 +203,43 @@ def _trend_plot(
     unit: str,
     summary_label: str,
     axis: str,
-    points: list[tuple[float, float, float | None]],
+    points: list[tuple[float, float, float | None, str]],
     out_path: Path,
 ) -> Path | None:
     """Plot each run's mean against the swept parameter, with its standard
     error where the run recorded one: a difference between two points is
-    only a trend where it is larger than the bars."""
-    if len(points) < 2:
+    only a trend where it is larger than the bars. One line per system: a
+    line through two systems' points draws the difference between the
+    systems as a trend in the setting."""
+    lines = _by_system(points)
+    if not lines:
         return None
-    points = sorted(points, key=lambda p: p[0])
-    xs = [p[0] for p in points]
-    ys = [p[1] for p in points]
-    errors = [p[2] if p[2] is not None else 0.0 for p in points]
     ylabel = f"{summary_label} {label} ({unit})" if unit else f"{summary_label} {label}"
     fig, ax = new_figure(
         title=f"{label} vs {_short_axis(axis)}",
         xlabel=_short_axis(axis),
         ylabel=ylabel,
     )
-    ax.errorbar(xs, ys, yerr=errors if any(errors) else None, marker="o",
-                linewidth=1.4, capsize=3)
+    for system, line in lines.items():
+        xs = [p[0] for p in line]
+        ys = [p[1] for p in line]
+        errors = [p[2] if p[2] is not None else 0.0 for p in line]
+        ax.errorbar(xs, ys, yerr=errors if any(errors) else None, marker="o",
+                    linewidth=1.4, capsize=3,
+                    label=system if len(lines) > 1 else None)
+    if len(lines) > 1:
+        ax.legend(title=None, loc="best")
     return save_figure(fig, out_path)
+
+
+def _by_system(points: list[tuple]) -> dict[str, list[tuple]]:
+    """Points grouped by their last item, the run's system, each group in
+    order of the swept value; groups of fewer than two points left out."""
+    groups: dict[str, list[tuple]] = {}
+    for point in points:
+        groups.setdefault(point[-1], []).append(point)
+    return {system: sorted(line, key=lambda p: p[0])
+            for system, line in groups.items() if len(line) >= 2}
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +334,7 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
 
         # Overlay: load each run's series again (cheap; keeps memory low).
         series_by_run: list[tuple[str, np.ndarray]] = []
-        trend_points: list[tuple[float, float]] = []
+        trend_points: list[tuple[float, float, float | None, str]] = []
         overlaid: list[dict[str, Any]] = []
         trended: list[dict[str, Any]] = []
         for run in runs:
@@ -306,7 +351,8 @@ def build_comparison_report(batch_output_dir: str | Path) -> Path | None:
                 xval = _axis_numeric_value(run, axis)
                 if xval is not None and analysis in per_run_means.get(rid, {}):
                     mean = per_run_means[rid][analysis]
-                    trend_points.append((xval, mean["mean"], mean["error"]))
+                    trend_points.append((xval, mean["mean"], mean["error"],
+                                         str(run.get("system_id") or "")))
                     trended.append({**who, "x": xval, "mean": mean["mean"],
                                     "error": mean["error"], "over": _over(mean),
                                     "said": with_its_error(mean["mean"], mean["error"])})
@@ -628,13 +674,25 @@ def _trend_takeaway(
         x = _axis_numeric_value(run, axis)
         mean = per_run_means.get(run["run_id"], {}).get(analysis)
         if x is not None and mean is not None:
-            pts.append((x, mean["mean"], mean["error"], bool(mean.get("noted"))))
-    if len(pts) < 2:
-        return None
-    pts.sort(key=lambda p: p[0])
-    (x_lo, y_lo, e_lo, n_lo), (x_hi, y_hi, e_hi, n_hi) = pts[0], pts[-1]
+            pts.append((x, mean["mean"], mean["error"], bool(mean.get("noted")),
+                        str(run.get("system_id") or "")))
+    # Each system's ends against each other: the lowest point of one system
+    # and the highest of another differ by the systems, not the setting.
+    lines = _by_system(pts)
+    said = [_one_trend(line, label, flabel, unit, axis,
+                       system if len(lines) > 1 else None)
+            for system, line in lines.items()]
+    return " ".join(said) or None
+
+
+def _one_trend(pts: list[tuple], label: str, flabel: str, unit: str, axis: str,
+               system: str | None) -> str:
+    """The takeaway of one system's points, in order of the swept value."""
+    (x_lo, y_lo, e_lo, n_lo, _), (x_hi, y_hi, e_hi, n_hi, _) = pts[0], pts[-1]
     unit_str = f" {unit}" if unit else ""
     where = f"From `{_short_axis(axis)}` {x_lo:g} to {x_hi:g}, the {flabel} {label.lower()}"
+    if system is not None:
+        where = f"For `{system}`, f" + where[1:]
     change = y_hi - y_lo
     if e_lo is None or e_hi is None:
         return (f"{where} goes from {y_lo:.3g} to {y_hi:.3g}{unit_str}; no standard error "

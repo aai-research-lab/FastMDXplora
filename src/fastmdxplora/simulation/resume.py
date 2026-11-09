@@ -276,13 +276,24 @@ class Segment:
 
 
 def _production_steps(block: dict[str, Any]) -> int:
-    """How many production steps a config asks for, defaults included."""
+    """How many production steps a config asks for, defaults included:
+    counted as the runner's `plan_stages` counts them. This counted its own
+    way (a million steps by default, whatever the timestep; a duration
+    truncated), so a study put in the queue, which runs the count written
+    here, ran 4 ns where the same config run directly ran 2 at 4 fs."""
+    from fastmdxplora.simulation.lengths import (
+        DEFAULT_PRODUCTION_NS,
+        DEFAULT_TIMESTEP_FS,
+        steps_in,
+    )
+
     if block.get("production_steps") is not None:
         return int(block["production_steps"])
-    if block.get("duration_ns") is not None:
-        timestep = float(block.get("timestep_fs") or 2.0)
-        return int(float(block["duration_ns"]) * 1e6 / timestep)
-    return 1_000_000
+    timestep = float(block.get("timestep_fs") or DEFAULT_TIMESTEP_FS)
+    duration = block.get("duration_ns")
+    if duration is not None and float(duration) >= 0:
+        return steps_in(float(duration), timestep)
+    return steps_in(DEFAULT_PRODUCTION_NS, timestep)
 
 
 def plan_segments(

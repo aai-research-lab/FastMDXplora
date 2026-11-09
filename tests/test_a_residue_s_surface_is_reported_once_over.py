@@ -173,6 +173,43 @@ def _trypsin_with_benzamidine(tmp_path) -> md.Trajectory:
 
 @pytest.mark.xfail(sys.platform == "win32", strict=False,
                    reason="MDTraj's surface areas on Windows; see test_concrete_analyses.")
+class TestTwoResiduesOfOneNumberAreTwoResidues:
+    """Where the insertion codes were not read (the Python API on a
+    trajectory loaded by hand), 184 and 184A carry the same labels: the
+    per-residue heatmap could not be drawn, and the summary averaged the
+    two residues as one."""
+
+    def _unread(self, monkeypatch) -> md.Trajectory:
+        from fastmdxplora.analysis import residues
+
+        traj = _peptide()
+        top = traj.topology.copy()
+        for residue, number in zip(top.residues, (183, 184, 184, 185, 186)):
+            residue.resSeq = number
+        monkeypatch.setattr(residues, "_INSERTION_CODES", {})
+        return md.Trajectory(traj.xyz, top)
+
+    def test_each_keeps_its_own_average(self, monkeypatch, tmp_path) -> None:
+        from fastmdxplora.analysis import sasa as sasa_module
+        from fastmdxplora.analysis.sasa import SASA
+
+        monkeypatch.setattr(sasa_module.md, "shrake_rupley", lambda *a, **k: AREAS.copy())
+        analysis = SASA(mode="residue", output_dir=tmp_path)
+        analysis.save_data(analysis.compute(self._unread(monkeypatch)), tmp_path / "sasa.dat")
+        summary = pd.read_csv(tmp_path / "sasa_average_per_residue.csv")
+        assert summary["residue"].tolist() == [183, 184, 184, 185, 186]
+        np.testing.assert_allclose(summary["mean_sasa_nm2"].to_numpy(),
+                                   AREAS.astype(np.float64).mean(axis=0), rtol=1e-6)
+
+    def test_the_heatmap_is_drawn(self, monkeypatch, tmp_path) -> None:
+        from fastmdxplora.analysis import sasa as sasa_module
+        from fastmdxplora.analysis.sasa import SASA
+
+        monkeypatch.setattr(sasa_module.md, "shrake_rupley", lambda *a, **k: AREAS.copy())
+        result = SASA(mode="residue", output_dir=tmp_path).run(self._unread(monkeypatch))
+        assert result.status == "ok", result.message
+
+
 class TestTheSurfaceSaysWhetherTheLigandWasThere:
     """The default selection is the protein, so the surface reported beside
     a bound ligand is the protein's without it: in trypsin's S1 pocket
