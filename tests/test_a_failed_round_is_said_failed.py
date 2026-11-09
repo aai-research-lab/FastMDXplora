@@ -4292,6 +4292,17 @@ def test_a_budget_s_stop_heard_as_a_study_of_one_s_setup_ended_runs_it_again(
     assert found and all(remedy.argv == (*line, "--force-overwrite") for remedy in found), found
 
 
+def test_a_run_a_budget_study_stopped_in_setup_did_not_start_names_its_run_again(
+        tmp_path, monkeypatch):
+    """A run a budget study stopped in its setup stage did not start said
+    `fastmdx resume` runs it, which ran setup alone and read it finished."""
+    batch, argv, _typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    record = json.loads((batch.output_dir / "batch_manifest.json").read_text())
+    said = [run["message"] for run in record["runs"] if run["status"] == "skipped"]
+    assert len(said) == 1 and said[0].startswith("Not started"), said
+    assert "fastmdx resume" not in said[0] and "fastmdx explore" in said[0], said
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as

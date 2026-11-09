@@ -3842,12 +3842,17 @@ class BatchExplorer:
 
     # ------------------------------------------------------------------
     def _not_started(self, specs) -> list["RunResult"]:
-        """The runs a stopped study did not start, each saying so."""
-        return [_skipped_run_result(
-            spec, self._run_output_dir(spec),
-            f"{NOT_STARTED_BY_A_STOP} `fastmdx resume "
-            f"{self.output_dir}` runs it, and carries on the runs that were "
-            "stopped.") for spec in specs]
+        """The runs a stopped study did not start, each saying so, and what
+        runs them: in a budget study's setup stage, the study run again,
+        its setup first, where a resume ran setup alone."""
+        from fastmdxplora.simulation.runner import run_again_before_its_price
+
+        again = run_again_before_its_price()
+        said = (f"{again[0].upper()}{again[1:]}." if again else
+                f"`fastmdx resume {self.output_dir}` runs it, and carries on the runs "
+                "that were stopped.")
+        return [_skipped_run_result(spec, self._run_output_dir(spec),
+                                    f"{NOT_STARTED_BY_A_STOP} {said}") for spec in specs]
 
     def _stopped_at_once(self, spec, now: BaseException) -> "RunResult":
         """A run going as its study was stopped now (a second stop), read from
