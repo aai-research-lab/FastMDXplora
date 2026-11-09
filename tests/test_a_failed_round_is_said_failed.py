@@ -3940,6 +3940,28 @@ def test_a_stop_as_a_budget_s_records_are_rewritten_leaves_them_whole(tmp_path, 
         "include_phase": rest, "output": "x"}
 
 
+def test_a_stop_heard_as_a_budget_s_setup_ends_is_taken_from_python(tmp_path, monkeypatch):
+    """From `fastmdx agent --autonomous` or Python, a stop heard as setup's
+    study ended, every run ok: priced and simulated, as if none was asked."""
+    from fastmdxplora import cost
+    from fastmdxplora.agent import staged
+    from fastmdxplora.simulation import runner
+
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    monkeypatch.setattr(runner, "_QUIET_ONCE_STOPPED", False)
+    config, stages = _a_budget_study(tmp_path, monkeypatch,
+                                     first=_a_setup_stopped("heard as it ended"))
+    monkeypatch.setattr(cost, "measure_prepared_system",
+                        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("priced")))
+    runner._listen_afresh()
+    try:
+        done = staged.run_in_stages(yaml.safe_load(config.read_text()), tmp_path / "study",
+                                    budget_hours=1000)
+    finally:
+        runner._listen_afresh()
+    assert done.stopped and [phases for phases, _ in stages] == [["setup"]], stages
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

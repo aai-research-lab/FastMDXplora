@@ -257,6 +257,7 @@ def _run_in_stages(
     said = again or AGAIN
     os.environ[_signals.RUN_AGAIN_BEFORE_ITS_PRICE] = said
     _said_at_its_setup_stage(out, said, again_argv)
+    _signals._THE_LAST_STUDY_HEARD_A_STOP = False
     try:
         ran = runner(config=setup_only, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
@@ -264,7 +265,7 @@ def _run_in_stages(
         return staged
     cut = _stopped_when_asked(ran)
     staged.setup_done = not cut
-    if cut or _a_study_heard_a_stop():
+    if cut or _signals._THE_LAST_STUDY_HEARD_A_STOP:
         # Asked to stop in setup's study (Ctrl-C, SIGTERM, the GUI's Stop):
         # nothing is priced or run. It was refused for want of a particle
         # count, or priced and simulated as if no stop was asked.
@@ -399,14 +400,6 @@ def _stopped_when_asked(ran: Any) -> bool:
         return any(_was_stopped(result) for result in ran or [])
     except TypeError:  # an explore that returns no list of results
         return False
-
-
-def _a_study_heard_a_stop() -> bool:
-    """Whether the command's study heard a stop (`runner._A_STUDY_HEARD_A_STOP`):
-    one heard as setup's study ended leaves every run of it ok."""
-    from fastmdxplora.simulation import runner
-
-    return bool(runner._A_STUDY_HEARD_A_STOP)
 
 
 #: Written beside a study with a budget as its setup stage begins: what

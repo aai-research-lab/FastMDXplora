@@ -1419,6 +1419,9 @@ class _StopInTheRounds(_StopRequests):
 _QUIET_ONCE_STOPPED = False
 #: A study of the command heard a stop (`_StopInTheStudy.__exit__`).
 _A_STUDY_HEARD_A_STOP = False
+#: Whether the last study in this process heard a stop, set as it ends
+#: (`_StopInTheStudy.__exit__`), whoever called it.
+_THE_LAST_STUDY_HEARD_A_STOP = False
 #: In the environment, so a pool's workers read it too, while a study with
 #: a budget runs its setup stage and its pricing (`agent.staged`): what runs
 #: it again, said in place of `fastmdx resume` by its stop lines, which ran
@@ -1577,7 +1580,10 @@ class _StopInTheStudy(_StopInTheRounds):
         return self
 
     def __exit__(self, *exc: Any) -> bool:
-        global _A_STUDY_HEARD_A_STOP
+        global _A_STUDY_HEARD_A_STOP, _THE_LAST_STUDY_HEARD_A_STOP
+        # Whatever the caller (the Agent, a notebook): a stop heard as the
+        # study ended leaves every run of it ok (`agent.staged`).
+        _THE_LAST_STUDY_HEARD_A_STOP = self.signal is not None
         if _QUIET_ONCE_STOPPED and self.signal is not None:
             # Put back as the raising handler, not the command's own and
             # then it: a SIGTERM between the two ended the process (143).
