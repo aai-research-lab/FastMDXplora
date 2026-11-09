@@ -524,11 +524,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study's own `manifest.json`, which such a study has none of, and an
   umbrella study of 36 completed windows was said "not run".
 - An umbrella study's free energy (`free_energy/pmf/`) is a figure on its
-  Analysis page, first and among the key figures, and counts as an analysis:
-  the page said its windows were "compared below" and showed nothing. A
-  study whose `pmf.json` refused the profile shows none, whatever an earlier
-  run left there.
-- A folder of Python source (one with an `__init__.py`) is not a study: a
+  Analysis page, the first of its figures and among the key figures, and
+  counts as an analysis: the page said its windows were "compared below"
+  and showed nothing. A study whose `pmf.json` refused the profile shows no
+  figure, whatever an earlier run left there, and lists its files as files.
+- A study with a stray `__init__.py` beside its own records is still a
+  study.
+- A folder of Python source (one with an `__init__.py` and no study's
+  records) is not a study: a
   checkout's `src/fastmdxplora` was listed among the studies as one not
   started.
 - The Viewer stops asking for the newest frame once its run has ended and
@@ -2247,9 +2250,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
-- New study's code card has a Copy button for the config, command or
-  Python shown, named for the pane shown and ticking when copied; it is
-  disabled while the pane is empty.
+- New study's code card has a Copy button for the config, the command or
+  the script shown, named for the pane shown and ticking when copied; it is
+  off while the pane is empty, the study cannot start, or the config is
+  refused.
 
 - `python -m fastmdxplora.validation.replica_calibration` gives, beside the
   ratio (the SD of the replica means over the mean stated error, near one
