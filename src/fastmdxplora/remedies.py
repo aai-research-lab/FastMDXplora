@@ -465,7 +465,8 @@ def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
     named = _output_named(argv)
     if named is None:
         return ""
-    output = Path(named).expanduser()
+    # As explore reads it: `~` is not expanded after `--output=`.
+    output = Path(named)
     if not output.is_absolute():
         if not cwd:
             return ""

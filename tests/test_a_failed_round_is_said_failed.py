@@ -4571,6 +4571,17 @@ def test_a_study_s_phases_put_back_leave_its_record_whole(tmp_path, monkeypatch)
     assert record.read_text().startswith("# a header")
 
 
+def test_an_output_given_with_a_tilde_after_equals_is_read_as_explore_reads_it(tmp_path):
+    """`--output=~/x` is not expanded by the shell, and explore writes into
+    `./~/x`; the fix read it as `$HOME/x` and refused it as moved."""
+    from fastmdxplora.remedies import _why_not_run_into
+
+    study = tmp_path / "~" / "x"
+    study.mkdir(parents=True)
+    argv = ("explore", "-c", "s.yml", "--output=~/x", "--force-overwrite")
+    assert _why_not_run_into(study, argv, str(tmp_path)) == ""
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
