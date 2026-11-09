@@ -399,13 +399,18 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         # A study with a budget stopped in its setup stage: a resume of it
         # ran setup alone and read it finished.
         argv = tuple(str(word) for word in again.get("argv") or ())
-        found = [replace(remedy, fix="Run the study again, its setup first: it stopped before "
-                                     "its simulation began, so only its setup is recorded.",
-                         command="fastmdx " + shlex.join(argv) if argv else "",
-                         argv=argv, cwd=str(again.get("cwd") or "") if argv else "",
-                         price=None)
+        again_said = dict(fix="Run the study again, its setup first: it stopped before "
+                              "its simulation began, so only its setup is recorded.",
+                          command="fastmdx " + shlex.join(argv) if argv else "",
+                          argv=argv, cwd=str(again.get("cwd") or "") if argv else "",
+                          price=None)
+        found = [replace(remedy, **again_said)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
-                 else remedy for remedy in found]
+                 else remedy for remedy in found] or [
+            # Stopped as its runs' setup ended, each run "ok": nothing else
+            # says it stopped.
+            Remedy(code=STOPPED_REFUSAL, where="the study",
+                   why="It was stopped when asked as its setup ended.", **again_said)]
     try:
         elsewhere = another_host_said(owner)
     except Exception:  # noqa: BLE001 - its fixes as they are

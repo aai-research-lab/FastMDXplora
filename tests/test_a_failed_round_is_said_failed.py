@@ -4189,6 +4189,109 @@ def test_the_gui_s_stop_says_a_python_budget_s_stop_once(tmp_path):
     assert "run again from its setup" in said, said
 
 
+def _heard_as_its_first_run_s_setup_ended(tmp_path: Path, monkeypatch):
+    """A budget study of two runs whose stop was heard as its first run's
+    setup ended: that run's record says setup "ok", the second was not
+    started, and the study's batch manifest is written as it ends. The
+    batch, its argv and the folder it was typed in."""
+    import os
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    study = tmp_path / "w" / "st"
+    batch = BatchExplorer(config_data={
+        "systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
+        "sweep": {"simulation.random_seed": [1, 2]}, "budget_hours": 50},
+        output_dir=str(study))
+    first, second = batch.run_specs
+    setup_alone = yaml.safe_dump({"include_phase": ["setup"]})
+    (study / "runs" / first.run_id).mkdir(parents=True)
+    (study / "resolved_config.yml").write_text(setup_alone)
+    (study / "runs" / first.run_id / "resolved_config.yml").write_text(setup_alone)
+    (study / "runs" / first.run_id / "manifest.json").write_text(json.dumps({
+        "phases": [{"name": "setup", "status": "ok"}]}))
+    argv = ["explore", "-c", "two.yml", "--output", "st", "--force-overwrite"]
+    typed = tmp_path / "w"
+    monkeypatch.setenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE, json.dumps({
+        "said": f"`fastmdx {' '.join(argv)}` runs the study again, its setup first",
+        "argv": argv, "cwd": str(typed)}))
+    batch._listens = runner._StopInTheStudy(folder=study)
+    batch._listens.signal = signal.SIGTERM
+    batch.results = [RunResult(run_id=first.run_id, system="tri", status="ok",
+                               output_dir=study / "runs" / first.run_id, sweep_values={},
+                               phases=[]), *batch._not_started([second])]
+    batch._write_batch_manifest()
+    monkeypatch.delenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE)
+    assert os.environ.get(runner.RUN_AGAIN_BEFORE_ITS_PRICE) is None
+    return batch, argv, typed
+
+
+def test_a_budget_s_stop_heard_as_a_run_s_setup_ended_runs_it_again(tmp_path, monkeypatch,
+                                                                    capsys):
+    """A stop in a budget study's setup heard just as a run's setup ended:
+    no run's record said what runs it again, and its fixes, the GUI's fix
+    and the GUI's Stop answer named `fastmdx resume`, which ran setup alone
+    and read the study finished."""
+    from fastmdxplora.batch.explorer import _what_would_fix_it
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.remedies import remedies_of
+
+    batch, argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    record = json.loads((batch.output_dir / "batch_manifest.json").read_text())
+    assert record["run_again_argv"] == argv and record["run_again_cwd"] == str(typed), record
+    found = remedies_of(batch.output_dir)
+    assert [remedy.argv for remedy in found] == [tuple(argv)], found
+    assert not any("fastmdx resume" in remedy.command for remedy in found), found
+    fixes = fixes_payload(batch.output_dir)["fixes"]
+    assert [fix["argv"] for fix in fixes] == [argv], fixes
+    said = exploration.stopped_said(batch.output_dir)
+    assert "before its simulation began" in said and "fastmdx explore" in said, said
+    printed = "\n".join(_what_would_fix_it(batch.output_dir))
+    assert "fastmdx resume" not in printed and "fastmdx explore" in printed, printed
+
+
+def test_a_budget_s_stop_heard_as_a_study_of_one_s_setup_ended_runs_it_again(
+        tmp_path, monkeypatch, capsys):
+    """The same for a study of one, which writes no batch manifest: its run
+    ended "ok" in setup and the stop was heard as its study ended."""
+    import importlib
+
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def first(out: Path):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({
+            "phases": [{"name": "setup", "status": "ok"}]}))
+        with runner.listening_for_the_study(out) as listens:
+            listens.stage = "finishing"
+            listens._note(signal.SIGTERM, None)
+        return [RunResult(run_id="tri", system="tri", status="ok", output_dir=out,
+                          sweep_values={}, phases=[])]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    line = ["explore", "-c", str(config), "--output", str(tmp_path / "study")]
+    runner._listen_afresh()
+    try:
+        assert cli.main(line) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    found = remedies_of(tmp_path / "study")
+    assert found and all(remedy.argv == (*line, "--force-overwrite") for remedy in found), found
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as

@@ -333,6 +333,21 @@ def _not_started_by_a_stop(result: Any) -> bool:
             and str(getattr(result, "message", "") or "").startswith(NOT_STARTED_BY_A_STOP))
 
 
+def _what_runs_it_again() -> dict[str, Any]:
+    """What runs the study again, its setup first, as its records say it
+    (`run_again`, `run_again_argv`, `run_again_cwd`), while a budget study
+    runs its setup stage and pricing (`runner.run_again_before_its_price`);
+    empty otherwise."""
+    from fastmdxplora.simulation.runner import (run_again_argv, run_again_before_its_price,
+                                                run_again_cwd)
+
+    again = run_again_before_its_price()
+    if not again:
+        return {}
+    return {"run_again": again, "run_again_argv": run_again_argv(),
+            "run_again_cwd": run_again_cwd()}
+
+
 def _begun_here(folder: Path) -> bool:
     """Whether a run of the study has records of its own: begun."""
     return any((Path(folder) / name).exists()
@@ -4286,6 +4301,11 @@ class BatchExplorer:
         ended = self._round_ended() if round_said else None
         if ended is not None:
             manifest["round_ended"] = ended.as_record()
+        # A budget study stopped in its setup stage: what runs it again, said
+        # where the study heard the stop. A stop as a run's setup ended left
+        # no run's record saying it, and its fixes named `fastmdx resume`,
+        # which ran setup alone and read it finished.
+        manifest.update(_what_runs_it_again() if self._stop_asked() else {})
         path = self.output_dir / "batch_manifest.json"
         from fastmdxplora.orchestrator import _put_in_place
 
