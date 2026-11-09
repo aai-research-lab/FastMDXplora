@@ -202,7 +202,10 @@ class TestThePage(unittest.TestCase):
         self.assertIn("empty.hidden = false", script)
         self.assertIn("render(null);", script)
         # And is asked for again: nothing else would ask for a finished study.
-        self.assertIn("setTimeout(load, 1000 * retrying);", script)
+        self.assertIn(
+            "setTimeout(function () { if (mine === asked) load(); }, 1000 * retrying);",
+            script,
+        )
 
     def test_it_does_not_rerender_on_every_poll_while_hidden(self):
         # A 20 KB document rendered on each app-state tick is a cost with
