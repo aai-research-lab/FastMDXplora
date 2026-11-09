@@ -638,7 +638,7 @@
       ended = Boolean(STATE.runStatus) && !runIsWriting();
       if (!index.live_frame_available) {
         sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
-        STATE.liveAtRest = ended;
+        STATE.liveAtRest = ended && !runIsWriting();
         return;
       }
       if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
@@ -648,7 +648,7 @@
           step: index.live_frame_index,
           simtime: index.simulation_time_ns,
         });
-        STATE.liveAtRest = ended;
+        STATE.liveAtRest = ended && !runIsWriting();
         return;
       }
       const version = encodeURIComponent(index.live_frame_mtime || Date.now());
@@ -675,7 +675,7 @@
         STATE.liveFrameIndex = index.live_frame_index;
         if (await moveTheLiveAtoms(coordinates)) {
           sayLive(true, overlay);
-          STATE.liveAtRest = ended;
+          STATE.liveAtRest = ended && !runIsWriting();
           return;
         }
       }
@@ -703,7 +703,7 @@
       const preview = document.getElementById("mini-preview-canvas");
       if (preview && isVisible(preview)) await mountStructure(pdb, {mini: true, fit: !STATE.miniModel});
       sayLive(true, overlay);
-      STATE.liveAtRest = ended;
+      STATE.liveAtRest = ended && !runIsWriting();
     } catch (error) {
       console.debug("live molecular frame unavailable", error);
       // Its index was saved before it was shown: forgotten, the ended run's

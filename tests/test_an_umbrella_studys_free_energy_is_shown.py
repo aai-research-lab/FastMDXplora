@@ -47,3 +47,13 @@ def test_a_refused_profile_shows_no_figure(tmp_path):
         tmp_path, refused="windows 3 and 4 do not overlap"))
     assert not [plot for plot in payload["plots"] if plot["title"] == FREE_ENERGY_TITLE]
     assert payload["svg_figure_count"] == 0
+
+
+def test_a_refused_profile_s_files_are_still_listed(tmp_path):
+    """Review of the round: hiding the refused profile's figure took its
+    files off the list of the study's files too, though they are on disk."""
+    payload = _results_payload(_an_umbrella_study(
+        tmp_path, refused="windows 3 and 4 do not overlap"))
+    listed = {record["path"] for record in payload["artifacts"]}
+    assert "free_energy/pmf/pmf.dat" in listed
+    assert not [plot for plot in payload["plots"] if plot["title"] == FREE_ENERGY_TITLE]
