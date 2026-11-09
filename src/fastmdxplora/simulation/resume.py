@@ -2866,9 +2866,13 @@ STOPPED_IN_A_RESUME = ("Stopped when asked (Ctrl+C) before the resume finished; 
 
 def stopped_in_a_resume(stopped: BaseException) -> str:
     """`STOPPED_IN_A_RESUME`, named by the stops it took where it was a stop
-    now (`runner.StopNow.said`): a second SIGTERM was said Ctrl+C."""
-    from fastmdxplora.simulation.runner import StopNow
+    now (`runner.StopNow.said`): a second SIGTERM was said Ctrl+C. A further
+    stop once its study heard one (`runner.StoppedAgain`) is named by its
+    signal."""
+    from fastmdxplora.simulation.runner import StopNow, StoppedAgain
 
+    if isinstance(stopped, StoppedAgain):
+        return STOPPED_IN_A_RESUME.replace("(Ctrl+C)", f"({stopped.said()})")
     if not isinstance(stopped, StopNow):
         return STOPPED_IN_A_RESUME
     return STOPPED_IN_A_RESUME.replace("Stopped when asked (Ctrl+C)",

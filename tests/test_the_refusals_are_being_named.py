@@ -51,6 +51,9 @@ NOT_REFUSALS = frozenset({
     # A second stop obeyed at once, a KeyboardInterrupt carrying its signal:
     # the phase it reaches records it under `simulation.run.stopped`.
     "StopNow",
+    # A further stop once the command's study heard one, carrying its
+    # signal: the command says it stopped when asked.
+    "StoppedAgain",
     # The Model Context Protocol's own answers and control flow, not
     # refusals of a study: the JSON-RPC error a client is sent for a request
     # it got wrong, a question put to the person mid-call, a call the

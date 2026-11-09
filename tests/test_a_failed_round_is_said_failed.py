@@ -3402,6 +3402,21 @@ def test_a_stop_as_a_resume_marks_its_round_leaves_the_record_whole(tmp_path, mo
     assert [path.name for path in tmp_path.iterdir()] == [stopping.RECORD]
 
 
+def test_a_further_sigterm_in_a_resume_of_one_is_named_sigterm():
+    """A further SIGTERM once a resume's study heard a stop, caught in a
+    resume of a study of one: a bare KeyboardInterrupt, said "Stopped when
+    asked (Ctrl+C)" though no Ctrl-C was pressed."""
+    from fastmdxplora.simulation import resume, runner
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        runner._stopped_when_asked_again(signal.SIGTERM, None)
+    said = resume.stopped_in_a_resume(caught.value)
+    assert "(SIGTERM)" in said and "Ctrl+C" not in said, said
+    with pytest.raises(KeyboardInterrupt) as caught:
+        runner._stopped_when_asked_again(signal.SIGINT, None)
+    assert resume.stopped_in_a_resume(caught.value) == resume.STOPPED_IN_A_RESUME
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
