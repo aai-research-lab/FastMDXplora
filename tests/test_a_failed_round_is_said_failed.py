@@ -3417,6 +3417,39 @@ def test_a_further_sigterm_in_a_resume_of_one_is_named_sigterm():
     assert resume.stopped_in_a_resume(caught.value) == resume.STOPPED_IN_A_RESUME
 
 
+def test_a_stopped_study_s_listener_hands_on_to_the_raising_handler_at_once(monkeypatch):
+    """The study's listener, a stop heard, put the command's own handler
+    back (SIG_DFL for SIGTERM) and only then the raising one: a SIGTERM
+    between the two ended the process (143)."""
+    from fastmdxplora.simulation import runner
+
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    monkeypatch.setattr(runner, "_QUIET_ONCE_STOPPED", True)
+    monkeypatch.setattr(runner, "_A_STUDY_HEARD_A_STOP", False)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    put: list[tuple[int, object]] = []
+    real = signal.signal
+
+    def noted(number, handler):
+        put.append((number, handler))
+        return real(number, handler)
+
+    runner._listen_afresh()
+    try:
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        with runner._StopInTheStudy(folder=None) as study:
+            study.stage = "finishing"
+            study._note(signal.SIGTERM, None)
+            monkeypatch.setattr(signal, "signal", noted)
+        monkeypatch.setattr(signal, "signal", real)
+    finally:
+        runner._listen_afresh()
+        real(signal.SIGTERM, before[0])
+        real(signal.SIGINT, before[1])
+    assert put, put
+    assert all(handler is runner._stopped_when_asked_again for _, handler in put), put
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

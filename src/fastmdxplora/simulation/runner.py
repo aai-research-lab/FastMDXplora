@@ -1547,6 +1547,11 @@ class _StopInTheStudy(_StopInTheRounds):
 
     def __exit__(self, *exc: Any) -> bool:
         global _A_STUDY_HEARD_A_STOP
+        if _QUIET_ONCE_STOPPED and self.signal is not None:
+            # Put back as the raising handler, not the command's own and
+            # then it: a SIGTERM between the two ended the process (143).
+            for number in self._previous:
+                self._previous[number] = _stopped_when_asked_again
         super().__exit__(*exc)
         if _QUIET_ONCE_STOPPED and self.signal is not None:
             _A_STUDY_HEARD_A_STOP = True
