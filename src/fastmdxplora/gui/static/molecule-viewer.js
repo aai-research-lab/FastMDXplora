@@ -49,6 +49,9 @@
     liveCoordinates: null,
     liveFrameIndex: null,
     liveUpdates: true,
+    // Read once after its run ended: no newer frame comes, and the poll
+    // rests until the run writes again (`onStatusUpdated`).
+    liveAtRest: false,
     mode: "structure",
     representation: "cartoon",
     colorMode: "spectrum",
@@ -180,8 +183,10 @@
     document.addEventListener("fullscreenchange", () => requestAnimationFrame(resizeViewers));
     wireFolds();
     const refreshSeconds = Number(document.body?.dataset.refreshSeconds || 3);
+    // A finished study was asked for its newest frame every few seconds,
+    // as long as it was open.
     window.setInterval(
-      pollLiveFrame,
+      () => { if (!STATE.liveAtRest) void pollLiveFrame(); },
       Math.max(1000, Math.min(60000, refreshSeconds * 1000))
     );
   }
@@ -199,6 +204,7 @@
     STATE.framesPieces = null;
     pausePlayback();
     STATE.liveUpdates = true;
+    STATE.liveAtRest = false;
     STATE.liveFrameIndex = null;
     STATE.liveOverlay = null;
     STATE.liveTopology = null;
@@ -620,14 +626,19 @@
   async function pollLiveFrame() {
     const generation = STATE.viewerGeneration;
     if (!STATE.liveUpdates || document.body.classList.contains("state-loading")) return;
+    let ended = false;
     try {
       const response = await fetch("/api/live-frame-index", {cache: "no-store"});
       if (!isViewerGenerationCurrent(generation)) return;
       if (!response.ok) return;
       const index = await response.json();
       if (!isViewerGenerationCurrent(generation)) return;
+      // At rest only once what the ended run left is shown: a frame that
+      // failed to load is asked for again.
+      ended = Boolean(STATE.runStatus) && !runIsWriting();
       if (!index.live_frame_available) {
         sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
+        STATE.liveAtRest = ended;
         return;
       }
       if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
@@ -637,6 +648,7 @@
           step: index.live_frame_index,
           simtime: index.simulation_time_ns,
         });
+        STATE.liveAtRest = ended;
         return;
       }
       const version = encodeURIComponent(index.live_frame_mtime || Date.now());
@@ -663,6 +675,7 @@
         STATE.liveFrameIndex = index.live_frame_index;
         if (await moveTheLiveAtoms(coordinates)) {
           sayLive(true, overlay);
+          STATE.liveAtRest = ended;
           return;
         }
       }
@@ -690,8 +703,12 @@
       const preview = document.getElementById("mini-preview-canvas");
       if (preview && isVisible(preview)) await mountStructure(pdb, {mini: true, fit: !STATE.miniModel});
       sayLive(true, overlay);
+      STATE.liveAtRest = ended;
     } catch (error) {
       console.debug("live molecular frame unavailable", error);
+      // Its index was saved before it was shown: forgotten, the ended run's
+      // last frame is loaded again rather than taken as shown.
+      if (ended) STATE.liveFrameIndex = null;
     }
   }
 
@@ -3417,6 +3434,7 @@
     // Updates" beside its last frame. Kept while paused, so there is a way
     // to resume.
     const writing = running || STATE.runStatus === "starting";
+    if (writing) STATE.liveAtRest = false;
     document.querySelectorAll("[data-while-running]").forEach((control) => {
       control.hidden = !writing && STATE.liveUpdates !== false;
     });

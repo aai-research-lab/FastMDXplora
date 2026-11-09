@@ -148,9 +148,18 @@ STUDY_MARKERS = ("manifest.json", "resolved_config.yml", "exploration.yml",
 
 def is_study(directory: Path) -> bool:
     try:
+        if _is_package(directory):
+            return False
         return any((directory / m).exists() for m in STUDY_MARKERS)
     except OSError:
         return False
+
+
+def _is_package(directory: Path) -> bool:
+    """Whether a folder is Python source: FastMDXplora's own package has
+    `simulation`, `analysis` and `report` in it, and a checkout's
+    `src/fastmdxplora` was listed among the studies as one not started."""
+    return (directory / "__init__.py").is_file()
 
 
 _is_study = is_study
@@ -171,6 +180,9 @@ def holds_no_study(directory: Path) -> bool:
     try:
         if not directory.is_dir() or is_study(directory):
             return False
+        if _is_package(directory):
+            # Its `setup` package is not setup's folder.
+            return True
         if any((directory / name).exists() for name in _BEGUN):
             return False
         entries = [entry for entry in directory.iterdir() if not entry.name.startswith(".")]
