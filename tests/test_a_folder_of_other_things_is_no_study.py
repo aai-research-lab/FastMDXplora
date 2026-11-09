@@ -217,3 +217,18 @@ def test_python_source_is_no_study(tmp_path):
     assert is_study(study)
     listed = {Path(s["path"]).name for s in studies_in(tmp_path)["studies"]}
     assert "fastmdxplora" not in listed and "trp-cage" in listed
+
+
+def test_a_study_holding_an_init_file_is_still_a_study(tmp_path):
+    """Review of the round: a study's folder with a stray `__init__.py`
+    beside its manifest was dropped from All studies, and its Overview
+    said it held no study."""
+    from fastmdxplora.gui.browse import is_study
+
+    study = tmp_path / "ubq"
+    (study / "simulation").mkdir(parents=True)
+    (study / "manifest.json").write_text("{}", encoding="utf-8")
+    (study / "__init__.py").write_text("", encoding="utf-8")
+
+    assert is_study(study)
+    assert not holds_no_study(study)
