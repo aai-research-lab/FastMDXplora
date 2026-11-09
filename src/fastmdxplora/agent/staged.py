@@ -158,6 +158,8 @@ def run_in_stages(
     staged: StagedRun | None = None,
     force: bool = False,
     keep_previous: bool = False,
+    again: str = "",
+    again_argv: tuple[str, ...] = (),
 ) -> StagedRun:
     """Run setup, price the rest, and continue only if it fits.
 
@@ -183,6 +185,11 @@ def run_in_stages(
         As `fastmdx explore --force-overwrite` and `--rerun` give them, for
         both stages: a study whose setup is there already was refused,
         whatever was passed.
+    again, again_argv
+        What runs the study again, its setup first, as a sentence's clause
+        and as the arguments after `fastmdx`, said in place of `fastmdx
+        resume` until the second stage writes its record (`SETUP_STAGE`):
+        a resume there ran setup alone and read the study finished.
     """
     # The study's process record held from setup to the end: setup's run ends,
     # and the prepared system is then timed and priced in this process before
@@ -190,13 +197,23 @@ def run_in_stages(
     # going (`orchestrator._hold_run_process`).
     from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
 
+    import os
+
+    from fastmdxplora.simulation.runner import RUN_AGAIN_BEFORE_ITS_PRICE
+
     _hold_run_process(Path(output_dir))
+    before = os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE)
     try:
         return _run_in_stages(config, output_dir, budget_hours=budget_hours,
                               platform_name=platform_name, precision=precision,
                               explore=explore, measure=measure, staged=staged,
-                              force=force, keep_previous=keep_previous)
+                              force=force, keep_previous=keep_previous,
+                              again=again, again_argv=again_argv)
     finally:
+        if before is None:
+            os.environ.pop(RUN_AGAIN_BEFORE_ITS_PRICE, None)
+        else:
+            os.environ[RUN_AGAIN_BEFORE_ITS_PRICE] = before
         _release_run_process(Path(output_dir))
 
 
@@ -212,8 +229,13 @@ def _run_in_stages(
     staged: StagedRun | None = None,
     force: bool = False,
     keep_previous: bool = False,
+    again: str = "",
+    again_argv: tuple[str, ...] = (),
 ) -> StagedRun:
+    import os
+
     from fastmdxplora.cost import estimate_runs
+    from fastmdxplora.simulation import runner as _signals
 
     out = Path(output_dir)
     staged = staged if staged is not None else StagedRun(output_dir=out)
@@ -229,6 +251,12 @@ def _run_in_stages(
     # a conflict the person never wrote, refused after setup had run.
     asked = _phases_asked(config)
     setup_only = _with_phases(config, ["setup"])
+    # Until the second stage writes its record, what runs the study again
+    # is said in place of `fastmdx resume`, by its stop lines (in this
+    # process and its pool's workers) and by its records.
+    said = again or AGAIN
+    os.environ[_signals.RUN_AGAIN_BEFORE_ITS_PRICE] = said
+    _said_at_its_setup_stage(out, said, again_argv)
     try:
         ran = runner(config=setup_only, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
@@ -340,6 +368,9 @@ def _run_in_stages(
             simulation.get("setup_from") or simulation.get("prepared_from")):
         simulation["setup_from"] = injected = str(simulate_from)
     rest["simulation"] = simulation
+    # From here a stop is carried on by `fastmdx resume`, once the second
+    # stage's record is written.
+    os.environ.pop(_signals.RUN_AGAIN_BEFORE_ITS_PRICE, None)
     try:
         staged.results = runner(config=rest, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
@@ -352,6 +383,8 @@ def _run_in_stages(
         # Begun once its record is written: before, the study still read
         # as setup alone, which a resume reads finished.
         staged.simulating = _record_the_study_s_phases(out, config, after_setup, injected)
+        if staged.simulating:
+            (out / SETUP_STAGE).unlink(missing_ok=True)
     staged.simulated = True
     return staged
 
@@ -372,6 +405,78 @@ def _a_study_heard_a_stop() -> bool:
     from fastmdxplora.simulation import runner
 
     return bool(runner._A_STUDY_HEARD_A_STOP)
+
+
+#: Written beside a study with a budget as its setup stage begins: what
+#: runs it again (``said``, ``argv``). Until the second stage writes its
+#: record, a resume of it runs setup alone and reads the study finished
+#: (`before_its_price`).
+SETUP_STAGE = "budget_setup_stage.json"
+#: What runs it again, where its caller gave nothing.
+AGAIN = "run again with --force-overwrite, the study runs from its setup"
+
+
+def _said_at_its_setup_stage(out: Path, said: str, argv: tuple[str, ...]) -> None:
+    import json
+
+    from fastmdxplora.orchestrator import _put_in_place
+
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        _put_in_place(out / SETUP_STAGE, json.dumps(
+            {"stage": "setup", "said": said, "argv": list(argv)}, indent=2) + "\n")
+    except OSError:
+        pass
+
+
+def _its_records(out: Path) -> list[Path]:
+    """The resolved configs of the study and of its runs: not a shared
+    preparation's (`shared_setup/`), nor any other folder's below it."""
+    found = [out / "resolved_config.yml"]
+    runs = out / "runs"
+    if runs.is_dir():
+        found += sorted(run / "resolved_config.yml" for run in runs.iterdir() if run.is_dir())
+    return [path for path in found if path.is_file()]
+
+
+def _phases_recorded(path: Path) -> list[str] | None:
+    """The phases a resolved config records it runs (`include_phase`), or
+    None where it cannot be read, or records an `exclude_phase`."""
+    import yaml
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(data, dict) or data.get("exclude_phase"):
+        return None
+    return list(data.get("include_phase") or [])
+
+
+def _the_second_stage_began(out: Path, sent: list[str]) -> bool:
+    """Whether the second stage wrote a record: one of the study's or its
+    runs' resolved configs records exactly its phases."""
+    return any(_phases_recorded(path) == list(sent) for path in _its_records(out))
+
+
+def before_its_price(study: Path | str) -> dict[str, Any] | None:
+    """What runs the study again (``said``, ``argv``), where it is a study
+    with a budget stopped at its setup stage or its pricing: its setup
+    stage's record (`SETUP_STAGE`) is there, and every record of it says
+    setup alone. A resume of it ran setup alone and read it finished.
+    None for any other study."""
+    import json
+
+    root = Path(study)
+    try:
+        record = json.loads((root / SETUP_STAGE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    records = _its_records(root)
+    if not isinstance(record, dict) or not records or any(
+            _phases_recorded(path) != ["setup"] for path in records):
+        return None
+    return record
 
 
 def _phases_asked(config: dict[str, Any]) -> list[str]:

@@ -1419,6 +1419,21 @@ class _StopInTheRounds(_StopRequests):
 _QUIET_ONCE_STOPPED = False
 #: A study of the command heard a stop (`_StopInTheStudy.__exit__`).
 _A_STUDY_HEARD_A_STOP = False
+#: In the environment, so a pool's workers read it too, while a study with
+#: a budget runs its setup stage and its pricing (`agent.staged`): what runs
+#: it again, said in place of `fastmdx resume` by its stop lines, which ran
+#: setup alone there and read the study finished.
+RUN_AGAIN_BEFORE_ITS_PRICE = "FASTMDXPLORA_RUN_AGAIN_BEFORE_ITS_PRICE"
+
+
+def run_again_before_its_price() -> str | None:
+    """What runs the study again, where its setup stage and pricing run
+    (`RUN_AGAIN_BEFORE_ITS_PRICE`); else None."""
+    import os
+
+    return os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE) or None
+
+
 #: A study of the command said its summary once asked to stop, with what
 #: carries it on (`BatchExplorer._print_summary`): a further stop then
 #: says nothing more (`cli.main`).
@@ -1524,12 +1539,14 @@ class _StopInTheStudy(_StopInTheRounds):
             if number == _signal.SIGINT:
                 _say_stop(CTRL_C_UNDER_WAY)
             return
+        again = run_again_before_its_price()
         if heard == "first":
             self.signal = number
             if self.in_a_run:
-                _say_stop(f"{self.name} received: the run ends in the phase it is in, which "
-                          f"`fastmdx resume` runs again, and no further run starts. "
-                          f"{stop_now_said(number)}")
+                _say_stop(f"{self.name} received: the run ends in the phase it is in, "
+                          + (f"and no further run starts; {again}. " if again else
+                             "which `fastmdx resume` runs again, and no further run starts. ")
+                          + stop_now_said(number))
                 if number == _signal.SIGINT:
                     raise KeyboardInterrupt
                 from fastmdxplora.refusals import RunStopped
@@ -1537,14 +1554,17 @@ class _StopInTheStudy(_StopInTheRounds):
                 raise RunStopped(self.name)
             _say_stop(f"{self.name} received: " + {
                 "preparation": "the shared preparation goes on to its end, and no run "
-                               "starts after it; `fastmdx resume` runs them.",
+                               "starts after it; " + (f"{again}." if again else
+                                                      "`fastmdx resume` runs them."),
                 "finishing": "every run has ended, and the study finishes writing its "
                              "reports and comparison.",
-            }.get(self.stage, "no further run starts, and the study ends where "
-                              "`fastmdx resume` carries it on.")
+            }.get(self.stage, f"no further run starts, and the study ends; {again}." if again
+                  else "no further run starts, and the study ends where "
+                       "`fastmdx resume` carries it on.")
                 + f" {stop_now_said(number)}")
             return
-        _say_stop(f"Stopping now: the study ends at once; `fastmdx resume "
+        _say_stop(f"Stopping now: the study ends at once; {again}." if again else
+                  f"Stopping now: the study ends at once; `fastmdx resume "
                   f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
         self._listening_on_until_it_ends()
         _stop_now(number)

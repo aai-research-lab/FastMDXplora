@@ -1964,20 +1964,31 @@ def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> i
     return 130
 
 
-def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
-    """A study with a budget stopped before its simulation began (setup's
-    study, its pricing): only its setup is recorded, and `fastmdx resume`
-    ran nothing and read it finished. Running it again carries it on."""
+def _run_again(args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
+    """What runs a study with a budget again, its setup first: as a clause
+    of a sentence, and as the arguments after `fastmdx` (none without a
+    config to name)."""
     import shlex
 
     config = getattr(args, "config", None)
     # Its output named where it was given: without it, a new folder.
     where = getattr(args, "output_dir", None)
     to = f" --output {shlex.quote(str(where))}" if where else ""
-    again = (f"`fastmdx explore -c {shlex.quote(str(config))}{to} --force-overwrite`" if config
-             else "the same `fastmdx explore` with --force-overwrite")
-    print(f"fastmdx: stopped when asked, before its simulation began; {again} runs the "
-          "study again, its setup first.", file=sys.stderr)
+    if not config:
+        return ("the same `fastmdx explore` with --force-overwrite runs the study again, "
+                "its setup first"), ()
+    argv = ("explore", "-c", str(Path(config).resolve()),
+            *(("--output", str(Path(where).resolve())) if where else ()), "--force-overwrite")
+    return (f"`fastmdx explore -c {shlex.quote(str(config))}{to} --force-overwrite` runs the "
+            "study again, its setup first"), argv
+
+
+def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
+    """A study with a budget stopped before its simulation began (setup's
+    study, its pricing): only its setup is recorded, and `fastmdx resume`
+    ran nothing and read it finished. Running it again carries it on."""
+    print(f"fastmdx: stopped when asked, before its simulation began; {_run_again(args)[0]}.",
+          file=sys.stderr)
     return 130
 
 
@@ -2107,10 +2118,12 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         staged = StagedRun(output_dir=output)
         try:
             with _then_quiet_once_stopped():
+                said, argv = _run_again(args)
                 staged = run_in_stages(config, output, budget_hours=float(budget),
                                        staged=staged,
                                        force=bool(getattr(args, "force", False)),
-                                       keep_previous=bool(getattr(args, "rerun", False)))
+                                       keep_previous=bool(getattr(args, "rerun", False)),
+                                       again=said, again_argv=argv)
         except KeyboardInterrupt as stop:
             # Said as `fastmdx resume` says it once the simulation began;
             # before, a traceback, the process ended by the signal.

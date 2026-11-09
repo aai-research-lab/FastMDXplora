@@ -3722,6 +3722,18 @@ def test_a_summary_that_said_no_carry_on_leaves_a_further_stop_said(tmp_path, ca
         runner._listen_afresh()
 
 
+def _at_a_budget_s_setup_stage(study: Path) -> str:
+    """``study`` as a budget study's setup stage leaves it: its record of
+    that stage, saying what runs it again, and its records of setup alone."""
+    from fastmdxplora.agent import staged
+
+    again = "`fastmdx explore -c s.yml --force-overwrite` runs the study again, its setup first"
+    staged._said_at_its_setup_stage(study, again, ("explore", "-c", "s.yml",
+                                                   "--force-overwrite"))
+    (study / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    return again
+
+
 def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
     """Setup's stage of a budget study, stopped: its summary said `fastmdx
     resume` carries it on, which ran setup alone and read it finished."""
@@ -3812,6 +3824,48 @@ def test_a_budget_s_overwrite_removes_nothing_before_its_price(flag, tmp_path, m
     assert stages == [], stages
     assert all((study / held / "held.txt").is_file()
                for held in ("setup", "simulation", "comparison"))
+
+
+def test_a_budget_s_setup_stage_names_no_resume_where_a_stop_is_said(tmp_path, monkeypatch):
+    """A budget study stopped in its setup stage: its stop lines, the
+    phase's record of the stop and its fixes said `fastmdx resume` carries
+    it on, which ran setup alone and read it finished. They say what runs
+    it again, as the GUI's Stop does, and its resume refuses."""
+    from fastmdxplora import orchestrator, refusals, remedies
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.simulation import resume, runner
+
+    said: list[str] = []
+    monkeypatch.setattr(runner, "_say_stop", said.append)
+    study, _results = _a_killed_worker_s_study(tmp_path)
+    again = _at_a_budget_s_setup_stage(study)
+    monkeypatch.setenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE, again)
+    for stage, in_a_run in ((None, True), (None, False), ("preparation", False)):
+        runner._listen_afresh()
+        listener = runner._StopInTheStudy(folder=study)
+        listener.stage, listener.in_a_run = stage, in_a_run
+        try:
+            listener._note(signal.SIGTERM, None)
+        except refusals.RunStopped:
+            pass
+        runner._listen_afresh()
+    # A second stop, obeyed at once.
+    monkeypatch.setattr(runner, "_a_stop_heard", lambda _number: "now")
+    with pytest.raises(runner.StopNow):
+        runner._StopInTheStudy(folder=study)._note(signal.SIGTERM, None)
+    runner._listen_afresh()
+    records = [orchestrator._stopped_by_ctrl_c("setup").args[0],
+               refusals.RunStopped("SIGTERM").as_error().args[0]]
+    for line in said + records:
+        assert "fastmdx resume" not in line and again in line, line
+    found = remedies.remedies_of(study)
+    assert found and not any("resume" in remedy.command or remedy.argv[:1] == ("resume",)
+                             for remedy in found), found
+    assert any(remedy.argv == ("explore", "-c", "s.yml", "--force-overwrite")
+               and remedy.price is None for remedy in found), found
+    assert again in exploration.stopped_said(study)
+    answer = resume.resume_study(study)
+    assert answer["ok"] is False and again in answer["error"], answer
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):

@@ -988,6 +988,23 @@ def _defaults_found_from(output_dir: Path) -> Any:
         return None
 
 
+def stopped_said(where: Any) -> str:
+    """What the GUI's Stop answers once the run it started has ended: a
+    study with a budget stopped at its setup stage or its pricing is run
+    again, its setup first, where a resume of it ran setup alone and read it
+    finished (`agent.staged.before_its_price`)."""
+    if where is not None:
+        from fastmdxplora.agent.staged import before_its_price
+
+        again = before_its_price(Path(where))
+        if again is not None:
+            return ("Workflow stopped before its simulation began; "
+                    f"{again.get('said') or 'run it again with --force-overwrite'}.")
+    return ("Workflow stopped. A run in production ends at its next "
+            "frame with a checkpoint there, and `fastmdx resume` "
+            "carries it on.")
+
+
 @dataclass
 class DashboardRuntime:
     """Mutable state shared by all request-handler threads."""
@@ -2413,9 +2430,7 @@ class DashboardRuntime:
             self._refresh_process()
             return {
                 "stopped": True,
-                "detail": ("Workflow stopped. A run in production ends at its next "
-                           "frame with a checkpoint there, and `fastmdx resume` "
-                           "carries it on."),
+                "detail": stopped_said(where),
                 "state": self.snapshot(),
             }
 
