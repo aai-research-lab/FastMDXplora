@@ -4368,6 +4368,41 @@ def test_a_fix_of_a_study_moved_since_it_stopped_is_not_run_into_the_old_path(
     assert not spawn.called and not (typed / "st").exists()
 
 
+def test_a_budget_s_run_again_names_the_folder_it_ran_in(tmp_path, monkeypatch, capsys):
+    """A budget study given no folder (neither `--output` nor its config's
+    `output`) runs in one named for the time; the command named to run it
+    again, its setup first, ran it in a new one."""
+    import importlib
+
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    named = {}
+    stopped = _a_setup_stopped("before its count")
+
+    def first(out: Path):
+        named["argv"], named["out"] = runner.run_again_argv(), out
+        return stopped(out)
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    study = yaml.safe_load(config.read_text())
+    study.pop("output")
+    config.write_text(yaml.safe_dump(study))
+    monkeypatch.chdir(tmp_path)
+    runner._listen_afresh()
+    try:
+        assert cli.main(["explore", "-c", str(config)]) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    assert named["argv"] == ["explore", "-c", str(config), "--force-overwrite",
+                             "--output", str(named["out"])], named
+    assert f"--output {named['out']}" in capsys.readouterr().err
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as

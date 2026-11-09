@@ -1964,14 +1964,17 @@ def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> i
     return 130
 
 
-def _run_again(_args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
+def _run_again(args: argparse.Namespace,
+               output: Path | None = None) -> tuple[str, tuple[str, ...]]:
     """What runs a study with a budget again, its setup first: the
     person's own command line (`_COMMAND_LINE`), whole, with
     `--force-overwrite` added where none of `--force-overwrite`, `--force`
-    and `--rerun` is there, as a clause
+    and `--rerun` is there, and `--output` naming the study's folder
+    (``output``) where neither the line nor its config named one, as a clause
     of a sentence and as the arguments after `fastmdx`. Built from `-c`
     and `--output` alone, it dropped `--budget-hours` and the rest, and ran
-    another study, unpriced. Where there is no command line (called from
+    another study, unpriced; with no `--output`, it ran in a new folder
+    named for the time. Where there is no command line (called from
     Python), no command: the study is said to be run again from its setup."""
     import shlex
 
@@ -1982,16 +1985,19 @@ def _run_again(_args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
         return AGAIN, ()
     if not any(word in ("--force-overwrite", "--force", "--rerun") for word in line):
         line.append("--force-overwrite")
+    if output is not None:
+        line += ["--output", str(output)]
     return (f"`{shlex.join(['fastmdx', *line])}` runs the study again, its setup first",
             tuple(line))
 
 
-def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
+def _said_stopped_before_its_simulation(args: argparse.Namespace,
+                                        output: Path | None = None) -> int:
     """A study with a budget stopped before its simulation began (setup's
     study, its pricing): only its setup is recorded, and `fastmdx resume`
     ran nothing and read it finished. Running it again carries it on."""
-    print(f"fastmdx: stopped when asked, before its simulation began; {_run_again(args)[0]}.",
-          file=sys.stderr)
+    print("fastmdx: stopped when asked, before its simulation began; "
+          f"{_run_again(args, output)[0]}.", file=sys.stderr)
     return 130
 
 
@@ -2091,6 +2097,9 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         if "report" not in existing:
             config["exclude_phase"] = [*existing, "report"]
 
+    # Whether the study's folder is named (in its config or by `--output`),
+    # before a dashboard names one: one not named is new each time.
+    named_its_output = bool(config.get("output") or getattr(args, "output_dir", None))
     if _dashboard_requested(args):
         _enable_dashboard_telemetry(config, args)
     dashboard_output_dir: Path | None = None
@@ -2119,9 +2128,11 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         if removed is not None:
             return removed
         staged = StagedRun(output_dir=output)
+        # A study whose folder was not named is run again in this one.
+        unnamed = None if named_its_output else output
         try:
             with _then_quiet_once_stopped():
-                said, argv = _run_again(args)
+                said, argv = _run_again(args, unnamed)
                 staged = run_in_stages(config, output, budget_hours=float(budget),
                                        staged=staged,
                                        force=bool(getattr(args, "force", False)),
@@ -2131,12 +2142,12 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             # Said as `fastmdx resume` says it once the simulation began;
             # before, a traceback, the process ended by the signal.
             if not staged.simulating:
-                return _said_stopped_before_its_simulation(args)
+                return _said_stopped_before_its_simulation(args, unnamed)
             return _said_stopped_when_asked(output, stop)
         if getattr(staged, "stopped", False):
             # Stopped in setup's study (a SIGTERM, the GUI's Stop): it was
             # refused for want of a particle count, or priced and run on.
-            return _said_stopped_before_its_simulation(args)
+            return _said_stopped_before_its_simulation(args, unnamed)
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
