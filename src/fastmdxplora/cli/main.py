@@ -1970,11 +1970,13 @@ def _run_again(args: argparse.Namespace,
     person's own command line (`_COMMAND_LINE`), whole, with
     `--force-overwrite` added where none of `--force-overwrite`, `--force`
     and `--rerun` is there, and `--output` naming the study's folder
-    (``output``) where neither the line nor its config named one, as a clause
+    (``output``) where the line names none, as a clause
     of a sentence and as the arguments after `fastmdx`. Built from `-c`
     and `--output` alone, it dropped `--budget-hours` and the rest, and ran
-    another study, unpriced; with no `--output`, it ran in a new folder
-    named for the time. Where there is no command line (called from
+    another study, unpriced. With no `--output`, it ran in a new folder
+    named for the time where nothing named one, and a study moved since
+    could not be told from the one it names (`remedies._why_not_run_into`),
+    its folder given by its config. Where there is no command line (called from
     Python), no command: the study is said to be run again from its setup."""
     import shlex
 
@@ -1985,7 +1987,9 @@ def _run_again(args: argparse.Namespace,
         return AGAIN, ()
     if not any(word in ("--force-overwrite", "--force", "--rerun") for word in line):
         line.append("--force-overwrite")
-    if output is not None:
+    from fastmdxplora.remedies import _output_named
+
+    if output is not None and _output_named(tuple(line)) is None:
         line += ["--output", str(output)]
     return (f"`{shlex.join(['fastmdx', *line])}` runs the study again, its setup first",
             tuple(line))
@@ -2097,9 +2101,6 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         if "report" not in existing:
             config["exclude_phase"] = [*existing, "report"]
 
-    # Whether the study's folder is named (in its config or by `--output`),
-    # before a dashboard names one: one not named is new each time.
-    named_its_output = bool(config.get("output") or getattr(args, "output_dir", None))
     if _dashboard_requested(args):
         _enable_dashboard_telemetry(config, args)
     dashboard_output_dir: Path | None = None
@@ -2128,8 +2129,7 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         session = (_start_dashboard_for_command(args, dashboard_output_dir)
                    if _dashboard_requested(args) else None)
         try:
-            rc = _explore_with_a_budget(args, config, float(budget), output,
-                                        named_its_output)
+            rc = _explore_with_a_budget(args, config, float(budget), output)
         except BaseException:
             if session is not None:
                 session.stop()
@@ -2227,18 +2227,16 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
 
 def _explore_with_a_budget(args: argparse.Namespace, config: dict[str, Any], budget: float,
-                           output: Path, named_its_output: bool) -> int:
+                           output: Path) -> int:
     """`fastmdx explore` of a study with a budget: setup, its price, then the
     rest only if it fits (`agent.run_in_stages`), its exit code."""
     from fastmdxplora.agent import run_in_stages
     from fastmdxplora.agent.staged import StagedRun
 
     staged = StagedRun(output_dir=output)
-    # A study whose folder was not named is run again in this one.
-    unnamed = None if named_its_output else output
     try:
         with _then_quiet_once_stopped():
-            said, argv = _run_again(args, unnamed)
+            said, argv = _run_again(args, output)
             staged = run_in_stages(config, output, budget_hours=budget,
                                    staged=staged,
                                    force=bool(getattr(args, "force", False)),
@@ -2248,12 +2246,12 @@ def _explore_with_a_budget(args: argparse.Namespace, config: dict[str, Any], bud
         # Said as `fastmdx resume` says it once the simulation began;
         # before, a traceback, the process ended by the signal.
         if not staged.simulating:
-            return _said_stopped_before_its_simulation(args, unnamed)
+            return _said_stopped_before_its_simulation(args, output)
         return _said_stopped_when_asked(output, stop)
     if getattr(staged, "stopped", False):
         # Stopped in setup's study (a SIGTERM, the GUI's Stop): it was
         # refused for want of a particle count, or priced and run on.
-        return _said_stopped_before_its_simulation(args, unnamed)
+        return _said_stopped_before_its_simulation(args, output)
     for note in staged.notes:
         print(f"  {note}")
     if staged.refusal is not None:

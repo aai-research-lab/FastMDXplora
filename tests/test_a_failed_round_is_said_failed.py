@@ -3594,7 +3594,8 @@ def test_a_stop_in_a_budget_s_pricing_says_what_carries_it_on(tmp_path, monkeypa
     said = capsys.readouterr().err
     assert code == 130, said
     assert "fastmdx resume" not in said, said
-    assert f"`fastmdx explore -c {config} --force-overwrite`" in said, said
+    assert (f"`fastmdx explore -c {config} --force-overwrite --output {tmp_path / 'study'}`"
+            in said), said
     assert [phases for phases, _ in stages] == [["setup"]]
     # As it says: the machine calibrated now, its simulation runs.
     cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
@@ -4439,10 +4440,12 @@ def test_a_first_sigterm_in_a_budget_s_pricing_is_a_stop(tmp_path, monkeypatch, 
         signal.signal(signal.SIGTERM, before)
     said = capsys.readouterr().err
     assert code == 130, said
-    assert f"`fastmdx explore -c {config} --force-overwrite`" in said, said
+    assert (f"`fastmdx explore -c {config} --force-overwrite --output {tmp_path / 'study'}`"
+            in said), said
     assert [phases for phases, _ in stages] == [["setup"]]
     found = remedies_of(tmp_path / "study")
-    assert found and found[0].argv == ("explore", "-c", str(config), "--force-overwrite"), found
+    assert found and found[0].argv == ("explore", "-c", str(config), "--force-overwrite",
+                                       "--output", str(tmp_path / "study")), found
 
 
 def test_a_budget_study_with_a_dashboard_starts_its_gui(tmp_path, monkeypatch):
@@ -4487,6 +4490,59 @@ def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, 
         write_resolved_config({**merged, "include_phase": ["setup", "simulation"]}, tmp_path)
     assert (tmp_path / "resolved_config.yml").read_text() == before
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_a_study_named_by_its_config_s_output_moved_since_it_stopped_is_refused(
+        tmp_path, monkeypatch):
+    """A budget study whose folder its config's `output` named, no `--output`
+    typed, stopped in setup and then renamed: its run-again named no
+    `--output`, so nothing told it from the study open, and the GUI's Run
+    made a new study at the old path."""
+    import importlib
+    from unittest import mock
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def first(out: Path):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({"phases": [{
+            "name": "setup", "status": "error",
+            "refusal": refusal_of(RunStopped("SIGTERM").as_error()).as_dict()}]}))
+        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+        from fastmdxplora.orchestrator import RunResult
+
+        return [RunResult(run_id="tri", system="tri", status="error", output_dir=out,
+                          sweep_values={}, phases=[], error_type=STOPPED_ERROR_TYPE,
+                          message="Stopped when asked")]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    monkeypatch.chdir(tmp_path)
+    runner._listen_afresh()
+    try:
+        assert cli.main(["explore", "-c", config.name]) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    named = next(r for r in remedies_of(tmp_path / "study") if r.argv[:1] == ("explore",))
+    assert "--output" in named.argv and not named.refused, named
+    now = tmp_path / "renamed"
+    (tmp_path / "study").rename(now)
+    remedy = next(r for r in remedies_of(now) if r.argv[:1] == ("explore",))
+    assert "moved or renamed" in remedy.refused, remedy
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=tmp_path)
+    runtime.active_root = now
+    with mock.patch.object(DashboardRuntime, "_spawn", return_value={"launched": True}) as spawn:
+        assert not runtime.run_a_fix(0)["ok"]
+    assert not spawn.called and not (tmp_path / "study").exists()
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
