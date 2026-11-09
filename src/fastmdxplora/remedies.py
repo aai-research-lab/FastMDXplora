@@ -388,15 +388,15 @@ def remedies_of(study: str | Path) -> list[Remedy]:
                         else INTERRUPTED_CODE, where="the study", why=owed.said,
                         fix=owed.carry_on_on_a_page, command=" ".join(owed.argv),
                         argv=owed.argv[1:])]
-    from fastmdxplora.agent.staged import before_its_price
+    from fastmdxplora.agent.staged import stopped_before_its_price
 
-    again = before_its_price(root)
+    again = stopped_before_its_price(root)
     if again is not None:
-        # A study with a budget stopped at its setup stage or its pricing:
-        # a resume of it ran setup alone and read it finished.
+        # A study with a budget stopped in its setup stage: a resume of it
+        # ran setup alone and read it finished.
         argv = tuple(str(word) for word in again.get("argv") or ())
-        found = [replace(remedy, fix="Run the study again, its setup first: a resume of it "
-                                     "runs setup alone and reads it finished.",
+        found = [replace(remedy, fix="Run the study again, its setup first: it stopped before "
+                                     "its simulation began, so only its setup is recorded.",
                          command="fastmdx " + shlex.join(argv) if argv else "",
                          argv=argv, price=None)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")

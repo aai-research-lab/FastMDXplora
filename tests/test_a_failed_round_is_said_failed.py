@@ -3723,16 +3723,28 @@ def test_a_summary_that_said_no_carry_on_leaves_a_further_stop_said(tmp_path, ca
 
 
 def _at_a_budget_s_setup_stage(study: Path) -> str:
-    """``study`` as a budget study's setup stage leaves it: its record of
-    that stage, saying what runs it again, and its records of setup alone."""
-    from fastmdxplora.agent import staged
+    """``study`` as a budget study stopped in its setup stage leaves it: its
+    records of setup alone, and its first run's record of the stop saying
+    what runs it again."""
+    import os
+
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.simulation import runner
 
     again = "`fastmdx explore -c s.yml --force-overwrite` runs the study again, its setup first"
-    staged._said_at_its_setup_stage(study, again, ("explore", "-c", "s.yml",
-                                                   "--force-overwrite"))
     (study / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    run = study / "runs" / "a"
+    run.mkdir(parents=True, exist_ok=True)
+    # Its record of the stop as a phase writes it, in its setup stage.
+    os.environ[runner.RUN_AGAIN_BEFORE_ITS_PRICE] = json.dumps(
+        {"said": again, "argv": ["explore", "-c", "s.yml", "--force-overwrite"]})
+    try:
+        refusal = refusal_of(RunStopped("SIGTERM").as_error()).as_dict()
+    finally:
+        os.environ.pop(runner.RUN_AGAIN_BEFORE_ITS_PRICE, None)
+    (run / "manifest.json").write_text(json.dumps({"phases": [{
+        "name": "setup", "status": "error", "refusal": refusal}]}))
     return again
-
 
 def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
     """Setup's stage of a budget study, stopped: its summary said `fastmdx
@@ -3855,16 +3867,16 @@ def test_a_budget_s_setup_stage_names_no_resume_where_a_stop_is_said(tmp_path, m
     """A budget study stopped in its setup stage: its stop lines, the
     phase's record of the stop and its fixes said `fastmdx resume` carries
     it on, which ran setup alone and read it finished. They say what runs
-    it again, as the GUI's Stop does, and its resume refuses."""
+    it again, as the GUI's Stop does."""
     from fastmdxplora import orchestrator, refusals, remedies
     from fastmdxplora.gui import exploration
-    from fastmdxplora.simulation import resume, runner
+    from fastmdxplora.simulation import runner
 
     said: list[str] = []
     monkeypatch.setattr(runner, "_say_stop", said.append)
     study, _results = _a_killed_worker_s_study(tmp_path)
     again = _at_a_budget_s_setup_stage(study)
-    monkeypatch.setenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE, again)
+    monkeypatch.setenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE, json.dumps({"said": again, "argv": []}))
     for stage, in_a_run in ((None, True), (None, False), ("preparation", False)):
         runner._listen_afresh()
         listener = runner._StopInTheStudy(folder=study)
@@ -3888,9 +3900,9 @@ def test_a_budget_s_setup_stage_names_no_resume_where_a_stop_is_said(tmp_path, m
                              for remedy in found), found
     assert any(remedy.argv == ("explore", "-c", "s.yml", "--force-overwrite")
                and remedy.price is None for remedy in found), found
+    assert all("only its setup is recorded" in remedy.fix for remedy in found
+               if remedy.argv[:1] == ("explore",)), found
     assert again in exploration.stopped_said(study)
-    answer = resume.resume_study(study)
-    assert answer["ok"] is False and again in answer["error"], answer
 
 
 def test_a_budget_s_record_rewrite_leaves_a_shared_preparation_as_it_was(tmp_path):
@@ -3985,6 +3997,48 @@ def test_an_autonomous_study_stopped_in_its_simulation_is_not_said_within_budget
         assert cli._run_staged(SimpleNamespace(agent_output=str(tmp_path), budget_hours=1),
                                {}) == code
         assert "Ran within the budget" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("how", ["setup alone asked", "refused by its price",
+                                 "its setup refused"])
+def test_a_budget_study_not_stopped_resumes_as_before(how, tmp_path, monkeypatch):
+    """A budget study that finished setup alone, was refused by its price,
+    or had its setup refused, was said stopped before its simulation began
+    by a record its setup stage left, and its resume was refused."""
+    from fastmdxplora import cost, remedies
+    from fastmdxplora.agent import staged
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation import resume
+
+    def first(out: Path):
+        if how == "its setup refused":
+            raise StudyError("This structure does not determine its residues.",
+                             code="setup.structure.undetermined")
+        (out / "setup").mkdir(parents=True, exist_ok=True)
+        (out / "setup" / "setup_parameters.json").write_text(
+            json.dumps({"n_atoms_solvated": 2_000}))
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        return []
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    study = yaml.safe_load(config.read_text())
+    if how == "setup alone asked":
+        study["include_phase"] = ["setup"]
+    out = tmp_path / "study"
+    out.mkdir(exist_ok=True)
+    staged.run_in_stages(study, out, budget_hours=1e-9 if how == "refused by its price" else 1000,
+                         again="`fastmdx explore -c s.yml --force-overwrite` runs it again",
+                         again_argv=("explore", "-c", "s.yml", "--force-overwrite"))
+    assert not (out / "budget_setup_stage.json").exists()
+    try:
+        # As before: what it does with a stand-in's records is not this test's.
+        error = str(resume.resume_study(out).get("error"))
+    except Exception:  # noqa: BLE001
+        error = ""
+    assert "before its simulation began" not in error, error
+    assert not any("--force-overwrite" in remedy.command for remedy in remedies.remedies_of(out))
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):

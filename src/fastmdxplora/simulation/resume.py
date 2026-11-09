@@ -2718,16 +2718,6 @@ def resume_study(study: str | Path, *,
     held = _held_elsewhere(root, taken_over=taken_over)
     if held:
         return {"study": str(root), "ok": False, "did": RESUMED_NOTHING, "error": held}
-    from fastmdxplora.agent.staged import before_its_price
-
-    again = before_its_price(root)
-    if again is not None:
-        # A study with a budget stopped at its setup stage or its pricing:
-        # it ran setup alone, said "Batch complete", and read it finished.
-        return {"study": str(root), "ok": False, "did": RESUMED_NOTHING,
-                "error": f"{root} was stopped before its simulation began, before its "
-                         "budget's price was known, so a resume would run its setup alone; "
-                         f"{again.get('said') or 'run it again with --force-overwrite'}."}
     try:
         with _carrying_on(root):
             return _resume_study(root, device_index=device_index)

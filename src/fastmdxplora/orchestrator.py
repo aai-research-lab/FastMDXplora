@@ -1912,14 +1912,15 @@ def _stopped_by_ctrl_c(phase: str, stopped: BaseException | None = None) -> Stud
         said = f"a second {stopped.signal_name}"
     else:
         said = f"{stopped.said()},"
-    from fastmdxplora.simulation.runner import run_again_before_its_price
+    from fastmdxplora.simulation.runner import run_again_argv, run_again_before_its_price
 
     # A budget's setup stage: a resume ran setup alone and read it finished.
-    again = run_again_before_its_price() or "`fastmdx resume` carries it on"
+    again = run_again_before_its_price()
     return StudyError(
         f"The run was stopped by {said} in its {phase} phase, before it finished; "
-        f"{again}.",
-        code=STOPPED_CODE, signal=name, checkpoint_on_frame=False)
+        f"{again or '`fastmdx resume` carries it on'}.",
+        code=STOPPED_CODE, signal=name, checkpoint_on_frame=False,
+        **({"run_again": again, "run_again_argv": run_again_argv()} if again else {}))
 
 
 def _was_a_stop(result: Any) -> bool:

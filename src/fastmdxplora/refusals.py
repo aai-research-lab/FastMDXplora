@@ -1446,17 +1446,18 @@ class RunStopped(BaseException):
         self.signal_name = signal_name
 
     def as_error(self) -> "StudyError":
-        from fastmdxplora.simulation.runner import run_again_before_its_price
+        from fastmdxplora.simulation.runner import run_again_argv, run_again_before_its_price
 
         # A budget's setup stage: a resume ran setup alone and read it finished.
-        again = (run_again_before_its_price()
-                 or "`fastmdx resume` runs again the phase it was in")
+        again = run_again_before_its_price()
         return StudyError(
             f"The run was stopped by {self.signal_name} outside production, "
-            f"before it finished; {again}.",
+            f"before it finished; {again or '`fastmdx resume` runs again the phase it was in'}.",
             code="simulation.run.stopped",
             details={"signal": self.signal_name, "step": None,
-                     "checkpoint_on_frame": False})
+                     "checkpoint_on_frame": False,
+                     **({"run_again": again, "run_again_argv": run_again_argv()}
+                        if again else {})})
 
 
 def refusal_of(value: Any) -> Refusal:

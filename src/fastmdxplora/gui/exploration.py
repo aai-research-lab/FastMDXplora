@@ -990,13 +990,13 @@ def _defaults_found_from(output_dir: Path) -> Any:
 
 def stopped_said(where: Any) -> str:
     """What the GUI's Stop answers once the run it started has ended: a
-    study with a budget stopped at its setup stage or its pricing is run
-    again, its setup first, where a resume of it ran setup alone and read it
-    finished (`agent.staged.before_its_price`)."""
+    study with a budget stopped in its setup stage is run again, its setup
+    first, where a resume of it ran setup alone and read it finished
+    (`agent.staged.stopped_before_its_price`)."""
     if where is not None:
-        from fastmdxplora.agent.staged import before_its_price
+        from fastmdxplora.agent.staged import stopped_before_its_price
 
-        again = before_its_price(Path(where))
+        again = stopped_before_its_price(Path(where))
         if again is not None:
             return ("Workflow stopped before its simulation began; "
                     f"{again.get('said') or 'run it again with --force-overwrite'}.")

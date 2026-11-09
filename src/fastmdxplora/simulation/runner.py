@@ -1429,12 +1429,27 @@ _THE_LAST_STUDY_HEARD_A_STOP = False
 RUN_AGAIN_BEFORE_ITS_PRICE = "FASTMDXPLORA_RUN_AGAIN_BEFORE_ITS_PRICE"
 
 
-def run_again_before_its_price() -> str | None:
-    """What runs the study again, where its setup stage and pricing run
-    (`RUN_AGAIN_BEFORE_ITS_PRICE`); else None."""
+def _run_again() -> dict[str, Any]:
     import os
 
-    return os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE) or None
+    given = os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE) or ""
+    try:
+        said = json.loads(given) if given else {}
+    except ValueError:
+        said = {"said": given}
+    return said if isinstance(said, dict) else {}
+
+
+def run_again_before_its_price() -> str | None:
+    """What runs the study again, where its setup stage and pricing run
+    (`RUN_AGAIN_BEFORE_ITS_PRICE`), as a clause; else None."""
+    return str(_run_again().get("said") or "") or None
+
+
+def run_again_argv() -> list[str]:
+    """The command that runs it again there, as the arguments after
+    `fastmdx`: none where the study was not run from a command line."""
+    return [str(word) for word in _run_again().get("argv") or []]
 
 
 #: A study of the command said its summary once asked to stop, with what
