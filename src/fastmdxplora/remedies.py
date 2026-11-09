@@ -175,7 +175,8 @@ class Remedy:
     #: "" for the GUI's own folder.
     cwd: str = ""
     #: Why ``argv`` is not run, where it would not run into this study: the
-    #: folder it is run from is gone. "" where nothing stands in its way.
+    #: folder it is run from is gone, or the study was moved or renamed
+    #: since. "" where nothing stands in its way.
     refused: str = ""
 
     def as_text(self, *, with_config: bool = True) -> str:
@@ -439,16 +440,45 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     return found
 
 
+def _output_named(argv: tuple[str, ...]) -> str | None:
+    """The folder a command line names with `--output` (as argparse reads
+    it, `--output=DIR` and a prefix such as `--out` too), or None."""
+    named = None
+    for at, word in enumerate(argv):
+        flag, equals, value = word.partition("=")
+        if len(flag) >= 4 and "--output".startswith(flag):
+            named = value if equals else (argv[at + 1] if at + 1 < len(argv) else None)
+    return named
+
+
 def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
     """Why the command that runs a study again, its setup first, is not run
-    for the study at ``root``: the folder it is run from is gone. "" where
-    it is there."""
+    for the study at ``root``: the folder it is run from is gone, or its
+    `--output`, read from there, is not this study (moved or renamed since
+    it stopped), which it would run into a new folder or another study.
+    "" where neither."""
     if not argv:
         return ""
     if cwd and not Path(cwd).is_dir():
         return (f"It is run from {cwd}, where it was first run, and that folder is not "
                 "there now, so it is not run from here.")
-    return ""
+    named = _output_named(argv)
+    if named is None:
+        return ""
+    output = Path(named).expanduser()
+    if not output.is_absolute():
+        if not cwd:
+            return ""
+        output = Path(cwd) / output
+    try:
+        same = output.resolve() == root.resolve()
+    except (OSError, RuntimeError):
+        same = False
+    if same:
+        return ""
+    return (f"It runs into {output}, and this study is at {root}: it was moved or renamed "
+            "since it stopped, so it is not run from here. Run it again with `--output` "
+            "naming the study where it is now.")
 
 
 def _unread(refusal: OSError, root: Path, where: str) -> Remedy:

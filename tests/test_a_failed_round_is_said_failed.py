@@ -4340,6 +4340,34 @@ def test_a_fix_run_from_where_it_was_typed_says_that_folder(tmp_path, monkeypatc
     shutil.rmtree(moved)
 
 
+def test_a_fix_of_a_study_moved_since_it_stopped_is_not_run_into_the_old_path(
+        tmp_path, monkeypatch):
+    """A budget study stopped in setup, then moved or renamed with the folder
+    it was typed in still there: its fix ran `--output st` from that folder,
+    into the old path, while the page watched the study where it is now."""
+    from unittest import mock
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.remedies import remedies_of
+
+    batch, _argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    assert not remedies_of(batch.output_dir)[0].refused
+    (typed / "old").mkdir()
+    now = typed / "old" / "st"
+    batch.output_dir.rename(now)
+    remedy = remedies_of(now)[0]
+    assert "moved or renamed" in remedy.refused and str(now) in remedy.refused, remedy
+    fix = fixes_payload(now)["fixes"][0]
+    assert not fix["runnable"] and fix["not_run_here"] == remedy.refused, fix
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=now.parent)
+    runtime.active_root = now
+    with mock.patch.object(DashboardRuntime, "_spawn", return_value={"launched": True}) as spawn:
+        answer = runtime.run_a_fix(0)
+    assert not answer["ok"] and "moved or renamed" in answer["error"], answer
+    assert not spawn.called and not (typed / "st").exists()
+
+
 def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
     """A SIGTERM as a run's setup ended raised its stop as the run wrote its
     resolved config again: the record was left cut short, the study read as
