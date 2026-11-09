@@ -3722,6 +3722,24 @@ def test_a_summary_that_said_no_carry_on_leaves_a_further_stop_said(tmp_path, ca
         runner._listen_afresh()
 
 
+def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
+    """Setup's stage of a budget study, stopped: its summary said `fastmdx
+    resume` carries it on, which ran setup alone and read it finished."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.simulation import runner
+
+    study, results = _a_killed_worker_s_study(tmp_path)
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir, batch.results = study, results
+    batch._raw = {"budget_hours": 50, "include_phase": ["setup"]}
+    batch._listens = runner._StopInTheStudy(folder=study)
+    batch._listens.signal = signal.SIGTERM
+    batch._print_summary()
+    printed = capsys.readouterr().out
+    assert "Batch" in printed and "fastmdx resume" not in printed, printed
+    assert runner._ITS_STOP_SAID is False
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

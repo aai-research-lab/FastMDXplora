@@ -4442,6 +4442,13 @@ class BatchExplorer:
         # What carries the study on, said here (its fixes, its stopped runs'
         # resume, its round's sentence): a further stop need not say it again.
         carry_on_said = bool(fixes) or bool(stopped) or ended is not None
+        raw = getattr(self, "_raw", None) or {}
+        if (raw.get("budget_hours") is not None
+                and list(raw.get("include_phase") or []) == ["setup"]):
+            # Setup's stage of a study with a budget (`agent.staged`): a
+            # resume of it ran setup alone and read the study finished. Its
+            # command says what runs it again.
+            fixes, stopped, carry_on_said = [], 0, False
         if fixes:
             print("\n".join(fixes))
         elif stopped:
