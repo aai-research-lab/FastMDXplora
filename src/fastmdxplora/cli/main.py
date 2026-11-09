@@ -2101,6 +2101,9 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         held = _refused_as_held(args, config)
         if held is not None:
             return held
+        removed = _removed_before_its_price(args, output)
+        if removed is not None:
+            return removed
         staged = StagedRun(output_dir=output)
         try:
             with _then_quiet_once_stopped():
@@ -2259,6 +2262,32 @@ def _the_study_s_exit(results: list[Any], output_dir: Path,
             # recorded as; 1 is for a run's own error or a failed round.
             rc = 130 if ended.state == "stopped" and not erred else 1
     return rc, ended
+
+
+def _removed_before_its_price(args: argparse.Namespace, output: Path) -> int | None:
+    """2, said, where `--force-overwrite` or `--rerun` with a budget would
+    remove (or move to `previous/`) what follows setup before the study is
+    priced: setup runs again first, and a study refused by its price, or
+    stopped in it, was left with its production gone; else None."""
+    flag = ("--force-overwrite" if getattr(args, "force", False)
+            else "--rerun" if getattr(args, "rerun", False) else None)
+    if flag is None:
+        return None
+    runs = _runs_in(output) if output.is_dir() else []
+    found = [str(run.output_dir / phase) for run in runs
+             for phase in ("simulation", "analysis", "report")
+             if (run.output_dir / phase).is_dir() and any((run.output_dir / phase).iterdir())]
+    for shared in ("comparison", "joined"):
+        if (output / shared).is_dir() and any((output / shared).iterdir()):
+            found.append(str(output / shared))
+    if not found:
+        return None
+    listed = "\n  ".join(found[:10] + ([f"and {len(found) - 10} more"] if len(found) > 10 else []))
+    print(f"fastmdx: {flag} with `budget_hours` runs setup again before the study is "
+          "priced, and that would take what follows setup out of the study first, "
+          f"whatever the price:\n  {listed}\nNothing was changed. Remove them first if "
+          "they are to go, or give the study another --output.", file=sys.stderr)
+    return 2
 
 
 def _refused_as_held(args: argparse.Namespace, config: dict[str, Any]) -> int | None:

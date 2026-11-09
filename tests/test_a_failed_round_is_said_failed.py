@@ -3791,6 +3791,29 @@ def test_a_stop_before_a_budget_s_second_stage_wrote_its_record_runs_it_again(
     assert "fastmdx resume" not in said and "--force-overwrite" in said, said
 
 
+@pytest.mark.parametrize("flag", ["--force-overwrite", "--rerun"])
+def test_a_budget_s_overwrite_removes_nothing_before_its_price(flag, tmp_path, monkeypatch,
+                                                               capsys):
+    """`--force-overwrite` (or `--rerun`) with a budget over a study holding
+    production ran setup again first, which took production, analyses and
+    reports out of the study before the price was known; a study then
+    refused by its price was left with none, beside a comparison of them."""
+    import importlib
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    config, stages = _a_budget_study(tmp_path, monkeypatch)
+    study = tmp_path / "study"
+    for held in (study / "setup", study / "simulation", study / "comparison"):
+        held.mkdir(parents=True)
+        (held / "held.txt").write_text("held\n")
+    assert cli.main(["explore", "-c", str(config), flag]) == 2
+    said = capsys.readouterr().err
+    assert str(study / "simulation") in said and str(study / "comparison") in said, said
+    assert stages == [], stages
+    assert all((study / held / "held.txt").is_file()
+               for held in ("setup", "simulation", "comparison"))
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
