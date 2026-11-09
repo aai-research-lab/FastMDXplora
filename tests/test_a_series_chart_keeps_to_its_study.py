@@ -150,3 +150,52 @@ def test_an_all_missing_series_explains_why_there_is_no_chart() -> None:
         assert page.locator("#chart").inner_text() == "Every value is missing."
         assert page.locator("#chart svg").count() == 0
         browser.close()
+
+
+def _plotted(data: dict, keys: int = 0) -> dict:
+    """A chart of ``data``: its circles, its label, and where the keyboard
+    is after focusing it and ``keys`` presses of ArrowRight."""
+    from pathlib import Path
+
+    from playwright.sync_api import sync_playwright
+
+    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "series-chart.js")
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.set_content('<div id="chart" style="width:440px"></div>')
+        page.add_script_tag(path=str(script))
+        page.evaluate("data => window.FastMDXSeries.draw(document.getElementById('chart'), data)",
+                      data)
+        chart = page.locator("#chart svg")
+        chart.focus()
+        at = [page.locator("#chart").get_attribute("data-at")]
+        for _ in range(keys):
+            chart.press("ArrowRight")
+            at.append(page.locator("#chart").get_attribute("data-at"))
+        found = {"circles": page.locator('#chart svg circle[r="2.2"]').count(),
+                 "label": chart.get_attribute("aria-label"), "at": at}
+        browser.close()
+    return found
+
+
+def test_a_residue_without_a_value_has_no_point() -> None:
+    pytest.importorskip("playwright.sync_api")
+    found = _plotted({
+        "label": "RMSF", "unit": "nm", "kind": "residue", "x_label": "Residue",
+        "x": [1, 2, 3, 4], "y": [0.1, None, 0.3, 0.2], "labels": ["1", "2", "3", "4"],
+        "residues": [{"chain": "A", "resi": i} for i in range(1, 5)],
+        "mean": None, "linked": False})
+    assert found["circles"] == 3, found
+
+
+def test_the_keyboard_steps_over_missing_values_and_the_label_counts_points() -> None:
+    pytest.importorskip("playwright.sync_api")
+    values = [None] * 40 + [0.1, 0.2] + [None] * 5 + [0.3]
+    found = _plotted({
+        "label": "RMSD", "unit": "nm", "kind": "time", "x_label": "Frame",
+        "x": list(range(len(values))), "y": values, "frames": list(range(len(values))),
+        "mean": None, "linked": False}, keys=3)
+    assert found["at"] == ["40", "41", "47", "47"], found
+    assert found["label"].startswith("RMSD, 3 points (45 without a value)"), found

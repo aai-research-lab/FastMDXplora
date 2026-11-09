@@ -138,7 +138,11 @@
   }
 
   function describe(data) {
-    var parts = [data.label + ", " + data.y.length + " points"];
+    // The points with a value: a frame without one is a gap, not a point.
+    var valued = data.y.filter(function (y) { return y != null && isFinite(y); }).length;
+    var missing = data.y.length - valued;
+    var parts = [data.label + ", " + valued + " points"
+      + (missing ? " (" + missing + " without a value)" : "")];
     var mean = data.mean;
     if (mean && mean.value != null) {
       parts.push("full-analysis mean " + withUnit(mean.value, data.unit)
@@ -302,6 +306,9 @@
     }, layer);
     if (data.kind === "residue" && xs.length <= 400) {
       xs.forEach(function (x, i) {
+        // A residue without a value has no point: at the foot of the axis
+        // it read as a computed zero.
+        if (!hasY(i)) return;
         el("circle", { cx: px(x), cy: py(ys[i]), r: 2.2, fill: c.line }, layer);
       });
     }
@@ -369,22 +376,29 @@
     function shownAt(i) {
       return i >= 0 && i < xs.length && xs[i] >= xLow - 1e-9 && xs[i] <= xHigh + 1e-9;
     }
-    function firstShown(direction) {
-      for (var i = direction > 0 ? 0 : xs.length - 1; i >= 0 && i < xs.length; i += direction) {
-        if (shownAt(i)) return i;
+    // The keyboard goes from point to point with a value, over the gaps.
+    function valuedAt(i) { return shownAt(i) && hasY(i); }
+    function nextValued(from, direction) {
+      for (var i = from; i >= 0 && i < xs.length; i += direction) {
+        if (valuedAt(i)) return i;
       }
       return -1;
+    }
+    function firstShown(direction) {
+      return nextValued(direction > 0 ? 0 : xs.length - 1, direction);
     }
     function nearestShown(value) {
       if (value < xLow) return firstShown(1);
       if (value > xHigh) return firstShown(-1);
       var i = nearest(xs, value);
-      return shownAt(i) ? i : firstShown(1);
+      if (valuedAt(i)) return i;
+      var after = nextValued(i, 1);
+      return after >= 0 ? after : firstShown(-1);
     }
     var at = -1;
     if (host._keyAt != null) {
       at = data.x.indexOf(host._keyAt);
-      if (!shownAt(at)) at = nearestShown(host._keyAt * clock.factor);
+      if (!valuedAt(at)) at = nearestShown(host._keyAt * clock.factor);
     }
     function show(index) {
       if (index < 0 || index >= xs.length) return;
@@ -511,8 +525,9 @@
       var step = event.shiftKey ? Math.max(1, Math.round(xs.length / 20)) : 1;
       // Along the points shown: zoomed in, the cursor stays in the view.
       var first = firstShown(1), last = firstShown(-1);
-      if (event.key === "ArrowRight") show(at < 0 ? first : Math.min(last, at + step));
-      else if (event.key === "ArrowLeft") show(at < 0 ? first : Math.max(first, at - step));
+      // The first and last shown have a value, so a step stops at them.
+      if (event.key === "ArrowRight") show(at < 0 ? first : nextValued(Math.min(last, at + step), 1));
+      else if (event.key === "ArrowLeft") show(at < 0 ? first : nextValued(Math.max(first, at - step), -1));
       else if (event.key === "Home") show(first);
       else if (event.key === "End") show(last);
       else if ((event.key === "Enter" || event.key === " ") && shownAt(at)) open(data, at);
