@@ -4369,6 +4369,10 @@ class BatchExplorer:
             # Asked to stop, and these its last lines: a further stop is that
             # one. Taken as a stop now, it said the summary twice.
             listens.now_under_way = True
+            from fastmdxplora.simulation import runner as _runner
+
+            # It says what carries the study on: the command need not again.
+            _runner._ITS_STOP_SAID = True
         ok = sum(1 for r in self.results if r.status == "ok")
         err = sum(1 for r in self.results if r.status == "error")
         skipped = sum(1 for r in self.results if r.status == "skipped")

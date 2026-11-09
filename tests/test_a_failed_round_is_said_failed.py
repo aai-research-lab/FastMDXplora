@@ -3507,6 +3507,36 @@ def test_a_further_stop_after_explore_s_study_is_said_stopped_when_asked(
     assert said.count("fastmdx: stopped when asked") == 1, said
 
 
+def test_a_further_stop_after_a_resume_s_summary_says_it_once(
+        tmp_path, monkeypatch, capsys):
+    """A resume whose study said its summary, with what carries it on, then a
+    further stop: the command said "stopped when asked" again after it."""
+    import importlib
+
+    from fastmdxplora.simulation import resume, runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def carried_on(_study, **_given):
+        _a_command_s_stop_after_its_study(True, tmp_path)
+        return {"ok": True, "did": "runs"}
+
+    monkeypatch.setattr(resume, "resume_study", carried_on)
+    runner._listen_afresh()
+    try:
+        code = cli.main(["resume", str(tmp_path / "study")])
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    printed = capsys.readouterr()
+    assert code == 130, printed
+    assert "Batch output:" in printed.out, printed.out
+    assert "fastmdx: stopped when asked" not in printed.err, printed.err
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

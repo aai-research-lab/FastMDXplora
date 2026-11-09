@@ -1419,6 +1419,10 @@ class _StopInTheRounds(_StopRequests):
 _QUIET_ONCE_STOPPED = False
 #: A study of the command heard a stop (`_StopInTheStudy.__exit__`).
 _A_STUDY_HEARD_A_STOP = False
+#: A study of the command said its summary once asked to stop, with what
+#: carries it on (`BatchExplorer._print_summary`): a further stop then
+#: says nothing more (`cli.main`).
+_ITS_STOP_SAID = False
 
 
 def _quiet_if_a_study_heard_a_stop() -> None:

@@ -1949,9 +1949,16 @@ def _start_dashboard_for_command(args: argparse.Namespace, output_dir: Path):
     return session
 
 
-def _said_stopped_when_asked(study: Any) -> int:
+def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> int:
     """A command's work stopped by a KeyboardInterrupt (a Ctrl-C, or a
-    further stop once its study heard one), said as `fastmdx resume` says it."""
+    further stop once its study heard one), said as `fastmdx resume` says it:
+    once, where the study's summary has not said what carries it on
+    (`runner._ITS_STOP_SAID`). A further stop said it again after the
+    round's own sentence."""
+    from fastmdxplora.simulation import runner
+
+    if isinstance(stop, runner.StoppedAgain) and runner._ITS_STOP_SAID:
+        return 130
     print(f"fastmdx: stopped when asked; `fastmdx resume {study}` carries it on.",
           file=sys.stderr)
     return 130
@@ -2009,10 +2016,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
                                       more_ns=simulation.get("extra_ns"),
                                       checkpoint_interval_steps=simulation.get(
                                           "checkpoint_interval_steps"))
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as stop:
             # Between its studies (the join): said as `fastmdx resume` says
             # it; before, a traceback, the process ended by the signal.
-            return _said_stopped_when_asked(resume_from)
+            return _said_stopped_when_asked(resume_from, stop)
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
             return 1
@@ -2142,7 +2149,7 @@ def _cmd_explore(args: argparse.Namespace) -> int:
 
         if isinstance(stop, runner.StoppedAgain):
             # A further stop once its study heard one: said, as `resume` says it.
-            return _said_stopped_when_asked(fmdx.output_dir)
+            return _said_stopped_when_asked(fmdx.output_dir, stop)
         return 130
     except Exception:
         if session is not None:
@@ -3423,7 +3430,7 @@ def _cmd_resume(args: argparse.Namespace) -> int:
                     answer = resume_study(args.study, **taken)
             else:
                 answer = resume_study(args.study, **taken)
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as stop:
         # A Ctrl+C obeyed at once: said as the study then stands, never a
         # traceback; one heard after its last record was written leaves it
         # finished, and is not a stop.
@@ -3437,9 +3444,7 @@ def _cmd_resume(args: argparse.Namespace) -> int:
             print("fastmdx: the study had finished when the stop was heard; nothing is "
                   "left to carry on.", file=sys.stderr)
             return 0
-        print(f"fastmdx: stopped when asked; `fastmdx resume {args.study}` carries it on.",
-              file=sys.stderr)
-        return 130
+        return _said_stopped_when_asked(args.study, stop)
     if getattr(args, "json", False):
         if not answer.get("ok"):
             from fastmdxplora.remedies import remedies_of
@@ -4060,7 +4065,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     runner._QUIET_ONCE_STOPPED = bool(
         next((word for word in given if not word.startswith("-")), None)
         in ("explore", "xplore", "resume"))
-    runner._A_STUDY_HEARD_A_STOP = False
+    runner._A_STUDY_HEARD_A_STOP = runner._ITS_STOP_SAID = False
     _COMMAND_S_HANDLERS.clear()
     _COMMAND_S_HANDLERS.update(before)
     try:
@@ -4068,7 +4073,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if argv is not None:
             _listening_as_the_command_began()
-        runner._A_STUDY_HEARD_A_STOP = False
+        runner._A_STUDY_HEARD_A_STOP = runner._ITS_STOP_SAID = False
         _COMMAND_S_HANDLERS.clear()
 
 
