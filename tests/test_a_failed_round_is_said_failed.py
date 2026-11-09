@@ -3893,6 +3893,22 @@ def test_a_budget_s_setup_stage_names_no_resume_where_a_stop_is_said(tmp_path, m
     assert answer["ok"] is False and again in answer["error"], answer
 
 
+def test_a_budget_s_record_rewrite_leaves_a_shared_preparation_as_it_was(tmp_path):
+    """The rewrite of a budget study's setup records, once its second stage
+    began, rewrote a shared preparation's (`shared_setup/`) to the whole
+    study, which replayed would run a whole study, not the preparation."""
+    from fastmdxplora.agent.staged import _record_the_study_s_phases
+
+    rest = ["simulation", "analysis", "report"]
+    shared = tmp_path / "shared_setup" / "resolved_config.yml"
+    shared.parent.mkdir(parents=True)
+    shared.write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    (tmp_path / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": rest}))
+    assert _record_the_study_s_phases(tmp_path, {}, rest, None) is True
+    assert yaml.safe_load(shared.read_text()) == {"include_phase": ["setup"]}
+    assert "include_phase" not in yaml.safe_load((tmp_path / "resolved_config.yml").read_text())
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

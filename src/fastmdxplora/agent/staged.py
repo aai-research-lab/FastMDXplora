@@ -506,9 +506,11 @@ def _record_the_study_s_phases(out: Path, config: dict[str, Any],
                                sent: list[str], injected: Any) -> bool:
     """Write the study's own phase selection into each resolved config the
     second stage wrote, and take out the `setup_from` this module gave it.
-    Once it wrote one, each the first stage wrote (setup alone) too: a run
-    the second stage did not reach, stopped in an earlier run, read as a
-    study of setup alone, and its resume ran nothing for it.
+    Once it wrote one, each record of the study and its runs the first
+    stage wrote (setup alone) too: a run the second stage did not reach,
+    stopped in an earlier run, read as a study of setup alone, and its
+    resume ran nothing for it. A shared preparation's record
+    (`shared_setup/`) is its own, and is left as it is.
 
     Only a file that records exactly one stage's phases is changed: any
     other was written by something else, and is left as it is. Whether the
@@ -527,9 +529,10 @@ def _record_the_study_s_phases(out: Path, config: dict[str, Any],
             continue
         if isinstance(data, dict) and not data.get("exclude_phase"):
             records.append((path, text, data, list(data.get("include_phase") or [])))
-    begun = any(phases == list(sent) for *_, phases in records)
+    begun = _the_second_stage_began(out, sent)
+    own = set(_its_records(out))
     for path, text, data, phases in records:
-        if phases != list(sent) and not (begun and phases == ["setup"]):
+        if phases != list(sent) and not (begun and phases == ["setup"] and path in own):
             continue
         rewritten: dict[str, Any] = {}
         for key, value in data.items():
