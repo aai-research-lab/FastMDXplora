@@ -3962,6 +3962,31 @@ def test_a_stop_heard_as_a_budget_s_setup_ends_is_taken_from_python(tmp_path, mo
     assert done.stopped and [phases for phases, _ in stages] == [["setup"]], stages
 
 
+def test_an_autonomous_study_stopped_in_its_simulation_is_not_said_within_budget(
+        tmp_path, monkeypatch, capsys):
+    """`fastmdx agent --autonomous` whose second stage was stopped or failed:
+    "Ran within the budget." and 0."""
+    import importlib
+    from types import SimpleNamespace
+
+    import fastmdxplora.agent as agent
+    from fastmdxplora.agent.staged import StagedRun
+    from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+    from fastmdxplora.orchestrator import RunResult
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    for status, error_type, code in (("error", STOPPED_ERROR_TYPE, 130),
+                                     ("error", "StudyError", 1)):
+        ran = StagedRun(output_dir=tmp_path, setup_done=True, simulated=True)
+        ran.results = [RunResult(run_id="a", system="tri", status=status,
+                                 output_dir=tmp_path, sweep_values={}, phases=[],
+                                 error_type=error_type, message="m")]
+        monkeypatch.setattr(agent, "run_in_stages", lambda *_a, ran=ran, **_k: ran)
+        assert cli._run_staged(SimpleNamespace(agent_output=str(tmp_path), budget_hours=1),
+                               {}) == code
+        assert "Ran within the budget" not in capsys.readouterr().out
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

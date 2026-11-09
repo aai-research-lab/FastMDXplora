@@ -4062,6 +4062,14 @@ def _run_staged(args: Any, config: dict) -> int:
                   "it with `setup_from`.")
         return 1
 
+    # Its study stopped when asked, or a run of it failed: said so, never
+    # "Ran within the budget" and 0.
+    results = getattr(staged, "results", None)
+    rc = _the_study_s_exit(results, output, args)[0] if results else 0
+    if rc:
+        print("\n  \u2717 " + (f"Stopped when asked; `fastmdx resume {output}` carries it on."
+                              if rc == 130 else "A run of the study failed."))
+        return rc
     print("\n  ✓ Ran within the budget.")
     return 0
 
