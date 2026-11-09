@@ -214,7 +214,7 @@
       if (fix.refused) {
         // Its folder gone, or the study moved since: why first, and the
         // command only as it was typed, never as the thing to run.
-        item.appendChild(el("div", "fix-not-here", fix.refused));
+        item.appendChild(withCode(el("div", "fix-not-here"), fix.refused));
         if (fix.command) {
           item.appendChild(el("div", "fix-cwd",
             "It was typed" + (fix.cwd ? ", in " + fix.cwd + "," : "") + " as:"));

@@ -4695,6 +4695,15 @@ def test_an_output_with_a_tilde_is_read_as_explore_reads_it_in_each_mode(
     assert "moved or renamed" in _why_not_run_into(other, argv, str(typed))
 
 
+def test_a_refused_fix_s_code_marks_are_set_as_code_on_its_card():
+    """The card set a refusal as plain text: its `--output` read with its
+    backticks, where the Fix line above sets them as code."""
+    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "fixes.js").read_text()
+    assert 'withCode(el("div", "fix-not-here"), fix.refused)' in script
+    assert 'el("div", "fix-not-here", fix.refused)' not in script
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
