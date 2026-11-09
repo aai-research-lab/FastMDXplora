@@ -1549,6 +1549,13 @@ class _StopInTheStudy(_StopInTheRounds):
         self._listening_on_until_it_ends()
         _stop_now(number)
 
+    def __enter__(self) -> "_StopInTheStudy":
+        global _ITS_STOP_SAID
+        # A new study: what an earlier one's summary said is not of this one.
+        _ITS_STOP_SAID = False
+        super().__enter__()
+        return self
+
     def __exit__(self, *exc: Any) -> bool:
         global _A_STUDY_HEARD_A_STOP
         if _QUIET_ONCE_STOPPED and self.signal is not None:

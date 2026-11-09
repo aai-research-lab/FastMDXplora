@@ -4369,10 +4369,10 @@ class BatchExplorer:
             # Asked to stop, and these its last lines: a further stop is that
             # one. Taken as a stop now, it said the summary twice.
             listens.now_under_way = True
-            from fastmdxplora.simulation import runner as _runner
+        from fastmdxplora.simulation import runner as _runner
 
-            # It says what carries the study on: the command need not again.
-            _runner._ITS_STOP_SAID = True
+        # Said afresh by each summary: one study's said nothing of the next.
+        _runner._ITS_STOP_SAID = False
         ok = sum(1 for r in self.results if r.status == "ok")
         err = sum(1 for r in self.results if r.status == "error")
         skipped = sum(1 for r in self.results if r.status == "skipped")
@@ -4439,6 +4439,9 @@ class BatchExplorer:
         fixes = _what_would_fix_it(self.output_dir,
                                    leave_out=[run for run in self._the_rule_s_runs()
                                               if run not in own] if ended else ())
+        # What carries the study on, said here (its fixes, its stopped runs'
+        # resume, its round's sentence): a further stop need not say it again.
+        carry_on_said = bool(fixes) or bool(stopped) or ended is not None
         if fixes:
             print("\n".join(fixes))
         elif stopped:
@@ -4456,6 +4459,8 @@ class BatchExplorer:
             # did not ("Batch complete" followed the round's failure).
             print(ended.said)
             print(ended.carry_on)
+        _runner._ITS_STOP_SAID = bool(listens is not None and listens.signal is not None
+                                      and carry_on_said)
 
 
 def _a_pull_is_there(directory: Path) -> bool:

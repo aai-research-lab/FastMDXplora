@@ -3693,6 +3693,35 @@ def test_a_stop_in_a_budget_s_setup_is_a_stop(how, tmp_path, monkeypatch, capsys
     assert [phases for phases, _ in stages][-1] == ["simulation", "analysis", "report"]
 
 
+def test_a_summary_that_said_no_carry_on_leaves_a_further_stop_said(tmp_path, capsys):
+    """A study asked to stop as it finished, every run ok: its summary said
+    nothing that carries it on, yet a further stop was said by nothing. And
+    what one study's summary said was taken as said for the next study."""
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner
+
+    study = tmp_path / "study"
+    (study / "runs" / "a").mkdir(parents=True)
+    batch = object.__new__(BatchExplorer)
+    batch.output_dir = study
+    batch.results = [RunResult(run_id="a", system="tri", status="ok",
+                               output_dir=study / "runs" / "a", sweep_values={}, phases=[])]
+    batch._listens = runner._StopInTheStudy(folder=study)
+    batch._listens.signal = signal.SIGTERM
+    batch._print_summary()
+    assert "Batch complete" in capsys.readouterr().out
+    assert runner._ITS_STOP_SAID is False
+    # Said by one study's summary, then a new study begins.
+    runner._ITS_STOP_SAID = True
+    try:
+        with runner._StopInTheStudy(folder=study):
+            assert runner._ITS_STOP_SAID is False
+    finally:
+        runner._ITS_STOP_SAID = False
+        runner._listen_afresh()
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
