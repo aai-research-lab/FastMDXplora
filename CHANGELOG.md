@@ -952,16 +952,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A study with `budget_hours` stopped in setup's study (a Ctrl-C, a SIGTERM,
   the GUI's Stop, or a stop heard as that study ended) no longer goes on to
   its price and simulation, nor is refused for want of a particle count: it
-  exits 130, "stopped when asked", and says that `fastmdx explore -c <config>
-  --force-overwrite` runs it again, setup first, with its `--output` where one
-  was given. A Ctrl-C in its pricing, or any stop there once a study heard
-  one, does the same, not a traceback; a first SIGTERM there still ends the
-  process by the signal. `fastmdx resume` ran setup alone for such a study and
-  read it finished: its stop lines, its runs' records of the stop, its fixes
-  (without a price) and the GUI's Stop now say what runs it again instead, and
-  `fastmdx resume` refuses it, naming that command. `fastmdx agent
-  --autonomous` takes such a stop too, and says a study stopped or failed in
-  its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
+  exits 130, "stopped when asked", and from `fastmdx explore` names the
+  command as it was given, with `--force-overwrite` added, as what runs it
+  again, its setup first. From `fastmdx agent --autonomous` or Python it names
+  no command, and says the study is run again from its setup. A Ctrl-C in its
+  pricing, or any stop there once a study heard one, does the same, not a
+  traceback; a first SIGTERM there still ends the process by the signal.
+  `fastmdx resume` runs setup alone for such a study and reads it finished, so
+  its stop lines, its runs' records of the stop, its fixes (without a price)
+  and the GUI's Stop, where a run of setup recorded the stop, say what runs it
+  again instead. `fastmdx agent --autonomous` says a study stopped or failed
+  in its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
   `--force-overwrite` and `--rerun` now reach both of its stages where only
   setup is there; over a study holding more they are refused before anything
   is changed, naming what would go, since setup runs again before the price is
