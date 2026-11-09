@@ -500,6 +500,40 @@ def _without_a_dashboard(argv: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(left)
 
 
+def _config_named(argv: tuple[str, ...]) -> str | None:
+    """The config file a command line names (`-c`, `-config`, `--config`,
+    with `=` too), or None."""
+    named = None
+    for at, word in enumerate(argv):
+        flag, equals, value = word.partition("=")
+        if flag in ("-c", "-config", "--config"):
+            named = value if equals else (argv[at + 1] if at + 1 < len(argv) else None)
+        elif word.startswith("-c") and not word.startswith("-config") and len(word) > 2:
+            named = word[2:]
+    return named
+
+
+def _output_of_its_config(argv: tuple[str, ...], cwd: str) -> str | None:
+    """The `output` the command line's config names, read from ``cwd`` as
+    explore reads it, or None where it names none or cannot be read."""
+    import yaml
+
+    named = _config_named(argv)
+    if not named:
+        return None
+    path = Path(named)
+    if not path.is_absolute():
+        if not cwd:
+            return None
+        path = Path(cwd) / path
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    output = data.get("output") if isinstance(data, dict) else None
+    return str(output) if output else None
+
+
 def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
     """Why the command that runs a study again, its setup first, is not run
     for the study at ``root``: the folder it is run from is gone, or its
@@ -514,7 +548,16 @@ def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
                 "its config is, with `--output` naming the study where it is now.")
     named = _output_named(argv)
     if named is None:
+        # Saved before its folder was named on the line (an earlier build):
+        # its config's `output`, where it gives one.
+        named = _output_of_its_config(argv, cwd)
+    if named is None and not cwd:
+        # Saved with no folder it was typed in: nothing to read it from.
         return ""
+    if named is None:
+        return ("It names no folder for the study, so it would run one elsewhere, and it "
+                "is not run from here. Run it again with `--output` naming the study where "
+                "it is now.")
     # As explore reads it: with a dashboard, `~` is expanded
     # (`cli.main._resolve_dashboard_output_dir`); without one, not after
     # `--output=`.

@@ -4704,6 +4704,24 @@ def test_a_refused_fix_s_code_marks_are_set_as_code_on_its_card():
     assert 'el("div", "fix-not-here", fix.refused)' not in script
 
 
+def test_a_run_again_saved_with_no_output_is_read_by_its_config_s(tmp_path):
+    """A run-again saved by an earlier build named no `--output` where its
+    config's `output` named the folder, and was not compared: moved, its
+    Run went into the config's old path."""
+    from fastmdxplora.remedies import _why_not_run_into
+
+    typed = tmp_path / "w"
+    (typed / "old" / "st").mkdir(parents=True)
+    (typed / "st").mkdir()
+    (typed / "s.yml").write_text(yaml.safe_dump({"output": "st"}))
+    (typed / "n.yml").write_text(yaml.safe_dump({"systems": []}))
+    argv = ("explore", "-c", "s.yml", "--force-overwrite")
+    assert _why_not_run_into(typed / "st", argv, str(typed)) == ""
+    assert "moved or renamed" in _why_not_run_into(typed / "old" / "st", argv, str(typed))
+    assert "names no folder" in _why_not_run_into(
+        typed / "st", ("explore", "--config=n.yml", "--force-overwrite"), str(typed))
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
