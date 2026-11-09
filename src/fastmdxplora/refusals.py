@@ -1446,7 +1446,8 @@ class RunStopped(BaseException):
         self.signal_name = signal_name
 
     def as_error(self) -> "StudyError":
-        from fastmdxplora.simulation.runner import run_again_argv, run_again_before_its_price
+        from fastmdxplora.simulation.runner import (run_again_argv, run_again_before_its_price,
+                                                    run_again_cwd)
 
         # A budget's setup stage: a resume ran setup alone and read it finished.
         again = run_again_before_its_price()
@@ -1456,7 +1457,8 @@ class RunStopped(BaseException):
             code="simulation.run.stopped",
             details={"signal": self.signal_name, "step": None,
                      "checkpoint_on_frame": False,
-                     **({"run_again": again, "run_again_argv": run_again_argv()}
+                     **({"run_again": again, "run_again_argv": run_again_argv(),
+                         "run_again_cwd": run_again_cwd()}
                         if again else {})})
 
 

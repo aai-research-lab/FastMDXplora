@@ -170,6 +170,10 @@ class Remedy:
     price: Price | None = None
     #: The runs or windows it covers, by name.
     covers: tuple[str, ...] = field(default_factory=tuple)
+    #: Where ``argv`` is run from, where it is the person's own command
+    #: line, its paths as typed (`agent.staged.stopped_before_its_price`):
+    #: "" for the GUI's own folder.
+    cwd: str = ""
 
     def as_text(self, *, with_config: bool = True) -> str:
         text = f"{self.where}: {self.why} Fix: {self.fix}"
@@ -398,7 +402,8 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         found = [replace(remedy, fix="Run the study again, its setup first: it stopped before "
                                      "its simulation began, so only its setup is recorded.",
                          command="fastmdx " + shlex.join(argv) if argv else "",
-                         argv=argv, price=None)
+                         argv=argv, cwd=str(again.get("cwd") or "") if argv else "",
+                         price=None)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
                  else remedy for remedy in found]
     try:

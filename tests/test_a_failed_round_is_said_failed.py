@@ -4102,6 +4102,69 @@ def test_a_budget_study_run_from_python_names_no_command(tmp_path, monkeypatch):
     assert "run again from its setup" in said["it"] and said["argv"] == [], said
 
 
+def test_a_budget_s_run_again_is_run_from_where_it_was_typed(tmp_path, monkeypatch):
+    """The command saved to run a budget study stopped in setup again held
+    its paths as typed (`-c two.yml --output sub/st`), and the GUI's fix ran
+    it from its own folder: the config was not found, or another one ran
+    into another folder."""
+    import importlib
+    from unittest import mock
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    where = {}
+
+    def first(out: Path):
+        # Setup's run stopped, its stop recorded as a phase records it.
+        out = out.resolve()
+        out.mkdir(parents=True, exist_ok=True)
+        where["out"] = out
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({"phases": [{
+            "name": "setup", "status": "error",
+            "refusal": refusal_of(RunStopped("SIGTERM").as_error()).as_dict()}]}))
+        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+
+        return [RunResult(run_id="tri", system="tri", status="error", output_dir=out,
+                          sweep_values={}, phases=[], error_type=STOPPED_ERROR_TYPE,
+                          message="Stopped when asked")]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    typed = tmp_path / "w"
+    (typed / "sub").mkdir(parents=True)
+    study = yaml.safe_load(config.read_text())
+    study.pop("output")
+    (typed / "two.yml").write_text(yaml.safe_dump(study))
+    line = ["explore", "-c", "two.yml", "--output", "sub/st"]
+    monkeypatch.chdir(typed)
+    runner._listen_afresh()
+    try:
+        assert cli.main(line) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    out = where["out"]
+    found = remedies_of(out)
+    index, fix = next((i, remedy) for i, remedy in enumerate(found)
+                      if remedy.argv[:1] == ("explore",))
+    assert fix.argv == (*line, "--force-overwrite"), fix
+    # The GUI, in another folder, runs it from where it was typed.
+    monkeypatch.chdir(tmp_path)
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=out.parent)
+    runtime.active_root = out
+    with mock.patch.object(DashboardRuntime, "_spawn", return_value={"launched": True}) as spawn:
+        assert runtime.run_a_fix(index)["ok"]
+    assert spawn.call_args.kwargs.get("cwd") == typed.resolve(), spawn.call_args
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

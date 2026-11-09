@@ -1542,6 +1542,7 @@ class DashboardRuntime:
         dashboard_url: str | None,
         *,
         config_path: str | Path | None = None,
+        cwd: Path | None = None,
     ) -> dict[str, Any]:
         """Start a run and take ownership of the process.
 
@@ -1574,7 +1575,8 @@ class DashboardRuntime:
                 since = time.time()
                 try:
                     started = self._spawn_now(command, output_dir, dashboard_url,
-                                              **({"env": start.env} if start.env else {}))
+                                              **({"env": start.env} if start.env else {}),
+                                              **({"cwd": cwd} if cwd is not None else {}))
                 except OutsideWorkspace as exc:
                     # Its log is a link: nothing is written where it leads,
                     # and nothing is started.
@@ -1633,9 +1635,11 @@ class DashboardRuntime:
 
     def _spawn_now(self, command: list[str], output_dir: Path,
                    dashboard_url: str | None, *,
-                   env: Mapping[str, str] | None = None) -> dict[str, Any]:
+                   env: Mapping[str, str] | None = None,
+                   cwd: Path | None = None) -> dict[str, Any]:
         """The process itself, started and held, given ``env`` (the GPU it
-        was chosen) beside this process's environment."""
+        was chosen) beside this process's environment, run from ``cwd``
+        (else the GUI's folder)."""
         log_path = output_dir / "exploration.log"
         given = dict(env or {})
         env = os.environ.copy()
@@ -1660,7 +1664,7 @@ class DashboardRuntime:
             # server holds the handle and signals the child directly.
             process = subprocess.Popen(
                 command,
-                cwd=str(self.exploration_root),
+                cwd=str(cwd if cwd is not None else self.exploration_root),
                 env=env,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
@@ -2268,9 +2272,18 @@ class DashboardRuntime:
             refused = _fix_refused(study, list(remedy.argv))
             if refused is not None:
                 return refused
+            # Run from where the person ran it, where its paths, as typed,
+            # mean what they did: from the GUI's folder, `-c two.yml` was
+            # not found, or was another study's.
+            where = getattr(remedy, "cwd", "") or ""
+            if where and not Path(where).is_dir():
+                return {"ok": False, "error": (
+                    f"This fix is run from {where}, where it was first run, and that "
+                    "folder is not there now: " + remedy.fix)}
             self.data_stale = False
             started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
-                                  study, dashboard_url)
+                                  study, dashboard_url,
+                                  **({"cwd": Path(where)} if where else {}))
             return {"ok": True, "error": None, "fix": remedy.as_record(), **started}
 
     def run_windows_again(self, windows: Any, *, force_constant: Any = None,

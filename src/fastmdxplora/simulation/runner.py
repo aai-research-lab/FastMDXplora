@@ -1452,6 +1452,12 @@ def run_again_argv() -> list[str]:
     return [str(word) for word in _run_again().get("argv") or []]
 
 
+def run_again_cwd() -> str:
+    """Where that command was run from, so its paths, as typed, mean what
+    they meant there: "" where there is no command."""
+    return str(_run_again().get("cwd") or "")
+
+
 #: A study of the command said its summary once asked to stop, with what
 #: carries it on (`BatchExplorer._print_summary`): a further stop then
 #: says nothing more (`cli.main`).

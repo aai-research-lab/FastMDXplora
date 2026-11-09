@@ -256,8 +256,10 @@ def _run_in_stages(
     # Until the second stage writes its record, what runs the study again
     # is said in place of `fastmdx resume`, by its stop lines (in this
     # process and its pool's workers) and by its records.
+    # Where the command was run from, beside it: its paths are as typed.
     os.environ[_signals.RUN_AGAIN_BEFORE_ITS_PRICE] = json.dumps(
-        {"said": again or AGAIN, "argv": list(again_argv) if again else []})
+        {"said": again or AGAIN, "argv": list(again_argv) if again else [],
+         "cwd": os.getcwd() if again and again_argv else ""})
     _signals._THE_LAST_STUDY_HEARD_A_STOP = False
     try:
         ran = runner(config=setup_only, output_dir=str(out), **given)
@@ -465,7 +467,8 @@ def stopped_before_its_price(study: Path | str) -> dict[str, Any] | None:
                 details = {**details, **details["details"]}
             if isinstance(details, dict) and details.get("run_again"):
                 return {"said": str(details["run_again"]),
-                        "argv": [str(word) for word in details.get("run_again_argv") or []]}
+                        "argv": [str(word) for word in details.get("run_again_argv") or []],
+                        "cwd": str(details.get("run_again_cwd") or "")}
     return None
 
 
