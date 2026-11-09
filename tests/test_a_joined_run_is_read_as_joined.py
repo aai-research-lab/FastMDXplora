@@ -299,6 +299,22 @@ class TestTheReportReadsTheJoinsWithoutBeingTold(unittest.TestCase):
         self.assertEqual(assess_series("rmsd", series).mean,
                          assess_series("rmsd", series, joins=[]).mean)
 
+    def test_a_record_keeps_its_own_error_when_joins_are_also_given(self):
+        from fastmdxplora.report.convergence import assess_series
+        from fastmdxplora.statistics import mean_record
+
+        joined, joins = _ten_segments()
+        recorded = mean_record(joined)
+        for record in (recorded, {**recorded, "mean": 10.01407, "standard_error": 0.026378},
+                       {**recorded, "standard_error": None}):
+            with self.subTest(record=record):
+                assessed = assess_series("rmsd", joined, joins=joins, record=record)
+                self.assertEqual(assessed.mean, record["mean"])
+                if record["standard_error"] is None:
+                    self.assertTrue(np.isnan(assessed.standard_error))
+                else:
+                    self.assertEqual(assessed.standard_error, record["standard_error"])
+
     def test_assess_run_passes_them_through(self):
         from fastmdxplora.report.convergence import assess_run
 

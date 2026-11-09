@@ -110,6 +110,10 @@ class Assessment:
     #: The error the analyses' record gives, as recorded; None where no
     #: record gives one.
     recorded_error: float | None = None
+    #: For a joined run, the pooled error over its segments
+    #: (`statistics.summarise_segments`); None for a run in one piece. A
+    #: record's own error is used before it.
+    pooled_error: float | None = None
     #: The fields taken from the analyses' record as written ("mean",
     #: "standard_error", "effective_samples", "discard", "n_frames",
     #: "verdict"); the others are worked out here from the series.
@@ -140,7 +144,13 @@ class Assessment:
             return float("nan")
         if self.recorded_error is not None:
             return float(self.recorded_error)
-        if "verdict" in self.recorded or self.effective_samples < 2:
+        if "verdict" in self.recorded:
+            return float("nan")
+        if self.pooled_error is not None:
+            # The spread is the first segment's and the independent samples
+            # the pooled count, so their ratio is no error of either.
+            return float(self.pooled_error)
+        if self.effective_samples < 2:
             return float("nan")
         return float(self.spread / np.sqrt(self.effective_samples))
 
@@ -303,6 +313,7 @@ def assess_series(name: str, values: Any,
     from fastmdxplora.statistics import summarise
 
     reason: Any = None
+    pooled_error: float | None = None
     if joins:
         # A joined run read as a single series loses most of it: the
         # equilibration detector finds a join, calls it a transient, and
@@ -337,6 +348,7 @@ def assess_series(name: str, values: Any,
                 equilibrated, mean=pooled.mean,
                 standard_error=pooled.standard_error,
                 effective_samples=pooled.effective_samples)
+            pooled_error = float(pooled.standard_error)
             reason = withheld
     else:
         equilibrated, reason = summarise(series)
@@ -421,6 +433,7 @@ def assess_series(name: str, values: Any,
         drift_is_measurable=bool(kept.size >= 6),
         withheld=str(reason) if reason else None,
         recorded_error=recorded_error,
+        pooled_error=pooled_error,
         recorded=frozenset(recorded),
         withheld_code=code if reason else "",
         unseen="" if reason else drift_unseen_said(record),
