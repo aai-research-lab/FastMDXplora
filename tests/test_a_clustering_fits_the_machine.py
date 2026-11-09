@@ -760,13 +760,13 @@ class TestTheFiguresAreCounted:
     @pytest.mark.parametrize("n", [1000, 2000])
     def test_the_map_is_in_the_plan(self, n):
         """At 1,000 frames, and at 2,000 in blocks of two, the map is 1,000
-        cells across, and a whole run plotting it peaked at up to 161.0 MiB
-        on Python 3.10, as CI's floor leg installs it
+        cells across, and a whole run plotting it peaked at up to 169.1 MiB
+        on CI's Python 3.10 leg, DBSCAN with a wide ``eps``
         (``FIGURE_BYTES_PER_CELL``). The plan of a clustering that makes the
         least of its matrix is at least that peak, so CI's 3.10 legs keep
-        the 4 MiB the whole-run test allows for terms in n alone: 158.7 MiB
-        were planned, under it."""
-        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 161.0 * 2**20
+        the 4 MiB the whole-run test allows for terms in n alone: 162.5 MiB
+        were planned, and that run was over it."""
+        assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 169.1 * 2**20
 
 
 _ADDRESS_SCRIPT = _CHAIN_SCRIPT + r"""

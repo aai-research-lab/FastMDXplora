@@ -142,14 +142,20 @@ ROWS_BYTES = 64 * 2**20
 #: same scikit-learn and Matplotlib), 142.4 to 142.6; DBSCAN 138.0 to
 #: 145.3 on 3.11 and 3.13, 138.6 to 142.4 on 3.10. Planned with room over
 #: the largest, 161.0 MiB, besides the 4 MiB of terms in n alone left to
-#: the share not planned on: 162.5 MiB, at most 1.18 times a peak.
+#: the share not planned on, it was 162.5 MiB, and CI's ubuntu-latest
+#: Python 3.10 leg (the same packages) measured DBSCAN with a wide ``eps``
+#: at 169.1, where this machine measured 138.1 to 149.0 in 18 runs on
+#: 3.10, 3.11 and 3.13 with glibc's defaults, and nothing of DBSCAN's held
+#: as the map began (7.9 to 8.1 MiB over the start, where k-means and
+#: average linkage held 9.8 to 15.1). Planned over that: 169.2 MiB, at most
+#: 1.23 times a peak (DBSCAN's least, 138.1 on 3.11).
 #: Plotted alone in a new process the map peaked at 141 to 142 MiB, and
 #: 136 bytes a cell were planned; in a run, glibc's threshold for giving an
 #: array a mapping of its own has risen to the size of the largest array of
 #: up to 32 MiB freed before (at 2,000 frames, one n by n), so the map's
 #: arrays come from the heap, and what they leave there freed stays
 #: resident: the spread on 3.10 and the two groups on 3.11.
-FIGURE_BYTES_PER_CELL = 154
+FIGURE_BYTES_PER_CELL = 161
 FIGURE_BYTES = 8 * 2**20
 
 
@@ -255,7 +261,7 @@ def map_needed(n: int) -> int:
     is freed: its cells in float64 (8 bytes a cell), and Matplotlib's mesh
     of them and its rendering (:data:`FIGURE_BYTES_PER_CELL` a cell, and
     :data:`FIGURE_BYTES` once). 1,000 frames, and each whole multiple of
-    them, make a map 1,000 cells across, about 163 MiB."""
+    them, make a map 1,000 cells across, about 169 MiB."""
     cells = -(-int(n) // map_block(n)) if n > 0 else 0
     return int(FIGURE_BYTES + (FIGURE_BYTES_PER_CELL + 8) * float(cells) * float(cells))
 
