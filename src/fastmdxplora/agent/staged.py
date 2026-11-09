@@ -396,25 +396,33 @@ def _with_phases(config: dict[str, Any], phases: list[str]) -> dict[str, Any]:
 
 
 def _record_the_study_s_phases(out: Path, config: dict[str, Any],
-                               sent: list[str], injected: Any) -> None:
+                               sent: list[str], injected: Any) -> bool:
     """Write the study's own phase selection into each resolved config the
     second stage wrote, and take out the `setup_from` this module gave it.
+    Once it wrote one, each the first stage wrote (setup alone) too: a run
+    the second stage did not reach, stopped in an earlier run, read as a
+    study of setup alone, and its resume ran nothing for it.
 
-    Only a file that records exactly the stage's phases is changed: any
-    other was written by something else, and is left as it is.
+    Only a file that records exactly one stage's phases is changed: any
+    other was written by something else, and is left as it is. Whether the
+    second stage wrote any.
     """
     import yaml
 
     include = config.get("include_phase", config.get("include"))
     exclude = config.get("exclude_phase", config.get("exclude"))
+    records = []
     for path in sorted(out.rglob("resolved_config.yml")):
         try:
             text = path.read_text(encoding="utf-8")
             data = yaml.safe_load(text)
         except (OSError, yaml.YAMLError):
             continue
-        if not isinstance(data, dict) or data.get("exclude_phase") or \
-                list(data.get("include_phase") or []) != list(sent):
+        if isinstance(data, dict) and not data.get("exclude_phase"):
+            records.append((path, text, data, list(data.get("include_phase") or [])))
+    begun = any(phases == list(sent) for *_, phases in records)
+    for path, text, data, phases in records:
+        if phases != list(sent) and not (begun and phases == ["setup"]):
             continue
         rewritten: dict[str, Any] = {}
         for key, value in data.items():
@@ -438,6 +446,7 @@ def _record_the_study_s_phases(out: Path, config: dict[str, Any],
                 yaml.safe_dump(rewritten, fh, sort_keys=False, default_flow_style=False)
         except OSError:
             continue
+    return begun
 
 
 def _runs_of(config: dict[str, Any], out: Path

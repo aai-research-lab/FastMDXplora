@@ -3740,6 +3740,32 @@ def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
     assert runner._ITS_STOP_SAID is False
 
 
+def test_a_run_its_budget_s_second_stage_did_not_reach_is_carried_on(tmp_path):
+    """A study of two runs with a budget stopped in its first run: the second
+    run's record still said setup alone, as setup's stage wrote it, and its
+    resume ran nothing for it, "Batch complete" with no production."""
+    from fastmdxplora.agent.staged import _record_the_study_s_phases
+
+    def record(run: str, phases: list[str]) -> Path:
+        where = tmp_path / "runs" / run / "resolved_config.yml"
+        where.parent.mkdir(parents=True, exist_ok=True)
+        where.write_text(yaml.safe_dump({"include_phase": phases, "output": str(where.parent)}))
+        return where
+
+    rest = ["simulation", "analysis", "report"]
+    one, two = record("one", rest), record("two", ["setup"])
+    _record_the_study_s_phases(tmp_path, {}, rest, None)
+    for where in (one, two):
+        assert "include_phase" not in yaml.safe_load(where.read_text()), where.read_text()
+    # Where the second stage wrote nothing, setup's record is as it was.
+    lone = tmp_path / "alone"
+    lone.mkdir()
+    (lone / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    assert _record_the_study_s_phases(lone, {}, rest, None) is False
+    assert yaml.safe_load((lone / "resolved_config.yml").read_text()) == {
+        "include_phase": ["setup"]}
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
