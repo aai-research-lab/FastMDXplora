@@ -68,6 +68,9 @@ class StagedRun:
     simulated: bool = False
     refusal: Refusal | None = None
     notes: list[str] = field(default_factory=list)
+    #: The second stage, the simulation onwards, has begun: a run stopped
+    #: before it is carried on by running the study again, its setup first.
+    simulating: bool = False
 
     @property
     def stopped_at(self) -> str:
@@ -143,6 +146,9 @@ def run_in_stages(
     precision: str = "",
     explore: Any = None,
     measure: Any = None,
+    staged: StagedRun | None = None,
+    force: bool = False,
+    keep_previous: bool = False,
 ) -> StagedRun:
     """Run setup, price the rest, and continue only if it fits.
 
@@ -161,6 +167,13 @@ def run_in_stages(
     measure
         Substituted in tests: times the prepared system when the machine
         has no usable measurement (:func:`measure_prepared_system`).
+    staged
+        Filled in as the stages go, where given: a caller whose run was
+        stopped part way reads how far it got.
+    force, keep_previous
+        As `fastmdx explore --force-overwrite` and `--rerun` give them, for
+        both stages: a study whose setup is there already was refused,
+        whatever was passed.
     """
     # The study's process record held from setup to the end: setup's run ends,
     # and the prepared system is then timed and priced in this process before
@@ -172,7 +185,8 @@ def run_in_stages(
     try:
         return _run_in_stages(config, output_dir, budget_hours=budget_hours,
                               platform_name=platform_name, precision=precision,
-                              explore=explore, measure=measure)
+                              explore=explore, measure=measure, staged=staged,
+                              force=force, keep_previous=keep_previous)
     finally:
         _release_run_process(Path(output_dir))
 
@@ -186,12 +200,19 @@ def _run_in_stages(
     precision: str = "",
     explore: Any = None,
     measure: Any = None,
+    staged: StagedRun | None = None,
+    force: bool = False,
+    keep_previous: bool = False,
 ) -> StagedRun:
     from fastmdxplora.cost import estimate_runs
 
     out = Path(output_dir)
-    staged = StagedRun(output_dir=out)
+    staged = staged if staged is not None else StagedRun(output_dir=out)
     runner = explore or _explore
+    # Passed only where given, so an explore that takes no such argument is
+    # called as it always was.
+    given = {name: True for name, asked in (("force", force),
+                                            ("keep_previous", keep_previous)) if asked}
 
     # The phases the study asks for, in whichever spelling it gave them. Each
     # stage replaces the study's phase keys with its own one list: setting
@@ -200,7 +221,7 @@ def _run_in_stages(
     asked = _phases_asked(config)
     setup_only = _with_phases(config, ["setup"])
     try:
-        runner(config=setup_only, output_dir=str(out))
+        runner(config=setup_only, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
@@ -303,8 +324,9 @@ def _run_in_stages(
             simulation.get("setup_from") or simulation.get("prepared_from")):
         simulation["setup_from"] = injected = str(simulate_from)
     rest["simulation"] = simulation
+    staged.simulating = True
     try:
-        runner(config=rest, output_dir=str(out))
+        runner(config=rest, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
@@ -468,7 +490,7 @@ def _what_it_will_run_on(config: dict[str, Any], platform_name: str,
         return "", precision
 
 
-def _explore(*, config: dict[str, Any], output_dir: str) -> Any:
+def _explore(*, config: dict[str, Any], output_dir: str, **given: Any) -> Any:
     from fastmdxplora import FastMDXplora
 
-    return FastMDXplora(config_data=config, output_dir=output_dir).explore()
+    return FastMDXplora(config_data=config, output_dir=output_dir).explore(**given)

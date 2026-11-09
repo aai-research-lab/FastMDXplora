@@ -3537,6 +3537,71 @@ def test_a_further_stop_after_a_resume_s_summary_says_it_once(
     assert "fastmdx: stopped when asked" not in printed.err, printed.err
 
 
+def _a_budget_study(tmp_path: Path, monkeypatch, second=None):
+    """A study with a budget, its stages run by a stand-in that refuses a
+    setup already there as the real one does, unless forced."""
+    from fastmdxplora.agent import staged
+    from fastmdxplora.refusals import OutputExistsError
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    config = tmp_path / "study.yml"
+    config.write_text(yaml.safe_dump(
+        {"systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
+         "output": str(tmp_path / "study"), "budget_hours": 1000,
+         "simulation": {"platform": "CPU", "production_steps": 1000,
+                        "nvt_steps": 0, "npt_steps": 0}}))
+    stages: list[tuple[list, dict]] = []
+
+    def explored(*, config, output_dir, **given):
+        stages.append((list(config.get("include_phase") or []), given))
+        setup = Path(output_dir) / "setup"
+        if config.get("include_phase") == ["setup"]:
+            if setup.is_dir() and any(setup.iterdir()) and not given.get("force"):
+                raise OutputExistsError("These output directories already hold results:")
+            setup.mkdir(parents=True, exist_ok=True)
+            (setup / "setup_parameters.json").write_text(
+                json.dumps({"n_atoms_solvated": 2_000}))
+            return []
+        return second() if second else []
+
+    monkeypatch.setattr(staged, "_explore", explored)
+    return config, stages
+
+
+def test_a_stop_in_a_budget_s_pricing_says_what_carries_it_on(tmp_path, monkeypatch, capsys):
+    """A Ctrl-C as a study with a budget timed its prepared system (its
+    pricing), only its setup recorded: a traceback. Pointed at `fastmdx
+    resume`, which ran nothing there and read the study finished, it says
+    to run it again; doing so runs its simulation."""
+    import importlib
+
+    from fastmdxplora import cost
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    config, stages = _a_budget_study(tmp_path, monkeypatch)
+
+    def priced(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cost, "measure_prepared_system", priced)
+    try:
+        code = cli.main(["explore", "-c", str(config)])
+    except KeyboardInterrupt:
+        code = "KeyboardInterrupt"
+    said = capsys.readouterr().err
+    assert code == 130, said
+    assert "fastmdx resume" not in said, said
+    assert f"`fastmdx explore -c {config} --force-overwrite`" in said, said
+    assert [phases for phases, _ in stages] == [["setup"]]
+    # As it says: the machine calibrated now, its simulation runs.
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    stages.clear()
+    assert cli.main(["explore", "-c", str(config), "--force-overwrite"]) == 0
+    assert [phases for phases, _ in stages] == [
+        ["setup"], ["simulation", "analysis", "report"]], stages
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

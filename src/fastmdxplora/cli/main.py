@@ -1964,6 +1964,20 @@ def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> i
     return 130
 
 
+def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
+    """A study with a budget stopped before its simulation began (setup's
+    study, its pricing): only its setup is recorded, and `fastmdx resume`
+    ran nothing and read it finished. Running it again carries it on."""
+    import shlex
+
+    config = getattr(args, "config", None)
+    again = (f"`fastmdx explore -c {shlex.quote(str(config))} --force-overwrite`" if config
+             else "the same `fastmdx explore` with --force-overwrite")
+    print(f"fastmdx: stopped when asked, before its simulation began; {again} runs the "
+          "study again, its setup first.", file=sys.stderr)
+    return 130
+
+
 def _finish_dashboard_for_command(session, args: argparse.Namespace, rc: int = 0) -> None:
     if session is None:
         return
@@ -2075,13 +2089,28 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     budget = config.get("budget_hours")
     if budget is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.agent import run_in_stages
+        from fastmdxplora.agent.staged import StagedRun
 
         from fastmdxplora.naming import default_output_name, system_of
 
         output = Path(config.get("output") or args.output_dir
                       or default_output_name(system_of(config)))
-        with _then_quiet_once_stopped():
-            staged = run_in_stages(config, output, budget_hours=float(budget))
+        held = _refused_as_held(args, config)
+        if held is not None:
+            return held
+        staged = StagedRun(output_dir=output)
+        try:
+            with _then_quiet_once_stopped():
+                staged = run_in_stages(config, output, budget_hours=float(budget),
+                                       staged=staged,
+                                       force=bool(getattr(args, "force", False)),
+                                       keep_previous=bool(getattr(args, "rerun", False)))
+        except KeyboardInterrupt as stop:
+            # Said as `fastmdx resume` says it once the simulation began;
+            # before, a traceback, the process ended by the signal.
+            if not staged.simulating:
+                return _said_stopped_before_its_simulation(args)
+            return _said_stopped_when_asked(output, stop)
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
@@ -2095,34 +2124,9 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             return 1
         return 0
 
-    if (getattr(args, "force", False) or getattr(args, "rerun", False)) and not getattr(
-            args, "dry_run", False):
-        # Its phases run again over a study held by another process, or
-        # going on another machine, would write into it and take its process
-        # records: refused before anything is written, as a resume is.
-        from fastmdxplora.batch.explorer import campaign_of
-        from fastmdxplora.simulation.resume import _held_elsewhere, _still_running
-
-        where = config.get("output") or args.output_dir
-        if where and Path(where).expanduser().is_dir():
-            root = Path(where).expanduser().resolve()
-            study = campaign_of(root) or root
-            # Refused before anything is written, every case: its run (or its
-            # study's) going on this machine said in the phases' own words
-            # (`orchestrator`), a study held by another process here or
-            # going on another machine as a resume's refusal says it.
-            if _still_running(root) or _still_running(study):
-                # Its study named where the study is the one going.
-                going = root if _still_running(root) else study
-                print(f"fastmdx: {going} is still running. Run its phases again once it has "
-                      "stopped.", file=sys.stderr)
-                return 1
-            held = _held_elsewhere(study)
-            if held:
-                from fastmdxplora.again import refused_again
-
-                print("fastmdx: " + refused_again(held), file=sys.stderr)
-                return 1
+    held = _refused_as_held(args, config)
+    if held is not None:
+        return held
     fmdx = FastMDXplora(
         config_data=config,
         output_dir=args.output_dir,
@@ -2237,6 +2241,41 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             print(ended.carry_on)
     _finish_dashboard_for_command(session, args, rc)
     return rc
+
+
+def _refused_as_held(args: argparse.Namespace, config: dict[str, Any]) -> int | None:
+    """1, said, where `--force-overwrite` or `--rerun` would run phases over a
+    study held by another process or going on another machine; else None."""
+    if not (getattr(args, "force", False) or getattr(args, "rerun", False)) or getattr(
+            args, "dry_run", False):
+        return None
+    # Its phases run again over a study held by another process, or
+    # going on another machine, would write into it and take its process
+    # records: refused before anything is written, as a resume is.
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.resume import _held_elsewhere, _still_running
+
+    where = config.get("output") or args.output_dir
+    if where and Path(where).expanduser().is_dir():
+        root = Path(where).expanduser().resolve()
+        study = campaign_of(root) or root
+        # Refused before anything is written, every case: its run (or its
+        # study's) going on this machine said in the phases' own words
+        # (`orchestrator`), a study held by another process here or
+        # going on another machine as a resume's refusal says it.
+        if _still_running(root) or _still_running(study):
+            # Its study named where the study is the one going.
+            going = root if _still_running(root) else study
+            print(f"fastmdx: {going} is still running. Run its phases again once it has "
+                  "stopped.", file=sys.stderr)
+            return 1
+        held = _held_elsewhere(study)
+        if held:
+            from fastmdxplora.again import refused_again
+
+            print("fastmdx: " + refused_again(held), file=sys.stderr)
+            return 1
+    return None
 
 
 def _worth_knowing(config: dict[str, Any]) -> list[str]:
