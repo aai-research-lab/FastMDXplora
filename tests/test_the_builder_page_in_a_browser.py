@@ -959,6 +959,24 @@ class TestCopyingTheShownCode:
         page.context.close()
 
 
+    def test_copy_is_disabled_when_the_config_is_refused(self, site):
+        """Review of the round: the server refusing the form put its refusal
+        in the Config pane, and Copy copied it and said "Config copied"."""
+        page = _open(site)
+        button = _ready_copy_button(page)
+        refusal = "Refused: setup.box_padding_nm 0.1 is too small for the cutoff."
+        page.route("**/api/config*", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            body='{"ok": false, "error": "%s"}' % refusal))
+        ph = '#run-settings [data-setting="ph"]'
+        page.fill(f"{ph} input", "7.2")
+        page.dispatch_event(f"{ph} input", "change")
+        page.wait_for_function("(said) => document.getElementById('run-config-preview')"
+                               ".textContent === said", arg=refusal)
+        assert button.is_disabled()
+        assert page.errors == []
+        page.context.close()
+
 class TestItsIcons:
     """The builder's everyday buttons are their icons, named on hover and to
     a screen reader by the names the docs give them, and its small ones keep

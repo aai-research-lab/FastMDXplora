@@ -2848,7 +2848,13 @@
   function updateCodeCopyButton() {
     const button = el("run-copy-code");
     const pane = document.querySelector("#run-summary-panel [data-code-pane]:not([hidden])");
-    if (button) button.disabled = el("run-start-button").disabled || !pane || !pane.textContent.trim();
+    // A refused config shows the refusal in its pane: that is no config to
+    // copy, and Copy said "Config copied" for it.
+    const refused = Boolean(state.built && !state.built.ok);
+    if (button) {
+      button.disabled = el("run-start-button").disabled || refused || !pane
+        || !pane.textContent.trim();
+    }
   }
 
   function showCode(built) {
