@@ -3450,6 +3450,63 @@ def test_a_stopped_study_s_listener_hands_on_to_the_raising_handler_at_once(monk
     assert all(handler is runner._stopped_when_asked_again for _, handler in put), put
 
 
+def _a_command_s_stop_after_its_study(said_its_summary: bool, tmp_path: Path):
+    """A study that heard a stop at its end, its summary said where asked,
+    then a further SIGTERM to the process in the work after it."""
+    import os
+    import time
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.simulation import runner
+
+    with runner.listening_for_the_study(tmp_path) as listens:
+        listens.stage = "finishing"
+        listens._note(signal.SIGTERM, None)
+        if said_its_summary:
+            study, results = _a_killed_worker_s_study(tmp_path)
+            batch = object.__new__(BatchExplorer)
+            batch.output_dir, batch.results, batch._listens = study, results, listens
+            batch._print_summary()
+    os.kill(os.getpid(), signal.SIGTERM)
+    until = time.monotonic() + 2
+    while time.monotonic() < until:
+        time.sleep(0.05)
+
+
+def test_a_further_stop_after_explore_s_study_is_said_stopped_when_asked(
+        tmp_path, monkeypatch, capsys):
+    """`fastmdx explore`, a further stop after its study heard one: 130, with
+    no "stopped when asked" line, which the CHANGELOG says it gives."""
+    import importlib
+
+    from fastmdxplora import FastMDXplora
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    (tmp_path / "study.yml").write_text(yaml.safe_dump(
+        {"systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
+         "output": str(tmp_path / "study")}))
+
+    def explored(self, **_given):
+        _a_command_s_stop_after_its_study(False, tmp_path / "study")
+        return []
+
+    monkeypatch.setattr(FastMDXplora, "explore", explored)
+    runner._listen_afresh()
+    try:
+        code = cli.main(["explore", "-c", str(tmp_path / "study.yml")])
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    said = capsys.readouterr().err
+    assert code == 130, said
+    assert said.count("fastmdx: stopped when asked") == 1, said
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

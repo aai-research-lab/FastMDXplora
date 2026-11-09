@@ -2135,9 +2135,14 @@ def _cmd_explore(args: argparse.Namespace) -> int:
                 **({"rerun_windows": args.rerun_windows}
                    if getattr(args, "rerun_windows", None) else {}),
             )
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as stop:
         if session is not None:
             session.stop()
+        from fastmdxplora.simulation import runner
+
+        if isinstance(stop, runner.StoppedAgain):
+            # A further stop once its study heard one: said, as `resume` says it.
+            return _said_stopped_when_asked(fmdx.output_dir)
         return 130
     except Exception:
         if session is not None:
