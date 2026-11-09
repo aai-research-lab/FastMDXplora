@@ -420,12 +420,15 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     if again is not None:
         # A study with a budget stopped in its setup stage: a resume of it
         # ran setup alone and read it finished.
-        argv = tuple(str(word) for word in again.get("argv") or ())
-        cwd = str(again.get("cwd") or "") if argv else ""
+        typed = tuple(str(word) for word in again.get("argv") or ())
+        cwd = str(again.get("cwd") or "") if typed else ""
+        # Run where a page watches it: a dashboard of its own (`--dashboard`)
+        # waited, once the study ended, for a Ctrl-C the GUI's Run cannot give.
+        argv = _without_a_dashboard(typed)
         again_said = dict(fix="Run the study again, its setup first: it stopped before "
                               "its simulation began, so only its setup is recorded.",
                           command="fastmdx " + shlex.join(argv) if argv else "",
-                          argv=argv, cwd=cwd, refused=_why_not_run_into(root, argv, cwd),
+                          argv=argv, cwd=cwd, refused=_why_not_run_into(root, typed, cwd),
                           price=None)
         found = [replace(remedy, **again_said)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
@@ -460,6 +463,41 @@ def _output_named(argv: tuple[str, ...]) -> str | None:
         if len(flag) >= 4 and "--output".startswith(flag):
             named = value if equals else (argv[at + 1] if at + 1 < len(argv) else None)
     return named
+
+
+#: explore's dashboard flags, and whether each takes a value.
+_DASHBOARD_FLAGS = {"--dashboard": False, "--live-dashboard": False,
+                    "--dashboard-stop-on-complete": False, "--dashboard-open-browser": False,
+                    "--dashboard-host": True, "--dashboard-port": True,
+                    "--dashboard-refresh-seconds": True, "--dashboard-frame-interval": True,
+                    "--dashboard-ligand-resname": True,
+                    "--dashboard-binding-pocket-cutoff-A": True,
+                    "--dashboard-max-playback-frames": True}
+
+
+def _dashboard_flag(word: str) -> str | None:
+    """The dashboard flag ``word`` names (whole, or a prefix argparse takes
+    as only that flag), or None."""
+    flag = word.partition("=")[0]
+    if flag in _DASHBOARD_FLAGS:
+        return flag
+    if not flag.startswith(("--dash", "--live")):
+        return None
+    named = [name for name in _DASHBOARD_FLAGS if name.startswith(flag)]
+    return named[0] if len(named) == 1 else None
+
+
+def _without_a_dashboard(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """``argv`` with explore's dashboard flags (and their values) left out."""
+    left: list[str] = []
+    words = iter(argv)
+    for word in words:
+        flag = _dashboard_flag(word)
+        if flag is None:
+            left.append(word)
+        elif _DASHBOARD_FLAGS[flag] and "=" not in word:
+            next(words, None)
+    return tuple(left)
 
 
 def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:

@@ -4602,6 +4602,58 @@ def test_a_fix_refused_says_why_first_and_its_command_only_as_typed(tmp_path):
     assert "Run," not in text and text.index(why) < text.index("It was typed"), text
 
 
+def test_a_dashboard_budget_s_fix_runs_with_no_dashboard_of_its_own(tmp_path, monkeypatch,
+                                                                    capsys):
+    """A `--dashboard` budget study stopped in setup saved its whole line, so
+    the GUI's Run started a study that finished, then served a GUI of its
+    own and waited for a Ctrl-C the GUI could not give, read running."""
+    import importlib
+
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.remedies import _without_a_dashboard, remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    monkeypatch.setattr(cli, "_start_dashboard_for_command", lambda *_a: None)
+    monkeypatch.setattr(cli, "_finish_dashboard_for_command", lambda *_a, **_k: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def first(out: Path):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({"phases": [{
+            "name": "setup", "status": "error",
+            "refusal": refusal_of(RunStopped("SIGTERM").as_error()).as_dict()}]}))
+        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+        from fastmdxplora.orchestrator import RunResult
+
+        return [RunResult(run_id="tri", system="tri", status="error", output_dir=out,
+                          sweep_values={}, phases=[], error_type=STOPPED_ERROR_TYPE,
+                          message="Stopped when asked")]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    monkeypatch.chdir(tmp_path)
+    line = ["explore", "-c", config.name, "--dashboard", "--dashboard-port", "8999",
+            "--dashboard-refresh-seconds=2", "--output", "study"]
+    runner._listen_afresh()
+    try:
+        assert cli.main(line) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    # At the terminal, the line as given.
+    assert "--dashboard --dashboard-port 8999" in capsys.readouterr().err
+    fix = next(r for r in remedies_of(tmp_path / "study") if r.argv[:1] == ("explore",))
+    assert fix.argv == ("explore", "-c", config.name, "--output", "study",
+                        "--force-overwrite"), fix
+    assert "dashboard" not in fix.command and not fix.refused, fix
+    assert _without_a_dashboard(("explore", "--live-dashboard", "--dashboard-p", "1",
+                                 "--dashboard-stop-on-complete", "-c", "x.yml")) == (
+        "explore", "-c", "x.yml")
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
