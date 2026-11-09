@@ -944,6 +944,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   finishes once a stop now was taken, not that it writes a comparison. A run
   its round stopped is read so in the batch manifest of a study stopped now,
   once its live record says so, not "ok, nothing to carry on" or cut.
+- A further stop once a study heard one now says "stopped when asked" once:
+  `explore` said nothing, and a resume whose study's summary already said
+  what carries it on said it again. In a resume of a study of one it is
+  named by its signal, not "(Ctrl+C)" for a SIGTERM. A SIGTERM as such a
+  study stops listening no longer ends the process by the signal.
+- A study with `budget_hours` stopped before its simulation began (setup's
+  study, its pricing) exits 130, "stopped when asked", and says that
+  `fastmdx explore -c <config> --force-overwrite` runs it again, setup
+  first, not a traceback; `fastmdx resume` ran nothing there and read the
+  study finished. `--force-overwrite` and `--rerun` now reach both of its
+  stages, where they were refused as setup's output was there. Its study
+  stopped when asked in its simulation exits 130, as without a budget, not
+  0.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
