@@ -1478,6 +1478,32 @@ class TestTheSolventTogglesShowSolvent:
         assert "STATE.currentPdb = null" in handler
         assert "onStructureUpdated" in handler
 
+    def test_a_finished_run_is_not_polled_for_frames(self) -> None:
+        """A finished study was asked for its newest frame every few seconds
+        for as long as it was open: the poll rests once the run has ended and
+        its last frame is read, and wakes when the run writes again."""
+        js = self._text("molecule-viewer.js")
+        timer = js.split("window.setInterval(", 1)[1].split("\n    );", 1)[0]
+        assert "if (!STATE.liveAtRest) void pollLiveFrame()" in timer
+        live_frame = js.split("async function pollLiveFrame(", 1)[1].split(
+            "\n  function ", 1
+        )[0]
+        assert "ended = Boolean(STATE.runStatus) && !runIsWriting();" in live_frame
+        # At rest only where what the run left is shown, never before the
+        # frame is fetched: a frame that failed to load is asked for again.
+        rests = live_frame.split("STATE.liveAtRest = ended;")
+        assert len(rests) == 5
+        assert all("sayLive(" in before[-300:] for before in rests[:-1])
+        assert "STATE.liveAtRest" not in live_frame.split("/structure/live-frame.pdb", 1)[0].split(
+            "sayLive(", 1)[0]
+        catch = live_frame.split("} catch (error) {", 1)[1]
+        assert "if (ended) STATE.liveFrameIndex = null;" in catch
+        assert "liveAtRest" not in catch
+        status = js.split("function onStatusUpdated(", 1)[1].split("\n  function ", 1)[0]
+        assert "if (writing) STATE.liveAtRest = false;" in status
+        changed = js.split("function onRunChanged(", 1)[1].split("\n  function ", 1)[0]
+        assert "STATE.liveAtRest = false;" in changed
+
 
 class TestAListOfChoicesIsOfferedAsChoices:
     """`include` and `exclude` take several analyses from a known set, and the
