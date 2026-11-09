@@ -897,11 +897,17 @@ def _fix_walked(app_runtime: Any, asked: dict[str, Any]) -> dict[str, Any] | Non
     argv, cwd = None, ""
     if "windows" not in asked and _links_out(_the_study_run(Path(study))):
         try:
-            shown = _fixes_held(app_runtime.data_root()).get("fixes") or []
-            argv = shown[int(asked.get("index"))].get("argv") or None
-            cwd = str(shown[int(asked.get("index"))].get("cwd") or "")
+            fix = (_fixes_held(app_runtime.data_root()).get("fixes") or [])[
+                int(asked.get("index"))]
         except (TypeError, ValueError, IndexError, AttributeError):
-            argv, cwd = None, ""
+            fix = {}
+        if fix.get("refused"):
+            # Not run anywhere (its folder gone, its study moved): its
+            # refusal alone, never its command to run "anyway" into the old
+            # path.
+            return {"ok": False, "error": str(fix["refused"]), "terminal": None}
+        argv = fix.get("argv") or None
+        cwd = str(fix.get("cwd") or "")
     return _fix_refused(study, argv, cwd)
 
 

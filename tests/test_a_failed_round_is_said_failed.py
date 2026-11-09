@@ -4654,6 +4654,27 @@ def test_a_dashboard_budget_s_fix_runs_with_no_dashboard_of_its_own(tmp_path, mo
         "explore", "-c", "x.yml")
 
 
+def test_a_refused_fix_posted_where_a_link_leads_out_names_no_command(tmp_path, monkeypatch):
+    """`POST /api/fix` of a fix refused as its study moved, in a study with a
+    link out of it, answered with its command to run "anyway", into the old
+    path."""
+    from fastmdxplora.gui import server
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    batch, _argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    (typed / "old").mkdir()
+    now = typed / "old" / "st"
+    batch.output_dir.rename(now)
+    (tmp_path / "elsewhere").write_text("x")
+    (now / "outlink").symlink_to(tmp_path / "elsewhere")
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=now.parent)
+    runtime.active_root = now
+    answer = server._fix_walked(runtime, {"index": 0})
+    assert answer is not None and not answer["ok"] and answer["terminal"] is None, answer
+    assert "moved or renamed" in answer["error"], answer
+    assert "fastmdx explore" not in answer["error"], answer
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
