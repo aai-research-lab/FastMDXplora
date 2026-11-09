@@ -966,9 +966,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   no command, and says the study is run again from its setup. A Ctrl-C or a
   SIGTERM in its pricing (the GUI's Stop there too), or any stop there once a
   study heard one, does the same, not a traceback or a process ended by the
-  signal. Where neither `--output` nor its config's `output` named its folder,
-  the command names it with `--output`, so it runs again there, not in a new
-  folder named for the time.
+  signal. Where the line names no `--output`, the command names the study's
+  folder with `--output`, so it runs again there, not in a new folder named
+  for the time, whether the config's `output` named the folder or nothing
+  did.
   `fastmdx resume` runs setup alone for such a study and reads it finished, so
   its stop lines, its runs' records of the stop, a run it did not start, its
   fixes (without a price) and the GUI's Stop say what runs it again instead.
@@ -979,9 +980,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   (`cwd`), and its lines, the GUI's card and the terminal text where the GUI
   does not run it say it ("Run, in <folder>: ...", `cd <folder> && ...`).
   Where that folder is gone, or the study was moved or renamed since it
-  stopped so that the command's `--output` is not the study open, the fix is
-  not runnable and says why (`refused`), and nothing is run into the old
-  path. `explore --dashboard` of such a study starts its GUI, where it started
+  stopped so that the command's `--output` (read as explore reads it, `~`
+  after `--output=` not expanded) is not the study open, the fix is not
+  runnable and nothing is run into the old path. It says why first
+  (`refused`), and what to do instead, and gives the command only as it was
+  typed ("It was typed, in <folder>, as: ..."), never as the thing to run. `explore --dashboard` of such a study starts its GUI, where it started
   none. `fastmdx agent --autonomous` says a study stopped or failed
   in its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
   `--force-overwrite` and `--rerun` now reach both of its stages where only
@@ -993,8 +996,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   and one with a run that failed exits 1, as without a budget, where both
   exited 0.
 - A run's `resolved_config.yml` is written whole, to a file beside it that
-  is then put in its place: a stop raised as a run wrote it again as it ended
-  left it cut short, and the study unread.
+  is then put in its place, by the run and where a study's phases are put
+  back after some were run again: a stop raised as it was written left it
+  cut short, and the study unread.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
