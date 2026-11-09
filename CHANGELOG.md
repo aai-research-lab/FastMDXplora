@@ -963,13 +963,26 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   exits 130, "stopped when asked", and from `fastmdx explore` names the
   command as it was given, with `--force-overwrite` added, as what runs it
   again, its setup first. From `fastmdx agent --autonomous` or Python it names
-  no command, and says the study is run again from its setup. A Ctrl-C in its
-  pricing, or any stop there once a study heard one, does the same, not a
-  traceback; a first SIGTERM there still ends the process by the signal.
+  no command, and says the study is run again from its setup. A Ctrl-C or a
+  SIGTERM in its pricing (the GUI's Stop there too), or any stop there once a
+  study heard one, does the same, not a traceback or a process ended by the
+  signal. Where neither `--output` nor its config's `output` named its folder,
+  the command names it with `--output`, so it runs again there, not in a new
+  folder named for the time.
   `fastmdx resume` runs setup alone for such a study and reads it finished, so
-  its stop lines, its runs' records of the stop, its fixes (without a price)
-  and the GUI's Stop, where a run of setup recorded the stop, say what runs it
-  again instead. `fastmdx agent --autonomous` says a study stopped or failed
+  its stop lines, its runs' records of the stop, a run it did not start, its
+  fixes (without a price) and the GUI's Stop say what runs it again instead.
+  The study saves that command, and the folder it was typed in, in its own
+  record (its batch manifest, or a study of one's Manifest), so a stop heard
+  as a run's setup ended, which no run's record says, is read so too. Its
+  fixes' records (`/api/fixes`, `fastmdx resume --json`) carry that folder
+  (`cwd`), and its lines, the GUI's card and the terminal text where the GUI
+  does not run it say it ("Run, in <folder>: ...", `cd <folder> && ...`).
+  Where that folder is gone, or the study was moved or renamed since it
+  stopped so that the command's `--output` is not the study open, the fix is
+  not runnable and says why (`refused`), and nothing is run into the old
+  path. `explore --dashboard` of such a study starts its GUI, where it started
+  none. `fastmdx agent --autonomous` says a study stopped or failed
   in its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
   `--force-overwrite` and `--rerun` now reach both of its stages where only
   setup is there; over a study holding more they are refused before anything
@@ -979,6 +992,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   its setup alone. Its study stopped when asked in its simulation exits 130,
   and one with a run that failed exits 1, as without a budget, where both
   exited 0.
+- A run's `resolved_config.yml` is written whole, to a file beside it that
+  is then put in its place: a stop raised as a run wrote it again as it ended
+  left it cut short, and the study unread.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the
