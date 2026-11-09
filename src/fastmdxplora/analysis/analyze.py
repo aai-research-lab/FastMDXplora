@@ -329,6 +329,11 @@ def _saving_interval_ps(project_root: Path, *, trajectory: str | Path | None = N
                     return float(joined["saving_interval_ps"])
             except (OSError, ValueError, TypeError):
                 continue
+        # Any trajectory but the run's own or its joined one may have been
+        # written at another spacing, which this run's record does not say.
+        if beside.resolve().parent not in (
+                (project_root / "simulation").resolve(), (project_root / "joined").resolve()):
+            return None
 
     manifest = project_root / "simulation" / "simulation_parameters.json"
     try:
