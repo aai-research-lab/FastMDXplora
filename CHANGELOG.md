@@ -518,6 +518,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
+  CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
+  169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
+  3.13 peaked at 138.1 to 149.0, each at the map, with 7.9 to 8.1 MiB
+  held as it began: nothing of DBSCAN's. The whole-run test now says what was held as
+  the map began and the peak before it, and the tests that count memory
+  run their processes with glibc's default malloc, not settings taken
+  from the environment.
 - Every page of the docs names the interface the GUI. Four lines said "the
   browser": where the Agent's attempts are capped, where its API key is
   typed, the one server for `fastmdx gui` and `fastmdx agent`, and the
