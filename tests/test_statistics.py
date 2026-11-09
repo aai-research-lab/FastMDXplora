@@ -80,6 +80,46 @@ class TestCountingIndependentSamples:
 
 
 class TestFindingWhereARunSettled:
+    def test_leading_nan_frames_do_not_change_a_withheld_shortfall(self) -> None:
+        from fastmdxplora.statistics import mean_record
+
+        values = _correlated(0.995, n=400, seed=0)
+        finite = mean_record(values)
+        missing = mean_record(np.concatenate([np.full(300, np.nan), values]))
+        assert finite.get("not_a_measurement")
+        assert finite["shortfall"] == missing["shortfall"]
+
+    def test_a_recorded_discard_averages_the_same_finite_frames(self) -> None:
+        # The record's discard is a frame of the series as given, and the
+        # report's assessment says it so; the frames it judges are the
+        # finite ones after it, as when the missing frames are not there.
+        from fastmdxplora.report.convergence import assess_series
+        from fastmdxplora.statistics import mean_record
+
+        values = _correlated(0.9, n=1500, seed=0)
+        missing = np.concatenate([np.full(500, np.nan), values])
+        for record in (True, False):
+            finite = assess_series("rmsd", values,
+                                   record=mean_record(values) if record else None)
+            holed = assess_series("rmsd", missing,
+                                  record=mean_record(missing) if record else None)
+            assert holed.discard == finite.discard + 500
+            assert holed.n_frames == finite.n_frames + 500
+            assert holed.correlation_frames == pytest.approx(finite.correlation_frames)
+            assert holed.drift_in_noise == pytest.approx(finite.drift_in_noise)
+
+    def test_discard_is_on_the_original_frame_axis_after_nan_frames(self) -> None:
+        from fastmdxplora.statistics import mean_record
+
+        rng = np.random.default_rng(7)
+        values = (1.0 + 3.0 * np.exp(-np.arange(2000) / 120.0)
+                  + rng.normal(0, 0.2, 2000))
+        values[:500] = np.nan
+        record = mean_record(values)
+        finite = mean_record(values[np.isfinite(values)])
+        original_frames = np.flatnonzero(np.isfinite(values))
+        assert record["discard"] == int(original_frames[finite["discard"]])
+
     def test_a_relaxation_is_discarded(self) -> None:
         """Several relaxation times of it, which is what leaves the average
         describing the equilibrium rather than the approach to it. The start
