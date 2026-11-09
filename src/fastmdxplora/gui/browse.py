@@ -155,11 +155,19 @@ def is_study(directory: Path) -> bool:
         return False
 
 
+#: The markers only a study writes, never a package of Python source.
+_STUDY_FILES = ("manifest.json", "resolved_config.yml", "exploration.yml",
+                "batch_manifest.json")
+
+
 def _is_package(directory: Path) -> bool:
     """Whether a folder is Python source: FastMDXplora's own package has
     `simulation`, `analysis` and `report` in it, and a checkout's
-    `src/fastmdxplora` was listed among the studies as one not started."""
-    return (directory / "__init__.py").is_file()
+    `src/fastmdxplora` was listed among the studies as one not started. A
+    study holding a stray `__init__.py` beside its own records is still a
+    study."""
+    return ((directory / "__init__.py").is_file()
+            and not any((directory / name).exists() for name in _STUDY_FILES))
 
 
 _is_study = is_study
