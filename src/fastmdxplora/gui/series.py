@@ -241,7 +241,7 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
     return {
         "ok": True, "analysis": analysis, "label": label, "unit": unit, "kind": "time",
         "x_label": x_label,
-        "x": [x[i] for i in keep], "y": [values[i] for i in keep],
+        "x": [x[i] for i in keep], "y": [_finite(values[i]) for i in keep],
         "frames": [frames[i] for i in keep],
         "thinned": every if every > 1 else None,
         "linked": _of_the_played_trajectory(root, manifest),
@@ -311,7 +311,8 @@ def _residues(analysis: str, label: str, unit: str,
         values.append(value)
     return {
         "ok": True, "analysis": analysis, "label": label, "unit": unit, "kind": "residue",
-        "x_label": "Residue", "x": list(range(1, len(values) + 1)), "y": values,
+        "x_label": "Residue", "x": list(range(1, len(values) + 1)),
+        "y": [_finite(value) for value in values],
         "labels": labels, "residues": residues, "linked": False, "mean": None,
     }
 
@@ -327,7 +328,7 @@ def _atoms(root: Path, analysis: str, label: str, unit: str, path: Path,
     serials = [int(numbers[0]) for _, numbers in rows]
     return {
         "ok": True, "analysis": analysis, "label": label, "unit": unit, "kind": "atom",
-        "x_label": "Atom", "x": serials, "y": values,
+        "x_label": "Atom", "x": serials, "y": [_finite(value) for value in values],
         "labels": [f"Atom {serial}" for serial in serials],
         "entities": _profile_entities(root, path, record, rows, "atom"),
         "linked": False, "mean": None,
