@@ -3602,6 +3602,29 @@ def test_a_stop_in_a_budget_s_pricing_says_what_carries_it_on(tmp_path, monkeypa
         ["setup"], ["simulation", "analysis", "report"]], stages
 
 
+def test_a_budget_s_study_stopped_in_its_round_exits_130(tmp_path, monkeypatch, capsys):
+    """A study with a budget whose simulation was stopped when asked exited 0,
+    beside "Batch stopped"; without a budget it exits 130."""
+    import importlib
+
+    from fastmdxplora import cost
+    from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+    from fastmdxplora.orchestrator import RunResult
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+
+    def stopped():
+        return [RunResult(run_id="tri", system="tri", status="error",
+                          output_dir=tmp_path / "study", sweep_values={}, phases=[],
+                          error_type=STOPPED_ERROR_TYPE, message="Stopped when asked")]
+
+    config, stages = _a_budget_study(tmp_path, monkeypatch, second=stopped)
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    assert cli.main(["explore", "-c", str(config)]) == 130, capsys.readouterr()
+    assert len(stages) == 2, stages
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

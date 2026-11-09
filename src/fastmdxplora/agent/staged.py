@@ -71,6 +71,8 @@ class StagedRun:
     #: The second stage, the simulation onwards, has begun: a run stopped
     #: before it is carried on by running the study again, its setup first.
     simulating: bool = False
+    #: What the second stage's explore returned (its runs' results).
+    results: Any = field(default=None, repr=False)
 
     @property
     def stopped_at(self) -> str:
@@ -326,7 +328,7 @@ def _run_in_stages(
     rest["simulation"] = simulation
     staged.simulating = True
     try:
-        runner(config=rest, output_dir=str(out), **given)
+        staged.results = runner(config=rest, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
