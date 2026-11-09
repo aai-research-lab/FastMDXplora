@@ -825,3 +825,22 @@ def test_the_reference_recipe_carries_every_conda_only_backend() -> None:
     # would reintroduce a build failure somebody had already diagnosed.
     assert "pip_check: false" in text
     assert "numpy<2" in text
+
+
+def test_the_alias_supports_the_pythons_the_package_does():
+    """`pip install fastmdx` on a Python the package refuses found an alias
+    that installed and a dependency that did not."""
+    import re
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    shim = repo / "shim-package" / "pyproject.toml"
+    if not shim.is_file():  # pragma: no cover - the alias is optional
+        return
+
+    def supported(path: Path) -> str:
+        found = re.search(r'^requires-python = "([^"]+)"', path.read_text(encoding="utf-8"), re.M)
+        assert found, path
+        return found.group(1)
+
+    assert supported(shim) == supported(repo / "pyproject.toml")
