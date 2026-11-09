@@ -1971,7 +1971,10 @@ def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
     import shlex
 
     config = getattr(args, "config", None)
-    again = (f"`fastmdx explore -c {shlex.quote(str(config))} --force-overwrite`" if config
+    # Its output named where it was given: without it, a new folder.
+    where = getattr(args, "output_dir", None)
+    to = f" --output {shlex.quote(str(where))}" if where else ""
+    again = (f"`fastmdx explore -c {shlex.quote(str(config))}{to} --force-overwrite`" if config
              else "the same `fastmdx explore` with --force-overwrite")
     print(f"fastmdx: stopped when asked, before its simulation began; {again} runs the "
           "study again, its setup first.", file=sys.stderr)
@@ -2111,6 +2114,10 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             if not staged.simulating:
                 return _said_stopped_before_its_simulation(args)
             return _said_stopped_when_asked(output, stop)
+        if getattr(staged, "stopped", False):
+            # Stopped in setup's study (a SIGTERM, the GUI's Stop): it was
+            # refused for want of a particle count, or priced and run on.
+            return _said_stopped_before_its_simulation(args)
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
@@ -4000,6 +4007,9 @@ def _run_staged(args: Any, config: dict) -> int:
     staged = run_in_stages(config, output,
                            budget_hours=float(args.budget_hours))
 
+    if getattr(staged, "stopped", False):
+        print("\n  \u2717 Stopped when asked in setup: nothing was priced or run.")
+        return 130
     for note in staged.notes:
         print(f"  {note}")
 

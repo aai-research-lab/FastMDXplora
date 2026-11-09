@@ -3537,9 +3537,10 @@ def test_a_further_stop_after_a_resume_s_summary_says_it_once(
     assert "fastmdx: stopped when asked" not in printed.err, printed.err
 
 
-def _a_budget_study(tmp_path: Path, monkeypatch, second=None):
+def _a_budget_study(tmp_path: Path, monkeypatch, second=None, first=None):
     """A study with a budget, its stages run by a stand-in that refuses a
-    setup already there as the real one does, unless forced."""
+    setup already there as the real one does, unless forced. ``first``, where
+    given, is setup's stage itself, given the study's folder."""
     from fastmdxplora.agent import staged
     from fastmdxplora.refusals import OutputExistsError
 
@@ -3558,6 +3559,8 @@ def _a_budget_study(tmp_path: Path, monkeypatch, second=None):
         if config.get("include_phase") == ["setup"]:
             if setup.is_dir() and any(setup.iterdir()) and not given.get("force"):
                 raise OutputExistsError("These output directories already hold results:")
+            if first is not None:
+                return first(Path(output_dir))
             setup.mkdir(parents=True, exist_ok=True)
             (setup / "setup_parameters.json").write_text(
                 json.dumps({"n_atoms_solvated": 2_000}))
@@ -3623,6 +3626,71 @@ def test_a_budget_s_study_stopped_in_its_round_exits_130(tmp_path, monkeypatch, 
                    precision="mixed")
     assert cli.main(["explore", "-c", str(config)]) == 130, capsys.readouterr()
     assert len(stages) == 2, stages
+
+
+def _a_setup_stopped(how: str):
+    """Setup's stage of a budget study, stopped as ``how`` says: its run
+    stopped before setup recorded its count, or after, or every run ended
+    and its study heard the stop as it finished."""
+    from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner
+
+    def stage(out: Path):
+        if how != "before its count":
+            (out / "setup").mkdir(parents=True, exist_ok=True)
+            (out / "setup" / "setup_parameters.json").write_text(
+                json.dumps({"n_atoms_solvated": 2_000}))
+        if how == "heard as it ended":
+            with runner.listening_for_the_study(out) as listens:
+                listens.stage = "finishing"
+                listens._note(signal.SIGTERM, None)
+            return [RunResult(run_id="tri", system="tri", status="ok", output_dir=out,
+                              sweep_values={}, phases=[])]
+        return [RunResult(run_id="tri", system="tri", status="error", output_dir=out,
+                          sweep_values={}, phases=[], error_type=STOPPED_ERROR_TYPE,
+                          message="Stopped when asked")]
+    return stage
+
+
+@pytest.mark.parametrize("how", ["before its count", "after its count", "heard as it ended"])
+def test_a_stop_in_a_budget_s_setup_is_a_stop(how, tmp_path, monkeypatch, capsys):
+    """A SIGTERM (or the GUI's Stop) in a budget study's setup: refused for
+    want of a particle count (2), or priced and simulated as if no stop was
+    asked (0). It is a stop: 130, the line that runs it again, no price."""
+    import importlib
+
+    from fastmdxplora import cost
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    config, stages = _a_budget_study(tmp_path, monkeypatch, first=_a_setup_stopped(how))
+    priced = []
+    monkeypatch.setattr(cost, "measure_prepared_system",
+                        lambda *_a, **_k: priced.append(True) or (_ for _ in ()).throw(
+                            AssertionError("priced")))
+    runner._listen_afresh()
+    try:
+        code = cli.main(["explore", "-c", str(config), "--output", str(tmp_path / "study")])
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    said = capsys.readouterr().err
+    assert code == 130, said
+    assert (f"`fastmdx explore -c {config} --output {tmp_path / 'study'} --force-overwrite`"
+            in said), said
+    assert [phases for phases, _ in stages] == [["setup"]] and not priced, stages
+    # As it says.
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    monkeypatch.setattr(cost, "measure_prepared_system", lambda *_a, **_k: None)
+    config, stages = _a_budget_study(tmp_path, monkeypatch)
+    assert cli.main(["explore", "-c", str(config), "--output", str(tmp_path / "study"),
+                     "--force-overwrite"]) == 0
+    assert [phases for phases, _ in stages][-1] == ["simulation", "analysis", "report"]
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):

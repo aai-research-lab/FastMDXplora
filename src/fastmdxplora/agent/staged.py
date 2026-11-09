@@ -71,11 +71,15 @@ class StagedRun:
     #: The second stage, the simulation onwards, has begun: a run stopped
     #: before it is carried on by running the study again, its setup first.
     simulating: bool = False
+    #: Asked to stop in setup's study: nothing was priced or run.
+    stopped: bool = False
     #: What the second stage's explore returned (its runs' results).
     results: Any = field(default=None, repr=False)
 
     @property
     def stopped_at(self) -> str:
+        if self.stopped:
+            return "setup"
         if self.refusal is None:
             return "" if self.simulated else "nothing ran"
         return "estimate" if self.setup_done else "setup"
@@ -94,6 +98,8 @@ class StagedRun:
         }
 
     def __str__(self) -> str:
+        if self.stopped:
+            return "stopped when asked, in setup"
         if self.refusal is not None:
             return f"stopped at {self.stopped_at}: {self.refusal.message}"
         if self.simulated and self.runs > 1:
@@ -223,11 +229,18 @@ def _run_in_stages(
     asked = _phases_asked(config)
     setup_only = _with_phases(config, ["setup"])
     try:
-        runner(config=setup_only, output_dir=str(out), **given)
+        ran = runner(config=setup_only, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
-    staged.setup_done = True
+    cut = _stopped_when_asked(ran)
+    staged.setup_done = not cut
+    if cut or _a_study_heard_a_stop():
+        # Asked to stop in setup's study (Ctrl-C, SIGTERM, the GUI's Stop):
+        # nothing is priced or run. It was refused for want of a particle
+        # count, or priced and simulated as if no stop was asked.
+        staged.stopped = True
+        return staged
 
     after_setup = [phase for phase in asked if phase != "setup"]
     if not after_setup:
@@ -339,6 +352,24 @@ def _run_in_stages(
         _record_the_study_s_phases(out, config, after_setup, injected)
     staged.simulated = True
     return staged
+
+
+def _stopped_when_asked(ran: Any) -> bool:
+    """Whether a run of the first stage ended stopped when asked."""
+    from fastmdxplora.batch.explorer import _was_stopped
+
+    try:
+        return any(_was_stopped(result) for result in ran or [])
+    except TypeError:  # an explore that returns no list of results
+        return False
+
+
+def _a_study_heard_a_stop() -> bool:
+    """Whether the command's study heard a stop (`runner._A_STUDY_HEARD_A_STOP`):
+    one heard as setup's study ended leaves every run of it ok."""
+    from fastmdxplora.simulation import runner
+
+    return bool(runner._A_STUDY_HEARD_A_STOP)
 
 
 def _phases_asked(config: dict[str, Any]) -> list[str]:
