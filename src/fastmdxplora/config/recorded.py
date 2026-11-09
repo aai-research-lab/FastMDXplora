@@ -118,6 +118,8 @@ def keep_the_study_s_phases(study: Path, include: Any, exclude: Any) -> None:
     """
     import yaml
 
+    from fastmdxplora.orchestrator import _put_in_place
+
     study = Path(study)
     records = [study / RECORDED]
     runs = study / "runs"
@@ -135,8 +137,8 @@ def keep_the_study_s_phases(study: Path, include: Any, exclude: Any) -> None:
                          if line.startswith("#"))
         config["include_phase"] = include
         config["exclude_phase"] = exclude
-        record.write_text(header + yaml.safe_dump(config, sort_keys=False),
-                          encoding="utf-8")
+        # Whole or not at all: a stop as it was written left it cut short.
+        _put_in_place(record, header + yaml.safe_dump(config, sort_keys=False))
 
 
 def laid_over(recorded: dict[str, Any], given: dict[str, Any]) -> dict[str, Any]:

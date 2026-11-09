@@ -4545,6 +4545,32 @@ def test_a_study_named_by_its_config_s_output_moved_since_it_stopped_is_refused(
     assert not spawn.called and not (tmp_path / "study").exists()
 
 
+def test_a_study_s_phases_put_back_leave_its_record_whole(tmp_path, monkeypatch):
+    """The study's phases put back after some were run again wrote its
+    resolved config in place: a stop as it was written left it cut short."""
+    from fastmdxplora.config.recorded import keep_the_study_s_phases
+
+    record = tmp_path / "resolved_config.yml"
+    record.write_text("# a header\n" + yaml.safe_dump({"include_phase": ["analysis"],
+                                                     "systems": [{"id": "s1"}]}))
+
+    def cut(self, text, *_args, **_kwargs):
+        with open(self, "w", encoding="utf-8") as stream:
+            stream.write(text[: len(text) // 2])
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Path, "write_text", cut)
+    try:
+        keep_the_study_s_phases(tmp_path, ["setup", "simulation"], None)
+    except KeyboardInterrupt:
+        pytest.fail(f"cut as it was written: {record.read_text()!r}")
+    finally:
+        monkeypatch.undo()
+    read = yaml.safe_load(record.read_text())
+    assert read["include_phase"] == ["setup", "simulation"] and read["systems"], read
+    assert record.read_text().startswith("# a header")
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
