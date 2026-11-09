@@ -4465,12 +4465,14 @@ def _results_payload(root: Path) -> dict[str, Any]:
     manifest = _load_json(root / "manifest.json")
     analysis_manifest = _load_json(root / "analysis" / "analysis_manifest.json")
     sim_manifest = _load_json(root / "simulation" / "simulation_parameters.json")
+    # A study that refused its free energy (windows too far apart to
+    # overlap) can still hold an earlier run's figure; it is not this one's,
+    # so it is not shown, though its files are listed as files.
+    figures = artifacts
     if _free_energy_refused(root):
-        # A study that refused its free energy (windows too far apart to
-        # overlap) can keep the previous run's figure; it is not this one's.
-        artifacts = [record for record in artifacts
-                     if not record["path"].startswith(f"{FREE_ENERGY_DIR}/")]
-    plots = _plot_records(artifacts)
+        figures = [record for record in artifacts
+                   if not record["path"].startswith(f"{FREE_ENERGY_DIR}/")]
+    plots = _plot_records(figures)
     report_suffixes = {".md", ".html", ".htm", ".pdf", ".pptx", ".zip"}
     reports = [
         record
@@ -4503,7 +4505,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
     return {
         "refreshed_at": _iso_now(),
         "has_analysis": any(record["path"].startswith(("analysis/", f"{FREE_ENERGY_DIR}/"))
-                            for record in artifacts),
+                            for record in figures),
         "has_report": any(record["path"].startswith("report/") for record in artifacts),
         # No folder and no title where no study is open: the root is then a
         # name that is never created, and it was shown as the study's.
@@ -4516,7 +4518,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
                                           extended=extended,
                                           production_not_read=production_not_read),
         "phases": _phase_records(manifest),
-        "analyses": _analysis_records(analysis_manifest, artifacts, plots, root),
+        "analyses": _analysis_records(analysis_manifest, figures, plots, root),
         "dashboard": dashboard,
         "plots": plots,
         "key_plots": [plot for plot in plots if plot["title"] in KEY_PLOT_TITLES][:6],

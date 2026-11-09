@@ -1491,7 +1491,7 @@ class TestTheSolventTogglesShowSolvent:
         assert "ended = Boolean(STATE.runStatus) && !runIsWriting();" in live_frame
         # At rest only where what the run left is shown, never before the
         # frame is fetched: a frame that failed to load is asked for again.
-        rests = live_frame.split("STATE.liveAtRest = ended;")
+        rests = live_frame.split("STATE.liveAtRest = ended && !runIsWriting();")
         assert len(rests) == 5
         assert all("sayLive(" in before[-300:] for before in rests[:-1])
         assert "STATE.liveAtRest" not in live_frame.split("/structure/live-frame.pdb", 1)[0].split(
