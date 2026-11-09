@@ -448,6 +448,8 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         "said": said, "determined": determined, "why": why,
         "samples": _samples(samples),
         "from_frame": discard, "of_frames": n, "from_ns": from_ns,
+        # Frames after the discard without a value, so not averaged.
+        "without_a_value": _count(found.get("without_a_value")) or 0,
         "reweighted": False, "constant": constant,
         # Withheld by this version from a mean an earlier version's rules
         # called determined (`statistics.too_few_by_these_rules`), which

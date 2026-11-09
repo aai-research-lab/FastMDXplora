@@ -1039,6 +1039,17 @@ def mean_record(series: np.ndarray, *, frame_interval_ns: float | None = None,
             if not shortfall.met:
                 record["shortfall"] = shortfall.as_record()
     record["n_frames"] = int(values.size)
+    finite_count = int(np.isfinite(values).sum())
+    if finite_count < values.size:
+        # Said where it matters, so a reader knows the discard from one an
+        # earlier version wrote, which counted the frames with a value.
+        record["discard_of"] = "saved frames"
+        if equilibrated is not None:
+            after = values[int(equilibrated.discard):]
+            missing = int(after.size - np.isfinite(after).sum())
+            if missing:
+                # Not among the frames averaged after the discard.
+                record["without_a_value"] = missing
     if boundaries:
         record["segment_joins"] = boundaries
     if unseen is not None and reason is None and equilibrated is not None:

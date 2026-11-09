@@ -232,13 +232,20 @@
       "</summary><p>" + escapeHTML(quantity.noted_why) + "</p></details>";
   }
 
+  function averaged(quantity) {
+    return quantity.of_frames - (quantity.from_frame || 0) - (quantity.without_a_value || 0);
+  }
+
   function quantityRow(row, quantity, label, indented) {
     var status = statusOf(quantity);
     var from = quantity.from_ns != null && quantity.from_frame
       ? "from " + sayLength(quantity.from_ns)
       : (quantity.from_frame ? "from frame " + count(quantity.from_frame) : "");
+    // The frames the mean is over: after the discard, and with a value.
+    var missing = quantity.without_a_value || 0;
     var frames = quantity.of_frames != null
-      ? count(quantity.of_frames - (quantity.from_frame || 0)) + " of " + count(quantity.of_frames)
+      ? count(averaged(quantity)) + " of " + count(quantity.of_frames)
+        + (missing ? " (" + count(missing) + " without a value)" : "")
       : (quantity.reweighted ? "reweighted" : "−");
     return '<tr data-analysis="' + escapeHTML(row.analysis) + '" data-status="' + status.key + '"' +
       (indented ? ' class="is-quantity"' : "") + ">" +
@@ -410,7 +417,7 @@
       (row.quantities || []).forEach(function (q) {
         rows.push([row.title, q.key === "mean" ? "Mean" : q.label,
           q.value == null ? "" : String(q.value), q.error == null ? "" : String(q.error),
-          q.unit || "", q.of_frames == null ? "" : String(q.of_frames - (q.from_frame || 0)),
+          q.unit || "", q.of_frames == null ? "" : String(averaged(q)),
           q.from_ns == null ? "" : String(q.from_ns), q.samples == null ? "" : String(q.samples),
           q.unavailable ? "not read" : q.determined ? "yes" : "no", q.why || "", q.noted || ""]);
       });

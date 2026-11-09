@@ -359,9 +359,12 @@ def assess_series(name: str, values: Any,
     recorded: set[str] = set()
     recorded_error: float | None = None
     frames = int(given.size)
-    # Whether the discard below is a record's, a frame of the series as
-    # given, or one found here, a count of its finite frames.
+    # Whether the discard below is a record's, and how it counts: a frame of
+    # the series as given where the record says so, as one written by this
+    # version does wherever frames have no value; else a count of the
+    # finite frames, as an earlier version wrote it and as one is found here.
     discard_given = False
+    discard_as_written = False
     if isinstance(record, dict) and _number(record.get("mean")) is not None:
         # The analysis's own record, as written: its mean, error, discard,
         # independent samples and verdict, none worked out again.
@@ -387,7 +390,8 @@ def assess_series(name: str, values: Any,
                 equilibrated.standard_deviation))
         recorded |= {"mean", "verdict"}
         recorded |= {"discard"} if found is not None else set()
-        discard_given = found is not None
+        discard_as_written = found is not None
+        discard_given = discard_as_written and record.get("discard_of") == "saved frames"
         recorded |= {"effective_samples"} if effective is not None else set()
         # The verdict every page reads (`statistics.withheld_reason`): one an
         # earlier version called determined on too few independent samples
@@ -419,6 +423,8 @@ def assess_series(name: str, values: Any,
     discard = int(equilibrated.discard) if equilibrated else 0
     if discard_given:
         start = int(np.isfinite(given[:discard]).sum())
+    elif discard_as_written:
+        start = discard
     else:
         start, discard = discard, (int(finite_at[discard]) if discard < n
                                    else int(given.size))
