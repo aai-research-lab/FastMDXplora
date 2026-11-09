@@ -515,8 +515,12 @@ def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
     named = _output_named(argv)
     if named is None:
         return ""
-    # As explore reads it: `~` is not expanded after `--output=`.
-    output = Path(named)
+    # As explore reads it: with a dashboard, `~` is expanded
+    # (`cli.main._resolve_dashboard_output_dir`); without one, not after
+    # `--output=`.
+    with_a_dashboard = any(_dashboard_flag(word) in ("--dashboard", "--live-dashboard")
+                           for word in argv)
+    output = Path(named).expanduser() if with_a_dashboard else Path(named)
     if not output.is_absolute():
         if not cwd:
             return ""

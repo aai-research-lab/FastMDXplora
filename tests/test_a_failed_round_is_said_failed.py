@@ -4675,6 +4675,26 @@ def test_a_refused_fix_posted_where_a_link_leads_out_names_no_command(tmp_path, 
     assert "fastmdx explore" not in answer["error"], answer
 
 
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_an_output_with_a_tilde_is_read_as_explore_reads_it_in_each_mode(
+        dashboard, tmp_path, monkeypatch):
+    """With `--dashboard`, explore expands `~` in `--output=~/x`
+    (`_resolve_dashboard_output_dir`); without, it does not. The fix read it
+    one way for both, and refused a study that never moved."""
+    from fastmdxplora.remedies import _why_not_run_into
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    typed = tmp_path / "w"
+    for study in (typed / "~" / "x", tmp_path / "home" / "x"):
+        study.mkdir(parents=True)
+    argv = ("explore", "-c", "s.yml", "--output=~/x", "--force-overwrite",
+            *(("--dashboard",) if dashboard else ()))
+    there = tmp_path / "home" / "x" if dashboard else typed / "~" / "x"
+    other = typed / "~" / "x" if dashboard else tmp_path / "home" / "x"
+    assert _why_not_run_into(there, argv, str(typed)) == ""
+    assert "moved or renamed" in _why_not_run_into(other, argv, str(typed))
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx
