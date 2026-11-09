@@ -4447,8 +4447,9 @@ class BatchExplorer:
                 and list(raw.get("include_phase") or []) == ["setup"]):
             # Setup's stage of a study with a budget (`agent.staged`): a
             # resume of it ran setup alone and read the study finished. Its
-            # command says what runs it again.
-            fixes, stopped, carry_on_said = [], 0, False
+            # fixes say what runs it again (`remedies_of`), and so does its
+            # command: no line of a resume here.
+            stopped, carry_on_said = 0, False
         if fixes:
             print("\n".join(fixes))
         elif stopped:

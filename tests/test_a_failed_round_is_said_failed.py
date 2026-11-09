@@ -3736,11 +3736,13 @@ def _at_a_budget_s_setup_stage(study: Path) -> str:
 
 def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
     """Setup's stage of a budget study, stopped: its summary said `fastmdx
-    resume` carries it on, which ran setup alone and read it finished."""
+    resume` carries it on, which ran setup alone and read it finished. Its
+    fixes say what runs it again."""
     from fastmdxplora.batch.explorer import BatchExplorer
     from fastmdxplora.simulation import runner
 
     study, results = _a_killed_worker_s_study(tmp_path)
+    _at_a_budget_s_setup_stage(study)
     batch = object.__new__(BatchExplorer)
     batch.output_dir, batch.results = study, results
     batch._raw = {"budget_hours": 50, "include_phase": ["setup"]}
@@ -3748,8 +3750,31 @@ def test_a_budget_s_setup_stage_stopped_points_to_no_resume(tmp_path, capsys):
     batch._listens.signal = signal.SIGTERM
     batch._print_summary()
     printed = capsys.readouterr().out
-    assert "Batch" in printed and "fastmdx resume" not in printed, printed
+    assert "fastmdx resume" not in printed, printed
+    assert "Run: fastmdx explore -c s.yml --force-overwrite" in printed, printed
     assert runner._ITS_STOP_SAID is False
+
+
+def test_a_budget_s_setup_stage_still_says_what_would_fix_a_failure(tmp_path, capsys,
+                                                                    monkeypatch):
+    """Setup's stage of a budget study whose run failed (a structure setup
+    refused): its summary said no fix at all."""
+    from fastmdxplora.batch import explorer
+    from fastmdxplora.orchestrator import RunResult
+
+    study = tmp_path / "study"
+    (study / "runs" / "a").mkdir(parents=True)
+    monkeypatch.setattr(explorer, "_what_would_fix_it", lambda *_a, **_k: [
+        "What would fix it:", "  a: The structure could not be read.",
+        "    Fix: Give a structure setup reads."])
+    batch = object.__new__(explorer.BatchExplorer)
+    batch.output_dir = study
+    batch.results = [RunResult(run_id="a", system="tri", status="error",
+                               output_dir=study / "runs" / "a", sweep_values={}, phases=[],
+                               error_type="StudyError", message="The structure could not be read.")]
+    batch._raw = {"budget_hours": 50, "include_phase": ["setup"]}
+    batch._print_summary()
+    assert "Fix: Give a structure setup reads." in capsys.readouterr().out
 
 
 def test_a_run_its_budget_s_second_stage_did_not_reach_is_carried_on(tmp_path):
