@@ -4582,6 +4582,26 @@ def test_an_output_given_with_a_tilde_after_equals_is_read_as_explore_reads_it(t
     assert _why_not_run_into(study, argv, str(tmp_path)) == ""
 
 
+def test_a_fix_refused_says_why_first_and_its_command_only_as_typed(tmp_path):
+    """A run-again refused (its folder gone, its study moved) still showed
+    "Run, in <folder>: <command>" first, and the refusal under it; the gone
+    folder's refusal said nothing of what to do instead."""
+    from fastmdxplora.remedies import Remedy, _why_not_run_into
+
+    gone = str(tmp_path / "gone")
+    argv = ("explore", "-c", "s.yml", "--output", "st", "--force-overwrite")
+    why = _why_not_run_into(tmp_path / "st", argv, gone)
+    assert "`--output` naming the study where it is now" in why, why
+    remedy = Remedy(code="simulation.run.stopped", where="the study", why="Stopped.",
+                    fix="Run the study again, its setup first.", argv=argv, cwd=gone,
+                    command="fastmdx " + " ".join(argv), refused=why)
+    lines = remedy.as_lines()
+    assert not any(line.strip().startswith("Run") for line in lines), lines
+    assert lines[2].strip() == why and lines[3].strip().startswith("It was typed"), lines
+    text = remedy.as_text()
+    assert "Run," not in text and text.index(why) < text.index("It was typed"), text
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

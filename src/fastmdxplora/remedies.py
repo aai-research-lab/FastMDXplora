@@ -181,11 +181,14 @@ class Remedy:
 
     def as_text(self, *, with_config: bool = True) -> str:
         text = f"{self.where}: {self.why} Fix: {self.fix}"
-        if self.command:
+        if self.refused:
+            # Not the thing to run: the refusal first, then what was typed.
+            text += f" {self.refused}"
+            if self.command:
+                text += f" It was typed{self._typed_in(True)} as `{self.command}`."
+        elif self.command:
             text += (f" Run, in `{self.cwd}`: `{self.command}`." if self.cwd
                      else f" Run: `{self.command}`.")
-        if self.refused:
-            text += f" {self.refused}"
         if self.price is not None:
             text += f" Costs {self.price.as_text()}."
         if with_config and self.config:
@@ -199,14 +202,22 @@ class Remedy:
     def as_lines(self) -> list[str]:
         """For the console: the refusal, then what fixes it and its price."""
         lines = [f"{self.where}: {self.why}", f"  Fix: {self.fix}"]
-        if self.command:
+        if self.refused:
+            # Not the thing to run: the refusal first, then what was typed.
+            lines.append(f"  {self.refused}")
+            if self.command:
+                lines.append(f"  It was typed{self._typed_in(False)} as: {self.command}")
+        elif self.command:
             lines.append(f"  Run, in {self.cwd}: {self.command}" if self.cwd
                          else f"  Run: {self.command}")
-        if self.refused:
-            lines.append(f"  {self.refused}")
         if self.price is not None:
             lines.append(f"  Costs {self.price.as_text()}.")
         return lines
+
+    def _typed_in(self, quoted: bool) -> str:
+        if not self.cwd:
+            return ""
+        return f", in `{self.cwd}`," if quoted else f", in {self.cwd},"
 
     def as_record(self) -> dict[str, Any]:
         return {"code": self.code, "where": self.where, "why": self.why,
@@ -461,7 +472,8 @@ def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
         return ""
     if cwd and not Path(cwd).is_dir():
         return (f"It is run from {cwd}, where it was first run, and that folder is not "
-                "there now, so it is not run from here.")
+                "there now, so it is not run from here. Run it again from a folder where "
+                "its config is, with `--output` naming the study where it is now.")
     named = _output_named(argv)
     if named is None:
         return ""
