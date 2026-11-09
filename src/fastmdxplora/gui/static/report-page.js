@@ -241,25 +241,32 @@
    * time: a finished study's state does not change, so nothing else would
    * ask again, and the page would say there is no report. */
   /* An answer is for the study shown when it was asked: one that comes
-   * back after the study changed is not shown over the study now open.
-   * Answers about the same study all stand, since a poll that asks again
-   * before the last answer came back would otherwise leave none shown. */
+   * back after the study changed is not shown over the study now open, and
+   * the page asks again for the study now shown. Answers about the same
+   * study all stand, since a poll that asks again before the last answer
+   * came back would otherwise leave none shown. */
   var retrying = 0;
   var asked = 0;
   function shownStudy() {
     return ((window.FastMDXDashboard || {}).state || {}).studyShown || "";
+  }
+  function showing() {
+    var page = document.querySelector('.page[data-page="report"]');
+    return !!(page && !page.hidden);
   }
   function load() {
     var mine = asked;
     var study = shownStudy();
     return fetch("/api/report").then(function (r) { return r.json(); })
       .then(function (data) {
-        if (mine !== asked || study !== shownStudy()) return;
+        if (mine !== asked) return;
+        if (study !== shownStudy()) { if (showing()) load(); return; }
         retrying = 0;
         render(data);
       })
       .catch(function () {
-        if (mine !== asked || study !== shownStudy()) return;
+        if (mine !== asked) return;
+        if (study !== shownStudy()) { if (showing()) load(); return; }
         render(null);
         if (retrying < 5) {
           retrying += 1;
@@ -457,10 +464,17 @@
       window.FastMDXDashboard.on("navigate", function (detail) {
         if (detail === "report" || (detail && detail.page === "report")) load();
       });
+      /* Another study opened elsewhere: the report shown is the last
+       * study's, so it goes, and the study now shown is asked for. */
       window.FastMDXDashboard.on("study-changed-elsewhere", function () {
         asked += 1;
         var doc = el("report-document");
-        if (doc) delete doc.dataset.rendered;
+        if (doc) {
+          delete doc.dataset.rendered;
+          doc.innerHTML = "";
+          doc.hidden = true;
+        }
+        if (showing()) load();
       });
     }
   });
