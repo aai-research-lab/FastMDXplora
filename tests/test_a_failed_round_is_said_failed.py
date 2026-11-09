@@ -4189,6 +4189,28 @@ def test_the_gui_s_stop_says_a_python_budget_s_stop_once(tmp_path):
     assert "run again from its setup" in said, said
 
 
+def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
+    """A SIGTERM as a run's setup ended raised its stop as the run wrote its
+    resolved config again: the record was left cut short, the study read as
+    no budget's setup alone, and its fixes named `fastmdx resume`."""
+    from fastmdxplora.config import write_resolved_config
+
+    merged = {"system": "tri-ala.pdb", "output": str(tmp_path), "include_phase": ["setup"]}
+    write_resolved_config(merged, tmp_path)
+    before = (tmp_path / "resolved_config.yml").read_text()
+
+    def cut(data, stream=None, **_given):
+        if stream is not None:
+            stream.write("systems:\n- id: s1\n  system")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(yaml, "safe_dump", cut)
+    with pytest.raises(KeyboardInterrupt):
+        write_resolved_config({**merged, "include_phase": ["setup", "simulation"]}, tmp_path)
+    assert (tmp_path / "resolved_config.yml").read_text() == before
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

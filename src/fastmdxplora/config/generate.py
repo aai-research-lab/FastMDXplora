@@ -483,8 +483,11 @@ def write_resolved_config(
         header += f"# {name}: {said['value']}, taken from {said['from']}\n"
     if merged.get("derived"):
         header += "#\n"
+    from fastmdxplora.orchestrator import _put_in_place
+
     path = out / filename
-    with path.open("w", encoding="utf-8") as fh:
-        fh.write(header)
-        yaml.safe_dump(doc, fh, sort_keys=False, default_flow_style=False)
+    # Whole or not at all: a stop raised as it was written (a run's record
+    # written again as it ends) left it cut short, and the study unread.
+    _put_in_place(path, header + yaml.safe_dump(doc, sort_keys=False,
+                                                default_flow_style=False))
     return path
