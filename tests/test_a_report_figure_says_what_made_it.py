@@ -234,3 +234,66 @@ def test_a_late_report_cannot_replace_a_newer_report_after_a_study_switch(elsewh
         "rendered": None,
         "afterPoll": "SAME_STUDY_REPORT",
     }
+
+
+def test_the_report_follows_a_study_opened_elsewhere(study, tmp_path) -> None:
+    """Study A shown at #report; another window opens study B. B's report is
+    shown within a few seconds: the answer to a request sent just before the
+    switch was dropped as A's, and nothing asked again until a later poll."""
+    pytest.importorskip("playwright.sync_api")
+    import json
+    import shutil
+    import urllib.request
+
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+    from fastmdxplora.gui.workspace import study_key
+
+    other = tmp_path / "other"
+    shutil.copytree(study, other)
+    written = other / "report" / "report.md"
+    written.write_text("# STUDY_B_REPORT\n\n" + written.read_text(encoding="utf-8"),
+                       encoding="utf-8")
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#report", wait_until="domcontentloaded")
+            page.wait_for_selector("#report-document h1")
+            assert "STUDY_B_REPORT" not in page.text_content("#report-document")
+            # The request sent just before the switch is answered after it,
+            # with B's report, once the page shows B; later requests go
+            # through.
+            held: list = []
+
+            def hold_the_first(route):
+                if held:
+                    route.continue_()
+                else:
+                    held.append(route)
+
+            page.route("**/api/report", hold_the_first)
+            page.evaluate("() => { window.FastMDXReport.load(); }")
+            while not held:
+                page.wait_for_timeout(50)
+            base = session.url.split("#")[0].rstrip("/")
+            asked = urllib.request.Request(
+                base + "/api/explore/switch", method="POST",
+                data=json.dumps({"folder": str(other)}).encode(),
+                headers={"content-type": "application/json"})
+            with urllib.request.urlopen(asked, timeout=30) as answer:
+                assert json.loads(answer.read()).get("ok") is not False
+            page.wait_for_function("(key) => window.FastMDXDashboard.state.studyShown === key",
+                                   arg=study_key(other), timeout=30000)
+            # No later poll asks for the report in its place.
+            page.evaluate("() => { window.FastMDXDashboard.state.paused = true; }")
+            held[0].continue_()
+            page.wait_for_function(
+                "() => /STUDY_B_REPORT/.test("
+                "document.getElementById('report-document').textContent)", timeout=6000)
+            browser.close()
+    finally:
+        session.server.shutdown()
