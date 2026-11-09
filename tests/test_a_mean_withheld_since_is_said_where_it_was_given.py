@@ -49,8 +49,12 @@ def _table_as_rows(overview: dict) -> list[list[str]]:
     if node is None:
         pytest.skip("no node")
     script = (STATIC / "analysis-page.js").read_text(encoding="utf-8")
-    start = script.index("  function tableAsRows(")
-    function = script[start:script.index("\n  }\n", start) + 4]
+    # With the count of frames averaged it says (`averaged`).
+    functions = []
+    for name in ("averaged", "tableAsRows"):
+        start = script.index(f"  function {name}(")
+        functions.append(script[start:script.index("\n  }\n", start) + 4])
+    function = "\n".join(functions)
     probe = (f"var overview = {json.dumps(overview)};\n{function}\n"
              "console.log(JSON.stringify(tableAsRows()));")
     said = subprocess.run([node, "-e", probe], capture_output=True, text=True, check=True)

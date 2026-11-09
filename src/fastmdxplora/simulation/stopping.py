@@ -391,7 +391,7 @@ _RECOMPUTED = frozenset({
     "discard", "statistical_inefficiency", "effective_samples", "mean", "standard_error",
     "standard_deviation", "degrees_of_freedom", "not_a_measurement", "shortfall", "n_frames",
     "start_shared_with_replicas", "segment_joins", "drift_test", "withheld_code",
-    "drift_unseen"})
+    "drift_unseen", "discard_of", "without_a_value"})
 
 
 def _series_in(path: Path) -> "Any | None":
