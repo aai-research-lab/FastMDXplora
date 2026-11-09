@@ -303,8 +303,12 @@ def assess_series(name: str, values: Any,
     wrote one (`statistics.mean_record`): its mean, discard, independent
     samples and verdict are taken as written, so one mean has one verdict.
     """
-    series = np.asarray(values, dtype=np.float64)
-    series = series[np.isfinite(series)]
+    # The frames as given, and those of them with a value. A discard is a
+    # frame of the series as given, as a record says it
+    # (`statistics.summarise`); what is averaged are the finite frames.
+    given = np.asarray(values, dtype=np.float64).ravel()
+    finite_at = np.flatnonzero(np.isfinite(given))
+    series = given[finite_at]
     n = series.size
     if n == 0:
         return Assessment(name, 0, 0, float("nan"), float("nan"), 1.0, 0.0, 0.0,
@@ -325,7 +329,7 @@ def assess_series(name: str, values: Any,
         # The series as given: the joins are its frame numbers, and
         # summarise_segments moves them past values that are not finite.
         pooled, withheld = summarise_segments(
-            np.asarray(values, dtype=np.float64).ravel(), joins,
+            given, joins,
             unit=(record.get("unit") or record.get("units") or None)
             if isinstance(record, dict) else None)
         if pooled is None:
@@ -354,7 +358,10 @@ def assess_series(name: str, values: Any,
         equilibrated, reason = summarise(series)
     recorded: set[str] = set()
     recorded_error: float | None = None
-    frames = int(n)
+    frames = int(given.size)
+    # Whether the discard below is a record's, a frame of the series as
+    # given, or one found here, a count of its finite frames.
+    discard_given = False
     if isinstance(record, dict) and _number(record.get("mean")) is not None:
         # The analysis's own record, as written: its mean, error, discard,
         # independent samples and verdict, none worked out again.
@@ -380,6 +387,7 @@ def assess_series(name: str, values: Any,
                 equilibrated.standard_deviation))
         recorded |= {"mean", "verdict"}
         recorded |= {"discard"} if found is not None else set()
+        discard_given = found is not None
         recorded |= {"effective_samples"} if effective is not None else set()
         # The verdict every page reads (`statistics.withheld_reason`): one an
         # earlier version called determined on too few independent samples
@@ -409,7 +417,12 @@ def assess_series(name: str, values: Any,
             "This run is not long against its own correlation time"):
         code = "analysis.sampling.correlation_unresolved"
     discard = int(equilibrated.discard) if equilibrated else 0
-    kept = series[discard:] if discard < n else series[-1:]
+    if discard_given:
+        start = int(np.isfinite(given[:discard]).sum())
+    else:
+        start, discard = discard, (int(finite_at[discard]) if discard < n
+                                   else int(given.size))
+    kept = series[start:] if start < n else series[-1:]
     effective = (float(equilibrated.effective_samples) if equilibrated
                  else float(n / autocorrelation_time(series)))
     return Assessment(
