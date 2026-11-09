@@ -3909,6 +3909,37 @@ def test_a_budget_s_record_rewrite_leaves_a_shared_preparation_as_it_was(tmp_pat
     assert "include_phase" not in yaml.safe_load((tmp_path / "resolved_config.yml").read_text())
 
 
+def test_a_stop_as_a_budget_s_records_are_rewritten_leaves_them_whole(tmp_path, monkeypatch):
+    """A further Ctrl-C as the second stage's records were rewritten: a
+    record left cut short, and the study told it had not begun."""
+    from fastmdxplora import cost, orchestrator
+    from fastmdxplora.agent import staged
+
+    rest = ["simulation", "analysis", "report"]
+
+    def stopped(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    def second():
+        (tmp_path / "study" / "resolved_config.yml").write_text(
+            yaml.safe_dump({"include_phase": rest, "output": "x"}))
+        # A further Ctrl-C as its records are written again.
+        monkeypatch.setattr(orchestrator, "_put_in_place", stopped)
+        return []
+
+    _config, _stages = _a_budget_study(tmp_path, monkeypatch, second=second)
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    progress = staged.StagedRun(output_dir=tmp_path / "study")
+    config = yaml.safe_load(_config.read_text())
+    with pytest.raises(KeyboardInterrupt):
+        staged.run_in_stages(config, tmp_path / "study", budget_hours=1000,
+                             staged=progress)
+    assert progress.simulating is True
+    assert yaml.safe_load((tmp_path / "study" / "resolved_config.yml").read_text()) == {
+        "include_phase": rest, "output": "x"}
+
+
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
     """A first stop after every run ended (its comparison), or during the
     preparation its windows share, said the study ends where `fastmdx

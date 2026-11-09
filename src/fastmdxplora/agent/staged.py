@@ -377,12 +377,14 @@ def _run_in_stages(
         staged.refusal = refusal_of(exc)
         return staged
     finally:
+        # Begun once its record is written: before, the study still read
+        # as setup alone, which a resume reads finished. Said before the
+        # records are written again, so a stop as they are is said so.
+        staged.simulating = _the_second_stage_began(out, after_setup)
         # The record is of the study, not of the second stage: it was
         # written as `exclude_phase: [setup]` with the stage's `setup_from`,
         # so replaying it skipped the setup the study asked for.
-        # Begun once its record is written: before, the study still read
-        # as setup alone, which a resume reads finished.
-        staged.simulating = _record_the_study_s_phases(out, config, after_setup, injected)
+        _record_the_study_s_phases(out, config, after_setup, injected)
         if staged.simulating:
             (out / SETUP_STAGE).unlink(missing_ok=True)
     staged.simulated = True
@@ -513,10 +515,13 @@ def _record_the_study_s_phases(out: Path, config: dict[str, Any],
     (`shared_setup/`) is its own, and is left as it is.
 
     Only a file that records exactly one stage's phases is changed: any
-    other was written by something else, and is left as it is. Whether the
-    second stage wrote any.
+    other was written by something else, and is left as it is. Each is put
+    in place whole (`orchestrator._put_in_place`), so a stop as it is
+    written leaves it as it was. Whether the second stage wrote any.
     """
     import yaml
+
+    from fastmdxplora.orchestrator import _put_in_place
 
     include = config.get("include_phase", config.get("include"))
     exclude = config.get("exclude_phase", config.get("exclude"))
@@ -551,9 +556,8 @@ def _record_the_study_s_phases(out: Path, config: dict[str, Any],
         header = "".join(line for line in text.splitlines(keepends=True)
                          if line.startswith("#"))
         try:
-            with path.open("w", encoding="utf-8") as fh:
-                fh.write(header)
-                yaml.safe_dump(rewritten, fh, sort_keys=False, default_flow_style=False)
+            _put_in_place(path, header + yaml.safe_dump(rewritten, sort_keys=False,
+                                                        default_flow_style=False))
         except OSError:
             continue
     return begun
