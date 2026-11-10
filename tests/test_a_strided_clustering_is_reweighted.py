@@ -4,11 +4,13 @@ Clustering clusters at most 5,000 frames, every k-th past them, and the
 reweighting read only labels of every frame: a biased run of more than
 5,000 frames had no reweighted populations, and nothing said so. Each frame
 clustered now carries its own weight; labels whose frames' weights cannot be
-read are refused by name, never given a fraction unweighted.
+read are refused by name, never given a fraction unweighted. The Viewer's
+states placed the labels of every 3rd frame on the first frames analysed.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import sys
 from pathlib import Path
@@ -173,3 +175,59 @@ def test_weighted_mean_of_every_frame_is_unchanged(tmp_path):
     for state in entry["states"]:
         assert state["reweighted_fraction"] == pytest.approx(
             weighted_mean((labels == state["label"]).astype(float), weights))
+
+
+# --------------------------------------------------------------------------
+# The Viewer's states, placed on the frames they label
+# --------------------------------------------------------------------------
+DATA = Path(__file__).parent / "data" / "assemblies"
+FRAMES, SHIFT = 30, 0.4
+
+
+@pytest.fixture(scope="module")
+def strided_study(tmp_path_factory):
+    """Trypsin with residues 16 to 65 moved 0.4 nm in the second half,
+    clustered on every 3rd frame."""
+    md = pytest.importorskip("mdtraj")
+    from fastmdxplora.analysis import AnalysisOrchestrator
+    from fastmdxplora.gui.trajectory_frames import frames_info
+
+    root = tmp_path_factory.mktemp("states") / "study"
+    (root / "simulation").mkdir(parents=True)
+    raw = root / "3PTB.pdb"
+    raw.write_bytes(gzip.decompress((DATA / "3PTB.pdb.gz").read_bytes()))
+    whole = md.load_pdb(str(raw))
+    protein = whole.atom_slice(whole.topology.select("protein"))
+    moving = protein.topology.select("resSeq 16 to 65")
+    xyz = np.repeat(protein.xyz, FRAMES, axis=0)
+    xyz[FRAMES // 2:, moving, 0] += SHIFT
+    xyz += np.random.default_rng(9).normal(0, 0.01, xyz.shape).astype(np.float32)
+    trajectory = md.Trajectory(xyz, protein.topology)
+    trajectory[0].save_pdb(str(root / "simulation" / "trajectory_topology.pdb"))
+    trajectory.save_dcd(str(root / "simulation" / "production.dcd"))
+    (root / "simulation" / "live_status.json").write_text(json.dumps(
+        {"status": "completed", "stage": "production"}), encoding="utf-8")
+    assert frames_info(root)["available"]
+    AnalysisOrchestrator(str(root / "simulation" / "production.dcd"),
+                         str(root / "simulation" / "trajectory_topology.pdb"),
+                         output_dir=str(root / "analysis")).run(
+        include=["cluster"], options={"cluster": {"n_clusters": 2, "methods": ["kmeans"],
+                                                  "stride": 3}})
+    return root
+
+
+def test_the_viewer_s_states_are_of_the_frames_labelled(strided_study):
+    from fastmdxplora.gui.states import states_of
+
+    said = states_of(strided_study)
+    assert said["ok"], said
+    # Labels of frames 0, 3, ..., 27: each frame played takes the state of
+    # the labelled frame nearest it, so the first half's state holds frames
+    # 0 to 13 and the second's 14 to 29.
+    played = sorted(state["played"] for state in said["states"])
+    assert played == [14, 16], said["states"]
+    early, late = sorted(said["states"], key=lambda state: state["representative"])
+    assert early["representative"] < FRAMES // 2 <= late["representative"]
+    assert early["frames"] == late["frames"] == 5
+    assert said["of_played"] == [early["state"]] * 14 + [late["state"]] * 16
+    assert "among the 10 frames it clustered (every 3rd of the 30 analysed)" in said["said"]

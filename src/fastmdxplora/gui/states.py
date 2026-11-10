@@ -52,14 +52,25 @@ def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
     index = _load_json(simulation / "frames_index.json")
     if not index.get("available") or not (simulation / "frames.dcd").is_file():
         return {"ok": False, "reason": "There are no frames to show the states in yet."}
-    labels = pd.read_csv(folder / f"cluster_{chosen}.dat")["cluster"].to_numpy(dtype=int)
-    analysed, _, _ = analysed_axis(out, len(labels))
-    analysed = np.asarray(analysed)
+    table = pd.read_csv(folder / f"cluster_{chosen}.dat")
+    labels = table["cluster"].to_numpy(dtype=int)
+    record = _load_json(folder / "options.json")
+    # Each label is of the analysed frame its `frame` column names: every
+    # k-th from the clustering's start, where it clustered at most
+    # `max_frames`. Read as the first frames analysed, the labels of every
+    # 3rd of 12,000 frames were placed on the first 4,000.
+    labelled = (table["frame"].to_numpy(dtype=int) if "frame" in table.columns
+                else np.arange(len(labels)))
+    given = ((record.get("findings") or {}).get("frames") or {}).get("n_frames_given")
+    if not isinstance(given, int) or isinstance(given, bool) or given <= int(labelled.max(
+            initial=-1)):
+        given = int(labelled.max(initial=-1)) + 1
+    axis, _, _ = analysed_axis(out, given)
+    analysed = np.asarray(axis)[labelled]
     played = np.asarray([int(i) for i in index.get("frame_indices") or []])
     # Each frame played takes the label of the analysed frame nearest it.
     nearest = np.abs(played[:, None] - analysed[None, :]).argmin(axis=1)
     of_played = labels[nearest]
-    record = _load_json(folder / "options.json")
     selection = str(record.get("selection") or ALPHA_CARBONS)
     with suppress_native_output():
         frames = md.load_dcd(str(simulation / "frames.dcd"),
@@ -86,8 +97,9 @@ def states_of(root: str | Path, method: str | None = None) -> dict[str, Any]:
                                    and representative < len(times) else None)})
     states.sort(key=lambda state: -state["share"])
     noise = int((labels == -1).sum())
+    among = _which_frames(labelled, given)
     said = (f"The {len(states)} states the cluster analysis's {chosen} found among the "
-            f"{len(labels):,} frames it analysed, each shown by its medoid among the frames "
+            f"{len(labels):,} frames it {among}, each shown by its medoid among the frames "
             f"played (the frame with the least summed RMSD to the state's others, on "
             f"`{selection}`).")
     if noise:
@@ -149,6 +161,21 @@ def state_difference(root: str | Path, first: Any, second: Any,
                          "about": (f"How far each residue's alpha carbon is between frame {b} "
                                    f"and frame {a}, fitted on the alpha carbons (RMSD "
                                    f"{rmsd:.2f} Å).")}}
+
+
+def _which_frames(labelled: np.ndarray, given: int) -> str:
+    """Which of the ``given`` analysed frames the labels are of, said after
+    "the N frames it": "analysed", or "clustered (every 3rd of the 12,000
+    analysed)"."""
+    if len(labelled) >= given:
+        return "analysed"
+    k = int(labelled[1] - labelled[0]) if len(labelled) > 1 else 1
+    first = int(labelled[0]) if len(labelled) else 0
+    if k == 1:
+        return f"clustered (from frame {first:,} of the {given:,} analysed)"
+    ending = "th" if 10 <= k % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(k % 10, "th")
+    start = f" from frame {first:,}" if first else ""
+    return f"clustered (every {k}{ending}{start} of the {given:,} analysed)"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
