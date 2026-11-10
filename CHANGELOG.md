@@ -9,6 +9,29 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A turn the umbrella windows tile is recombined on a grid from -pi to
+  pi, so the seam is the edge between the first and last bins and a
+  barrier at +-pi is read across it; the grid was cut where the samples
+  stopped, which put the seam inside no bin. A curve given with bins at
+  both -pi and +pi reads them as one bin, their mean. A peak clearing
+  2.5 kJ/mol and not twice the error of its rise is refused as a barrier
+  and named in `summary.within_error` (its rise, error and what it
+  needed), with `summary.barrier_refused` saying why where none is left.
+  The rise's error is its spread over the bootstrap's resampled curves
+  where 20 or more hold both bins, else the two bins' standard errors;
+  `summary.barrier_judged_by` says which and `summary.barrier_error_kjmol`
+  is the barrier's. The PMF analysis reads an older summary again by this
+  rule.
+- Along a distance between centres `pmf.json` names its two curves in
+  `pmf.curves`: `free_energy_kjmol` is A(r) = -kT ln P(r), which the
+  binding free energy and the next study's design read, and
+  `potential_of_mean_force_kjmol` is W(r) = A(r) + 2kT ln r at the study's
+  temperature, plotted, with the barrier and minima read off it
+  (`summary.read_off`). The figure's x axis is r in nm (a torsion's in
+  rad), the `.dat` header gives the units and kT, and the comparison
+  report says which curve the figure is. The coordinates with a binding
+  free energy are `umbrella.SHELL_COORDINATES`, one list with those given
+  W(r).
 - An umbrella study's binding free energy judges its bulk tail against the
   bootstrap's resampled curves (saved in `pmf.json` under `uncertainty` as
   `resample_curves_kjmol`): each point's departure from the tail's mean,
