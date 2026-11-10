@@ -34,9 +34,11 @@
       tenths = Math.floor(n * 10);
       if (tenths / 10 > n) tenths -= 1;
     }
-    var count = (tenths / 10).toFixed(1).replace(/\.0$/, "");
+    // With a thousands separator, as the tables give it: 12,345.6.
+    var count = (tenths / 10).toFixed(1).replace(/\.0$/, "")
+      .replace(/^\d+/, function (whole) { return whole.replace(/\B(?=(\d{3})+$)/g, ","); });
     return (about ? "about " : "") + count + " independent sample" +
-      (Number(count) === 1 ? "" : "s");
+      (tenths === 10 ? "" : "s");
   }
 
   var SVG = "http://www.w3.org/2000/svg";

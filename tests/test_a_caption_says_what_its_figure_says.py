@@ -53,7 +53,7 @@ def _row(root: Path, start: str):
     (21.0, "21 independent samples", "21"),
     (1.001, "1 independent sample", "1"),
     (0.3, "fewer than one independent sample", "< 1"),
-    (12345.67, "12345.6 independent samples", "12,345.6"),
+    (12345.67, "12,345.6 independent samples", "12,345.6"),
 ])
 def test_captions_records_and_report_table_say_the_same_count(tmp_path, samples, expected, cell):
     from fastmdxplora.gui.figure_data import figure_payload

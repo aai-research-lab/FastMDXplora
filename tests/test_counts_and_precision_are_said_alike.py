@@ -324,3 +324,45 @@ def test_the_reweighted_table_s_header_rounds_its_count_down(tmp_path, independe
     _write_table(record, tmp_path / "reweighted_averages.dat")
     header = (tmp_path / "reweighted_averages.dat").read_text(encoding="utf-8").splitlines()[1]
     assert header == f"# weight-concentration effective frames 40.0 of 400, {said}"
+
+
+# -- a thousands separator, as the tables give it -------------------------------
+LARGE = [
+    (12345.67, "12,345.6 independent samples"),
+    (1000.0, "1,000 independent samples"),
+    (999.96, "999.9 independent samples"),
+    (1234567.0, "1,234,567 independent samples"),
+]
+
+
+@pytest.mark.parametrize("count, said", LARGE)
+def test_a_large_count_is_said_as_the_tables_give_it(count, said):
+    assert independent_samples_said(count) == said
+
+
+def test_the_pages_say_a_large_count_as_the_records_do():
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+              / "overview.js").read_text(encoding="utf-8")
+    start = script.index("  function samplesSaid(")
+    function = script[start:script.index("\n  }\n", start) + 4]
+    probe = (f"{function}\nconsole.log(JSON.stringify({json.dumps([c for c, _ in LARGE])}"
+             ".map(function (n) { return samplesSaid(n, true); })));")
+    said = subprocess.run([node, "-e", probe], capture_output=True, text=True, check=True)
+    assert json.loads(said.stdout) == ["about " + words for _, words in LARGE]
+
+
+def test_the_agent_s_summary_says_a_large_count_as_the_tables_do(tmp_path):
+    from tests.test_a_mean_is_recorded_with_its_unit import _study
+    from fastmdxplora.gui.agent_panel import _results_summary
+
+    text = _results_summary(_study(tmp_path, {"rg": {
+        "mean": 0.328, "standard_error": 0.001, "effective_samples": 12345.67, "unit": "nm"}}))
+    assert ", 12,345.6 effective samples" in text
