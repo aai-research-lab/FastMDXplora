@@ -704,7 +704,18 @@ def binding_free_energy(
         shifted = energy[inside] - reference_at
         return float(np.trapezoid(np.exp(-shifted / kt), radius[inside]))
 
-    minimum_at = float(radius[int(np.nanargmin(energy))])
+    # The bound state's minimum is W(r)'s, A(r) + 2kT ln r: A's sits
+    # 2kT ln(r_outer / r_well) further out and can be in bulk. Read off A, a
+    # 6 kJ/mol well at 0.45 nm had its minimum at 1.98 nm, its bound range
+    # integrated out to 1.63 nm, and a binding free energy (-6.15) more
+    # negative than a 12 kJ/mol well's (-5.58). The integral stays on A.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mean_force = np.where(radius > 0.0,
+                              energy + 2.0 * kt * np.log(np.where(radius > 0.0, radius, 1.0)),
+                              np.nan)
+    minimum_at = float(radius[int(np.nanargmin(mean_force))]
+                       if np.any(np.isfinite(mean_force))
+                       else radius[int(np.nanargmin(energy))])
     bulk_level = reference_at - 2.0 * kt * np.log(radius)
     if bound_cutoff_nm is None:
         beyond = known & (radius > minimum_at) & (energy >= bulk_level - kt)

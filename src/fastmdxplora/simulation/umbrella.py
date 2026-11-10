@@ -1981,13 +1981,30 @@ def closure_gap(coordinate: Any, energy: Any) -> float | None:
 #: error is read off their spread rather than off the two bins' errors.
 BARRIER_RESAMPLES_NEEDED = 20
 
+#: The chance, over the whole curve, that its noise alone gives a barrier.
+#: One peak at a time it was the chance per peak, and the highest of sixty
+#: noisy bins read above the lowest stood clear of twice its own error on
+#: every one of twenty flat turns at 90 frames a window.
+BARRIER_FALSE_RATE = 0.05
+
+
+def _sidak_multiplier(pairs: int, rate: float = BARRIER_FALSE_RATE) -> float:
+    """How many errors a rise must clear when any of ``pairs`` rises could
+    have been the one chosen, each judged on its own: the normal quantile
+    at Sidak's per-rise chance, 1 - (1 - rate)^(1 / pairs)."""
+    from statistics import NormalDist
+
+    each = 1.0 - (1.0 - rate) ** (1.0 / max(1, int(pairs)))
+    return float(NormalDist().inv_cdf(1.0 - each))
+
 
 def describe_pmf(coordinate: Any, energy: Any,
                  covered: tuple[float, float] | None = None,
                  *, periodic: bool = False,
                  errors: Any = None,
                  closed: bool | None = None,
-                 resamples: Any = None) -> dict[str, Any]:
+                 resamples: Any = None,
+                 unit: str | None = None) -> dict[str, Any]:
     """The numbers a reader wants from a curve, computed once, here.
 
     Reading these by hand is how the curve gets misread. The grid spans
@@ -2026,19 +2043,32 @@ def describe_pmf(coordinate: Any, energy: Any,
     mean; a turn's grid from :func:`compute_pmf` has its seam on the edge
     between its first and last bins instead.
 
-    **A peak within its error is refused, not flagged.** One that clears
-    the fixed margin and not twice the error of its rise is not called a
-    barrier: a number in ``barrier_kjmol`` is quoted, and a flag beside it
-    is not. It is named in ``within_error`` with its rise, that rise's
-    error and what it needed, and where no barrier is left
-    ``barrier_refused`` says why. The error of a rise is the spread of that
-    difference over the bootstrap's resampled curves (``resamples``, the
-    rows `compute_pmf` saves as ``resample_curves_kjmol``) where at least
-    :data:`BARRIER_RESAMPLES_NEEDED` hold both bins, which no zero moves;
-    else the two bins' standard errors together; else none, and the margin
-    is the whole test. ``barrier_judged_by`` says which, and
-    ``barrier_error_kjmol`` is the error of the barrier as reported, its
-    rise above the curve's lowest point.
+    **The peaks are judged as a family.** The barrier quoted is the
+    highest of the curve's peaks, so its noise is that of the largest rise
+    the noise makes anywhere on the curve, not that of one rise. Each rise
+    must clear its own error times a multiplier set so that a curve with no
+    barrier quotes one about :data:`BARRIER_FALSE_RATE` of the time: the
+    95th percentile, over the bootstrap's resampled curves (``resamples``,
+    the rows `compute_pmf` saves as ``resample_curves_kjmol``), of the
+    largest of every rise's departure from the curve's own over that rise's
+    error (the max statistic). A rise's error is its spread over the
+    resamples where at least :data:`BARRIER_RESAMPLES_NEEDED` hold both
+    bins, which no zero moves; else the two bins' standard errors together,
+    with Sidak's multiplier over every pair of bins; else none, and the
+    2.5 kJ/mol margin is the whole test. ``barrier_judged_by`` says how
+    the barrier quoted (or the highest peak refused) was judged,
+    ``barrier_multiplier`` the multiplier, and ``barrier_error_kjmol`` the
+    error of the barrier as reported, its rise above the lowest point.
+
+    **A peak within its error is refused, not flagged**, since a number in
+    ``barrier_kjmol`` is quoted and a flag beside it is not. It is named in
+    ``within_error`` with its rise, that rise's error and what it needed;
+    where no barrier is left ``barrier_refused`` says why, and where a
+    refused peak is the curve's highest point ``highest_kjmol`` is null
+    and ``highest_withheld`` says why, so its height is not quoted as a
+    barrier either. Where a higher peak was refused and a lower one stands,
+    ``barrier_note`` says so. ``unit`` is the coordinate's, for the
+    positions in those sentences.
     """
     coordinate = np.asarray(coordinate, dtype=float)
     energy = np.asarray([np.nan if v is None else float(v) for v in energy],
@@ -2125,29 +2155,63 @@ def describe_pmf(coordinate: Any, energy: Any,
         and (closed or values[i] < neighbours(i)[1])
     ]
 
-    def rise_error(i: int, side: int) -> "tuple[float, str | None]":
-        """The error of ``values[i] - values[side]``, and what it was read
-        from: the resamples' spread of that difference, where enough hold
+    # Every rise's error from the resamples, and the max statistic: for
+    # each resample, the largest departure of any rise from the curve's own
+    # over that rise's error. Under the bootstrap a resample stands to the
+    # curve as the curve to the truth, so on a curve with no barrier the
+    # curve's own largest rise over its error falls below this statistic's
+    # 95th percentile 95 times in 100.
+    pair_error = np.full((n, n), np.nan)
+    pair_count = np.zeros((n, n), dtype=int)
+    multiplier = None
+    if len(resampled) >= BARRIER_RESAMPLES_NEEDED:
+        largest = np.full(len(resampled), -np.inf)
+        for i in range(n):
+            rise = resampled[:, [i]] - resampled
+            held = np.isfinite(rise)
+            count = held.sum(axis=0)
+            safe = np.where(held, rise, 0.0)
+            with np.errstate(invalid="ignore", divide="ignore"):
+                mean = safe.sum(axis=0) / count
+                spread_i = np.sqrt(np.where(held, (rise - mean) ** 2, 0.0)
+                                   .sum(axis=0) / (count - 1))
+            usable = (count >= BARRIER_RESAMPLES_NEEDED) & (spread_i > 0)
+            usable[i] = False
+            pair_count[i] = count
+            pair_error[i] = np.where(usable, spread_i, np.nan)
+            if usable.any():
+                departure = (rise[:, usable] - (values[i] - values[usable])) \
+                    / spread_i[usable]
+                departure = np.where(np.isfinite(departure), departure, -np.inf)
+                largest = np.maximum(largest, departure.max(axis=1))
+        reached = largest[np.isfinite(largest)]
+        if reached.size >= BARRIER_RESAMPLES_NEEDED:
+            multiplier = float(np.quantile(reached, 1.0 - BARRIER_FALSE_RATE,
+                                           method="higher"))
+    fallback = _sidak_multiplier(n * (n - 1))
+
+    def rise_error(i: int, side: int) -> "tuple[float, str | None, float]":
+        """The error of ``values[i] - values[side]``, what it was read from,
+        and the multiplier it is judged by: the resamples' spread of that
+        difference with the max statistic's multiplier, where enough hold
         both bins (it carries no zero's noise, which every bin's error
-        does), else the two bins' errors together. An error not computed
-        counts as none, not as the other's."""
-        if len(resampled):
-            both = np.isfinite(resampled[:, i]) & np.isfinite(resampled[:, side])
-            if int(both.sum()) >= BARRIER_RESAMPLES_NEEDED:
-                return (float(np.std(resampled[both, i] - resampled[both, side],
-                                     ddof=1)),
-                        f"the rise's spread over {int(both.sum())} resamples")
+        does); else the two bins' errors together, with Sidak's; else none.
+        An error not computed counts as none, not as the other's."""
+        if multiplier is not None and np.isfinite(pair_error[i, side]):
+            return (float(pair_error[i, side]),
+                    f"the rise's spread over {int(pair_count[i, side])} "
+                    "resamples", multiplier)
         if np.isfinite(spread[i]) or np.isfinite(spread[side]):
             return (float(np.hypot(np.nan_to_num(spread[i]),
                                    np.nan_to_num(spread[side]))),
-                    "the two bins' standard errors")
-        return 0.0, None
+                    "the two bins' standard errors", fallback)
+        return 0.0, None, 0.0
 
     def judged(i: int) -> dict[str, Any]:
         """Peak ``i`` against the lowest point on each side (on a closed turn
         the lowest point anywhere), as it fares on the side it stands least
         above: its rise there, that rise's error, and what it needed, the
-        fixed margin or twice the error, whichever is more."""
+        fixed margin or the multiplier times the error, whichever is more."""
         if closed:
             sides = [int(np.argmin(values))]
         else:
@@ -2156,12 +2220,13 @@ def describe_pmf(coordinate: Any, energy: Any,
         worst: dict[str, Any] | None = None
         for side in sides:
             rise = float(values[i] - values[side])
-            noise, source = rise_error(i, side)
-            needed = max(BARRIER_PROMINENCE_KJMOL, 2.0 * noise)
+            noise, source, times = rise_error(i, side)
+            needed = max(BARRIER_PROMINENCE_KJMOL, times * noise)
             if worst is None or rise - needed < worst["rise_kjmol"] - worst["needed_kjmol"]:
                 worst = {"at": float(where[i]), "rise_kjmol": rise,
                          "error_kjmol": noise if source else None,
-                         "needed_kjmol": needed, "error_from": source}
+                         "needed_kjmol": needed, "error_from": source,
+                         "multiplier": times if source else None}
         assert worst is not None
         return worst
 
@@ -2173,33 +2238,50 @@ def describe_pmf(coordinate: Any, energy: Any,
     # Cleared the margin and not its error: said, so a hump the noise can
     # make is seen and not quoted. Below the margin a bump is a plateau's
     # bin-to-bin scatter and is not listed.
-    within = sorted((got for got in candidates.values()
-                     if BARRIER_PROMINENCE_KJMOL <= got["rise_kjmol"]
-                     < got["needed_kjmol"]),
+    refused_at = [i for i, got in candidates.items()
+                  if BARRIER_PROMINENCE_KJMOL <= got["rise_kjmol"] < got["needed_kjmol"]]
+    within = sorted((candidates[i] for i in refused_at),
                     key=lambda got: -got["rise_kjmol"])
     barrier = max(peaks, key=lambda i: values[i]) if peaks else None
     barrier_error = None
     if barrier is not None:
-        noise, source = rise_error(barrier, int(np.argmin(values)))
+        noise, source, _ = rise_error(barrier, int(np.argmin(values)))
         barrier_error = noise if source else None
-    if len(resampled) >= BARRIER_RESAMPLES_NEEDED:
-        judged_by = (f"twice the error of each rise, from the bootstrap's "
-                     f"resampled curves ({len(resampled)}), and at least "
-                     f"{BARRIER_PROMINENCE_KJMOL} kJ/mol")
-    elif np.isfinite(spread).any():
-        judged_by = ("twice the error of each rise, from the bins' standard "
-                     f"errors, and at least {BARRIER_PROMINENCE_KJMOL} kJ/mol")
-    else:
+    place = f" {unit}" if unit else ""
+
+    # How the barrier quoted was judged, or the highest peak refused; with
+    # neither, what a peak would have been judged by.
+    shown = (candidates[barrier] if barrier is not None
+             else within[0] if within else None)
+    source = shown["error_from"] if shown is not None else (
+        "the rise's spread over the resamples" if multiplier is not None
+        else "the two bins' standard errors" if np.isfinite(spread).any()
+        else None)
+    times = shown["multiplier"] if shown is not None else (
+        multiplier if multiplier is not None
+        else fallback if np.isfinite(spread).any() else None)
+    if source is None or times is None:
         judged_by = (f"{BARRIER_PROMINENCE_KJMOL} kJ/mol alone: no error was "
                      "computed for the curve")
+    elif source.startswith("the rise's spread"):
+        judged_by = (f"{times:.2f} times its rise's error, from {source}: the "
+                     "95th percentile over the bootstrap's resampled curves of "
+                     "the largest rise the noise makes anywhere on the curve, "
+                     f"over its error; and at least {BARRIER_PROMINENCE_KJMOL} kJ/mol")
+    else:
+        judged_by = (f"{times:.2f} times its rise's error, from {source}, "
+                     f"Sidak's multiplier over the curve's {n * (n - 1)} "
+                     f"rises; and at least {BARRIER_PROMINENCE_KJMOL} kJ/mol")
+    withheld = top in refused_at
     said: dict[str, Any] = {
         "barrier_kjmol": None if barrier is None else float(values[barrier]),
         "barrier_at": None if barrier is None else float(where[barrier]),
         "barrier_error_kjmol": barrier_error,
         "barrier_judged_by": judged_by,
+        "barrier_multiplier": times if source is not None else None,
         "within_error": within,
-        "highest_kjmol": float(values[top]),
-        "highest_at": float(where[top]),
+        "highest_kjmol": None if withheld else float(values[top]),
+        "highest_at": None if withheld else float(where[top]),
         "highest_is_an_end": bool(not closed and top in (0, n - 1)),
         "covered": [float(where.min()), float(where.max())],
         "minima": sorted(minima, key=lambda m: m["free_energy_kjmol"]),
@@ -2214,16 +2296,59 @@ def describe_pmf(coordinate: Any, energy: Any,
         "closure_gap_kjmol": (closure_gap(coordinate, energy)
                               if periodic else None),
     }
+    if withheld:
+        said["highest_withheld"] = (
+            f"The highest point, {values[top]:.1f} kJ/mol at "
+            f"{where[top]:.3g}{place}, is a peak refused as a barrier (see "
+            "`within_error`), so its height is not given here either.")
     if barrier is None and within:
         first = within[0]
         said["barrier_refused"] = (
             f"The highest peak, {first['rise_kjmol']:.1f} kJ/mol at "
-            f"{first['at']:.3g}, stands less than twice its error "
+            f"{first['at']:.3g}{place}, stands less than "
+            f"{first['multiplier']:.2f} times its error "
             f"({first['error_kjmol']:.1f} kJ/mol) above the lowest point "
             "beside it, so it is not called a barrier: the sampling's noise "
-            "alone makes a peak that size. Sampling longer in the windows "
-            "there narrows the error.")
+            "alone makes a peak that size somewhere on a curve this long. "
+            "Sampling longer in the windows there narrows the error.")
+    elif barrier is not None and any(values[i] > values[barrier] for i in refused_at):
+        higher = max(refused_at, key=lambda i: values[i])
+        said["barrier_note"] = (
+            f"A higher peak, {values[higher]:.1f} kJ/mol at "
+            f"{where[higher]:.3g}{place}, was refused as within its error (see "
+            "`within_error`); the barrier given is the highest that stands.")
     return said
+
+
+def the_barrier_in_a_line(record: Any) -> str | None:
+    """The barrier a `pmf.json` gives, or that it was refused and why, in
+    one line, for the console and the comparison report; None where the
+    record has no curve described."""
+    if not isinstance(record, dict) or record.get("refused"):
+        return None
+    summary = record.get("summary")
+    if not isinstance(summary, dict) or "barrier_kjmol" not in summary:
+        return None
+    variable = (record.get("plan") or {}).get("collective_variable")
+    unit = "nm" if variable in SHELL_COORDINATES else variable_unit(variable)
+    place = f" {unit}" if unit else ""
+    curve = ("W(r)" if summary.get("read_off") == "potential_of_mean_force_kjmol"
+             else "the free energy")
+    barrier = summary.get("barrier_kjmol")
+    if isinstance(barrier, (int, float)) and not isinstance(barrier, bool):
+        error = summary.get("barrier_error_kjmol")
+        spread = (f" +/- {error:.1f}" if isinstance(error, (int, float))
+                  and not isinstance(error, bool) else "")
+        said = (f"{barrier:.1f}{spread} kJ/mol at {summary.get('barrier_at'):.3g}"
+                f"{place}, on {curve}")
+        if summary.get("barrier_note"):
+            said += "; a higher peak was refused as within its error"
+        return said + "."
+    refused = summary.get("barrier_refused")
+    if refused:
+        return "none given. " + str(refused).split(", so it is not called")[0] + "."
+    return (f"none: no peak on {curve} stands {BARRIER_PROMINENCE_KJMOL} kJ/mol "
+            "above its lowest point on each side.")
 
 
 def displacement(values: Any, centre: float, periodic: bool) -> np.ndarray:
@@ -2359,7 +2484,8 @@ def _the_curves_named(radial: bool, temperature_K: float) -> dict[str, str]:
             "and the next study's design read this one."),
         "potential_of_mean_force_kjmol": (
             f"W(r) = A(r) + 2kT ln r, kT = {kt:.4f} kJ/mol at "
-            f"{temperature_K:g} K, in kJ/mol, zero at its lowest bin; flat "
+            f"{temperature_K:g} K, in kJ/mol, zero at its lowest bin between "
+            "the outermost windows' centres; flat "
             "where the two centres no longer interact. Plotted, and the "
             "barrier and minima are read off it."),
     }
@@ -2648,10 +2774,20 @@ def compute_pmf(
     # wants the potential of mean force, W(r) = A(r) + 2kT ln r, flat once
     # the two no longer interact, and a depth or barrier read off A instead
     # moves with the range the windows spanned by 2kT ln(r2 / r1).
+    #
+    # W is zero at its lowest bin between the outermost windows' centres.
+    # Beyond them a bin is read from one window's tail, and the bin at the
+    # end of the grid holds the extreme sample by construction, so it reads
+    # low: a free particle's W, zeroed there, sat 2.7 kJ/mol above a dip at
+    # the inner end that read as a contact well.
     mean_force = None
     if shell and bool(np.all(centres > 0.0)):
         mean_force = pmf + 2.0 * kT * np.log(centres)
-        if np.any(np.isfinite(mean_force)):
+        between = ((centres >= min(w.centre for w in ordered))
+                   & (centres <= max(w.centre for w in ordered)))
+        if np.any(np.isfinite(mean_force[between])):
+            mean_force -= np.nanmin(mean_force[between])
+        elif np.any(np.isfinite(mean_force)):
             mean_force -= np.nanmin(mean_force)
 
     # `null` rather than a number: the coordinate exists and the free energy
@@ -2799,7 +2935,8 @@ def compute_pmf(
         resamples=(None if uncertainty is None
                    else uncertainty.get("resample_curves_kjmol")),
         closed=periodic and turn_is_tiled(covered[0], covered[1], len(ordered),
-                                          [w.centre for w in ordered]))
+                                          [w.centre for w in ordered]),
+        unit="nm" if shell else variable_unit(getattr(plan, "collective_variable", None)))
     summary["read_off"] = ("potential_of_mean_force_kjmol" if mean_force is not None
                            else "free_energy_kjmol")
     if uncertainty is not None and summary.get("barrier_kjmol") is not None:

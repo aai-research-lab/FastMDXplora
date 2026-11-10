@@ -213,3 +213,220 @@ class TestTheComparisonReportSaysWhichCurve:
         text = "\n".join(_umbrella_preamble(*_umbrella_result(md),
                                             radial=_umbrella_is_radial(md)))
         assert "W(r)" not in text
+
+
+class TestTheComparisonReportGivesTheBarrier:
+    def test_in_one_line(self, tmp_path) -> None:
+        from fastmdxplora.batch.compare import (
+            _umbrella_barrier, _umbrella_is_radial, _umbrella_preamble,
+            _umbrella_result)
+
+        (tmp_path / "comparison").mkdir()
+        x = np.linspace(-np.pi, np.pi, 40, endpoint=False)
+        e = 7.5 * (1.0 - np.cos(x))
+        (tmp_path / "pmf.json").write_text(json.dumps({
+            "pmf": {"coordinate": list(x), "free_energy_kjmol": list(e)},
+            "plan": {"collective_variable": "torsion"}, "refused": None,
+            "summary": describe_pmf(x, list(e), errors=[0.2] * 40, periodic=True,
+                                    closed=True, unit="rad")}), encoding="utf-8")
+        picked = tmp_path / "free_energy" / "pmf"
+        picked.mkdir(parents=True)
+        (picked / "pmf.png").write_bytes(b"")
+        md = tmp_path / "comparison" / "comparison_report.md"
+        text = "\n".join(_umbrella_preamble(*_umbrella_result(md),
+                                            radial=_umbrella_is_radial(md),
+                                            barrier=_umbrella_barrier(md)))
+        assert "**Barrier:** 15.0 +/- 0.3 kJ/mol at -3.14 rad, on the free energy." in text
+
+
+def _a_well(depth, at=0.45, width=0.06):
+    r = np.linspace(0.4, 2.0, 50)
+    w = -depth * np.exp(-((r - at) / width) ** 2)
+    kt = KB_KJMOL * 300.0
+    a = w - 2.0 * kt * np.log(r)
+    return r, a - a.min()
+
+
+class TestTheBoundStateIsWsWell:
+    """The binding free energy's bound range began at A's minimum, which for
+    a shallow well near the first window is in bulk: a 6 kJ/mol well at
+    0.45 nm had its minimum at 1.98 nm, its range out to 1.63 nm and a
+    number (-6.15) more negative than a 12 kJ/mol well's (-5.58)."""
+
+    def test_a_shallow_well_is_found_where_it_is(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        got = {}
+        for depth in (6.0, 12.0):
+            r, a = _a_well(depth)
+            got[depth] = binding_free_energy(r, list(a), temperature_K=300.0)
+            assert got[depth]["minimum_at_nm"] == pytest.approx(0.45, abs=0.02)
+            assert 0.45 < got[depth]["bound_cutoff_nm"] < 0.7
+        assert got[6.0]["delta_g_kjmol"] > got[12.0]["delta_g_kjmol"]
+
+    def test_its_number_is_the_closed_form(self) -> None:
+        # The integral stays on A: with the range ending where W is back
+        # within kT of bulk, the closed form over the same range.
+        from fastmdxplora.simulation.binding import (
+            STANDARD_VOLUME_NM3, binding_free_energy)
+
+        r, a = _a_well(12.0)
+        got = binding_free_energy(r, list(a), temperature_K=300.0)
+        kt = KB_KJMOL * 300.0
+        w = -12.0 * np.exp(-((r - 0.45) / 0.06) ** 2)
+        inside = r <= got["bound_cutoff_nm"]
+        exact = -kt * np.log(4.0 * np.pi * np.trapezoid(
+            r[inside] ** 2 * np.exp(-w[inside] / kt), r[inside]) / STANDARD_VOLUME_NM3)
+        assert got["delta_g_kjmol"] == pytest.approx(exact, abs=0.05)
+
+    def test_the_reference_checks_are_given_w_s_well(self, tmp_path,
+                                                     monkeypatch) -> None:
+        from types import SimpleNamespace
+
+        from fastmdxplora.batch import explorer as explorer_module
+        from fastmdxplora.simulation import reference_state
+
+        seen = {}
+        monkeypatch.setattr(reference_state, "check_the_reference",
+                            lambda *a, **k: seen.update(k) or {})
+        batch = explorer_module.BatchExplorer.__new__(explorer_module.BatchExplorer)
+        batch.run_specs = [SimpleNamespace(options={"simulation": {"umbrella": {
+            "index": 0, "ligand_name": "BEN", "site_selection": "resid 1"}}})]
+        r, a = _a_well(6.0)
+        plan = _plan([0.4, 2.0])
+        batch._with_the_reference_checked(
+            {"bulk_from_nm": 1.6}, {"coordinate": list(r), "free_energy_kjmol": list(a)},
+            plan, {0: tmp_path}, temperature=300.0, cone=None)
+        assert seen["bound_at_nm"] == pytest.approx(0.45, abs=0.02)
+
+
+@pytest.fixture(scope="module")
+def well():
+    grid = np.linspace(0.25, 2.1, 185001)
+    kt = KB_KJMOL * 300.0
+    w_true = -6.0 * np.exp(-((grid - 0.5) / 0.08) ** 2)
+    a_true = w_true - 2.0 * kt * np.log(grid)
+    plan = _plan(np.linspace(0.4, 2.0, 30), force=1500.0)
+    rng = np.random.default_rng(4)
+    picked = {}
+    for window in plan.windows:
+        weight = np.exp(-(a_true + 0.5 * window.force_constant
+                          * (grid - window.centre) ** 2) / kt)
+        picked[window.index] = rng.choice(grid, size=20000, p=weight / weight.sum())
+    logging.disable(logging.WARNING)
+    try:
+        return compute_pmf(picked, plan, temperature_K=300.0, bootstrap_resamples=0)
+    finally:
+        logging.disable(logging.NOTSET)
+
+
+class TestARecombinedWellIsReadOffW:
+    def test_its_minimum_is_the_well_at_zero(self, well) -> None:
+        # Read off A, the well's bin stood 1.4 kJ/mol above A's lowest
+        # point, at the outer end.
+        deepest = well["summary"]["minima"][0]
+        assert deepest["coordinate"] == pytest.approx(0.5, abs=0.04)
+        assert deepest["free_energy_kjmol"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_its_plateau_is_the_well_s_depth(self, well) -> None:
+        # W in bulk is the well's depth above it; with 1.5 or 3 in place of
+        # 2 in front of kT ln r it would be 6 -/+ kT ln(r / 0.5), 1.7 off at
+        # 2 nm.
+        r = np.asarray(well["pmf"]["coordinate"])
+        w = np.asarray(well["pmf"]["potential_of_mean_force_kjmol"], dtype=float)
+        bulk = r > 1.4
+        assert np.mean(w[bulk]) == pytest.approx(6.0, abs=0.4)
+        assert well["summary"]["highest_kjmol"] == pytest.approx(6.0, abs=0.6)
+
+
+class TestTheInnerEndIsNotAWell:
+    def test_w_is_zero_between_the_windows_centres(self, free) -> None:
+        # The end bin below the first window holds the extreme sample and
+        # reads low; W is zeroed between the windows' centres, so the free
+        # particle's W there is flat about 0, not 2.7 above a dip.
+        r = np.asarray(free["pmf"]["coordinate"])
+        w = np.asarray(free["pmf"]["potential_of_mean_force_kjmol"], dtype=float)
+        between = (r >= 0.4) & (r <= 2.0)
+        assert np.nanmin(w[between]) == pytest.approx(0.0, abs=1e-12)
+        assert np.nanmax(w[between]) < 0.8
+        assert "between the outermost windows' centres" in \
+            free["pmf"]["curves"]["potential_of_mean_force_kjmol"]
+
+    def test_beyond_them_it_is_plotted_faint(self, tmp_path) -> None:
+        import matplotlib.pyplot as plt
+
+        from fastmdxplora.analysis.pmf import PMF
+
+        r = np.linspace(0.25, 2.0, 50)
+        a = -2.0 * KT * np.log(r)
+        a[0] -= 2.7
+        (tmp_path / "pmf.json").write_text(json.dumps({
+            "pmf": {"coordinate": list(r), "free_energy_kjmol": list(a - a.min())},
+            "plan": {"collective_variable": "ligand_distance"},
+            "temperature_K": TEMPERATURE, "covered": [0.4, 2.0],
+            "refused": None, "unsampled_bins": 0, "n_windows": 25,
+        }), encoding="utf-8")
+        analysis = PMF(output_dir=tmp_path / "analysis")
+        result = analysis.compute(None)
+        w = result["potential_of_mean_force_kjmol"]
+        assert np.min(w[r >= 0.4]) == pytest.approx(0.0, abs=1e-9)
+        fig, ax = plt.subplots()
+        analysis.plot(result, ax)
+        labels = [line.get_label() for line in ax.get_lines()]
+        assert "beyond the outermost windows' centres" in labels
+        solid = next(line for line in ax.get_lines()
+                     if line.get_label() == "W(r) = A(r) + 2kT ln r")
+        assert np.isnan(solid.get_ydata()[0])
+        plt.close(fig)
+
+
+class TestATorsionsDataFileSaysItsUnits:
+    def test_rad(self, tmp_path) -> None:
+        from fastmdxplora.analysis.pmf import PMF
+
+        x = np.linspace(-np.pi, np.pi, 40, endpoint=False)
+        (tmp_path / "pmf.json").write_text(json.dumps({
+            "pmf": {"coordinate": list(x), "free_energy_kjmol": list(1.0 - np.cos(x))},
+            "plan": {"collective_variable": "torsion"},
+            "temperature_K": TEMPERATURE, "covered": [-np.pi, np.pi],
+            "refused": None, "unsampled_bins": 0, "n_windows": 24,
+        }), encoding="utf-8")
+        analysis = PMF(output_dir=tmp_path / "analysis")
+        result = analysis.compute(None)
+        lines = analysis.save_data(result, tmp_path / "pmf.dat").read_text().splitlines()
+        assert lines[0] == "# coordinate free_energy_kjmol"
+        assert lines[1] == ("# coordinate is the torsion in rad; free_energy_kjmol "
+                            "in kJ/mol, zero at its lowest bin.")
+
+
+class TestTheConsoleGivesTheBarrier:
+    def test_in_one_line(self, tmp_path, monkeypatch, capsys) -> None:
+        from fastmdxplora.batch import explorer as explorer_module
+        from fastmdxplora.simulation import umbrella
+        from fastmdxplora.simulation.umbrella import expand_umbrella
+
+        r = np.linspace(0.4, 2.0, 41)
+        e = 6.0 * np.exp(-((r - 1.0) / 0.08) ** 2)
+        summary = {**describe_pmf(r, list(e), errors=[2.5] * 41, unit="nm"),
+                   "read_off": "potential_of_mean_force_kjmol"}
+        monkeypatch.setattr(umbrella, "collect_samples", lambda *a, **k: {})
+        monkeypatch.setattr(umbrella, "design_from_a_pilot", lambda *a, **k: {})
+        monkeypatch.setattr(umbrella, "compute_pmf", lambda *a, **k: {
+            "pmf": None, "refused": None, "summary": summary})
+        batch = explorer_module.BatchExplorer.__new__(explorer_module.BatchExplorer)
+        batch._raw = expand_umbrella({
+            "systems": [{"id": "s", "system": "x.pdb"}],
+            "simulation": {"umbrella": {
+                "collective_variable": "distance", "select_atoms_a": "resid 1",
+                "select_atoms_b": "resid 2", "force_constant": 1000,
+                "from": 0.4, "to": 1.2, "n_windows": 5}}})
+        batch.run_specs = []
+        batch.output_dir = tmp_path
+        batch._draw_pmf = lambda path: None
+        batch._maybe_build_pmf(bootstrap_resamples=0)
+        printed = [line for line in capsys.readouterr().out.splitlines()
+                   if line.startswith("Barrier:")]
+        assert printed == [
+            "Barrier:        none given. The highest peak, 6.0 kJ/mol at 1 nm, "
+            f"stands less than {summary['within_error'][0]['multiplier']:.2f} times "
+            "its error (3.5 kJ/mol) above the lowest point beside it."]

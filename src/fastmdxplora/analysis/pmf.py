@@ -104,13 +104,15 @@ class PMF(Analysis):
         # region nothing visited.
         # A summary written before a barrier was a peak (no `highest_kjmol`
         # in it), or before a peak within its error was said
-        # (`barrier_judged_by`), is read again by today's rule, so one curve
+        # (`barrier_multiplier`, the peaks judged as a family), is read
+        # again by today's rule, so one curve
         # has one barrier.
         summary = record.get("summary")
         if (not summary or recomputed or "highest_kjmol" not in summary
-                or "barrier_judged_by" not in summary):
+                or "barrier_multiplier" not in summary):
             from fastmdxplora.simulation.umbrella import (
-                PERIODIC_VARIABLES, describe_pmf, turn_is_tiled)
+                PERIODIC_VARIABLES, SHELL_COORDINATES, describe_pmf,
+                turn_is_tiled, variable_unit)
 
             covered = record.get("covered")
             plan = record.get("plan") or {}
@@ -125,7 +127,9 @@ class PMF(Analysis):
                 errors=spread.get("standard_error"),
                 resamples=spread.get("resample_curves_kjmol"),
                 closed=bool(periodic and covered and isinstance(count, int)
-                            and turn_is_tiled(covered[0], covered[1], count)))
+                            and turn_is_tiled(covered[0], covered[1], count)),
+                unit=("nm" if plan.get("collective_variable") in SHELL_COORDINATES
+                      else variable_unit(plan.get("collective_variable"))))
             summary["read_off"] = ("potential_of_mean_force_kjmol"
                                    if mean_force is not None
                                    else "free_energy_kjmol")
@@ -148,10 +152,24 @@ class PMF(Analysis):
         energy = (result["potential_of_mean_force_kjmol"]
                   if result.get("potential_of_mean_force_kjmol") is not None
                   else result["free_energy_kjmol"])
-        ax.plot(coordinate, energy, linewidth=1.6,
-                label=("W(r) = A(r) + 2kT ln r"
-                       if result.get("potential_of_mean_force_kjmol") is not None
-                       else None))
+        radial = result.get("potential_of_mean_force_kjmol") is not None
+        covered = (result.get("summary") or {}).get("covered")
+        if radial and covered:
+            # Between the outermost windows' centres, plotted in full; beyond
+            # them a bin is read from one window's tail and the end bin
+            # holds the extreme sample, so it is plotted faint and dashed and
+            # does not read as a well.
+            between = ((coordinate >= float(covered[0]))
+                       & (coordinate <= float(covered[1])))
+            if not between.all():
+                ax.plot(coordinate, energy, linewidth=1.0, linestyle="--",
+                        color=colour("FAINT"),
+                        label="beyond the outermost windows' centres")
+            ax.plot(coordinate, np.where(between, energy, np.nan), linewidth=1.6,
+                    label="W(r) = A(r) + 2kT ln r")
+        else:
+            ax.plot(coordinate, energy, linewidth=1.6,
+                    label="W(r) = A(r) + 2kT ln r" if radial else None)
 
         # The minimum the summary gives: the lowest bin inside the range the
         # windows covered. Taken over the whole grid it marked 2.2 nm on a
@@ -212,7 +230,17 @@ class PMF(Analysis):
             return "nan" if np.isnan(value) else f"{value:.6f}"
 
         if mean_force is None:
+            from fastmdxplora.simulation.umbrella import variable_unit
+
+            variable = getattr(self, "_variable", None)
+            unit = variable_unit(variable)
             lines = ["# coordinate free_energy_kjmol"]
+            if isinstance(variable, str) and variable:
+                lines.append(
+                    f"# coordinate is the {variable.replace('_', ' ')}"
+                    + (f" in {unit}" if unit else
+                       " (no unit)" if unit == "" else "")
+                    + "; free_energy_kjmol in kJ/mol, zero at its lowest bin.")
             for x, y in zip(result["coordinate"], result["free_energy_kjmol"]):
                 lines.append(f"{x:.6f} {said(y)}")
         else:
@@ -258,6 +286,13 @@ def _potential_of_mean_force(record: dict[str, Any], coordinate: np.ndarray,
             or not np.any(np.isfinite(energy))):
         return None, False
     mean_force = energy + 2.0 * KB_KJ * float(temperature) * np.log(coordinate)
+    # Zero at its lowest bin between the outermost windows' centres, as
+    # `compute_pmf` saves it.
+    covered = record.get("covered")
+    if covered:
+        between = (coordinate >= float(covered[0])) & (coordinate <= float(covered[1]))
+        if np.any(np.isfinite(mean_force[between])):
+            return mean_force - np.nanmin(mean_force[between]), True
     return mean_force - np.nanmin(mean_force), True
 
 

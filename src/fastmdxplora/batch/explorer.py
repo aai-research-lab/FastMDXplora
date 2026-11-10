@@ -3578,6 +3578,11 @@ class BatchExplorer:
         else:
             drawn_note = f", plotted in {drawn.parent.name}/" if drawn else ""
             print(f"Free energy:    {destination}{drawn_note}")
+            from fastmdxplora.simulation.umbrella import the_barrier_in_a_line
+
+            barrier_line = the_barrier_in_a_line(payload)
+            if barrier_line:
+                print(f"Barrier:        {barrier_line}")
         for line in _what_the_binding_says(payload.get("binding")):
             print(line)
 
@@ -3625,9 +3630,14 @@ class BatchExplorer:
                       .get("index") is not None), {})
         window = with_general_selection_names(dict(first), "ligand_distance")
         centres = {w.index: float(w.centre) for w in plan.windows}
-        points = [(y, x) for x, y in zip(pmf.get("coordinate") or [],
-                                         pmf.get("free_energy_kjmol") or [])
-                  if y is not None]
+        # The well is W(r)'s minimum, A(r) + 2kT ln r, which the record
+        # saves; A's own minimum sits further out and can be in bulk.
+        from fastmdxplora.simulation.umbrella import KB_KJ
+
+        points = [(y + 2.0 * KB_KJ * temperature * math.log(x), x)
+                  for x, y in zip(pmf.get("coordinate") or [],
+                                  pmf.get("free_energy_kjmol") or [])
+                  if y is not None and x is not None and x > 0]
         bound_at = (binding.get("minimum_at_nm")
                     or (min(points)[1] if points else None))
         bulk_from = binding.get("bulk_from_nm")

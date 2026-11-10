@@ -18,8 +18,11 @@ import numpy as np
 import pytest
 
 from fastmdxplora.simulation.binding import KB_KJMOL
+from statistics import NormalDist
+
 from fastmdxplora.simulation.umbrella import (
-    BARRIER_PROMINENCE_KJMOL, UmbrellaPlan, Window, compute_pmf, describe_pmf)
+    BARRIER_FALSE_RATE, BARRIER_PROMINENCE_KJMOL, UmbrellaPlan, Window,
+    compute_pmf, describe_pmf, the_barrier_in_a_line)
 
 TEMPERATURE = 300.0
 KT = KB_KJMOL * TEMPERATURE
@@ -27,6 +30,11 @@ BINS = 60
 H = 2.0 * np.pi / BINS
 EDGES = np.linspace(-np.pi, np.pi, BINS + 1)
 CENTRES = 0.5 * (EDGES[:-1] + EDGES[1:])
+
+
+def _sidak(pairs: int) -> float:
+    """Sidak's multiplier, written out again here."""
+    return NormalDist().inv_cdf((1.0 - BARRIER_FALSE_RATE) ** (1.0 / pairs))
 
 
 def _hump(at: float, height: float = 20.0, width: float = 0.4):
@@ -142,9 +150,11 @@ class TestAPeakWithinItsErrorIsRefused:
         (named,) = got["within_error"]
         assert named["at"] == pytest.approx(0.5)
         assert named["rise_kjmol"] == pytest.approx(6.0)
-        # Twice the two bins' errors together: 2 * hypot(2.5, 2.5).
+        # The two bins' errors together, hypot(2.5, 2.5), times Sidak's
+        # multiplier over the 41 * 40 rises the curve has.
         assert named["error_kjmol"] == pytest.approx(np.hypot(2.5, 2.5))
-        assert named["needed_kjmol"] == pytest.approx(2.0 * np.hypot(2.5, 2.5))
+        assert named["needed_kjmol"] == pytest.approx(
+            _sidak(41 * 40) * np.hypot(2.5, 2.5))
         assert "not called a barrier" in got["barrier_refused"]
         assert "standard errors" in got["barrier_judged_by"]
 
@@ -178,7 +188,7 @@ class TestAPeakWithinItsErrorIsRefused:
         got = describe_pmf(x, list(e), errors=list(errors), resamples=rows.tolist())
         assert got["barrier_kjmol"] == pytest.approx(6.0)
         assert got["barrier_error_kjmol"] == pytest.approx(0.2 * np.sqrt(2.0), rel=0.1)
-        assert "resampled curves (400)" in got["barrier_judged_by"]
+        assert "the rise's spread over 400 resamples" in got["barrier_judged_by"]
 
     def test_a_turn_judges_its_seam_peak_against_its_error(self) -> None:
         exact = _per_bin(_hump(np.pi, height=4.0))
@@ -198,3 +208,173 @@ class TestTheStudySaysItsBarrier:
         for key in ("barrier_error_kjmol", "barrier_judged_by", "within_error"):
             assert key in summary
         assert summary["read_off"] == "free_energy_kjmol"
+        # No bootstrap here, so no multiplier: the margin alone.
+        assert summary["barrier_multiplier"] is None
+
+
+def _triangle(height, x):
+    """A hump with exact zeros beside it, so each side's lowest point is a
+    known bin."""
+    return height * np.clip(1.0 - np.abs(x - 0.5) / 0.1, 0.0, None)
+
+
+def _max_statistic(noise):
+    """The family's multiplier and every rise's error, written out again
+    from the definition: per resample, the largest of every rise's
+    departure over that rise's error; its 95th percentile."""
+    d = noise[:, :, None] - noise[:, None, :]
+    sd = d.std(axis=0, ddof=1)
+    np.fill_diagonal(sd, np.nan)
+    largest = np.nanmax(d / sd, axis=(1, 2))
+    return np.quantile(largest, 1.0 - BARRIER_FALSE_RATE, method="higher"), sd
+
+
+class TestThePeaksAreJudgedAsAFamily:
+    X = np.linspace(0.0, 1.0, 41)
+
+    def _noise(self):
+        return np.random.default_rng(8).normal(0.0, 0.6, size=(200, self.X.size))
+
+    def _needed(self, noise):
+        q, sd = _max_statistic(noise)
+        top = int(np.argmax(_triangle(1.0, self.X)))
+        values = _triangle(1.0, self.X)
+        sides = [int(np.argmin(values[:top])), top + 1 + int(np.argmin(values[top + 1:]))]
+        return q, max(q * sd[top, side] for side in sides)
+
+    def test_the_multiplier_is_the_max_statistic_s(self) -> None:
+        noise = self._noise()
+        q, needed = self._needed(noise)
+        e = _triangle(0.9 * needed, self.X)
+        got = describe_pmf(self.X, list(e), resamples=(e + noise).tolist())
+        assert got["barrier_multiplier"] == pytest.approx(q, rel=1e-9)
+        # Just under it: refused, and what it needed is said exactly.
+        assert got["barrier_kjmol"] is None
+        assert got["within_error"][0]["needed_kjmol"] == pytest.approx(needed, rel=1e-9)
+        # Just over it: given.
+        e = _triangle(1.1 * needed, self.X)
+        got = describe_pmf(self.X, list(e), resamples=(e + noise).tolist())
+        assert got["barrier_kjmol"] == pytest.approx(1.1 * needed)
+        assert got["barrier_multiplier"] == pytest.approx(q, rel=1e-9)
+        # Several errors, not two: the highest of 41 bins read above the
+        # lowest.
+        assert 3.0 < q < 5.0
+
+    def test_without_resamples_sidak_over_every_rise(self) -> None:
+        z = _sidak(41 * 40)
+        needed = z * np.hypot(1.0, 1.0)
+        refused = describe_pmf(self.X, list(_triangle(0.9 * needed, self.X)),
+                               errors=[1.0] * 41)
+        assert refused["barrier_kjmol"] is None
+        assert refused["barrier_multiplier"] == pytest.approx(z)
+        given = describe_pmf(self.X, list(_triangle(1.1 * needed, self.X)),
+                             errors=[1.0] * 41)
+        assert given["barrier_kjmol"] == pytest.approx(1.1 * needed)
+
+    def test_the_label_says_what_judged_the_peak(self) -> None:
+        # 30 resamples, the peak's bin empty in 25 of them: its rise is
+        # judged by the bins' errors, and the label says so.
+        noise = self._noise()[:30]
+        e = _triangle(8.0, self.X)
+        rows = e + noise
+        rows[:25, 20] = np.nan
+        got = describe_pmf(self.X, list(e), errors=[0.3] * 41, resamples=rows.tolist())
+        assert got["barrier_kjmol"] == pytest.approx(8.0)
+        assert "the two bins' standard errors" in got["barrier_judged_by"]
+        assert "resamples" not in got["barrier_judged_by"]
+        whole = describe_pmf(self.X, list(e), errors=[0.3] * 41,
+                             resamples=(e + noise).tolist())
+        assert "the rise's spread over 30 resamples" in whole["barrier_judged_by"]
+
+
+class TestARefusedPeakIsNotQuoted:
+    X = np.linspace(0.0, 1.0, 41)
+
+    def test_its_height_is_withheld(self) -> None:
+        e = 6.0 * np.exp(-((self.X - 0.5) / 0.08) ** 2)
+        got = describe_pmf(self.X, list(e), errors=[2.5] * 41, unit="rad")
+        assert got["highest_kjmol"] is None and got["highest_at"] is None
+        assert "refused as a barrier" in got["highest_withheld"]
+        assert "at 0.5 rad" in got["barrier_refused"]
+
+    def test_a_lower_one_that_stands_says_the_higher_was_refused(self) -> None:
+        e = (12.0 * np.exp(-((self.X - 0.3) / 0.05) ** 2)
+             + 10.0 * np.exp(-((self.X - 0.7) / 0.05) ** 2))
+        errors = np.full(41, 0.3)
+        errors[12] = 4.0  # the higher peak's bin, at 0.3
+        got = describe_pmf(self.X, list(e), errors=list(errors), unit="nm")
+        assert got["barrier_at"] == pytest.approx(0.7)
+        assert "A higher peak, 12.0 kJ/mol at 0.3 nm" in got["barrier_note"]
+        assert got["highest_kjmol"] is None
+
+
+class TestTheBarrierIsSaidInOneLine:
+    def _record(self, summary, variable="torsion"):
+        return {"refused": None, "plan": {"collective_variable": variable},
+                "summary": summary}
+
+    def test_given(self) -> None:
+        x, e = TestAPeakWithinItsErrorIsRefused()._curve()
+        line = the_barrier_in_a_line(self._record(
+            describe_pmf(x, list(e), errors=[0.5] * x.size, unit="rad")))
+        assert line == "6.0 +/- 0.7 kJ/mol at 0.5 rad, on the free energy."
+
+    def test_refused_and_why(self) -> None:
+        x, e = TestAPeakWithinItsErrorIsRefused()._curve()
+        line = the_barrier_in_a_line(self._record(
+            describe_pmf(x, list(e), errors=[2.5] * x.size, unit="rad")))
+        assert line.startswith("none given. The highest peak, 6.0 kJ/mol at 0.5 rad, "
+                               "stands less than")
+        assert "times its error" in line and "\n" not in line
+
+    def test_none_along_a_distance(self) -> None:
+        r = np.linspace(0.4, 2.0, 41)
+        line = the_barrier_in_a_line(self._record(
+            {**describe_pmf(r, list(np.zeros(41))),
+             "read_off": "potential_of_mean_force_kjmol"}, "ligand_distance"))
+        assert line == "none: no peak on W(r) stands 2.5 kJ/mol above its lowest point on each side."
+
+
+class TestAFlatTurnQuotesNoBarrierByItsNoise:
+    """A flat turn at 300 frames a window (240 after the discard), 40
+    resamples: one peak at a time, 7 of 20 seeds quoted a barrier of 2.5 to
+    2.9 kJ/mol; judged as a family, 0 of those 20 and 2 of 60 quoted one,
+    and a 20 kJ/mol hump on the seam is still given."""
+
+    def _study(self, profile, samples, seed):
+        centres = -np.pi + np.arange(36) * (2.0 * np.pi / 36)
+        plan = UmbrellaPlan(
+            windows=tuple(Window(index=i, centre=float(c), force_constant=400.0)
+                          for i, c in enumerate(centres)),
+            collective_variable="torsion", equilibration_fraction=0.2,
+            minimum_overlap=0.0, minimum_samples=50, cone=None,
+            bootstrap_resamples=40)
+        grid = np.linspace(-np.pi, np.pi, 200001)[:-1]
+        step = grid[1] - grid[0]
+        truth = profile(grid)
+        rng = np.random.default_rng(seed)
+        picked = {}
+        for window in plan.windows:
+            d = np.remainder(grid - window.centre + np.pi, 2.0 * np.pi) - np.pi
+            weight = np.exp(-(truth + 0.5 * window.force_constant * d ** 2) / KT)
+            values = rng.choice(grid, size=samples, p=weight / weight.sum())
+            values = values + rng.uniform(0.0, step, size=samples)
+            picked[window.index] = np.remainder(values + np.pi, 2.0 * np.pi) - np.pi
+        logging.disable(logging.WARNING)
+        try:
+            return compute_pmf(picked, plan, temperature_K=TEMPERATURE,
+                               bootstrap_resamples=40, bootstrap_seed=seed)["summary"]
+        finally:
+            logging.disable(logging.NOTSET)
+
+    def test_flat(self) -> None:
+        quoted = [seed for seed in range(1, 9)
+                  if self._study(lambda x: 0.0 * x, 240, seed)["barrier_kjmol"] is not None]
+        # One peak at a time, seeds 1, 2, 3, 5 and 7 of these quoted one.
+        assert len(quoted) <= 1
+
+    def test_a_real_one_on_the_seam_stands(self) -> None:
+        got = self._study(_hump(np.pi), 2400, 1)
+        assert got["barrier_kjmol"] == pytest.approx(19.52, abs=0.6)
+        assert "rad" in the_barrier_in_a_line(
+            {"plan": {"collective_variable": "torsion"}, "summary": got})

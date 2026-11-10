@@ -429,9 +429,21 @@ def _umbrella_is_radial(md_path: Path) -> bool:
     return isinstance(pmf, dict) and pmf.get("potential_of_mean_force_kjmol") is not None
 
 
+def _umbrella_barrier(md_path: Path) -> str | None:
+    """The study's barrier in one line, or that it was refused and why."""
+    from fastmdxplora.simulation.umbrella import the_barrier_in_a_line
+
+    try:
+        record = json.loads((md_path.parent.parent / "pmf.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return the_barrier_in_a_line(record)
+
+
 def _umbrella_preamble(
     free_energy: Path | None, refused: str | None = None, *,
-    radial: bool = False,
+    radial: bool = False, barrier: str | None = None,
 ) -> list[str]:
     """What the study measured, ahead of what its windows happened to do."""
     lines = [
@@ -456,6 +468,8 @@ def _umbrella_preamble(
         relative = Path("..") / free_energy.relative_to(
             free_energy.parent.parent.parent)
         lines += [f"![Potential of mean force]({relative.as_posix()})", ""]
+        if barrier:
+            lines += [f"**Barrier:** {barrier}", ""]
         if radial:
             lines += [
                 "Along this distance the figure is the potential of mean "
@@ -511,7 +525,8 @@ def _write_markdown(
     umbrella = _umbrella_result(md_path)
     if umbrella is not None:
         lines.extend(_umbrella_preamble(*umbrella,
-                                        radial=_umbrella_is_radial(md_path)))
+                                        radial=_umbrella_is_radial(md_path),
+                                        barrier=_umbrella_barrier(md_path)))
 
     n = len(runs)
     sweep = manifest.get("sweep") or {}
