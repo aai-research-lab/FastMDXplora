@@ -12,13 +12,8 @@ from pathlib import Path
 import pytest
 
 
-@pytest.mark.parametrize("analysis,base", [("rmsd", 0.1), ("rg", 1.0)])
-def test_two_studies_have_local_zoom_and_export_tools(tmp_path, analysis, base):
-    pytest.importorskip("playwright.sync_api")
-    from PIL import Image
-    from playwright.sync_api import sync_playwright
-
-    from fastmdxplora.gui.server import start_dashboard_session
+def _two_studies(tmp_path: Path) -> tuple[Path, str]:
+    """A study to open and the Compare place of two others, alpha and beta."""
     from tests.test_the_frame_holds_the_study import _a_finished_study
 
     finished = Path(_a_finished_study())
@@ -33,9 +28,21 @@ def test_two_studies_have_local_zoom_and_export_tools(tmp_path, analysis, base):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["load_kwargs"] = {"saving_interval_ps": 10.0}
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
     place = (urllib.parse.quote(str(first), safe="") + "|"
              + urllib.parse.quote(str(second), safe=""))
+    return opened, place
+
+
+
+@pytest.mark.parametrize("analysis,base", [("rmsd", 0.1), ("rg", 1.0)])
+def test_two_studies_have_local_zoom_and_export_tools(tmp_path, analysis, base):
+    pytest.importorskip("playwright.sync_api")
+    from PIL import Image
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    opened, place = _two_studies(tmp_path)
     session = start_dashboard_session(output=str(opened), host="127.0.0.1", port=0)
     try:
         with sync_playwright() as pw:
@@ -140,3 +147,52 @@ def test_two_studies_have_local_zoom_and_export_tools(tmp_path, analysis, base):
     assert {row[0] for row in shown} == {"alpha", "beta"}
     assert all(zoomed["view"][0] <= row[1] <= zoomed["view"][1] for row in shown)
     assert all_again == {"view": None, "range": None}
+
+
+#: What the page's CSS gives a chart's marks and words.
+_LOOK = ("stroke", "stroke-width", "stroke-dasharray", "fill", "opacity",
+         "font-size", "font-weight", "text-anchor", "dominant-baseline")
+
+
+def test_an_exported_chart_looks_as_the_page_shows_it_on_a_dark_page(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    opened, place = _two_studies(tmp_path)
+    look = "(svg, names) => [...svg.querySelectorAll('*')].filter((n) => !n.closest('defs'))" \
+           ".map((n) => [n.getAttribute('class') || n.tagName," \
+           " names.map((name) => getComputedStyle(n).getPropertyValue(name))])"
+    session = start_dashboard_session(output=str(opened), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900},
+                                    accept_downloads=True, color_scheme="dark")
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#compare/" + place, wait_until="domcontentloaded")
+            chart = '.compare-series-block[data-analysis="rmsd"] .compare-series-chart'
+            page.wait_for_selector(chart + " .plot-tools")
+            shown = page.evaluate(f"(names) => ({look})(document.querySelector("
+                                  f"'{chart} svg'), names)", list(_LOOK))
+            with page.expect_download() as got:
+                page.click(chart + ' .plot-tool:text("SVG")')
+            exported = Path(got.value.path()).read_text(encoding="utf-8")
+            alone = browser.new_page(color_scheme="dark")
+            alone.set_content(exported)
+            saved = alone.evaluate(f"(names) => ({look})(document.querySelector('svg'), names)",
+                                   list(_LOOK))
+            browser.close()
+    finally:
+        session.server.shutdown()
+
+    saved = [mark for mark in saved if mark[0] != "plot-ground"]
+    assert [mark[0] for mark in saved] == [mark[0] for mark in shown]
+    assert saved == shown
+    marks = dict(shown)
+    stroke, width = marks["runs-overlay-axis"][0], marks["runs-overlay-axis"][1]
+    assert stroke not in ("none", "rgb(0, 0, 0)") and width != "0px"
+    assert marks["runs-overlay-grid"][0] not in ("none", "rgb(0, 0, 0)")
+    assert marks["runs-overlay-tick"][3] not in ("none", "rgb(0, 0, 0)")
+    assert marks["runs-overlay-label"][3] not in ("none", "rgb(0, 0, 0)")

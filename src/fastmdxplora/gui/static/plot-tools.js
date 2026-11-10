@@ -64,10 +64,36 @@
     return "#ffffff";
   }
 
-  /* The plot as it is drawn, standing alone: its fonts named, its tools and
-   * brush left out. */
+  /* What the page's CSS gives a plot's marks and words. A file opened
+   * elsewhere has none of the page's CSS, so these are written into it. */
+  var LOOK = ["stroke", "stroke-width", "stroke-dasharray", "stroke-linecap", "stroke-linejoin",
+              "stroke-opacity", "fill", "fill-opacity", "opacity", "font-size", "font-style",
+              "font-weight", "text-anchor", "dominant-baseline"];
+  // Taken from the parent where not given, so given only where it differs.
+  var NOT_INHERITED = { opacity: "1" };
+
+  /* Each element of the copy given the look its original has on the page,
+   * as inline style, which holds over its attributes as the CSS did. */
+  function lookOf(original, copy, above) {
+    var style = getComputedStyle(original);
+    var here = {};
+    LOOK.forEach(function (name) {
+      var value = style.getPropertyValue(name);
+      here[name] = value;
+      if (!value) return;
+      var from = name in NOT_INHERITED ? NOT_INHERITED[name] : (above ? above[name] : null);
+      if (value !== from || copy.hasAttribute(name)) copy.style.setProperty(name, value);
+    });
+    for (var k = 0; k < original.children.length && k < copy.children.length; k++) {
+      lookOf(original.children[k], copy.children[k], here);
+    }
+  }
+
+  /* The plot as the page shows it, standing alone: its look and fonts written in,
+   * its tools and brush left out. */
   function standalone(svg, host) {
     var copy = svg.cloneNode(true);
+    lookOf(svg, copy, null);
     // On the ground it is drawn on, so its words, coloured for that ground
     // (light on a dark page), read where the file is opened.
     var back = document.createElementNS(NS, "rect");
