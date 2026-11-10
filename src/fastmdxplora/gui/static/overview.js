@@ -23,7 +23,8 @@
    * decimal, so 9.96 is not said as 10 beside a rule that withholds under 10.
    * `about` hedges it, as an estimate is. */
   function samplesSaid(n, about) {
-    n = Number(n);
+    // No count is none, not a count of 0.
+    n = n == null || n === "" ? NaN : Number(n);
     if (!Number.isFinite(n)) return "";
     if (n < 1) return "fewer than one independent sample";
     // Float noise aside (0.39999999999999986 is 0.4), but never up to a

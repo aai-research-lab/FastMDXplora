@@ -640,6 +640,32 @@ def test_the_production_chart_note_says_the_shared_sample_count(tmp_path, monkey
     assert note.startswith(f"production mean, {expected}"), note
 
 
+def test_a_production_mean_with_no_count_says_none(tmp_path, monkeypatch):
+    """The note read "production mean, " with nothing after it."""
+    from fastmdxplora.gui import overview_view
+
+    root = _browser_study(tmp_path / "study", "completed")
+    payload_of = overview_view.overview_payload
+
+    def production(where, **kwargs):
+        payload = payload_of(where, **kwargs)
+        payload["thermodynamics"]["means"]["temperature"].update(
+            samples=None, determined=True, noted="")
+        return payload
+
+    monkeypatch.setattr(overview_view, "overview_payload", production)
+
+    def check(page):
+        page.wait_for_function(
+            "() => document.querySelector('[data-chart-note=temperature]')"
+            ".textContent.startsWith('production mean')")
+        return page.text_content('[data-chart-note="temperature"]')
+
+    note, errors = _open(root, check)
+    assert not errors, errors
+    assert note == "production mean", note
+
+
 def test_under_one_independent_sample_is_said_so(tmp_path, monkeypatch) -> None:
     """A tile read "0 independent samples · from 17.6 ps" beside its mean."""
     pytest.importorskip("playwright.sync_api")

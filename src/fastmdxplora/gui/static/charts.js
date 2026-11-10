@@ -65,8 +65,10 @@
           // follows a full stop and ends with one; the image note is a clause.
           const sentence = !!mean.noted && /^[A-Z]/.test(mean.noted);
           const ends = sentence || (!!mean.noted && /\. [A-Z]/.test(mean.noted));
+          // A mean with no count of its samples says none.
+          const samples = mean.determined ? window.FastMDXOverview.samplesSaid(mean.samples) : "";
           note.textContent = (mean.determined
-            ? `production mean, ${window.FastMDXOverview.samplesSaid(mean.samples)}`
+            ? "production mean" + (samples ? `, ${samples}` : "")
             : "production mean, not determined")
             + (mean.noted ? (sentence ? ". " : "; ") + mean.noted + (ends ? "." : "") : "");
           note.title = [mean.determined ? "" : (mean.why || ""), mean.noted ? (mean.noted_why || "") : ""]
