@@ -146,6 +146,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   refusal says that a wider cone means every window runs again, since the
   windows of one study share one cone, and names `fastmdx explore -c
   <config> --force-overwrite`; `--rerun-window` cannot do it.
+- Clustering clusters at most 5,000 frames by default (`max_frames:
+  5000`): past them, every k-th frame from its start, k the least stride
+  that leaves at most 5,000 (every 3rd of 12,000 frames). The stride is
+  recorded under `findings.frames` and, with each cluster's frames and
+  fraction, under `findings.populations`; each fraction is of the frames
+  clustered, and the report says the populations were counted on every
+  k-th frame. A `stride` under the one the cap needs is raised to it, and
+  said; `max_frames: null` leaves the frames to `stride`, every frame at
+  its default. The memory check is of the frames clustered, and a
+  refusal's stride is never under the one the cap chose. In `fastmdx
+  analyze`, 3,000, 6,000 and 12,000 frames of the tests' alanine chain
+  clustered 3,000, 3,000 and 4,000 frames, peaking at 212.9 to 217.2 MiB
+  against 214.6 planned and 376.0 to 381.2 against 381.5 (Python 3.10,
+  3.11 and 3.13). Reweighted cluster populations are left out where the
+  frames clustered are strided, as they were at a stride before.
 - A joined run of three or four segments can now be called drifting
   (`analysis.sampling.drifting`, `drift_test:
   slope_against_errors_and_scatter`): with each segment mean placed at the
@@ -685,6 +700,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   test, and the tests not yet run there are not counted.
   The browser test of a rerun over an unfinished round has a file of its
   own, so the other tests of a failed round run on every core.
+- Clustering plans on at least 76 MiB of resident memory at any number of
+  frames. A few hundred frames were planned on their map alone, 10 to 48
+  MiB, where in `fastmdx analyze` they peaked at up to 74.1 MiB from the
+  check; under a container leaving 14 to 45 MiB, the stride the refusal
+  named was killed. With less than about 106 MB of room, clustering is now
+  refused at any stride.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
