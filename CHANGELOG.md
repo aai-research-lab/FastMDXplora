@@ -518,6 +518,38 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Joining segments whose trajectories were saved for a subset of atoms reads
+  them with the saved `trajectory_topology.pdb`, not the whole system's.
+- Dashboard links to files whose names hold `%`, `#` or spaces open those
+  files; quick-action links, quoted already, are not quoted twice.
+- The Report page shows no report that arrives after the study shown has
+  changed, and asks for the report of the study now shown; a study opened
+  elsewhere clears the last study's report at once.
+- The report's convergence table gives a joined run the pooled error over
+  its segments. It gave the first segment's spread over the pooled count of
+  independent samples, which on segments of very different spread was
+  smaller than the pooled error by a factor of 70. A record's own error is
+  still used first.
+- A mean's discard is a frame of the series as saved, frames without a value
+  counted, so it marks the right frame where a series begins with missing
+  values. So is a start shared with replicas, found on their average and
+  applied to each. The shortfall a withheld mean asks for, and the report's
+  assessment of a recorded discard, count the frames with a value after it.
+  A record of a series with frames without a value says so
+  (`discard_of: saved frames`) and how many after the discard have none
+  (`without_a_value`), and the Analysis table counts only the frames
+  averaged; a record an earlier version wrote is read as it was written.
+- A trajectory other than the run's own or its joined one is no longer given
+  the run's saving interval; it is read against frames.
+- Series values that are not finite are sent as JSON nulls, which a browser
+  can read, and every chart of a series plots them as gaps without letting
+  them set its axis; a residue profile plots no point for a residue without
+  a value. The keyboard steps from one point with a value to the next, and
+  a chart's label counts only the points with a value.
+- The `fastmdx` alias package declares the Python versions the package
+  supports (3.10 to 3.13).
+- The CLI guide lists the `fastmdx agent memory` flags.
+
 - A study of several runs has the Overview's "Project status" its runs give,
   read as the health line reads it (`telemetry._a_study_of_runs`), and "not
   read" where a record of its runs is linked out of it: it read only the
