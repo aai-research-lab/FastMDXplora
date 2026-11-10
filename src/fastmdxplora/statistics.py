@@ -101,22 +101,24 @@ RESOLVED_SAMPLES = 25.0
 UNCORRELATED_INEFFICIENCY = 2.0
 
 
-def independent_samples_said(count: float, *, about: bool = False) -> str:
+def independent_samples_said(count: float, *, about: bool = False,
+                             kind: str = "independent") -> str:
     """A count of independent samples in words, the same on every page: a
     count under one is "fewer than one independent sample", never rounded
     to 0; any other is rounded down to one decimal, with no trailing .0
     and with a thousands separator, as the tables give it: 12,345.6.
     This never crosses an integer threshold: 9.99 reads as 9.9, and a
     count just below :data:`RESOLVED_SAMPLES` reads as 24.9.
-    ``about`` hedges it, as an estimate is."""
+    ``about`` hedges it, as an estimate is; ``kind`` is the word before
+    "samples", "effective" where a page names them so."""
     count = float(count)
     if not np.isfinite(count):
-        return "a number of independent samples that could not be counted"
+        return f"a number of {kind} samples that could not be counted"
     if count < 1:
-        return "fewer than one independent sample"
+        return f"fewer than one {kind} sample"
     rounded = independent_samples_floored(count)
     said = f"{rounded:,.1f}".removesuffix(".0")
-    return (("about " if about else "") + f"{said} independent "
+    return (("about " if about else "") + f"{said} {kind} "
             + ("sample" if rounded == 1 else "samples"))
 
 

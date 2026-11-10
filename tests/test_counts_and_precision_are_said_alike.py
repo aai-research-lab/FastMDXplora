@@ -390,3 +390,19 @@ def test_an_assessment_saves_its_count_as_worked_out(monkeypatch, tmp_path, samp
     [row] = [line for line in document._convergence_section(tmp_path).splitlines()
              if line.startswith("| RMSD")]
     assert row.startswith(f"| RMSD | 1,000 | 0 | {cell} | "), row
+
+
+@pytest.mark.parametrize("samples, said", [
+    (10.0, ", 10 effective samples"),
+    (30.0, ", 30 effective samples"),
+    (1.05, ", 1 effective sample -- "),
+    (0.42, ", fewer than one effective sample"),
+])
+def test_the_agent_s_summary_says_the_count_as_the_pages_do(tmp_path, samples, said):
+    """10 read "10.0 effective samples", 30 "30.0" and 1.05 "1.0 effective samples"."""
+    from tests.test_a_mean_is_recorded_with_its_unit import _study
+    from fastmdxplora.gui.agent_panel import _results_summary
+
+    text = _results_summary(_study(tmp_path, {"rg": {
+        "mean": 0.328, "standard_error": 0.001, "effective_samples": samples, "unit": "nm"}}))
+    assert said in text, text

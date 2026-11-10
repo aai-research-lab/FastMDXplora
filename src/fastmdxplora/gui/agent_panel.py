@@ -1515,7 +1515,7 @@ def _results_summary(root: Any, first: str | None = None) -> str:
     from fastmdxplora.gui.report_dashboard import unit_of
     from fastmdxplora.statistics import (
         MINIMUM_EFFECTIVE_SAMPLES,
-        independent_samples_floored,
+        independent_samples_said,
         with_its_error,
     )
 
@@ -1585,10 +1585,10 @@ def _results_summary(root: Any, first: str | None = None) -> str:
             if has_error:
                 piece += " (s.e.)"
             if isinstance(n_eff, (int, float)) and math.isfinite(n_eff):
-                # Rounded down, as every page counts them: 9.96 is not 10.0
-                # beside "too few"; under one is said so, never 0.
-                piece += (", fewer than one effective sample" if n_eff < 1 else
-                          f", {independent_samples_floored(n_eff):,.1f} effective samples")
+                # Said as every page says them: rounded down, 9.96 is 9.9
+                # beside "too few"; 10 is 10, not 10.0; under one is said
+                # so, never 0.
+                piece += ", " + independent_samples_said(n_eff, kind="effective")
                 if n_eff < MINIMUM_EFFECTIVE_SAMPLES:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):

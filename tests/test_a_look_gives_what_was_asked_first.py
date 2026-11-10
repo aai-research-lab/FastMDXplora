@@ -101,7 +101,7 @@ def test_the_look_holds_the_analysis_asked_about_whole(tmp_path):
     look = box.use("read_study", {"study": str(study), "analysis": "rmsd"})
     assert look.ok
     after = look.said.split("what the analyses found:\n", 1)[1]
-    assert after.startswith("  rmsd: mean 0.0645 ± 0.0017 nm (s.e.), 41.0 effective samples, "
+    assert after.startswith("  rmsd: mean 0.0645 ± 0.0017 nm (s.e.), 41 effective samples, "
                             "first 1000 of 2000 frames discarded as unequilibrated\n")
     assert look.said.index("the config this run used") < look.said.index(
         "what the analyses found")
