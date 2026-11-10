@@ -144,13 +144,18 @@ jobs:
     # cancelled at 90 with nothing failed; the coverage leg took 139. The
     # plain legs now run as the coverage leg does (see "Run tests"), and
     # 120 is a margin for a macOS runner short of capacity, not room for
-    # the suite to grow back into. A hung test does not wait for it: on
-    # every core pytest-timeout fails it at 600 seconds by a signal and the
-    # next test runs (its own thread method ends the worker, and xdist ran
-    # the test again on each new one, 17 times on four cores, with no stack
-    # shown), and a worker that crashes ends that run, naming its test,
-    # rather than being replaced. Run one at a time, the thread method ends
-    # the run at 600 seconds with every thread's stack.
+    # the suite to grow back into. A hung test does not wait for it. On
+    # every core pytest-timeout fails it at 600 seconds by a signal, with
+    # its stack, and the next test runs; its own thread method ends the
+    # worker, and xdist ran the test again on each new one, 17 times on four
+    # cores, with no stack shown. The signal fires once: a test whose
+    # cleanup then waits on what hung (a `finally` that shuts down a pool
+    # whose worker never answers) holds its worker still, so at 660 seconds
+    # faulthandler writes every thread's stack, the test's own line among
+    # them, and ends the worker. A worker that crashes or is ended ends the
+    # run on every core, naming its test, rather than being replaced, and
+    # the tests not yet run there are not counted. Run one at a time, the
+    # thread method ends the run at 600 seconds with every thread's stack.
     timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' && 180 || 120 }}
     strategy:
       fail-fast: false
@@ -212,7 +217,9 @@ jobs:
           python -m pip install --upgrade pip
           # pytest-xdist runs the tests that drive no browser on every core
           # (see "Run tests"); a test tool for CI, so it is not in [test].
-          python -m pip install -e ".[test]" pytest-xdist
+          # pytest 9 is the first with `faulthandler_exit_on_timeout`, which
+          # that run sets; an older pytest would only warn that it is unknown.
+          python -m pip install -e ".[test]" pytest-xdist "pytest>=9"
           # The physics too, except on the floor. Without OpenMM the suite
           # skips everything that touches it, and for three rounds "low
           # coverage" meant "the dependency was silently absent where
@@ -319,8 +326,11 @@ jobs:
           # test runs, one test at a time on each worker. The coverage leg
           # already runs them so.
           #
-          # `--timeout-method=signal` and `--max-worker-restart=0` are why a
-          # hang on every core fails once (see `timeout-minutes`).
+          # `--timeout-method=signal`, the faulthandler options and
+          # `--max-worker-restart=0` are why a hang on every core fails once
+          # and is named (see `timeout-minutes`).
+          parallel="-n auto --dist loadfile --timeout-method=signal --max-worker-restart=0"
+          parallel="$parallel -o faulthandler_timeout=660 -o faulthandler_exit_on_timeout=true"
           browser=$(grep -lE 'playwright|\.goto\(|new_page\(|^def test_[a-z0-9_]+\([^)]*\bbrowser\b' tests/*.py || true)
           if [ -z "$browser" ]; then
             echo "::error::no file in tests/ matched the browser grep in Run tests (grep says above if a file could not be read); the grep needs updating"
@@ -330,8 +340,7 @@ jobs:
           if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.13" ]; then
             export COVERAGE_CORE=sysmon COVERAGE_DEBUG=sys
             export COVERAGE_DEBUG_FILE="$RUNNER_TEMP/coverage-debug.txt"
-            pytest -rfEs -n auto --dist loadfile --timeout-method=signal --max-worker-restart=0 \
-              --cov=fastmdxplora --cov-report= \
+            pytest -rfEs $parallel --cov=fastmdxplora --cov-report= \
               $(printf -- '--ignore=%s ' $browser) || status=1
             pytest -rfEs --cov=fastmdxplora --cov-append \
               --cov-report=term-missing --cov-report=xml $browser || status=1
@@ -342,7 +351,7 @@ jobs:
               status=1
             fi
           else
-            pytest -rfEs -n auto --dist loadfile --timeout-method=signal --max-worker-restart=0 \
+            pytest -rfEs $parallel \
               $(printf -- '--ignore=%s ' $browser) || status=1
             pytest -rfEs $browser || status=1
           fi

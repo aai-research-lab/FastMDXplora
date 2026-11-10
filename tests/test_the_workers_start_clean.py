@@ -19,6 +19,13 @@ thread-free at fork time. macOS and Windows spawn and never hung.
 So: spawn everywhere, pinned here; and a per-test timeout in the suite's
 own configuration, so the next wall -- whatever causes it -- fails as a
 named test with every thread's stack attached instead of hanging a runner.
+
+That is the run of one test at a time. CI's runs on every core (its "Run
+tests" step) use pytest-timeout's signal method instead, because the
+thread method ends a pytest-xdist worker and xdist ran the test again on
+each new one: there the test fails at 600 s with its stack, and if its
+cleanup then waits on what hung, faulthandler writes every thread's stack
+at 660 s and ends the worker, which names the test.
 """
 
 from __future__ import annotations

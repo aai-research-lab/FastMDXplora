@@ -49,17 +49,29 @@ def test_before_the_tests_run():
     assert names.index(STEP) < names.index("Run tests")
 
 
+def _run_tests() -> str:
+    return next(s for s in _steps() if s.get("name") == "Run tests")["run"]
+
+
+def _parallel() -> str:
+    """The options both runs on every core take, as the step sets them."""
+    said = [line.strip() for line in _run_tests().splitlines()
+            if line.strip().startswith("parallel=")]
+    assert len(said) == 2, said
+    return " ".join(said)
+
+
 def test_every_leg_runs_the_rest_on_every_core_and_fails_on_either_run():
     """On one core the plain legs took up to 89 minutes, and two were
     cancelled at 90 with nothing failed (run 42699335287). Every leg runs
     the files that drive no browser through pytest-xdist and the browser
     files one at a time after them, and a failure in either fails the job."""
-    steps = _steps()
-    install = next(s for s in steps
+    install = next(s for s in _steps()
                    if s.get("name") == "Install package and test dependencies")
     assert "if" not in install and "pytest-xdist" in install["run"]
-    run = next(s for s in steps if s.get("name") == "Run tests")["run"]
-    assert run.count("-n auto --dist loadfile") == 2
+    run = _run_tests()
+    assert "-n auto --dist loadfile" in _parallel()
+    assert run.count("pytest -rfEs $parallel ") == 2
     assert run.count("$(printf -- '--ignore=%s ' $browser) || status=1") == 2
     assert run.rstrip().endswith("fi\nexit $status")
 
@@ -69,14 +81,34 @@ def test_a_hang_on_every_core_fails_once_with_its_stack():
     worker, and xdist ran the hung test again on each new worker until it
     stopped replacing them, with no stack shown. The signal fails the test
     alone, and no crashed worker is replaced."""
-    run = next(s for s in _steps() if s.get("name") == "Run tests")["run"]
-    parallel = [line for line in run.splitlines() if "-n auto" in line]
-    assert len(parallel) == 2, parallel
-    for line in parallel:
-        assert "--timeout-method=signal" in line and "--max-worker-restart=0" in line, line
+    parallel = _parallel()
+    assert "--timeout-method=signal" in parallel and "--max-worker-restart=0" in parallel
+
+
+def test_a_hang_in_its_cleanup_is_named_and_ends_its_worker():
+    """The signal fires once, so a test whose `finally` then waits on what
+    hung (a pool shut down with a worker that never answers) held its
+    worker with nothing said. faulthandler writes every thread's stack after
+    the signal's 600 s and ends the worker; pytest 9 is the first to end it."""
+    parallel = _parallel()
+    assert "-o faulthandler_timeout=660" in parallel
+    assert "-o faulthandler_exit_on_timeout=true" in parallel
+    install = next(s for s in _steps()
+                   if s.get("name") == "Install package and test dependencies")
+    assert '"pytest>=9"' in install["run"]
+
+
+def test_this_pytest_can_end_a_hung_worker(pytestconfig):
+    """An option pytest does not know is only warned of, so the run on every
+    core would wait on a hung cleanup again with nothing failing."""
+    # Unknown, getini raises ValueError; the run on every core sets it true.
+    assert isinstance(pytestconfig.getini("faulthandler_exit_on_timeout"), bool)
 
 
 def test_a_browser_grep_that_finds_nothing_says_so():
-    run = next(s for s in _steps() if s.get("name") == "Run tests")["run"]
+    run = _run_tests()
     assert "tests/*.py || true)" in run
-    assert 'if [ -z "$browser" ]; then' in run and "::error::" in run
+    lines = [line.strip() for line in run.splitlines()]
+    at = lines.index('if [ -z "$browser" ]; then')
+    assert lines[at + 1].startswith('echo "::error::'), lines[at:at + 4]
+    assert lines[at + 2:at + 4] == ["exit 1", "fi"], lines[at:at + 4]
