@@ -232,6 +232,14 @@ def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
         return row
     findings = record.get("findings") if isinstance(record.get("findings"), dict) else {}
     found = findings.get("mean") if isinstance(findings.get("mean"), dict) else None
+    if name == "cluster":
+        # The Conformations row says the clustering took every k-th frame,
+        # as the figures under it do.
+        from fastmdxplora.gui.figure_data import cluster_stride_said
+
+        said = cluster_stride_said(root)
+        if said:
+            row["finding"] = said
     if name == "image_check":
         # Its finding as a sentence in its row, the paragraph one click away,
         # and the atoms it checks said as they are (not the analyses' scope).

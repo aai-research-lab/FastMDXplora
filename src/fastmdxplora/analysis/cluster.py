@@ -1232,10 +1232,17 @@ class Cluster(Analysis):
                 asked = (f", where `stride: {self.stride}` asked for every "
                          f"{_ordinal(self.stride)}" if self.stride > 1 else "")
                 why = (f"the least stride that leaves at most {self.max_frames:,} "
-                       f"(`max_frames: {self.max_frames}`){asked}. `max_frames: null` "
-                       "leaves the frames to `stride`.")
+                       f"(`max_frames: {self.max_frames}`){asked}. "
+                       + self._every_frame_said())
             record["said"] = (f"{record['said']} Every {_ordinal(stride)} frame of "
                               f"those was clustered, {clustered:,} frames, {why}")
+            if stride != self.stride:
+                # On the console too: the cap chose it, not a setting given.
+                logger.info("Clustering every %s frame, %s of the %s analysed: the least "
+                            "stride that leaves at most %s (`max_frames: %s`). %s",
+                            _ordinal(stride), f"{clustered:,}", f"{given:,}",
+                            f"{self.max_frames:,}", self.max_frames,
+                            self._every_frame_said())
         self.findings["frames"] = record
         self.findings.pop("populations", None)  # counted again, method by method
         self._first_frame = first
@@ -1475,6 +1482,7 @@ class Cluster(Analysis):
                                            frames=self._frames_given(len(labels)))
                     ax.set_xlabel(self._user_xlabel or "Frame")
                     ax.set_ylabel(self._user_ylabel or "Cluster")
+                    self._noted(fig)
                     save_figure(fig, path)
 
                 artifacts.extend(self._plotted(fig_path, timeline))
@@ -1488,6 +1496,7 @@ class Cluster(Analysis):
                         figsize=(5.8, 3.6),
                     )
                     _plot_cluster_counts(ax_counts, labels)
+                    self._noted(fig_counts)
                     save_figure(fig_counts, path)
 
                 artifacts.extend(self._plotted(counts_path, counts))
@@ -1508,6 +1517,7 @@ class Cluster(Analysis):
                             figsize=(6.5, 3.8),
                         )
                         _plot_hierarchical_dendrogram_from_linkage(ax_den, linkage_matrix)
+                        self._noted(fig_den)
                         save_figure(fig_den, dendro_path)
                         artifacts.append(dendro_path)
                         dendro_svg_path = dendro_path.with_suffix(".svg")
@@ -1703,6 +1713,7 @@ class Cluster(Analysis):
         def the_map() -> None:
             fig, ax = new_figure(title=title, figsize=(5.6, 4.8))
             _plot_distance_matrix(ax, averaged, frames, times, block=block)
+            self._noted(fig)
             save_figure(fig, figure_path)
 
         return written + self._plotted(figure_path, the_map)
@@ -1857,15 +1868,46 @@ class Cluster(Analysis):
         if noise:
             entry["noise_frames"] = noise
         found.setdefault("by_method", {})[method] = entry
-        if stride > 1:
-            why = (f"`stride: {stride}`" if stride == self.stride
-                   else f"`max_frames: {self.max_frames}`")
-            found["said"] = (
-                f"Cluster populations were counted on every {_ordinal(stride)} frame "
-                f"({why}): each cluster's frames are of the {n:,} clustered, of "
-                f"{given:,} analysed, and its fraction is of those {n:,}.")
+        said = self._stride_said()
+        if said:
+            found["said"] = said
         else:
             found.pop("said", None)
+
+    def _every_frame_said(self) -> str:
+        """What clusters every frame, from the settings this one was given:
+        ``max_frames: null`` where the stride is the cap's alone."""
+        if self.stride == 1:
+            return "`max_frames: null` clusters every frame."
+        return "`stride: 1` with `max_frames: null` clusters every frame."
+
+    def _stride_said(self) -> str:
+        """That the clustering took every k-th frame, the setting that chose
+        it, and what clusters every frame; "" at every frame. Said under
+        ``findings.populations``, in the report, on the clustering's
+        figures (PNG and SVG) and on the GUI's: the GUI's Conformations
+        section and the figures said nothing of it, and a count of 5,000
+        frames read as the whole of a run of 10,000."""
+        stride = self._stride
+        if stride <= 1 or self._clustered is None:
+            return ""
+        n = int(self._clustered.n_frames)
+        frames = self.findings.get("frames") or {}
+        given = int(frames.get("n_frames_analysed", n))
+        why = (f"`stride: {stride}`" if stride == self.stride
+               else f"`max_frames: {self.max_frames}`")
+        return (f"Cluster populations were counted on every {_ordinal(stride)} frame "
+                f"({why}): each cluster's frames are of the {n:,} clustered, of "
+                f"{given:,} analysed, and its fraction is of those {n:,}. "
+                + self._every_frame_said())
+
+    def _noted(self, fig: Any) -> None:
+        """The stride said below a clustering's figure, where it took every
+        k-th frame (:meth:`_stride_said`), as a projection's figure says the
+        methods refused."""
+        said = self._stride_said()
+        if said:
+            fig.text(0.5, -0.02, said, ha="center", va="top", fontsize=7, wrap=True)
 
     # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:

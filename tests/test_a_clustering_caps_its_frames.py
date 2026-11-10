@@ -58,7 +58,7 @@ class TestTheDefault:
         assert frames["max_frames"] == 5000
         assert "Every 2nd frame of those was clustered, 2,501 frames" in frames["said"]
         assert "`max_frames: 5000`" in frames["said"]
-        assert "`max_frames: null` leaves the frames to `stride`" in frames["said"]
+        assert "`max_frames: null` clusters every frame." in frames["said"]
         # The memory is checked on the frames clustered.
         assert analysis.findings["memory"]["frames"] == 2501
 
