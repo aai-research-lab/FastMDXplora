@@ -561,7 +561,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   On one core two were cancelled at 90 minutes with nothing failed; their
   limit is now 120. On every core, on every leg, a hung test fails once at
   600 s with its stack and the next test runs, where its worker was ended
-  and the test run again on each new one; a crashed worker is not replaced.
+  and the test run again on each new one. If its cleanup then waits on what
+  hung, every thread's stack is written at 660 s and its worker ended. A
+  worker that crashes or is ended ends the run on every core, naming its
+  test, and the tests not yet run there are not counted.
   The browser test of a rerun over an unfinished round has a file of its
   own, so the other tests of a failed round run on every core.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
