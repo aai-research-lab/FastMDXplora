@@ -271,7 +271,8 @@ def _in_a_line(why: str) -> str:
     text = " ".join(str(why or "").split())
     if not text:
         return ""
-    fewer = re.match(r"[\d.]+ independent samples? in \d+ frames.*?Below (\d+)", text)
+    fewer = re.match(r"(?:[\d.,]+|[Ff]ewer than one) independent samples? in [\d,]+ frames"
+                     r".*?Below (\d+)", text)
     if fewer:
         return f"Fewer than {fewer.group(1)} independent samples: the run has to be longer."
     if text.startswith("This run is not long against its own correlation time"):
