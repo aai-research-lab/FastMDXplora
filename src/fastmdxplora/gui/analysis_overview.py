@@ -26,6 +26,7 @@ import json
 import math
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastmdxplora import record_access
 from fastmdxplora.gui.report_dashboard import (
@@ -312,7 +313,7 @@ def _data_files(root: Path, name: str) -> list[dict[str, str]]:
                        key=lambda p: (p.stem != name, p.name))
     except OSError:
         return []
-    return [{"name": p.name, "href": f"/artifacts/analysis/{name}/{p.name}"}
+    return [{"name": p.name, "href": f"/artifacts/{quote(f'analysis/{name}/{p.name}')}"}
             for p in files[:12]]
 
 
