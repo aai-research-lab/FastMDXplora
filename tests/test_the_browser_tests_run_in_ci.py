@@ -47,3 +47,18 @@ def test_the_coverage_leg_measures_with_sys_monitoring():
 def test_before_the_tests_run():
     names = [s.get("name") for s in _steps()]
     assert names.index(STEP) < names.index("Run tests")
+
+
+def test_every_leg_runs_the_rest_on_every_core_and_fails_on_either_run():
+    """On one core the plain legs took up to 89 minutes, and two were
+    cancelled at 90 with nothing failed (run 42699335287). Every leg runs
+    the files that drive no browser through pytest-xdist and the browser
+    files one at a time after them, and a failure in either fails the job."""
+    steps = _steps()
+    install = next(s for s in steps
+                   if s.get("name") == "Install package and test dependencies")
+    assert "if" not in install and "pytest-xdist" in install["run"]
+    run = next(s for s in steps if s.get("name") == "Run tests")["run"]
+    assert run.count("-n auto --dist loadfile") == 2
+    assert run.count("$(printf -- '--ignore=%s ' $browser) || status=1") == 2
+    assert run.rstrip().endswith("fi\nexit $status")

@@ -138,7 +138,15 @@ jobs:
     # of its browser tests, its ffmpeg alone taking 9 minutes: 180 for it.
     # Those times were on ubuntu 3.11; the coverage leg is ubuntu 3.13 since
     # 10-28 (the reason is at "Run tests") and keeps the 180.
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' && 180 || 90 }}
+    # In run 42699335287 on 11-09 the plain legs, the suite on one core,
+    # took 50 minutes (ubuntu 3.10), 49 (macOS 3.10) and 89 (macOS 3.13,
+    # 55 seconds under its 90), and ubuntu 3.11 and macOS 3.11 were
+    # cancelled at 90 with nothing failed; the coverage leg took 139. The
+    # plain legs now run as the coverage leg does (see "Run tests"), and
+    # 120 is a margin for a macOS runner short of capacity, not room for
+    # the suite to grow back into: pytest-timeout stops a hung test at 600
+    # seconds well before it.
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' && 180 || 120 }}
     strategy:
       fail-fast: false
       matrix:
@@ -197,7 +205,9 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
+          # pytest-xdist runs the tests that drive no browser on every core
+          # (see "Run tests"); a test tool for CI, so it is not in [test].
+          python -m pip install -e ".[test]" pytest-xdist
           # The physics too, except on the floor. Without OpenMM the suite
           # skips everything that touches it, and for three rounds "low
           # coverage" meant "the dependency was silently absent where
@@ -243,7 +253,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
         shell: bash
         run: |
-          python -m pip install playwright pytest-xdist
+          python -m pip install playwright
           python -m playwright install --with-deps chromium
           sudo apt-get install -y -qq poppler-utils
           command -v pdftotext
@@ -286,11 +296,24 @@ jobs:
           # #65). A file drives Chromium if it names Playwright, or opens a
           # page or takes a browser from a fixture it imports from another.
           # pytest-cov appends the second run to the first.
+          #
+          # The plain legs run the same way since 11-09, untraced. On one
+          # core they took up to 89 minutes and two were cancelled at 90
+          # (the timings are at `timeout-minutes`), as the real-subprocess
+          # stop tests of a failed round were added. Their browser files
+          # skip there, Playwright being absent, and still run one at a
+          # time after the rest. Nothing outside them assumes a serial run:
+          # each process takes its own settings and cache folders and each
+          # test its own settings (tests/conftest.py), a server is given a
+          # free port (port 0), and the clustering tests read a peak in a
+          # child process of their own (VmHWM) or from tracemalloc, which
+          # counts the test's own allocations. The coverage leg already runs
+          # them so.
+          browser=$(grep -lE 'playwright|\.goto\(|new_page\(|^def test_[a-z0-9_]+\([^)]*\bbrowser\b' tests/*.py)
+          status=0
           if [ "${{ matrix.os }}" = "ubuntu-latest" ] && [ "${{ matrix.python-version }}" = "3.13" ]; then
             export COVERAGE_CORE=sysmon COVERAGE_DEBUG=sys
             export COVERAGE_DEBUG_FILE="$RUNNER_TEMP/coverage-debug.txt"
-            browser=$(grep -lE 'playwright|\.goto\(|new_page\(|^def test_[a-z0-9_]+\([^)]*\bbrowser\b' tests/*.py)
-            status=0
             pytest -rfEs -n auto --dist loadfile --cov=fastmdxplora --cov-report= \
               $(printf -- '--ignore=%s ' $browser) || status=1
             pytest -rfEs --cov=fastmdxplora --cov-append \
@@ -301,10 +324,12 @@ jobs:
               echo "::error::coverage did not measure with sys.monitoring; its warning is near the top of this step's log"
               status=1
             fi
-            exit $status
           else
-            pytest -rfEs
+            pytest -rfEs -n auto --dist loadfile \
+              $(printf -- '--ignore=%s ' $browser) || status=1
+            pytest -rfEs $browser || status=1
           fi
+          exit $status
 
       - name: Lint
         # CONTRIBUTING has required this since before there was a job for it,
