@@ -114,16 +114,18 @@ def figure_payload(root: str | Path, figure: str) -> dict[str, Any]:
         # Said below the chart, as below the figure: the clustering took
         # every k-th frame (`max_frames`), and a count of 5,000 frames read
         # as the whole of a run of 10,000.
-        note = cluster_stride_said(root)
+        note = cluster_stride_said(root, the_map=bool(found["matrix"]))
         if note:
             payload = dict(payload, figure_note=note)
     return {"ok": True, "figure": figure, **payload}
 
 
-def cluster_stride_said(root: Path) -> str:
+def cluster_stride_said(root: Path, the_map: bool = False) -> str:
     """That the clustering took every k-th frame, and what clusters every
-    frame, as its record says it (``findings.populations.said``); "" where
-    it clustered every frame, or its record does not say."""
+    frame, as its record says it (``findings.populations.said``, and for
+    the map ``findings.matrix.stride_said``), without the record's code
+    marks, which a page showed as they are; "" where it clustered every
+    frame, or its record does not say."""
     try:
         record = json.loads(_records.read_text(root / "analysis" / "cluster" / "options.json",
                                                encoding="utf-8"))
@@ -132,7 +134,10 @@ def cluster_stride_said(root: Path) -> str:
     findings = record.get("findings") if isinstance(record, dict) else None
     counted = findings.get("populations") if isinstance(findings, dict) else None
     said = counted.get("said") if isinstance(counted, dict) else None
-    return str(said) if said else ""
+    mapped = findings.get("matrix") if isinstance(findings, dict) else None
+    if the_map and isinstance(mapped, dict) and mapped.get("stride_said"):
+        said = mapped["stride_said"]
+    return str(said).replace("`", "") if said else ""
 
 
 # ---------------------------------------------------------------------------

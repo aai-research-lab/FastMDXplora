@@ -71,10 +71,16 @@ def test_each_figure_says_it_below(tmp_path, monkeypatch):
     result = Cluster(output_dir=tmp_path / "analysis", max_frames=100).run(_chain(250))
     assert result.status == "ok", result.message
     said = _said(tmp_path)
+    plain = said.replace("`", "")
     for name in ("cluster_kmeans.png", "cluster_kmeans_counts.png",
                  "cluster_hierarchical.png", "cluster_hierarchical_counts.png",
-                 "cluster_hierarchical_dendrogram.png", "cluster_rmsd_matrix.png"):
-        assert said in saved[name], (name, saved.get(name))
+                 "cluster_hierarchical_dendrogram.png"):
+        assert plain in saved[name], (name, saved.get(name))
+    # The map is of every 3rd frame, not of populations; no code marks.
+    assert saved["cluster_rmsd_matrix.png"] == [
+        "The map is of every 3rd frame (max_frames: 100), the 84 clustered of 250 "
+        "analysed. max_frames: null clusters every frame."]
+    assert not any("`" in text for texts in saved.values() for text in texts)
     saved.clear()
     Cluster(output_dir=tmp_path / "every", methods=["kmeans"]).run(_chain(80))
     assert all(not texts for texts in saved.values()), saved
@@ -87,7 +93,10 @@ def test_the_gui_s_charts_say_it_below(strided, whole, figure):
 
     payload = figure_payload(strided, f"analysis/cluster/{figure}.png")
     assert payload["ok"], payload
-    assert payload["figure_note"] == _said(strided)
+    expected = (_said(strided) if figure != "cluster_rmsd_matrix" else
+                json.loads((strided / "analysis" / "cluster" / "options.json").read_text())[
+                    "findings"]["matrix"]["stride_said"]).replace("`", "")
+    assert payload["figure_note"] == expected and "`" not in expected
     if figure != "cluster_hierarchical_dendrogram":
         every = figure_payload(whole, f"analysis/cluster/{figure}.png")
         assert every["ok"] and not every.get("figure_note"), every
@@ -97,7 +106,7 @@ def test_the_conformations_row_says_it(strided, whole):
     from fastmdxplora.gui.analysis_overview import _row
 
     row = _row(strided, "cluster", {"status": "ok"}, {}, False)
-    assert row["finding"] == _said(strided)
+    assert row["finding"] == _said(strided).replace("`", "")
     assert not _row(whole, "cluster", {"status": "ok"}, {}, False).get("finding")
 
 

@@ -1684,6 +1684,9 @@ class Cluster(Analysis):
                      f"consecutive clustered frames, {averaged.shape[0]} across."
                      if block > 1 else "The map shows every pair of clustered frames."),
         }
+        if self._map_stride_said():
+            # Said below the map, here and in the GUI.
+            self.findings["matrix"]["stride_said"] = self._map_stride_said()
         data_path = self.output_dir / "cluster_rmsd_matrix.npz"
         written = []
         try:
@@ -1718,7 +1721,7 @@ class Cluster(Analysis):
         def the_map() -> None:
             fig, ax = new_figure(title=title, figsize=(5.6, 4.8))
             _plot_distance_matrix(ax, averaged, frames, times, block=block)
-            self._noted(fig)
+            self._noted(fig, the_map=True)
             save_figure(fig, figure_path)
 
         return written + self._plotted(figure_path, the_map)
@@ -1906,13 +1909,30 @@ class Cluster(Analysis):
                 f"{given:,} analysed, and its fraction is of those {n:,}. "
                 + self._every_frame_said())
 
-    def _noted(self, fig: Any) -> None:
-        """The stride said below a clustering's figure, where it took every
-        k-th frame (:meth:`_stride_said`), as a projection's figure says the
-        methods refused."""
+    def _map_stride_said(self) -> str:
+        """That the RMSD map is of every k-th frame, the setting that chose
+        it, and what clusters every frame; "" at every frame. The map's note
+        spoke of cluster populations."""
         said = self._stride_said()
+        if not said:
+            return ""
+        stride = self._stride
+        n = int(self._clustered.n_frames)
+        given = int((self.findings.get("frames") or {}).get("n_frames_analysed", n))
+        why = (f"`stride: {stride}`" if stride == self.stride
+               else f"`max_frames: {self.max_frames}`")
+        return (f"The map is of every {_ordinal(stride)} frame ({why}), the {n:,} "
+                f"clustered of {given:,} analysed. " + self._every_frame_said())
+
+    def _noted(self, fig: Any, the_map: bool = False) -> None:
+        """The stride said below a clustering's figure, where it took every
+        k-th frame (:meth:`_stride_said`, :meth:`_map_stride_said` for the
+        map), as a projection's figure says the methods refused: without the
+        record's code marks, which a figure printed as they are."""
+        said = self._map_stride_said() if the_map else self._stride_said()
         if said:
-            fig.text(0.5, -0.02, said, ha="center", va="top", fontsize=7, wrap=True)
+            fig.text(0.5, -0.02, said.replace("`", ""), ha="center", va="top",
+                     fontsize=7, wrap=True)
 
     # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:
