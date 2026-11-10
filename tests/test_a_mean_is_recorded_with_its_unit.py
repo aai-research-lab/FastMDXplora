@@ -173,3 +173,12 @@ class TestTheAgentIsTold:
             "not_a_measurement": "too short against its correlation time", "unit": "nm"}}))
         assert "nan" not in text.lower()
         assert "rg: mean 0.3280 nm, 14.1 effective samples" in text
+
+    def test_a_count_just_under_ten_is_not_said_as_ten(self, tmp_path):
+        """9.96 effective samples read "10.0 effective samples -- too few"."""
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        text = _results_summary(_study(tmp_path, {"rg": {
+            "mean": 0.328, "standard_error": float("nan"), "effective_samples": 9.96,
+            "not_a_measurement": "too few independent samples", "unit": "nm"}}))
+        assert "rg: mean 0.3280 nm, 9.9 effective samples -- too few" in text
