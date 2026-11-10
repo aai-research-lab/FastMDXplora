@@ -670,7 +670,9 @@ def _metric_rows(project_root: Path, analysis_manifest: dict[str, Any]) -> list[
         rows.append(MetricRow(
             metric=label + suffix,
             average=str(quantity.get("said") or "—"),
-            samples="< 1" if samples == 0 else (f"{samples:,}" if isinstance(samples, int) else "—"),
+            # Rounded down to one decimal, as the Analysis table gives them.
+            samples=("\u2014" if not _finite(samples) else "< 1" if samples < 1
+                     else f"{samples:,.1f}".removesuffix(".0")),
             status=("Not read" if quantity.get("unavailable")
                     else "Determined" if quantity.get("determined") else "Not determined"),
             why=str(quantity.get("why") or ""),

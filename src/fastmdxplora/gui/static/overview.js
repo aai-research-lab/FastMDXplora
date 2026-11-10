@@ -18,12 +18,19 @@
 (function () {
   "use strict";
 
-  /* Independent samples as a count: under one is said so, where rounding
-   * gave "0 independent samples" beside a mean. */
-  function samplesSaid(n) {
-    if (n < 0.5) return "under 1 independent sample";
-    var whole = Math.round(n);
-    return whole + " independent sample" + (whole === 1 ? "" : "s");
+  /* Independent samples in words, as `statistics.independent_samples_said`
+   * says them: under one is said so, any other count rounded down to one
+   * decimal, so 9.96 is not said as 10 beside a rule that withholds under 10.
+   * `about` hedges it, as an estimate is. */
+  function samplesSaid(n, about) {
+    n = Number(n);
+    if (!Number.isFinite(n)) return "";
+    if (n < 1) return "fewer than one independent sample";
+    var tenths = Math.floor(n * 10);
+    if (tenths / 10 > n) tenths -= 1;
+    var count = (tenths / 10).toFixed(1).replace(/\.0$/, "");
+    return (about ? "about " : "") + count + " independent sample" +
+      (Number(count) === 1 ? "" : "s");
   }
 
   var SVG = "http://www.w3.org/2000/svg";
@@ -701,6 +708,7 @@
     load: load,
     get data() { return data; },
     ended: ended,
+    samplesSaid: samplesSaid,
     sayTime: sayTime,
     unreadSaid: unreadSaid,
     unreadNode: unreadNode,

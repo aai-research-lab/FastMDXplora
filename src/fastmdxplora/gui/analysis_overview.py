@@ -422,7 +422,7 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
         why = "No mean was recorded."
     elif error is None and why is None:
         if samples is not None and samples < RESOLVED_SAMPLES:
-            # Counted as every page counts them: 9.5 is "about 9", not 10.
+            # Counted as every page counts them: 24.96 is "about 24.9", not 25.
             count = independent_samples_said(samples, about=True)
             why = (f"{count[:1].upper()}{count[1:]}, fewer than the "
                    f"{RESOLVED_SAMPLES:g} an error bar needs.")
@@ -486,14 +486,14 @@ def _recorded(root: Path, name: str, found: dict[str, Any], biased: bool,
     }
 
 
-def _samples(count: float | None) -> int | None:
+def _samples(count: float | None) -> float | None:
     """Independent samples as the table's column gives them, by the one rule
-    every page says them by (`statistics.independent_samples_said`): 9.5 was
-    shown as 10 beside "not determined: 9.5 independent samples ... Below
-    10", where every other page says 9."""
-    from fastmdxplora.statistics import independent_samples_whole
+    every page says them by (`statistics.independent_samples_said`), rounded
+    down to one decimal: 24.96 was shown as 25 beside "fewer than the 25 an
+    error bar needs"."""
+    from fastmdxplora.statistics import independent_samples_floored
 
-    return independent_samples_whole(count) if count is not None else None
+    return independent_samples_floored(count) if count is not None else None
 
 
 def _not_read(root: Path, path: Path) -> dict[str, Any]:

@@ -79,12 +79,12 @@ def test_the_analysis_table_says_its_samples_as_every_page_does(root):
     from fastmdxplora.statistics import independent_samples_said
 
     (root / "analysis" / "rmsd" / "options.json").write_text(json.dumps({"findings": {"mean": {
-        **EARLIER, "effective_samples": 9.5, "standard_error": None}}}), encoding="utf-8")
+        **EARLIER, "effective_samples": 9.96, "standard_error": None}}}), encoding="utf-8")
     row = next(r for r in overview_of(root, include_time=False)["rows"]
                if r["analysis"] == "rmsd")
-    assert independent_samples_said(9.5) == "9 independent samples"
-    assert row["mean"]["samples"] == 9
-    assert row["mean"]["why"].startswith("About 9 independent samples, fewer than the 25")
+    assert independent_samples_said(9.96) == "9.9 independent samples"
+    assert row["mean"]["samples"] == 9.9
+    assert row["mean"]["why"].startswith("About 9.9 independent samples, fewer than the 25")
 
 
 def test_the_report_says_so_under_the_figure_an_earlier_version_plotted(root):

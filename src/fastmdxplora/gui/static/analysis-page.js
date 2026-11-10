@@ -257,7 +257,7 @@
       '<td class="analysis-results-frames mono" data-label="Frames averaged">' + escapeHTML(frames) +
         (from ? '<span class="analysis-results-from">' + escapeHTML(from) + "</span>" : "") + "</td>" +
       '<td class="analysis-results-samples mono" data-label="Independent samples">' +
-        escapeHTML(quantity.samples === 0 ? "< 1" : count(quantity.samples)) + "</td>" +
+        escapeHTML(quantity.samples != null && quantity.samples < 1 ? "< 1" : count(quantity.samples)) + "</td>" +
       statusCell(status.key, status.said, quantity.why) + "</tr>";
   }
 
@@ -574,9 +574,8 @@
       parts.push("Statistical inefficiency " + Number(eq.statistical_inefficiency).toPrecision(3) + " frames" +
         (auto.tau_int_time != null && timed ? " (integrated correlation time " +
           sayLength(auto.tau_int_time) + ")" : "") +
-        ((eq.effective_samples || 0) < 0.5 ? ", so under 1 independent sample."
-          : ", so about " + count(Math.round(eq.effective_samples)) + " independent sample" +
-            (Math.round(eq.effective_samples) === 1 ? "." : "s.")));
+        (eq.effective_samples == null ? "."
+          : ", so " + window.FastMDXOverview.samplesSaid(eq.effective_samples, true) + "."));
     }
     // As the table above says it (`recorded.said`, the server's): an error
     // only where the record stands behind it. Its note joined after a full

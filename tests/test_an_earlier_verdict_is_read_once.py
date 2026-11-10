@@ -21,7 +21,7 @@ EARLIER = {"discard": 66, "statistical_inefficiency": 4.65, "effective_samples":
            "mean": 0.0077659, "standard_error": 0.0010031, "standard_deviation": 0.004,
            "n_frames": 100, "unit": "nm"}
 
-WHY = "7 independent samples, fewer than the 10 this version determines a mean on."
+WHY = "7.3 independent samples, fewer than the 10 this version determines a mean on."
 
 
 def test_the_overview_the_table_and_the_card_read_one_verdict(tmp_path) -> None:

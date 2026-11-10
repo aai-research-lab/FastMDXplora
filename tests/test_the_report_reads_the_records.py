@@ -21,7 +21,7 @@ import numpy as np
 import pytest
 import yaml
 
-from fastmdxplora.statistics import mean_record, with_its_error
+from fastmdxplora.statistics import independent_samples_said, mean_record, with_its_error
 
 
 def _ar1(n: int, seed: int, phi: float = 0.95, sigma: float = 0.05) -> np.ndarray:
@@ -91,7 +91,7 @@ def _said_in_its_report(run: Path) -> str:
 
 def _as_recorded(record: dict) -> str:
     return (f"{with_its_error(record['mean'], record['standard_error'])} nm, from "
-            f"{record['effective_samples']:.0f} independent samples after discarding "
+            f"{independent_samples_said(record['effective_samples'])} after discarding "
             f"{record['discard']:,} frames")
 
 
@@ -452,11 +452,14 @@ def _traced(root: Path, said: str) -> list[dict]:
 
 
 def test_the_fewest_independent_samples_are_traced_to_their_record(thermostatted):
-    (number,) = _traced(thermostatted, "13")
-    assert number["traced"], number
-    assert number["record"]["key"] == "findings.thermodynamics.potential_energy.effective_samples"
+    # Said twice, each from the one record.
+    found = _traced(thermostatted, "12.8")
+    assert len(found) == 2
+    for number in found:
+        assert number["traced"], number
+        assert number["record"]["key"] == "findings.thermodynamics.potential_energy.effective_samples"
     text = (thermostatted / "report" / "report.md").read_text(encoding="utf-8")
-    assert "fewest: potential energy, 13 independent samples" in text
+    assert "fewest: potential energy, 12.8 independent samples" in text
 
 
 def test_the_mean_temperature_in_the_checks_is_traced_to_its_record(thermostatted):

@@ -66,7 +66,7 @@
           const sentence = !!mean.noted && /^[A-Z]/.test(mean.noted);
           const ends = sentence || (!!mean.noted && /\. [A-Z]/.test(mean.noted));
           note.textContent = (mean.determined
-            ? `production mean, ${Math.round(mean.samples)} independent samples`
+            ? `production mean, ${window.FastMDXOverview.samplesSaid(mean.samples)}`
             : "production mean, not determined")
             + (mean.noted ? (sentence ? ". " : "; ") + mean.noted + (ends ? "." : "") : "");
           note.title = [mean.determined ? "" : (mean.why || ""), mean.noted ? (mean.noted_why || "") : ""]

@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 
 from fastmdxplora.gui.analysis_overview import convergence_payload, overview_of
-from fastmdxplora.statistics import mean_record, with_its_error
+from fastmdxplora.statistics import independent_samples_floored, mean_record, with_its_error
 
 INTERVAL_PS = 10.0
 
@@ -98,7 +98,9 @@ class TestWhatTheTableSays:
         mean = row["mean"]
         assert mean["determined"] is True and mean["why"] is None
         assert mean["said"] == with_its_error(record["mean"], record["standard_error"]) + " nm"
-        assert mean["samples"] == int(round(record["effective_samples"]))
+        # Rounded down to one decimal, as every page says it.
+        assert mean["samples"] == independent_samples_floored(record["effective_samples"])
+        assert mean["samples"] <= record["effective_samples"] < mean["samples"] + 0.1
         assert (mean["from_frame"], mean["of_frames"]) == (record["discard"], 4000)
         # Frame k of the file was written at (k + 1) saving intervals.
         assert mean["from_ns"] == pytest.approx((record["discard"] + 1) * INTERVAL_PS / 1000.0)
@@ -133,7 +135,7 @@ class TestWhatTheTableSays:
         assert temperature["said"] == with_its_error(300.0656, 0.3093) + " K"
         assert (temperature["of_frames"], temperature["from_frame"], temperature["from_ns"]) == (50, 5, None)
         assert quantities["Density"]["determined"] is False
-        assert quantities["Density"]["samples"] == 0
+        assert quantities["Density"]["samples"] == pytest.approx(0.4)
         assert _rows(study)["thermodynamics"]["theme"] == "The run's ensemble"
 
     def test_a_failure_says_its_reason_without_the_name_before_it(self, study) -> None:
@@ -372,15 +374,15 @@ class TestThePage:
         assert panel.locator(".convergence-level").count() >= 2
         assert page.errors == []
 
-    def test_one_independent_sample_is_said_in_the_singular(self, page) -> None:
-        """"so about 1 independent samples" for a count that rounds to 1."""
+    def test_a_fractional_count_is_said_rounded_down_to_one_decimal(self, page) -> None:
+        """1.27 independent samples are "about 1.2", not "about 1"."""
         import json
 
         def one(route):
             answer = route.fetch()
             body = answer.json()
             body.setdefault("equilibration", {}).update(
-                effective_samples=1.2, statistical_inefficiency=40.0)
+                effective_samples=1.27, statistical_inefficiency=40.0)
             route.fulfill(response=answer, body=json.dumps(body))
 
         page.route("**/api/convergence?analysis=rmsd*", one)
@@ -391,7 +393,35 @@ class TestThePage:
             "'.convergence-panel[data-analysis=\"rmsd\"] .convergence-said') || {}).textContent || '')",
             timeout=20000)
         said = panel.locator(".convergence-said").text_content()
-        assert "so about 1 independent sample." in said, said
+        assert "so about 1.2 independent samples." in said, said
+
+    @pytest.mark.parametrize(("samples", "expected"), [
+        (9.5, "9.5"),
+        (24.9, "24.9"),
+        (21.0, "21"),
+        (0.3, "< 1"),
+        (12345.6, "12,345.6"),
+    ])
+    def test_the_table_gives_the_count_it_is_sent(self, page, samples, expected) -> None:
+        """The count as the server rounds it down, and under one said so."""
+        import json
+
+        def sample_count(route):
+            answer = route.fetch()
+            body = answer.json()
+            rmsd = next(row for row in body["rows"] if row["analysis"] == "rmsd")
+            next(q for q in rmsd["quantities"] if q["key"] == "mean")["samples"] = samples
+            route.fulfill(response=answer, body=json.dumps(body))
+
+        page.route("**/api/analysis-overview*", sample_count)
+        page.goto(page.url.split("#", 1)[0] + "#analysis", wait_until="domcontentloaded")
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function(
+            "() => { const cell = document.querySelector('#analysis-results tr[data-analysis=rmsd] "
+            ".analysis-results-samples'); return cell && cell.textContent.trim() !== ''; }")
+        cell = page.locator('#analysis-results tr[data-analysis="rmsd"] .analysis-results-samples')
+        assert cell.text_content().strip() == expected
+        assert page.errors == []
 
     def test_a_series_under_a_nanosecond_is_plotted_in_picoseconds(self, page) -> None:
         """The panel's time axes read "Time (ns)" with ticks of 0.0004 for a

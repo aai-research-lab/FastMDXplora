@@ -50,7 +50,7 @@ def test_the_report_s_findings(root) -> None:
 
     findings = json.loads((root / "analysis" / "rmsd" / "options.json").read_text())["findings"]
     notes = _findings_notes(findings)
-    assert notes[0] == ("Mean over the equilibrated part of the run: 0.007766 nm, from 7 "
+    assert notes[0] == ("Mean over the equilibrated part of the run: 0.007766 nm, from 7.3 "
                         "independent samples after discarding 66 frames.")
     assert "±" not in notes[0] and notes[1].startswith("Not determined: ")
 
@@ -111,7 +111,7 @@ def test_compare_of_a_study_s_runs(tmp_path) -> None:
     rmsd = runs_compared(_with_an_earlier_record(tmp_path))["measures"][0]
     cells = {c["run_id"]: c for c in rmsd["cells"]}
     assert cells["t310"]["error"] is None
-    assert cells["t310"]["withheld"].startswith("7 independent samples, fewer than the 10")
+    assert cells["t310"]["withheld"].startswith("7.3 independent samples, fewer than the 10")
     assert "versus" not in cells["t310"]
 
 
@@ -219,7 +219,7 @@ def test_the_report_s_findings_say_it_once(root) -> None:
     notes = _findings_notes(findings)
     assert notes[1].startswith("Not determined: fewer than the 10 independent samples this "
                                "version determines a mean on."), notes[1]
-    assert "7 independent samples" in notes[0] and "7 independent samples" not in notes[1]
+    assert "7.3 independent samples" in notes[0] and "7.3 independent samples" not in notes[1]
 
 
 def test_the_thermodynamics_figure(tmp_path) -> None:
