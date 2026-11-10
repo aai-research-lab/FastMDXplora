@@ -73,7 +73,7 @@ class TestTheTrendIsJudgedAgainstItsError:
     def test_the_record_says_which_rules_judged_it(self) -> None:
         rng = np.random.default_rng(3)
         record = mean_record(_ar1(int(100 * INEFFICIENCY), rng))
-        assert record["rules"] == MEAN_RULES == 3
+        assert record["rules"] == MEAN_RULES >= 3
 
 
 class TestTheTrendItself:

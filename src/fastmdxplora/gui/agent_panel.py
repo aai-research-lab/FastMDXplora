@@ -892,6 +892,47 @@ def _asked_going(target: Path, runtime: Any) -> bool:
         record.get("pid"), target, record.get("argv"), record)
 
 
+#: The head of the run-ended note of a study whose rule's round ended
+#: short, or whose rule was never applied.
+_ROUND_HEAD = {"failed": "Its stopping rule's round failed",
+               "stopped": "Its stopping rule's round was stopped",
+               "interrupted": "Its stopping rule's round did not finish",
+               "not applied": "Its stopping rule was not applied"}
+
+
+def _as_the_study_reads(root: Path, status: str, head: str, *,
+                        stopped: bool, counted: bool = False) -> tuple[str, str]:
+    """How a run the Agent started ended, as every page reads the study
+    (`workspace.study_state`, its rule's round first, `stopping.round_ended`):
+    headed by how its round ended where it ended short or its rule was
+    never applied, and its state where its runs and records said another. A head that
+    counts a study's runs stands with that state; "ended", said where its
+    records do not say how, stands. Stopped here and said so stands."""
+    try:
+        from fastmdxplora.gui.workspace import study_state
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(root)
+        state = study_state(root)
+    except Exception:  # noqa: BLE001 - its runs and records still say how it ended
+        return status, head
+    if ended is not None:
+        # The study's state (a run that refused its resume fails a round
+        # stopped), headed briefly: what it found says the round's
+        # sentence (`records_answer`), once.
+        word = state if state in ("stopped", "failed", "interrupted") else ended.state
+        return word, _ROUND_HEAD.get(
+            "not applied" if ended.said.startswith("Its stopping rule was not applied")
+            else ended.state, head)
+    if stopped and status == "stopped" or state not in _ENDED_AS:
+        return status, head
+    if counted:
+        return state, head
+    if status in _ENDED_AS and state != status:
+        return state, _ENDED_AS[state]
+    return status, head
+
+
 def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
                          path_for: Any = None) -> dict[str, Any]:
     """What a run the Agent started found, once it has ended, written from
@@ -953,6 +994,16 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             return "interrupted" if code < 0 else "failed" if code else ""
         return status
 
+    if not ours:
+        from fastmdxplora.simulation.resume import going_elsewhere
+
+        # Going on another machine, as its state says (`workspace.study_state`):
+        # not ended, whatever its runs' records say between its pieces.
+        try:
+            if going_elsewhere(root):
+                return {"ok": True, "ended": False}
+        except Exception:  # noqa: BLE001 - as its records say
+            pass
     runs = runs_of_a_study(root)
     if runs:
         if not ours and any(recorded(Path(r["path"])) in _GOING
@@ -986,6 +1037,8 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
             # Asked only to prepare: not "completed" above its records'
             # word that no run was run (tenth review, 10-08).
             head = f"The study was prepared once, for its {prepared} windows"
+        status, head = _as_the_study_reads(root, status, head, stopped=stopped,
+                                           counted=True)
         return {"ok": True, "ended": True, "status": status, "head": head,
                 "found": said("found"), "long_enough": "", "strengthen": ""}
     if not _wrote_records(root):
@@ -1007,6 +1060,7 @@ def run_summary_endpoint(payload: dict[str, Any], runtime: Any, *,
     head = _ENDED_AS.get(status, "The run ended")
     if seconds:
         head += (" in " if status == "completed" else " after ") + _hms(seconds)
+    status, head = _as_the_study_reads(root, status, head, stopped=stopped)
     if (root / "batch_manifest.json").is_file():
         # A study of several runs is answered in one paragraph, the same for
         # every question: said once.
@@ -1084,12 +1138,23 @@ def _run_status(runtime: Any, *, first: str | None = None,
         status = status_as_it_stands(runtime.active_root) or {}
         if status.get("stage"):
             lines.append(f"stage: {status['stage']}")
+        # The health as its card says it: the study's rule's round first
+        # (`stopping.round_ended`), with the run's folder, so it is never
+        # "Completed" of a study whose rule was never applied.
+        health = analyze_health(status, [], root=runtime.active_root)
         # A record left saying the run goes on, by a run that has ended: the
         # time it had left is not said, as the page does not say it.
         ended = status.get("status") == "interrupted"
         if ended:
-            lines.append("state: interrupted: the run ended without recording why; its "
-                         f"last update was {status.get('last_update_timestamp') or 'not recorded'}")
+            # The study's round first: a round that failed or was stopped
+            # is said so, never cut beside it.
+            word = str(health.get("state") or "")
+            word = word if word in ("interrupted", "failed", "stopped") else "interrupted"
+            why = str(health.get("message") or "") if health.get("state") == word else ""
+            lines.append(f"state: {word}: "
+                         + (why or "the run ended without recording why").rstrip(".")
+                         + "; its last update was "
+                         f"{status.get('last_update_timestamp') or 'not recorded'}")
         # The numbers the sidebar shows, so "how far along?" is answered
         # with a step and a time rather than "I have only the stage". The
         # Agent said exactly that while the sidebar read 334,000 of
@@ -1128,7 +1193,6 @@ def _run_status(runtime: Any, *, first: str | None = None,
         speed = status.get("ns_per_day") or status.get("speed")
         if isinstance(speed, (int, float)) and speed > 0:
             lines.append(f"speed: {speed:.2f} ns/day")
-        health = analyze_health(status, [])
         if health.get("state"):
             lines.append(f"health: {health['state']}"
                          + (f" -- {health['message']}" if health.get("message") else ""))
@@ -1228,12 +1292,27 @@ def _stopping_summary(root: Any) -> str:
     if not isinstance(record, dict):
         return ""
     lines = ["how long the study ran, and why (simulation.stop_when, as recorded):"]
-    for number, entry in enumerate(record.get("rounds") or [], start=1):
+    from fastmdxplora.simulation.stopping import round_numbers
+
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    # Numbered as the rule judged them: a catch-up is part of its round.
+    for number, entry in zip(round_numbers(rounds), rounds):
         said = "; ".join(str(v.get("said")) for v in entry.get("verdicts") or [])
+        if entry.get("brought_up"):
+            said = f"its catch-up of {', '.join(map(str, entry['brought_up']))}"
         lines.append(f"  round {number}, at {entry.get('production_ns')} ns: {said}"
                      f" -> {entry.get('decision')}"
                      + (f" by {entry['more_ns']} ns" if entry.get("more_ns") else ""))
-    if record.get("said"):
+    from fastmdxplora.simulation.stopping import round_ended
+
+    ended = round_ended(where)
+    if ended is not None:
+        # The study's state, as every page says it, in place of the
+        # record's sentence, which it holds: its runs each completed, and
+        # the study did not.
+        was = {"failed": "failed", "stopped": "was stopped"}.get(ended.state, "was interrupted")
+        lines.append(f"  outcome: the study {was} (not completed): {ended.as_text()}")
+    elif record.get("said"):
         lines.append(f"  outcome: {record['said']}")
     return "\n".join(lines)
 
@@ -1441,8 +1520,9 @@ def _results_summary(root: Any, first: str | None = None) -> str:
     # before a reason, how the reason is joined on, and the reason (or None).
     from fastmdxplora import record_access
     from fastmdxplora.image_note import note_of, paragraph_of, said_short
+    from fastmdxplora.statistics import drift_unseen_said, withheld_reason
 
-    rows: list[tuple[str, str, list[tuple[str, str, str | None]]]] = []
+    rows: list[tuple[str, str, list[tuple[str, str, str | None, str]]]] = []
     # Each analysis's image note in full, said once for the analysis where
     # one of its means carries it.
     paragraphs: dict[str, str] = {}
@@ -1455,14 +1535,17 @@ def _results_summary(root: Any, first: str | None = None) -> str:
         findings = data.get("findings") or {}
         if not isinstance(findings, dict):
             continue
-        parts: list[tuple[str, str, str | None]] = []
+        parts: list[tuple[str, str, str | None, str]] = []
         for key, f in findings.items():
             if not isinstance(f, dict):
                 continue
             # A series too short to measure records why and no mean, and the
             # AI model was told nothing: asked whether the RMSD had equilibrated it
-            # had no number and no reason, only silence to read.
-            withheld = f.get("not_a_measurement")
+            # had no number and no reason, only silence to read. Withheld as
+            # every page reads it (`statistics.withheld_reason`): a mean an
+            # earlier version called determined on 7 independent samples was
+            # handed over with its error and no verdict.
+            withheld = withheld_reason(f)
             # The findings key is usually "mean", and some analyses key their
             # finding by their own name; naming it again reads as a stutter
             # ("order_parameters: order_parameters mean 0.8565"). Name the
@@ -1471,7 +1554,7 @@ def _results_summary(root: Any, first: str | None = None) -> str:
             if "mean" not in f:
                 if withheld:
                     label = "" if own else f"{key} "
-                    parts.append((label, "no mean: ", str(withheld)))
+                    parts.append((label, "no mean: ", withheld, ""))
                 continue
             mean = f.get("mean")
             se = f.get("standard_error")
@@ -1483,7 +1566,8 @@ def _results_summary(root: Any, first: str | None = None) -> str:
             # AI model answering in Angstrom had nothing to say it was nm.
             unit = unit_of(name, f) if own else (
                 f["unit"] if isinstance(f.get("unit"), str) else "")
-            has_error = isinstance(se, (int, float)) and math.isfinite(se)
+            has_error = (isinstance(se, (int, float)) and math.isfinite(se)
+                         and not withheld)
             # As the report and the citations under the answer give it: the
             # error to two figures and the mean to the same place. To four
             # figures each, an energy of -123,456.7 +/- 12 read -1.235e+05,
@@ -1503,13 +1587,18 @@ def _results_summary(root: Any, first: str | None = None) -> str:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):
                 piece += f", first {discard} of {n} frames discarded as unequilibrated"
-            # Its image note beside its verdict, which it does not change, as
-            # every page says it; the analysis's paragraph once, below.
+            # Its image note after its verdict, which it does not change, as
+            # the citation under an answer says it; the analysis's paragraph
+            # once, below.
             noted = said_short(note_of(f))
             if noted:
-                piece += f" -- {noted}"
                 paragraphs.setdefault(options.parent.name, paragraph_of(findings))
-            parts.append((piece, " -- not determined: ", str(withheld) if withheld else None))
+            # And what its joined run's drift test could miss, as every page
+            # says it (`statistics.drift_unseen_said`).
+            unseen = drift_unseen_said(f, unit or None)
+            parts.append((piece, " -- not determined: ", withheld,
+                          (f" -- {noted}" if noted else "")
+                          + (f" -- {unseen}" if unseen else "")))
         if parts:
             rows.append((options.parent.name, name, parts))
     # An analysis asked about that recorded no mean and no reason is said
@@ -1527,13 +1616,13 @@ def _results_summary(root: Any, first: str | None = None) -> str:
     lines = [f"  {first}: nothing it recorded gives a mean or a reason"] if silent else []
     for folder, name, parts in rows[:20]:
         said_parts = []
-        for head, joiner, withheld in parts:
+        for head, joiner, withheld, tail in parts:
             if withheld is None:
-                said_parts.append(head)
+                said_parts.append(head + tail)
             elif folder == first:
-                said_parts.append(head + joiner + " ".join(withheld.split()))
+                said_parts.append(head + joiner + " ".join(withheld.split()) + tail)
             else:
-                said_parts.append(head + joiner + _reason_said_once(withheld, notes))
+                said_parts.append(head + joiner + _reason_said_once(withheld, notes) + tail)
         paragraph = paragraphs.get(folder)
         if paragraph:
             said_parts.append(("the image note: " + " ".join(paragraph.split()))

@@ -121,7 +121,7 @@ class TestWhatIsLeftDecidesWhatRuns:
         answer = resume_study(study)
         assert (answer["ok"], answer["did"]) == (True, "continued")
         assert ran == [("extend", {"study": study.resolve()})]
-        assert (answer["production_done_ns"], answer["production_planned_ns"]) == (0.4, 1.0)
+        assert (answer["production_done_before_ns"], answer["production_planned_ns"]) == (0.4, 1.0)
 
     def test_production_complete_runs_the_analyses_and_report_only(self, tmp_path, ran, monkeypatch) -> None:
         study = _study(tmp_path / "s")

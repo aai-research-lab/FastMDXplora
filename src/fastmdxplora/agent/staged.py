@@ -68,9 +68,19 @@ class StagedRun:
     simulated: bool = False
     refusal: Refusal | None = None
     notes: list[str] = field(default_factory=list)
+    #: The second stage, the simulation onwards, has written its record: a
+    #: run stopped before is carried on by running the study again, its
+    #: setup first; one stopped after, by `fastmdx resume`.
+    simulating: bool = False
+    #: Asked to stop in setup's study: nothing was priced or run.
+    stopped: bool = False
+    #: What the second stage's explore returned (its runs' results).
+    results: Any = field(default=None, repr=False)
 
     @property
     def stopped_at(self) -> str:
+        if self.stopped:
+            return "setup"
         if self.refusal is None:
             return "" if self.simulated else "nothing ran"
         return "estimate" if self.setup_done else "setup"
@@ -89,6 +99,8 @@ class StagedRun:
         }
 
     def __str__(self) -> str:
+        if self.stopped:
+            return "stopped when asked, in setup"
         if self.refusal is not None:
             return f"stopped at {self.stopped_at}: {self.refusal.message}"
         if self.simulated and self.runs > 1:
@@ -143,6 +155,11 @@ def run_in_stages(
     precision: str = "",
     explore: Any = None,
     measure: Any = None,
+    staged: StagedRun | None = None,
+    force: bool = False,
+    keep_previous: bool = False,
+    again: str = "",
+    again_argv: tuple[str, ...] = (),
 ) -> StagedRun:
     """Run setup, price the rest, and continue only if it fits.
 
@@ -161,6 +178,19 @@ def run_in_stages(
     measure
         Substituted in tests: times the prepared system when the machine
         has no usable measurement (:func:`measure_prepared_system`).
+    staged
+        Filled in as the stages go, where given: a caller whose run was
+        stopped part way reads how far it got.
+    force, keep_previous
+        As `fastmdx explore --force-overwrite` and `--rerun` give them, for
+        both stages: a study whose setup is there already was refused,
+        whatever was passed.
+    again, again_argv
+        What runs the study again, its setup first, as a sentence's clause
+        and as the arguments after `fastmdx` (none where there is no command
+        line to repeat), said in place of `fastmdx resume` by its stop
+        lines and its records of a stop until the second stage begins: a
+        resume there ran setup alone and read the study finished.
     """
     # The study's process record held from setup to the end: setup's run ends,
     # and the prepared system is then timed and priced in this process before
@@ -168,12 +198,23 @@ def run_in_stages(
     # going (`orchestrator._hold_run_process`).
     from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
 
+    import os
+
+    from fastmdxplora.simulation.runner import RUN_AGAIN_BEFORE_ITS_PRICE
+
     _hold_run_process(Path(output_dir))
+    before = os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE)
     try:
         return _run_in_stages(config, output_dir, budget_hours=budget_hours,
                               platform_name=platform_name, precision=precision,
-                              explore=explore, measure=measure)
+                              explore=explore, measure=measure, staged=staged,
+                              force=force, keep_previous=keep_previous,
+                              again=again, again_argv=again_argv)
     finally:
+        if before is None:
+            os.environ.pop(RUN_AGAIN_BEFORE_ITS_PRICE, None)
+        else:
+            os.environ[RUN_AGAIN_BEFORE_ITS_PRICE] = before
         _release_run_process(Path(output_dir))
 
 
@@ -186,12 +227,25 @@ def _run_in_stages(
     precision: str = "",
     explore: Any = None,
     measure: Any = None,
+    staged: StagedRun | None = None,
+    force: bool = False,
+    keep_previous: bool = False,
+    again: str = "",
+    again_argv: tuple[str, ...] = (),
 ) -> StagedRun:
+    import json
+    import os
+
     from fastmdxplora.cost import estimate_runs
+    from fastmdxplora.simulation import runner as _signals
 
     out = Path(output_dir)
-    staged = StagedRun(output_dir=out)
+    staged = staged if staged is not None else StagedRun(output_dir=out)
     runner = explore or _explore
+    # Passed only where given, so an explore that takes no such argument is
+    # called as it always was.
+    given = {name: True for name, asked in (("force", force),
+                                            ("keep_previous", keep_previous)) if asked}
 
     # The phases the study asks for, in whichever spelling it gave them. Each
     # stage replaces the study's phase keys with its own one list: setting
@@ -199,12 +253,27 @@ def _run_in_stages(
     # a conflict the person never wrote, refused after setup had run.
     asked = _phases_asked(config)
     setup_only = _with_phases(config, ["setup"])
+    # Until the second stage writes its record, what runs the study again
+    # is said in place of `fastmdx resume`, by its stop lines (in this
+    # process and its pool's workers) and by its records.
+    # Where the command was run from, beside it: its paths are as typed.
+    os.environ[_signals.RUN_AGAIN_BEFORE_ITS_PRICE] = json.dumps(
+        {"said": again or AGAIN, "argv": list(again_argv) if again else [],
+         "cwd": os.getcwd() if again and again_argv else ""})
+    _signals._THE_LAST_STUDY_HEARD_A_STOP = False
     try:
-        runner(config=setup_only, output_dir=str(out))
+        ran = runner(config=setup_only, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
-    staged.setup_done = True
+    cut = _stopped_when_asked(ran)
+    staged.setup_done = not cut
+    if cut or _signals._THE_LAST_STUDY_HEARD_A_STOP:
+        # Asked to stop in setup's study (Ctrl-C, SIGTERM, the GUI's Stop):
+        # nothing is priced or run. It was refused for want of a particle
+        # count, or priced and simulated as if no stop was asked.
+        staged.stopped = True
+        return staged
 
     after_setup = [phase for phase in asked if phase != "setup"]
     if not after_setup:
@@ -303,18 +372,104 @@ def _run_in_stages(
             simulation.get("setup_from") or simulation.get("prepared_from")):
         simulation["setup_from"] = injected = str(simulate_from)
     rest["simulation"] = simulation
+    # From here a stop is carried on by `fastmdx resume`, once the second
+    # stage's record is written.
+    os.environ.pop(_signals.RUN_AGAIN_BEFORE_ITS_PRICE, None)
     try:
-        runner(config=rest, output_dir=str(out))
+        staged.results = runner(config=rest, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
         staged.refusal = refusal_of(exc)
         return staged
     finally:
+        # Begun once its record is written: before, the study still read
+        # as setup alone, which a resume reads finished. Said before the
+        # records are written again, so a stop as they are is said so.
+        staged.simulating = _the_second_stage_began(out, after_setup)
         # The record is of the study, not of the second stage: it was
         # written as `exclude_phase: [setup]` with the stage's `setup_from`,
         # so replaying it skipped the setup the study asked for.
         _record_the_study_s_phases(out, config, after_setup, injected)
     staged.simulated = True
     return staged
+
+
+def _stopped_when_asked(ran: Any) -> bool:
+    """Whether a run of the first stage ended stopped when asked."""
+    from fastmdxplora.batch.explorer import _was_stopped
+
+    try:
+        return any(_was_stopped(result) for result in ran or [])
+    except TypeError:  # an explore that returns no list of results
+        return False
+
+
+#: Said where no command line is there to repeat (`fastmdx agent`, Python),
+#: naming no command: `fastmdx agent` has no `--force-overwrite`.
+AGAIN = "it stopped before its simulation began, and is run again from its setup"
+
+
+def _its_records(out: Path) -> list[Path]:
+    """The resolved configs of the study and of its runs: not a shared
+    preparation's (`shared_setup/`), nor any other folder's below it."""
+    found = [out / "resolved_config.yml"]
+    runs = out / "runs"
+    if runs.is_dir():
+        found += sorted(run / "resolved_config.yml" for run in runs.iterdir() if run.is_dir())
+    return [path for path in found if path.is_file()]
+
+
+def _phases_recorded(path: Path) -> list[str] | None:
+    """The phases a resolved config records it runs (`include_phase`), or
+    None where it cannot be read, or records an `exclude_phase`."""
+    import yaml
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    if not isinstance(data, dict) or data.get("exclude_phase"):
+        return None
+    return list(data.get("include_phase") or [])
+
+
+def _the_second_stage_began(out: Path, sent: list[str]) -> bool:
+    """Whether the second stage wrote a record: one of the study's or its
+    runs' resolved configs records exactly its phases."""
+    return any(_phases_recorded(path) == list(sent) for path in _its_records(out))
+
+
+def stopped_before_its_price(study: Path | str) -> dict[str, Any] | None:
+    """What runs the study again (``said``, ``argv``), where it is a study
+    with a budget stopped in its setup stage: every record of it and its
+    runs says setup alone, and a run's record of its stop says what runs it
+    again (`runner.run_again_before_its_price`). A resume of it runs setup
+    alone and reads it finished. None for any other study."""
+    import json
+
+    root = Path(study)
+    records = _its_records(root)
+    if not records or any(_phases_recorded(path) != ["setup"] for path in records):
+        return None
+    manifests = [root / "manifest.json"]
+    if (root / "runs").is_dir():
+        manifests += sorted(run / "manifest.json" for run in (root / "runs").iterdir())
+    for manifest in manifests:
+        try:
+            record = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for phase in (record.get("phases") or []) if isinstance(record, dict) else []:
+            details = ((phase.get("refusal") or {}).get("details") or {}
+                       if isinstance(phase, dict) else {})
+            if isinstance(details, dict) and isinstance(details.get("details"), dict):
+                # A stop outside production (`RunStopped.as_error`) records
+                # its particulars one level down.
+                details = {**details, **details["details"]}
+            if isinstance(details, dict) and details.get("run_again"):
+                return {"said": str(details["run_again"]),
+                        "argv": [str(word) for word in details.get("run_again_argv") or []],
+                        "cwd": str(details.get("run_again_cwd") or "")}
+    return None
 
 
 def _phases_asked(config: dict[str, Any]) -> list[str]:
@@ -341,25 +496,39 @@ def _with_phases(config: dict[str, Any], phases: list[str]) -> dict[str, Any]:
 
 
 def _record_the_study_s_phases(out: Path, config: dict[str, Any],
-                               sent: list[str], injected: Any) -> None:
+                               sent: list[str], injected: Any) -> bool:
     """Write the study's own phase selection into each resolved config the
     second stage wrote, and take out the `setup_from` this module gave it.
+    Once it wrote one, each record of the study and its runs the first
+    stage wrote (setup alone) too: a run the second stage did not reach,
+    stopped in an earlier run, read as a study of setup alone, and its
+    resume ran nothing for it. A shared preparation's record
+    (`shared_setup/`) is its own, and is left as it is.
 
-    Only a file that records exactly the stage's phases is changed: any
-    other was written by something else, and is left as it is.
+    Only a file that records exactly one stage's phases is changed: any
+    other was written by something else, and is left as it is. Each is put
+    in place whole (`orchestrator._put_in_place`), so a stop as it is
+    written leaves it as it was. Whether the second stage wrote any.
     """
     import yaml
 
+    from fastmdxplora.orchestrator import _put_in_place
+
     include = config.get("include_phase", config.get("include"))
     exclude = config.get("exclude_phase", config.get("exclude"))
+    records = []
     for path in sorted(out.rglob("resolved_config.yml")):
         try:
             text = path.read_text(encoding="utf-8")
             data = yaml.safe_load(text)
         except (OSError, yaml.YAMLError):
             continue
-        if not isinstance(data, dict) or data.get("exclude_phase") or \
-                list(data.get("include_phase") or []) != list(sent):
+        if isinstance(data, dict) and not data.get("exclude_phase"):
+            records.append((path, text, data, list(data.get("include_phase") or [])))
+    begun = _the_second_stage_began(out, sent)
+    own = set(_its_records(out))
+    for path, text, data, phases in records:
+        if phases != list(sent) and not (begun and phases == ["setup"] and path in own):
             continue
         rewritten: dict[str, Any] = {}
         for key, value in data.items():
@@ -378,11 +547,11 @@ def _record_the_study_s_phases(out: Path, config: dict[str, Any],
         header = "".join(line for line in text.splitlines(keepends=True)
                          if line.startswith("#"))
         try:
-            with path.open("w", encoding="utf-8") as fh:
-                fh.write(header)
-                yaml.safe_dump(rewritten, fh, sort_keys=False, default_flow_style=False)
+            _put_in_place(path, header + yaml.safe_dump(rewritten, sort_keys=False,
+                                                        default_flow_style=False))
         except OSError:
             continue
+    return begun
 
 
 def _runs_of(config: dict[str, Any], out: Path
@@ -468,7 +637,7 @@ def _what_it_will_run_on(config: dict[str, Any], platform_name: str,
         return "", precision
 
 
-def _explore(*, config: dict[str, Any], output_dir: str) -> Any:
+def _explore(*, config: dict[str, Any], output_dir: str, **given: Any) -> Any:
     from fastmdxplora import FastMDXplora
 
-    return FastMDXplora(config_data=config, output_dir=output_dir).explore()
+    return FastMDXplora(config_data=config, output_dir=output_dir).explore(**given)

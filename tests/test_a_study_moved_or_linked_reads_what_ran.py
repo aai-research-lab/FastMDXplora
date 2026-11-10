@@ -410,7 +410,7 @@ def test_segments_that_agree_are_not_said_for_the_study(tmp_path: Path) -> None:
     """`h_nostatus_same`: it said "on the CPU platform" of the study."""
     root = _segments_ran_on(_intru(tmp_path, status=False), "CPU", "CPU")
     text = methods_paragraphs(root, {}, {})
-    assert ("Simulations used OpenMM on the CPU platform for segment-001 to segment-002; "
+    assert ("Simulations used OpenMM on the CPU platform for segment-001 and segment-002; "
             "the first piece's platform is not recorded.") in text
 
 
@@ -429,7 +429,9 @@ def test_a_live_status_linked_out_gives_no_platform_for_the_first_piece(
     real = root.resolve()
     with record_access.confined_records(real, lambda _path: True):
         text = methods_paragraphs(real, {}, {})
-    assert "the first piece's platform is not recorded" in text
+    # Linked out, it may say: not read, not "not recorded".
+    assert ("the first piece's platform is not read, its live status or log being linked "
+            "out of the study") in text
     assert "Simulations used OpenMM on the CPU platform." not in text and "CUDA" not in text
 
 
@@ -453,7 +455,10 @@ def test_a_study_started_from_a_checkpoint_and_minimized_says_both(tmp_path: Pat
 
 def test_only_a_study_s_folder_is_named(tmp_path: Path) -> None:
     """Never a home folder, a file, or a name that ends the code span; the
-    checkpoint's own record's study before the path named."""
+    folder of the checkpoint read before the study its record says wrote it
+    (`csG` copied to `csKc` and continued from the copy started from
+    `csKc`), and that study, read on any machine, only where the path is no
+    study's."""
     def opening(**given: object) -> str:
         record = {"parameters": {**START, "minimize": False, "nvt_duration_ns": 0,
                                  "npt_duration_ns": 0, **given.pop("parameters", {})},
@@ -470,7 +475,28 @@ def test_only_a_study_s_folder_is_named(tmp_path: Path) -> None:
         == "the study `alpha`"
     assert opening(parameters={"resume_from": "/w/alpha/simulation/checkpoint.chk"},
                    continues={"study": "/old/src0", "checkpoint": "/w/alpha/x.chk"}) == \
-        "the study `src0`"
+        "the study `alpha`"
+    assert opening(parameters={"resume_from": "/w/state.chk"},
+                   continues={"study": "/old/src0"}) == "the study `src0`"
+
+
+def test_a_windows_path_and_a_user_s_home_are_read_on_any_machine(tmp_path: Path) -> None:
+    def opening(**given: object) -> str:
+        record = {"parameters": {**START, "minimize": False, "nvt_duration_ns": 0,
+                                 "npt_duration_ns": 0, **given.pop("parameters", {})},
+                  "resolved": {"nvt_steps": 0, "npt_steps": 0, "production_steps": 10_000},
+                  **given}
+        text = methods_paragraphs(tmp_path, {}, record)
+        return text.split("Production continued from the checkpoint of ")[1].split(";")[0]
+
+    assert opening(parameters={"resume_from": "/w/state.chk"},
+                   continues={"study": "C:\\runs\\csG\\segment-002"}) == "the study `csG`"
+    assert opening(parameters={"resume_from": "/w/state.chk"},
+                   continues={"study": "~kunle"}) == "another study"
+    assert opening(parameters={"resume_from": "~kunle/simulation/checkpoint.chk"}) == \
+        "another study"
+    assert opening(parameters={"resume_from": "C:\\runs\\csKc\\simulation\\checkpoint.chk"}) \
+        == "the study `csKc`"
 
 
 def _renamed_with_its_piece_s_config(tmp_path: Path, **config: object) -> Path:
@@ -530,3 +556,41 @@ def test_a_study_under_a_folder_reached_through_a_link_reads_its_pieces(
     assert said["pieces"] == 2 and said["production_ran_ns"] == 0.012
     assert said["production_ran_source"] == "summed over pieces"
     assert said["nvt"]["source"] != NOT_READ
+
+
+def test_production_continued_only_where_both_stages_are_known_0(tmp_path: Path) -> None:
+    """`/tmp/A1k/s/eqB`: started from another study's checkpoint, not
+    minimised, its equilibration not recorded. It said "no minimisation or
+    equilibration was run"."""
+    record = {"parameters": {"integrator": "langevin_middle", "timestep_fs": 2.0,
+                             "ensemble": "npt", "duration_ns": 0.02, "minimize": False,
+                             "resume_from": "/runs/eqA/simulation/checkpoint.chk"},
+              "resolved": {"production_steps": 10_000}}
+    text = methods_paragraphs(tmp_path, {}, record)
+    assert "no minimisation or equilibration was run" not in text
+    assert "The run started from the checkpoint of the study `eqA`." in text
+    record["resolved"].update({"nvt_steps": 0, "npt_steps": 500})
+    assert "no minimisation or equilibration was run" not in methods_paragraphs(
+        tmp_path, {}, record)
+    record["resolved"]["npt_steps"] = 0
+    assert ("Production continued from the checkpoint of the study `eqA`; no minimisation "
+            "or equilibration was run.") in methods_paragraphs(tmp_path, {}, record)
+
+
+def test_the_first_piece_s_platform_is_read_from_the_study_s_log(tmp_path: Path) -> None:
+    """No live status (`live_telemetry: false`): the study's own log says
+    what its first piece's run selected."""
+    root = _segments_ran_on(_intru(tmp_path, status=False), "CPU", "CPU")
+    (root / "fastmdxplora.log").write_text(
+        "2026-11-01 10:51:30,086 - INFO - Selected OpenMM platform: CPU (mixed precision "
+        "requested; this platform has no such setting)\n", encoding="utf-8")
+    text = methods_paragraphs(root, {}, {})
+    assert "Simulations used OpenMM on the CPU platform." in text
+    assert recorded_stage_lengths(root)["read_from"]["settings"]["platform"] == \
+        "fastmdxplora.log"
+    (root / "fastmdxplora.log").write_text(
+        "- INFO - Selected OpenMM platform: CUDA (precision=mixed, device=0)\n",
+        encoding="utf-8")
+    text = methods_paragraphs(root, {}, {})
+    assert "The platform differed between pieces: CUDA for the first piece, CPU for " \
+           "segment-001, CPU for segment-002." in text

@@ -308,6 +308,8 @@ class _Study:
         self.runs: dict[str, str] = {}
         self.quantities: set[str] = set()
         self.measured: set[str] = set()
+        #: The quantities each analysis computed, by the analysis.
+        self.computed_by: dict[str, set[str]] = {}
         self.vocabulary: set[str] = set()
         for record in records:
             parts = record["file"].split("/")
@@ -319,8 +321,10 @@ class _Study:
                 # What it measured: the parts its values are kept under
                 # (`findings.thermodynamics.total_energy.shortfall.more_ns`).
                 keys = [w for w in record["key"].lower().split(".") if not w.endswith("]")]
-                self.measured.update(w for w in keys[:-1]
-                                     if w not in _GENERIC and w != analysis and w not in _COUNTED)
+                quantities = {w for w in keys[:-1]
+                              if w not in _GENERIC and w != analysis and w not in _COUNTED}
+                self.measured.update(quantities)
+                self.computed_by.setdefault(analysis, set()).update(quantities)
             self.quantities.update(w for w in record["key"].lower().split(".")
                                    if not w.endswith("]"))
             self.vocabulary |= _key_words(record["key"])
@@ -352,6 +356,10 @@ _GENERIC = {"findings", "parameters", "resolved", "options", "mean", "shortfall"
 _ERRORS = {"standard_error", "error", "sem", "uncertainty", "standard_deviation", "std"}
 #: Fields that count a thing other than by its plural (frames discarded).
 _COUNT_FIELDS = {"frames": {"discard", "discarded"}, "samples": {"independent"}}
+#: A field of an analysis's own (`findings.thermodynamics.samples`, the rows
+#: of the energy log it read) that is the frame count of every quantity it
+#: computed, as the report's Convergence table gives it in its frames column.
+_FRAMES_OF_ITS_QUANTITIES = {"samples"}
 
 
 def _analysis_of(file: str) -> str:
@@ -466,6 +474,14 @@ def trace_number(said: str, unit: str, records: Any, *, counts: str = "",
         if run and (not runs or _named(run) not in runs):
             continue
         own = any(s == analysis or _about(s, record) for s in explicit if s not in study.runs)
+        # The frame count of a quantity an analysis computed, said in a
+        # frames column: the analysis's own count of them, not the
+        # trajectory's (`analysis_manifest.json n_frames`).
+        frames_of_it = bool(
+            analysis and field in _FRAMES_OF_ITS_QUANTITIES and _quantity(record) == analysis
+            and _stem("frames") in _words(head) and not counts
+            and any(s in study.computed_by.get(analysis, ()) for s in explicit))
+        own = own or frames_of_it
         said_of = any(s == analysis or _about(s, record) for s in spoken if s not in study.runs)
         if analysis:
             if sections and analysis not in sections:
@@ -505,7 +521,7 @@ def trace_number(said: str, unit: str, records: Any, *, counts: str = "",
         else:
             # Said with neither: a record whose field the words or the
             # column name, about the number's subject where it has a unit.
-            head_named = bool(_words(head) & field_words) if head else False
+            head_named = (bool(_words(head) & field_words) if head else False) or frames_of_it
             if not (head_named or field_words & before_words):
                 continue
             if record_unit and not about:

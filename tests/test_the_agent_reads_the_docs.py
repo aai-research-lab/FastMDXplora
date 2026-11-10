@@ -538,6 +538,15 @@ def test_a_bold_name_is_a_name_and_a_word_alone_is_not() -> None:
     assert labels("**Name it**") == frozenset({" name it "})
 
 
+def test_a_setting_named_in_code_in_a_row_s_first_cell_is_a_name() -> None:
+    labels = software_docs._labels_of
+    assert labels("| `ligand_pose` | str | auto | The pose |") == frozenset({" ligand pose "})
+    # Only the first cell, and only a name of words joined by underscores.
+    assert labels("| str | `ligand_pose` |") == frozenset()
+    assert labels("| `auto` | the default |") == frozenset()
+    assert labels("text `ligand_pose` text") == frozenset()
+
+
 def test_words_cut_to_nothing_still_end() -> None:
     assert software_docs._windows("abc def", 0) == ["abc def"]
     assert software_docs._windows("abc def", -5) == ["abc def"]

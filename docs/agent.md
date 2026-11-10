@@ -334,7 +334,7 @@ request, the config language, the conversation, the run), so the AI model
 reads again what was asked rather than patching only what it was shown.
 
 **Cycles are counted and capped.** Three attempts in all, the first included,
-from the command line (`--attempts`), the browser and Python alike. Cheap
+from the command line (`--attempts`), the GUI and Python alike. Cheap
 validation invites thrashing, and a Config that validates on the fortieth
 mutation validates for reasons nobody chose. Exhausting the cap is a refusal, not a
 fall-through to whatever last nearly worked.
@@ -438,7 +438,7 @@ fastmdx gui        # the workbench, with an Agent section in the sidebar
 fastmdx agent      # the same server, opened at that section
 ```
 
-One browser and one codebase. `fastmdx agent` with no request passes `#agent`
+One GUI and one codebase. `fastmdx agent` with no request passes `#agent`
 in the URL fragment, which the page reads on load to decide where to start. Two
 commands that started two servers would be two things to learn for one thing to
 use.
@@ -569,7 +569,7 @@ set once.
 Nothing in the GUI layer decides whether a Config is acceptable. The validator
 does that, as it does for a Config written by hand.
 
-**The key is typed in the browser, sent once, and stored server-side.** It is
+**The key is typed in the GUI, sent once, and stored server-side.** It is
 never sent back: the endpoint reports which provider and AI model are set and
 never the secret, so a page that never receives a key cannot leak one to a
 screenshot, an extension or a bug report. A browser cannot hold a secret —

@@ -30,6 +30,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any, Sequence
 
 from fastmdxplora import (
@@ -835,7 +836,8 @@ def _overwrite_args(p: argparse.ArgumentParser) -> None:
         help=(
             "As --force-overwrite, keeping what it replaces in the study's "
             "previous/<phase> (in place of what was kept there before) "
-            "rather than removing it."
+            "rather than removing it; an analysis only where it finished, "
+            "one that did not being removed with previous/ left as it is."
         ),
     )
 
@@ -1265,11 +1267,21 @@ def _build_parser() -> argparse.ArgumentParser:
             "had begun; the whole study again if it had not. A study that "
             "stopped with a refusal is not run again, since that was its "
             "answer. Running this twice does the work once, so a service "
-            "can run it every time a job restarts."
+            "can run it every time a job restarts. A job restarted on "
+            "another node or in another container finds the study's "
+            "process recorded there, which cannot be asked from here: it "
+            "is refused until that record has been quiet for an hour, or "
+            "run with --taken-over once that process has ended."
         ),
     )
     resume.add_argument("study", metavar="STUDY",
                         help="The study folder, as given to --output when it ran.")
+    resume.add_argument("--taken-over", action="store_true",
+                        help="Carry on a study whose process was recorded on another "
+                             "machine or container, which cannot be asked from here, "
+                             "without waiting for its records to be quiet for an hour: "
+                             "for when you know that process has ended. A process on "
+                             "this machine still refuses it. The GUI never runs this.")
     resume.add_argument("--json", action="store_true",
                         help="Print the outcome as one line of JSON, for a program to read.")
 
@@ -1937,15 +1949,65 @@ def _start_dashboard_for_command(args: argparse.Namespace, output_dir: Path):
     return session
 
 
-def _finish_dashboard_for_command(session, args: argparse.Namespace) -> None:
+def _said_stopped_when_asked(study: Any, stop: BaseException | None = None) -> int:
+    """A command's work stopped by a KeyboardInterrupt (a Ctrl-C, or a
+    further stop once its study heard one), said as `fastmdx resume` says it:
+    once, where the study's summary has not said what carries it on
+    (`runner._ITS_STOP_SAID`). A further stop said it again after the
+    round's own sentence."""
+    from fastmdxplora.simulation import runner
+
+    if isinstance(stop, runner.StoppedAgain) and runner._ITS_STOP_SAID:
+        return 130
+    print(f"fastmdx: stopped when asked; `fastmdx resume {study}` carries it on.",
+          file=sys.stderr)
+    return 130
+
+
+def _run_again(_args: argparse.Namespace) -> tuple[str, tuple[str, ...]]:
+    """What runs a study with a budget again, its setup first: the
+    person's own command line (`_COMMAND_LINE`), whole, with
+    `--force-overwrite` added where none of `--force-overwrite`, `--force`
+    and `--rerun` is there, as a clause
+    of a sentence and as the arguments after `fastmdx`. Built from `-c`
+    and `--output` alone, it dropped `--budget-hours` and the rest, and ran
+    another study, unpriced. Where there is no command line (called from
+    Python), no command: the study is said to be run again from its setup."""
+    import shlex
+
+    from fastmdxplora.agent.staged import AGAIN
+
+    line = list(_COMMAND_LINE)
+    if not line:
+        return AGAIN, ()
+    if not any(word in ("--force-overwrite", "--force", "--rerun") for word in line):
+        line.append("--force-overwrite")
+    return (f"`{shlex.join(['fastmdx', *line])}` runs the study again, its setup first",
+            tuple(line))
+
+
+def _said_stopped_before_its_simulation(args: argparse.Namespace) -> int:
+    """A study with a budget stopped before its simulation began (setup's
+    study, its pricing): only its setup is recorded, and `fastmdx resume`
+    ran nothing and read it finished. Running it again carries it on."""
+    print(f"fastmdx: stopped when asked, before its simulation began; {_run_again(args)[0]}.",
+          file=sys.stderr)
+    return 130
+
+
+def _finish_dashboard_for_command(session, args: argparse.Namespace, rc: int = 0) -> None:
     if session is None:
         return
     if args.dashboard_stop_on_complete:
         session.stop()
         return
     print()
-    print(f"Exploration complete. The GUI is still running at: {session.url}")
+    # Said as it ended: "complete" followed a study stopped or failed.
+    ended = {0: "complete", 130: "stopped"}.get(rc, "ended with an error")
+    print(f"Exploration {ended}. The GUI is still running at: {session.url}")
     print("Press Ctrl+C to stop the GUI.")
+    # A Ctrl-C ends the wait, whatever the study left it as.
+    _listening_as_the_command_began()
     try:
         session.wait_forever()
     except KeyboardInterrupt:
@@ -1978,9 +2040,17 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if resume_from is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.simulation.resume import extend_study
 
-        answer = extend_study(resume_from,
-                              total_ns=simulation.get("duration_ns"),
-                              more_ns=simulation.get("extra_ns"))
+        try:
+            with _then_quiet_once_stopped():
+                answer = extend_study(resume_from,
+                                      total_ns=simulation.get("duration_ns"),
+                                      more_ns=simulation.get("extra_ns"),
+                                      checkpoint_interval_steps=simulation.get(
+                                          "checkpoint_interval_steps"))
+        except KeyboardInterrupt as stop:
+            # Between its studies (the join): said as `fastmdx resume` says
+            # it; before, a traceback, the process ended by the signal.
+            return _said_stopped_when_asked(resume_from, stop)
         if not answer.get("ok"):
             print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
             return 1
@@ -2036,12 +2106,37 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     budget = config.get("budget_hours")
     if budget is not None and not getattr(args, "dry_run", False):
         from fastmdxplora.agent import run_in_stages
+        from fastmdxplora.agent.staged import StagedRun
 
         from fastmdxplora.naming import default_output_name, system_of
 
         output = Path(config.get("output") or args.output_dir
                       or default_output_name(system_of(config)))
-        staged = run_in_stages(config, output, budget_hours=float(budget))
+        held = _refused_as_held(args, config)
+        if held is not None:
+            return held
+        removed = _removed_before_its_price(args, output)
+        if removed is not None:
+            return removed
+        staged = StagedRun(output_dir=output)
+        try:
+            with _then_quiet_once_stopped():
+                said, argv = _run_again(args)
+                staged = run_in_stages(config, output, budget_hours=float(budget),
+                                       staged=staged,
+                                       force=bool(getattr(args, "force", False)),
+                                       keep_previous=bool(getattr(args, "rerun", False)),
+                                       again=said, again_argv=argv)
+        except KeyboardInterrupt as stop:
+            # Said as `fastmdx resume` says it once the simulation began;
+            # before, a traceback, the process ended by the signal.
+            if not staged.simulating:
+                return _said_stopped_before_its_simulation(args)
+            return _said_stopped_when_asked(output, stop)
+        if getattr(staged, "stopped", False):
+            # Stopped in setup's study (a SIGTERM, the GUI's Stop): it was
+            # refused for want of a particle count, or priced and run on.
+            return _said_stopped_before_its_simulation(args)
         for note in staged.notes:
             print(f"  {note}")
         if staged.refusal is not None:
@@ -2049,12 +2144,18 @@ def _cmd_explore(args: argparse.Namespace) -> int:
             if staged.setup_done:
                 print("\nSetup's output is kept, so a shorter study can reuse it.")
             return 2
+        # Its study stopped when asked exits 130, as without a budget (0).
+        results = getattr(staged, "results", None)
+        rc = _the_study_s_exit(results, output, args)[0] if results else 0
         failed = _analyses_asked_for_that_failed(config, _runs_in(output))
         if failed:
             _say_failed(failed)
-            return 1
-        return 0
+            return rc or 1
+        return rc
 
+    held = _refused_as_held(args, config)
+    if held is not None:
+        return held
     fmdx = FastMDXplora(
         config_data=config,
         output_dir=args.output_dir,
@@ -2064,18 +2165,24 @@ def _cmd_explore(args: argparse.Namespace) -> int:
     if _dashboard_requested(args) and not getattr(args, "dry_run", False):
         session = _start_dashboard_for_command(args, dashboard_output_dir)
     try:
-        results = fmdx.explore(
-            dry_run=getattr(args, "dry_run", False),
-            force=getattr(args, "force", False),
-            **({"keep_previous": True} if getattr(args, "rerun", False) else {}),
-            # Passed only when given, so an explore that takes no such
-            # argument is called as it always was.
-            **({"rerun_windows": args.rerun_windows}
-               if getattr(args, "rerun_windows", None) else {}),
-        )
-    except KeyboardInterrupt:
+        with _then_quiet_once_stopped():
+            results = fmdx.explore(
+                dry_run=getattr(args, "dry_run", False),
+                force=getattr(args, "force", False),
+                **({"keep_previous": True} if getattr(args, "rerun", False) else {}),
+                # Passed only when given, so an explore that takes no such
+                # argument is called as it always was.
+                **({"rerun_windows": args.rerun_windows}
+                   if getattr(args, "rerun_windows", None) else {}),
+            )
+    except KeyboardInterrupt as stop:
         if session is not None:
             session.stop()
+        from fastmdxplora.simulation import runner
+
+        if isinstance(stop, runner.StoppedAgain):
+            # A further stop once its study heard one: said, as `resume` says it.
+            return _said_stopped_when_asked(fmdx.output_dir, stop)
         return 130
     except Exception:
         if session is not None:
@@ -2101,11 +2208,7 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         keep_the_study_s_phases(Path(fmdx.output_dir), *kept)
 
     # Single run -> flat layout; point at the project manifest.
-    rc = 0 if all(r.status == "ok" for r in results) else 1
-    if rc and _stopped_by_ctrl_c(results):
-        # Stopped at the terminal: the study wrote where it stopped and
-        # what carries it on, and the shell is told it was interrupted.
-        rc = 130
+    rc, ended = _the_study_s_exit(results, fmdx.output_dir, args)
     failed = _analyses_asked_for_that_failed(config, results)
     if failed:
         # The analysis phase finishes when one of its analyses fails, and
@@ -2130,8 +2233,112 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         print()
         print(f"Project output: {fmdx.output_dir}")
         print(f"Manifest:       {fmdx.output_dir / 'manifest.json'}")
-    _finish_dashboard_for_command(session, args)
+        if ended is not None:
+            # Last, as a study of several says it in its summary: the run
+            # ended well and its rule's round did not.
+            print(ended.said)
+            print(ended.carry_on)
+    _finish_dashboard_for_command(session, args, rc)
     return rc
+
+
+def _the_study_s_exit(results: list[Any], output_dir: Path,
+                      args: argparse.Namespace) -> tuple[int, Any]:
+    """The exit code of a study that ran, from its runs' results and its
+    rule's round (`stopping.round_ended`), with that round's end."""
+    from fastmdxplora.simulation.stopping import round_ended
+
+    rc = 0 if all(r.status == "ok" for r in results) else 1
+    if rc and _stopped_when_asked(results):
+        # Stopped when asked (Ctrl+C, SIGTERM, the GUI's Stop): the study
+        # wrote where it stopped and what carries it on, and the shell is
+        # told it was interrupted. A SIGTERM or the GUI's Stop exited 1.
+        rc = 130
+    # Every run ended well and the rule's round did not: the study failed
+    # (or was stopped), as its batch manifest and every page say it.
+    ended = round_ended(output_dir)
+    if ended is not None:
+        from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                                 STOPPED_IN_THE_ROUNDS, _was_stopped)
+
+        erred = [r for r in results if r.status == "error" and not _was_stopped(r)
+                 and getattr(r, "error_type", None) not in (
+                     STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS)]
+        if getattr(args, "rerun", False):
+            # Its phases run again carry no round on: its code is what they
+            # did (1 a run's own error, 130 stopped here, 0 each ended
+            # well), whatever its round left the study as; that round is
+            # said after it.
+            rc = 1 if erred else 130 if (rc == 130 or any(
+                _was_stopped(r) for r in results)) else 0
+        else:
+            # The study's state decides, as every page reads it: a round
+            # stopped when asked exits 130, as a study stopped at the
+            # terminal does, whatever its runs stopped in the round are
+            # recorded as; 1 is for a run's own error or a failed round.
+            rc = 130 if ended.state == "stopped" and not erred else 1
+    return rc, ended
+
+
+def _removed_before_its_price(args: argparse.Namespace, output: Path) -> int | None:
+    """2, said, where `--force-overwrite` or `--rerun` with a budget would
+    remove (or move to `previous/`) what follows setup before the study is
+    priced: setup runs again first, and a study refused by its price, or
+    stopped in it, was left with its production gone; else None."""
+    flag = ("--force-overwrite" if getattr(args, "force", False)
+            else "--rerun" if getattr(args, "rerun", False) else None)
+    if flag is None:
+        return None
+    runs = _runs_in(output) if output.is_dir() else []
+    found = [str(run.output_dir / phase) for run in runs
+             for phase in ("simulation", "analysis", "report")
+             if (run.output_dir / phase).is_dir() and any((run.output_dir / phase).iterdir())]
+    for shared in ("comparison", "joined"):
+        if (output / shared).is_dir() and any((output / shared).iterdir()):
+            found.append(str(output / shared))
+    if not found:
+        return None
+    listed = "\n  ".join(found[:10] + ([f"and {len(found) - 10} more"] if len(found) > 10 else []))
+    print(f"fastmdx: {flag} with `budget_hours` runs setup again before the study is "
+          "priced, and that would take what follows setup out of the study first, "
+          f"whatever the price:\n  {listed}\nNothing was changed. Remove them first if "
+          "they are to go, or give the study another --output.", file=sys.stderr)
+    return 2
+
+
+def _refused_as_held(args: argparse.Namespace, config: dict[str, Any]) -> int | None:
+    """1, said, where `--force-overwrite` or `--rerun` would run phases over a
+    study held by another process or going on another machine; else None."""
+    if not (getattr(args, "force", False) or getattr(args, "rerun", False)) or getattr(
+            args, "dry_run", False):
+        return None
+    # Its phases run again over a study held by another process, or
+    # going on another machine, would write into it and take its process
+    # records: refused before anything is written, as a resume is.
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.resume import _held_elsewhere, _still_running
+
+    where = config.get("output") or args.output_dir
+    if where and Path(where).expanduser().is_dir():
+        root = Path(where).expanduser().resolve()
+        study = campaign_of(root) or root
+        # Refused before anything is written, every case: its run (or its
+        # study's) going on this machine said in the phases' own words
+        # (`orchestrator`), a study held by another process here or
+        # going on another machine as a resume's refusal says it.
+        if _still_running(root) or _still_running(study):
+            # Its study named where the study is the one going.
+            going = root if _still_running(root) else study
+            print(f"fastmdx: {going} is still running. Run its phases again once it has "
+                  "stopped.", file=sys.stderr)
+            return 1
+        held = _held_elsewhere(study)
+        if held:
+            from fastmdxplora.again import refused_again
+
+            print("fastmdx: " + refused_again(held), file=sys.stderr)
+            return 1
+    return None
 
 
 def _worth_knowing(config: dict[str, Any]) -> list[str]:
@@ -2245,6 +2452,15 @@ def _stopped_by_ctrl_c(results: list[Any]) -> bool:
             if refusal.get("code") == STOPPED_CODE and details.get("signal") == "SIGINT":
                 return True
     return False
+
+
+def _stopped_when_asked(results: list[Any]) -> bool:
+    """Whether a study ended because it was asked to stop (Ctrl+C, SIGTERM,
+    the GUI's Stop): a run of it stopped, and none ended in an error of its
+    own (that is the exit code of an error, 1)."""
+    from fastmdxplora.batch.explorer import ended_by_a_stop_asked
+
+    return ended_by_a_stop_asked(results)
 
 
 def _share_args(parser: argparse.ArgumentParser) -> None:
@@ -3260,13 +3476,77 @@ def _cmd_gui(args: argparse.Namespace, *, panel: str = "") -> int:
     return 0
 
 
+def _stdout_on_stderr():
+    """A context in which whatever is written to stdout goes to stderr:
+    Python's prints, the console log's lines (its handler holds the stream
+    it was given), and what the C libraries write to the descriptor
+    (MDTraj's DCD plugin). Sending ``sys.stdout`` alone left these on
+    stdout before a resume's JSON."""
+    import contextlib
+
+    from fastmdxplora.utils.native_output import _flush_all
+
+    @contextlib.contextmanager
+    def redirected():
+        _flush_all()
+        try:
+            saved = os.dup(1)
+        except OSError:
+            saved = None
+        if saved is not None:
+            try:
+                os.dup2(2, 1)
+            except OSError:
+                os.close(saved)
+                saved = None
+        try:
+            with contextlib.redirect_stdout(sys.stderr):
+                yield
+        finally:
+            # Flushed while still sent on, then stdout put back.
+            _flush_all()
+            if saved is not None:
+                try:
+                    os.dup2(saved, 1)
+                finally:
+                    os.close(saved)
+
+    return redirected()
+
+
 def _cmd_resume(args: argparse.Namespace) -> int:
     """`fastmdx resume STUDY`: carry a stopped study on to its end."""
     import json
 
     from fastmdxplora.simulation.resume import resume_study
 
-    answer = resume_study(args.study)
+    # Asked for only where the person gave it (`--taken-over`).
+    taken = {"taken_over": True} if getattr(args, "taken_over", False) else {}
+    try:
+        with _then_quiet_once_stopped():
+            if getattr(args, "json", False):
+                # What the runs print goes to stderr, so the answer on stdout
+                # is the one line of JSON a program reads; it followed every
+                # phase's progress there, and no JSON reader read it.
+                with _stdout_on_stderr():
+                    answer = resume_study(args.study, **taken)
+            else:
+                answer = resume_study(args.study, **taken)
+    except KeyboardInterrupt as stop:
+        # A Ctrl+C obeyed at once: said as the study then stands, never a
+        # traceback; one heard after its last record was written leaves it
+        # finished, and is not a stop.
+        try:
+            from fastmdxplora.gui.workspace import study_state
+
+            finished = study_state(args.study) == "completed"
+        except Exception:  # noqa: BLE001 - said as a stop
+            finished = False
+        if finished:
+            print("fastmdx: the study had finished when the stop was heard; nothing is "
+                  "left to carry on.", file=sys.stderr)
+            return 0
+        return _said_stopped_when_asked(args.study, stop)
     if getattr(args, "json", False):
         if not answer.get("ok"):
             from fastmdxplora.remedies import remedies_of
@@ -3281,21 +3561,69 @@ def _cmd_resume(args: argparse.Namespace) -> int:
         said = {
             "nothing": "Nothing to do: the study finished.",
             "analysed": "Production was complete; the analyses and report were run.",
+            "reported": "Production was complete; its report was written.",
             "continued": "Production was carried on from its last checkpoint, "
                          "joined, and analysed.",
             "restarted": "Production had not begun, so the study was run from its start.",
             "runs": "Every run of the study was carried on or run, and the "
                     "study's comparison across them rebuilt.",
+            "judged": "Nothing was simulated: its stopping rule was applied to its "
+                      "production as it stands.",
+            "records": "Nothing was simulated: the run's records were finished, and it "
+                       "reads completed.",
         }
-        print(said.get(answer.get("did"), "Done."))
+        if answer.get("did") == "reported":
+            # What was reported over, and the command that chose it.
+            print(answer.get("detail") or said["reported"])
+        else:
+            print(said.get(answer.get("did"), "Done."))
+        if answer.get("rule_said"):
+            # What its rule decided, last of what was done.
+            print(f"Its stopping rule: {answer['rule_said']}")
+        saved = [str(phase) for phase in answer.get("saved_in_previous") or []]
+        if saved:
+            # What was saved, by name: the report too only where it was there.
+            print(f"Its {' and '.join(saved)} from before "
+                  f"{'are' if len(saved) > 1 else 'is'} saved in "
+                  f"{' and '.join(f'previous/{phase}' for phase in saved)}.")
+        if "production_done_ns" in answer:
+            from fastmdxplora.simulation.lengths import FROM_CLOCK
+            from fastmdxplora.simulation.sampling_ask import length_said
+
+            ns = answer.get("production_done_ns")
+            if ns is not None and answer.get("production_done_source") == FROM_CLOCK:
+                from fastmdxplora.report.methods import _ps_said
+
+                # As the methods say a clock.
+                print(f"The study's production is now {_ps_said(ns * 1000.0)} "
+                      "by the integrator's own clock.")
+            elif ns is not None:
+                print(f"The study's production is now {length_said(ns)}.")
+            else:
+                print("The study's production is "
+                      + str(answer.get("production_done_source") or "not recorded") + ".")
     else:
-        print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
+        if not answer.get("said_above"):
+            # A study of several says its round's end last in its summary.
+            print(f"fastmdx: {answer.get('error')}", file=sys.stderr)
         from fastmdxplora.batch.explorer import _what_would_fix_it
 
-        fixes = _what_would_fix_it(answer.get("study") or args.study)
+        # A round not carried on is fixed as its sentence says: a run's own
+        # remedy (`fastmdx resume` for its owed analyses) said otherwise.
+        fixes = ([] if answer.get("round_ended")
+                 else _what_would_fix_it(answer.get("study") or args.study))
         if fixes:
             print("\n".join(fixes), file=sys.stderr)
-    return 0 if answer.get("ok") else 1
+    if answer.get("ok"):
+        return 0
+    # A stop asked (the round stopped when asked, or the resume itself), as
+    # `fastmdx explore` says it: interrupted; a resume a run refused ran
+    # nothing, and was not stopped; a round that failed is not a stop, nor
+    # a run ended in an error of its own (a worker killed), as `fastmdx
+    # explore` counts it.
+    state = (answer.get("round_ended") or {}).get("state")
+    return (130 if (state == "stopped" or (answer.get("stopped") and state is None))
+            and not answer.get("refused") and not answer.get("erred") else 1)
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
@@ -3724,6 +4052,9 @@ def _run_staged(args: Any, config: dict) -> int:
     staged = run_in_stages(config, output,
                            budget_hours=float(args.budget_hours))
 
+    if getattr(staged, "stopped", False):
+        print("\n  \u2717 Stopped when asked in setup: nothing was priced or run.")
+        return 130
     for note in staged.notes:
         print(f"  {note}")
 
@@ -3734,6 +4065,14 @@ def _run_staged(args: Any, config: dict) -> int:
                   "it with `setup_from`.")
         return 1
 
+    # Its study stopped when asked, or a run of it failed: said so, never
+    # "Ran within the budget" and 0.
+    results = getattr(staged, "results", None)
+    rc = _the_study_s_exit(results, output, args)[0] if results else 0
+    if rc:
+        print("\n  \u2717 " + (f"Stopped when asked; `fastmdx resume {output}` carries it on."
+                              if rc == 130 else "A run of the study failed."))
+        return rc
     print("\n  ✓ Ran within the budget.")
     return 0
 
@@ -3812,6 +4151,85 @@ def _choose_model() -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """The command, with a stop after its study's listener has ended (its
+    summary said, the command's last lines) taken as the stop under way
+    (`runner._quiet_once_stopped`): a fourth SIGTERM there ended the
+    process (143), and a Ctrl-C by the signal, the study stopped and
+    recorded. Anything that waits for the person after the study (its GUI,
+    `--dashboard`) puts the command's handlers back first
+    (`_listening_as_the_command_began`). Run as the console script (no
+    ``argv``) the process then ends, and they are left as they are: put
+    back, a stop in its shutdown (some 600 ms) still ended it by the signal.
+    Called in a process that goes on (a notebook, a test), they are put
+    back as it returns."""
+    import signal
+
+    from fastmdxplora.simulation import runner
+
+    before = {}
+    for number in (signal.SIGINT, signal.SIGTERM):
+        try:
+            before[number] = signal.getsignal(number)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+    given = list(sys.argv[1:] if argv is None else argv)
+    # Only a command that runs a study and then ends: not the GUI, the
+    # Agent or a server, which go on after a study they ran.
+    runner._QUIET_ONCE_STOPPED = bool(
+        next((word for word in given if not word.startswith("-")), None)
+        in ("explore", "xplore", "resume"))
+    runner._A_STUDY_HEARD_A_STOP = runner._ITS_STOP_SAID = False
+    _COMMAND_S_HANDLERS.clear()
+    _COMMAND_S_HANDLERS.update(before)
+    _COMMAND_LINE[:] = given
+    try:
+        return _main(argv)
+    finally:
+        if argv is not None:
+            _listening_as_the_command_began()
+        runner._A_STUDY_HEARD_A_STOP = runner._ITS_STOP_SAID = False
+        _COMMAND_S_HANDLERS.clear()
+        _COMMAND_LINE.clear()
+
+
+@contextmanager
+def _then_quiet_once_stopped():
+    """The command's work (its studies and what runs between them), then
+    quiet where one of them heard a stop (`runner._quiet_if_a_study_heard_a_stop`)."""
+    from fastmdxplora.simulation import runner
+
+    try:
+        yield
+    finally:
+        runner._quiet_if_a_study_heard_a_stop()
+
+
+#: SIGINT's and SIGTERM's handlers as the command began (`main`).
+_COMMAND_S_HANDLERS: dict[int, Any] = {}
+#: The command's own line, as given after `fastmdx` (`main`).
+_COMMAND_LINE: list[str] = []
+
+
+def _listening_as_the_command_began() -> None:
+    """The command's own SIGINT and SIGTERM handlers put back, where a
+    stopped study left them ignored (`runner._quiet_once_stopped`), and no
+    later study leaves them so: before anything that waits for a Ctrl-C
+    (`explore --dashboard` waited for ever, Ctrl-C and SIGTERM ignored)."""
+    import signal
+
+    from fastmdxplora.simulation import runner
+
+    runner._QUIET_ONCE_STOPPED = False
+    for number, handler in _COMMAND_S_HANDLERS.items():
+        try:
+            if (signal.getsignal(number) in (signal.SIG_IGN, runner._stopped_when_asked_again)
+                    and handler is not None):
+                signal.signal(number, handler)
+        except (ValueError, OSError, TypeError):  # pragma: no cover
+            pass
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     # Ensure the CLI can emit its Unicode output (box-drawing banner, "→",
     # "—") regardless of the platform's locale. On machines whose default
     # stdio encoding is ASCII, printing these would otherwise raise

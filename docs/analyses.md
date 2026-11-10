@@ -220,7 +220,8 @@ size said in the log first).
 The matrix grows with the square of the frames clustered: 31,000 frames make
 7.7 GB of it in float64 and 128,000 frames 131 GB, before the copies a
 method makes. So before it is made, its peak (the matrix and the largest copy
-the methods asked for make, `findings.memory`) is checked against the memory
+the methods asked for make, or the map plotted once it is freed where that is
+more, `findings.memory`) is checked against the memory
 this process can take, of which clustering plans on three quarters: the least
 of the machine's available memory, its control group's limit less its usage
 (`memory.max` less `memory.current` under cgroup v2, `memory.limit_in_bytes`
@@ -233,12 +234,21 @@ holds, the record saying which was least and the refusal saying it in words
 ("the container allows", "this machine has", "the process may use"). The
 peak is counted as resident memory measured it, compiled code's copies
 included (17 n^2 bytes beside the matrix for an average or complete
-linkage). Several workers clustering at once each read the same memory, and
-one's matrix is not seen by another until it is written: that is not planned
-for yet.
+linkage). The map is plotted from the averaged matrix after the full one is
+freed, and the figures before it collected; the dendrogram is the
+hierarchical clustering's own tree. Under `ulimit -v` the libraries are
+mapped first where the room holds them, else the run is refused with its
+record; each `dimred` method is planned on its own; a figure the memory
+runs out plotting is said with what helps (`findings.figures_not_plotted`).
+Several workers clustering at once each read the same memory: that is not
+planned for yet.
 Past it, clustering is refused (`analysis.memory.matrix_too_large`), leading
-with the stride that fits, then the frames, the bytes needed and available,
-and last where the memory was read, and said in the log;
+with the stride that fits, then the frames, the bytes needed, the room and
+the three quarters of it planned on (all of it under `ulimit -v`, with how
+much larger the limit would have to be), in one unit, MB under 1 GB, to as
+many decimals as tell them apart and read in their order, the share computed
+from the room as said, and last where the memory was read, and said in the
+log and on the Analysis page, in the analysis's own section;
 `stride: k` under `options: {cluster: ...}` clusters every k-th frame, and
 the other analyses still read every frame. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
@@ -247,7 +257,17 @@ square), checked before any of its methods runs and refused past it with the
 stride that fits under `analysis: {stride: k}` ("every 2nd frame"); PCA,
 t-SNE and UMAP make none, and asked for beside a refused MDS they still run
 and their projections are saved, the refusal recorded (`findings.mds_refused`)
-and said in the report.
+and said in the report, on each projection's figure (PNG and SVG) and below
+it in the GUI.
+
+`rmsd`, `cluster` and `dimred` superpose the frames on their selection, which
+needs three atoms. On one (alanine dipeptide's one alpha carbon, the
+default selection) every frame fits every other exactly and each RMSD would
+read 0, and on two only their separation is compared: the plan leaves them
+out, and named in `include` or given such a selection they are refused
+(`analysis.selection.arity`) with the selection that works here, the first
+of `backbone`, `protein and not element H` and `not water and not element
+H` that matches three atoms or more.
 
 `dimred`, with PCA, writes the free-energy landscape on the first two
 components: G = -kT ln P, with P the histogram over `landscape_bins` bins
@@ -444,7 +464,9 @@ against another tool.
   seed and the number of starts are written to `options.json`. A Ward
   hierarchy is built on the points its labels came from (the superposed
   coordinates, or an MDS embedding of the pairwise RMSD), so its dendrogram
-  and `hierarchical_linkage.npy` cut to the same clusters.
+  and `hierarchical_linkage.npy` cut to the same clusters. The dendrogram's
+  heights are the linkage's distance in nm, said on its axis and in the
+  GUI's CSV of it (`height1 (nm)`).
 
 - **SASA per residue** gives each residue's mean and its spread over the
   frames, and the spread is the sample standard deviation, dividing by the

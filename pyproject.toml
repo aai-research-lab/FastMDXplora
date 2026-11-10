@@ -72,6 +72,10 @@ dependencies = [
     "matplotlib>=3.5",
     "scipy>=1.7",
     "scikit-learn>=1.0",
+    # Holds BLAS and OpenMP to one thread while clustering under an
+    # address-space limit (analysis/cluster.py). scikit-learn requires it;
+    # declared because it is imported here.
+    "threadpoolctl>=2.0",
     "pandas>=1.4",
     "python-pptx>=0.6.21",
     # Used directly to size figures on slides. python-pptx happens to require

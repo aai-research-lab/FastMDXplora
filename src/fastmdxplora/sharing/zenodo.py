@@ -985,19 +985,23 @@ def _not_a_copy(study: Path, kept: dict[str, Any]) -> None:
             same, theirs = False, {}
         both = named & _named_in(theirs) if not same else set()
         if both:
-            # The draft or record itself where both name it, before its concept.
-            where, key, which = min((b.split(":", 2) for b in both),
-                                    key=lambda b: _SAID_FIRST.index(b[1]))
-            named_as = {"id": f"the draft or record {which}", "record": f"the record {which}",
-                        "asked_as": f'the draft asked for as "{which}"',
-                        "concept": f"versions of the record {which}"}[key]
+            # Named as that one is shared now: its draft or record, else the
+            # title its draft was asked for under, else its record's concept.
+            where = sorted(b.split(":", 1)[0] for b in both)[0]
+            entry = theirs.get(where) if isinstance(theirs.get(where), dict) else {}
+            named_as = (f"the draft or record {entry['id']}" if entry.get("id")
+                        else f"the record {entry['record']}" if entry.get("record")
+                        else f'the draft asked for as "{entry["asked_as"]}"'
+                        if entry.get("asked_as")
+                        else f"a version of the record {entry.get('concept')}")
+            # (No way is said for this one to carry on that one's record: two
+            # copies of it would each take it.)
             raise ShareRefused(
                 f"{study / SHARED_TO} is the one of the study at {there}, copied with it: "
-                f"both name {named_as} on {where}, and sharing this "
-                f"one would write over that one's. To share this study as one of its own, "
-                f"delete {study / SHARED_TO} and share again; to go on with that one, share "
-                "it from its own folder (or, for this one to carry on its draft or record instead, "
-                f"move {there / SHARED_TO} over {study / SHARED_TO}).", code="environment.share.not_finished",
+                f"that one is shared as {named_as} on {where}, and sharing this one "
+                f"would write over it. To share this study as one of its own, delete "
+                f"{study / SHARED_TO} and share again; to go on with that one, share it from "
+                "its own folder.", code="environment.share.not_finished",
                 path=str(study / SHARED_TO))
     kept["folder"] = here
 
@@ -1006,9 +1010,6 @@ def _not_a_copy(study: Path, kept: dict[str, Any]) -> None:
 # the title a draft was asked for under (its answer lost), the title its
 # first draft was asked for under (kept through every version), its concept's.
 _NAMED = ("id", "record", "asked_as", "asked_first", "concept")
-# Named in a refusal in this order: what the person finds on Zenodo first (a
-# title asked for is the draft's only until the share describes it).
-_SAID_FIRST = ("id", "record", "concept", "asked_as")
 
 
 def _named_in(kept: dict[str, Any]) -> set[str]:

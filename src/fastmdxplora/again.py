@@ -34,7 +34,7 @@ from fastmdxplora.refusals import StudyError
 from fastmdxplora.replaced import PREVIOUS
 
 __all__ = ["PHASES", "PREVIOUS", "Again", "analyses_named", "frames_of", "offered",
-           "phases_named", "plan", "recorded_analyses"]
+           "phases_named", "plan", "recorded_analyses", "saved_said"]
 
 #: The phases offered to run again on a study, in the order they run.
 PHASES = ("analysis", "report")
@@ -89,9 +89,7 @@ class Again:
         if self.report_added:
             lines.append("The report is written again too, as the study has one: one "
                          "from the analyses before would contradict them.")
-        kept = " and ".join(f"{phase}/" for phase in self.phases)
-        lines.append(f"The {kept} there now {'are' if len(self.phases) > 1 else 'is'} kept "
-                     f"in {PREVIOUS}/, in place of what was kept there before.")
+        lines.append(saved_said(self.phases))
         if self.campaign is not None and "analysis" in self.phases:
             lines.append("The comparison of the runs is built again after.")
         for name, why in self.left_out:
@@ -106,6 +104,21 @@ class Again:
                 "report_added": self.report_added,
                 "left_out": [{"run": name, "why": why} for name, why in self.left_out],
                 "said": self.said(), "command": ["fastmdx", *self.command()]}
+
+
+def saved_said(phases: Iterable[str]) -> str:
+    """What a run again of ``phases`` does with what they wrote before, as
+    `replaced.make_way` does it: the one wording of `Again.said` and the
+    GUI's Analyze again."""
+    phases = tuple(phases)
+    folders = " and ".join(f"{phase}/" for phase in phases)
+    said = (f"The {folders} there now {'are' if len(phases) > 1 else 'is'} saved in "
+            f"{PREVIOUS}/, in place of what was saved there before.")
+    if "analysis" in phases:
+        said += (" An analysis/ that did not finish is removed instead"
+                 + (", with its report/" if "report" in phases else "")
+                 + f", and what {PREVIOUS}/ holds is left as it is.")
+    return said
 
 
 def phases_named(given: Iterable[Any]) -> tuple[str, ...]:
@@ -207,7 +220,32 @@ def frames_of(run: Path) -> Path | None:
 def _going(runs: Iterable[Path]) -> list[str]:
     from fastmdxplora.simulation.resume import _still_running
 
-    return [run.name for run in runs if _still_running(run)]
+    # Each named once: a study of one run is its own run.
+    return list(dict.fromkeys(run.name for run in runs if _still_running(run)))
+
+
+def refused_again(held: str) -> str:
+    """A resume's refusal (`resume._held_elsewhere`) said of phases run
+    again: run again once it has stopped; going on another machine, run
+    again or resumed from here after the time it names, once it has ended
+    there."""
+    import re
+
+    said = (held.replace("Resume it once it has stopped.", "Run it again once it has stopped.")
+            .replace("It can be resumed from here after", "It can be run again or resumed from "
+                     "here after"))
+    # The command its last words, as a page sets a command (``terminal``).
+    return re.sub(r"or now with `(fastmdx resume --taken-over [^`]+)` once it has ended there\.",
+                  r"or now, once it has ended there, with: \1", said)
+
+
+def _command_said(why: str) -> str | None:
+    """The command a refusal ends with (`refused_again`), for a page to set
+    as code; None where it ends with none."""
+    import re
+
+    found = re.search(r"with: (fastmdx resume --taken-over .+)$", why)
+    return found.group(1) if found else None
 
 
 def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | None = None) -> Again:
@@ -231,6 +269,14 @@ def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | Non
         raise StudyError(f"{', '.join(going)} {'is' if len(going) == 1 else 'are'} still "
                          "running. Run it again once it has stopped.",
                          code="environment.workspace.run_going")
+    from fastmdxplora.simulation.resume import _held_elsewhere
+
+    # Its study held by another process, or going on another machine
+    # (`resume._held_elsewhere`): its phases run again would write into it
+    # and take its process records, as a resume would; refused the same.
+    held = _held_elsewhere(campaign or root)
+    if held:
+        raise StudyError(refused_again(held), code="environment.workspace.run_going")
 
     left_out: list[tuple[str, str]] = []
     if "analysis" in asked:
@@ -301,10 +347,12 @@ def offered(study: str | Path) -> dict[str, Any]:
         try:
             found = plan(root, [phase])
         except Exception as exc:  # noqa: BLE001 - said, not raised
-            out[phase] = {"can": False, "why": refusal_of(exc).message,
-                          "code": refusal_of(exc).code}
+            why = refusal_of(exc).message
+            out[phase] = {"can": False, "why": why, "code": refusal_of(exc).code,
+                          **({"terminal": _command_said(why)} if _command_said(why) else {})}
             continue
         out[phase] = {"can": True, "runs": len(found.runs),
                       "report_too": found.report_added, "said": found.said(),
+                      "saved_said": saved_said(found.phases),
                       "left_out": [{"run": name, "why": why} for name, why in found.left_out]}
     return out

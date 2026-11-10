@@ -95,7 +95,10 @@ _HEALTH_REMEDIES = {TEMPERATURE_EXPLANATION: TEMPERATURE_REMEDY}
 
 
 def admitted_for_problems(root: Path) -> Callable[[Path], bool]:
-    """The study's public files, and the run's own process record.
+    """The study's public files, the run's own process record, and the
+    study's lock (`resume.CARRYING_ON_FILE`), by which a resume carrying it
+    on is told from a study owing its analysis: refused, it was said "Not
+    read" on the Overview of every study a resume had carried on.
 
     The process record (`RUN_PROCESS_FILE`) is hidden, so the public rule
     refuses it, and without it a run whose record says it is going cannot
@@ -108,6 +111,7 @@ def admitted_for_problems(root: Path) -> Callable[[Path], bool]:
     from fastmdxplora import record_access
     from fastmdxplora.gui.server import _private, _public_records
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+    from fastmdxplora.simulation.resume import CARRYING_ON_FILE
 
     public = _public_records(root)
 
@@ -121,11 +125,14 @@ def admitted_for_problems(root: Path) -> Callable[[Path], bool]:
                 or (len(parts) == 2 and parts[0].startswith("segment-")
                     and not _private(parts[:1]))):
             return True
+        if parts == (CARRYING_ON_FILE,):
+            return True
         if not public(path):
             return False
         try:
             # Where it leads, as the held read found it (`record_access`).
-            return record_access.resolved(path).name != RUN_PROCESS_FILE
+            return record_access.resolved(path).name not in (RUN_PROCESS_FILE,
+                                                             CARRYING_ON_FILE)
         except (OSError, RuntimeError):
             return False
 
@@ -391,9 +398,11 @@ def _read_problems(root: Path, *, artifacts: list[dict[str, Any]] | None,
         refusal = phase.get("refusal")
         code = str(refusal.get("code") or "") if isinstance(refusal, dict) else ""
         said = str(phase["status"]).lower()
-        carried = phase.get("carried_on_from")
+        carried = phase.get("carried_on_from") or phase.get("stopped_at_its_end")
         if isinstance(carried, dict):
-            # A stop that was carried on and joined (`resume._production_carried_on`).
+            # A stop that was carried on and joined (`resume._production_carried_on`),
+            # or one at its last step said whole by its resume
+            # (`resume._its_stop_at_its_end_said_whole`): its own words.
             earlier = carried.get("refusal")
             stop_said(carried.get("message"),
                       earlier.get("message") if isinstance(earlier, dict) else None)

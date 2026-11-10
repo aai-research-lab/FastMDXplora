@@ -135,6 +135,9 @@ class SS(Analysis):
             DSSP codes. Column names are residue resSeq numbers (PDB
             numbering when available, else topology indices).
         """
+        from fastmdxplora.analysis.loading import SEGMENT_JOINS
+
+        self._segment_joins = getattr(traj, SEGMENT_JOINS, ())
         # Restrict to the selected atoms (e.g. protein/solute) before DSSP.
         # compute_dssp already emits protein-only columns, but slicing first
         # honors an explicit scope (e.g. protein-only) and avoids handing DSSP
@@ -205,7 +208,8 @@ class SS(Analysis):
              **{f"{name}_fraction": per_residue[:, k] for k, name in enumerate(CLASSES)}})
         interval = _frame_interval_ns(traj)
         for k, name in enumerate(CLASSES[:2]):
-            record = mean_record(per_frame[:, k], frame_interval_ns=interval)
+            record = mean_record(per_frame[:, k], frame_interval_ns=interval,
+                                 joins=getattr(self, "_segment_joins", ()))
             record["unit"] = ""  # a fraction of the residues, as base records one
             self.findings[f"{name}_fraction"] = record
 

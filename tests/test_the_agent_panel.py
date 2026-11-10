@@ -1722,7 +1722,7 @@ class TestTheBudgetIsAConfigKey(unittest.TestCase):
         staged = []
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("fastmdxplora.agent.run_in_stages",
-                           side_effect=lambda config, output, *, budget_hours: staged.append(
+                           side_effect=lambda config, output, *, budget_hours, **_given: staged.append(
                                (config.get("budget_hours"), budget_hours, Path(output)))
                            or SimpleNamespace(notes=[], refusal=None, setup_done=True)), \
                 mock.patch.object(importlib.import_module("fastmdxplora"), "FastMDXplora",

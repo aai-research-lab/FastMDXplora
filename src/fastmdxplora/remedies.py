@@ -28,6 +28,7 @@ a guess with this study's name on it.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 from dataclasses import dataclass, field, replace
@@ -113,7 +114,10 @@ class Price:
 
     def as_text(self) -> str:
         if self.production_ns <= 0 and self.equilibration_ns <= 0:
-            return "no simulation"
+            # A floor of nothing (its stopping rule's rounds to come) is not
+            # "no simulation": the rounds extend the runs.
+            return ("only what its stopping rule's rounds run" if self.lower_bound
+                    else "no simulation")
         amount = f"{'at least ' if self.lower_bound else ''}{_ns(self.production_ns)} of production"
         if self.equilibration_ns > 0:
             amount += f" and {_ns(self.equilibration_ns)} of equilibration"
@@ -166,6 +170,10 @@ class Remedy:
     price: Price | None = None
     #: The runs or windows it covers, by name.
     covers: tuple[str, ...] = field(default_factory=tuple)
+    #: Where ``argv`` is run from, where it is the person's own command
+    #: line, its paths as typed (`agent.staged.stopped_before_its_price`):
+    #: "" for the GUI's own folder.
+    cwd: str = ""
 
     def as_text(self, *, with_config: bool = True) -> str:
         text = f"{self.where}: {self.why} Fix: {self.fix}"
@@ -342,24 +350,77 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     carries a whole study on at once.
     """
     root = Path(study).expanduser().resolve()
-    from fastmdxplora.simulation.resume import _still_running
+    from fastmdxplora.gui.telemetry import _study_of
+    from fastmdxplora.simulation.resume import (_still_running, another_host_said,
+                                                being_carried_on)
 
     try:
         # A study carried on keeps the record of its process in the piece
         # being run: it was offered to be carried on again while it was.
+        # Going too while it or a run of it is held, or goes on another
+        # machine (`being_carried_on`).
+        owner = _study_of(root)
         if _still_running(root) or any(_still_running(piece)
                                        for piece in sorted(root.glob("segment-*"))
-                                       if piece.is_dir()):
+                                       if piece.is_dir()) or being_carried_on(owner):
             return []
     except Exception:  # noqa: BLE001 - a record, not a verdict
-        pass
+        owner = root
     try:
-        return _from_its_records(root)
+        found = _from_its_records(root)
     except OutsideWorkspace as refusal:
         # A record that says what stopped the study, refused by a held read
         # (`record_access`): not read, and nothing of it said. Not a study
         # with no such record either, which reads as stopped another way.
         return [_unread(refusal, root, "the study")]
+    from fastmdxplora.simulation.stopping import rule_owed
+
+    # Its runs ended well and its stopping rule was never applied to them:
+    # `fastmdx resume` applies it (`stopping.rule_owed`). Where a resume
+    # carried it on since an earlier stop and ended, the rule's sentence is
+    # the reason, not the stop that resume carried on from.
+    owed = rule_owed(root)
+    if owed is None and not found:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        # A round cut (in its join, say) gives its resume as the rule's
+        # card does (`stopping.round_ended`).
+        ended = round_ended(root)
+        owed = ended if ended is not None and ended.state == "interrupted" else None
+    if owed is not None and (not found or owed.state == "interrupted"):
+        found = [Remedy(code=STOPPED_REFUSAL if owed.state == "stopped"
+                        else INTERRUPTED_CODE, where="the study", why=owed.said,
+                        fix=owed.carry_on_on_a_page, command=" ".join(owed.argv),
+                        argv=owed.argv[1:])]
+    from fastmdxplora.agent.staged import stopped_before_its_price
+
+    again = stopped_before_its_price(root)
+    if again is not None:
+        # A study with a budget stopped in its setup stage: a resume of it
+        # ran setup alone and read it finished.
+        argv = tuple(str(word) for word in again.get("argv") or ())
+        found = [replace(remedy, fix="Run the study again, its setup first: it stopped before "
+                                     "its simulation began, so only its setup is recorded.",
+                         command="fastmdx " + shlex.join(argv) if argv else "",
+                         argv=argv, cwd=str(again.get("cwd") or "") if argv else "",
+                         price=None)
+                 if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
+                 else remedy for remedy in found]
+    try:
+        elsewhere = another_host_said(owner)
+    except Exception:  # noqa: BLE001 - its fixes as they are
+        elsewhere = ""
+    if elsewhere:
+        # Its process was another machine's, not seen to end from here: the
+        # person's to run, once it has ended there, never run from here, and
+        # said why.
+        from fastmdxplora.simulation.stopping import _where_its_process_was
+
+        where = _where_its_process_was(owner).strip()
+        found = [replace(remedy, decision=True,
+                         why=remedy.why if where in remedy.why else f"{remedy.why} {where}")
+                 for remedy in found]
+    return found
 
 
 def _unread(refusal: OSError, root: Path, where: str) -> Remedy:
@@ -400,7 +461,18 @@ def _from_its_records(root: Path) -> list[Remedy]:
     if failed is None:
         return _stopped_unrecorded(root)
     name, refusal = failed
-    return [remedy_for(refusal, study=root, where=f"the study's {name}")]
+    remedy = remedy_for(refusal, study=root, where=f"the study's {name}")
+    from fastmdxplora.simulation.resume import analysis_owed, how_a_resume_finds
+
+    if analysis_owed(root) and (how_a_resume_finds(root) or {}).get("own"):
+        # Its analyses of its joined pieces ended in an error of their own,
+        # which a resume refuses: analysed again once put right, as its
+        # round's sentence, its page and the Agent say.
+        argv = ("explore", "--output", str(root), "--include", "analysis", "report",
+                "--rerun")
+        remedy = replace(remedy, fix="Put right what its analyses said, then analyse it again.",
+                         command="fastmdx " + " ".join(argv), argv=argv, price=None)
+    return [remedy]
 
 
 def _stopped_unrecorded(root: Path) -> list[Remedy]:
@@ -430,6 +502,8 @@ def _stopped_unrecorded(root: Path) -> list[Remedy]:
 
 #: The refusal said of a run that ended without recording its end.
 INTERRUPTED_CODE = "simulation.run.interrupted"
+#: A round's piece whose join failed (`telemetry._its_join_owed`).
+JOIN_FAILED_CODE = "simulation.round.join_failed"
 #: And of one asked to stop (`simulation.runner.STOPPED_CODE`).
 STOPPED_REFUSAL = "simulation.run.stopped"
 
@@ -449,12 +523,64 @@ def _interrupted(root: Path) -> Remedy | None:
     # A run that had taken every step it planned before its record went
     # quiet finished (the Python API writes no end of its own): it was
     # offered `fastmdx resume` beside a report of the whole run.
-    if stands.get("status") != "interrupted":
+    if stands.get("status") != "interrupted" and not (
+            stands.get("status") == "failed" and stands.get("join_owed")):
+        # A piece whose join failed in its study's round is carried on as
+        # one cut before its join is: said with the round's failure.
         return None
     ended = stands.get("ended_by")
+    from fastmdxplora.gui.telemetry import ANALYSIS_OWED
+
+    if ended == ANALYSIS_OWED:
+        # Its simulation ended and was joined; what is owed runs here, and
+        # nothing is carried on from a checkpoint. The card names its
+        # subject ("The study:") before the reason.
+        why = ("Its process ended after its pieces were joined, before their analyses and "
+               "report had run.")
+        remedy = _resume(INTERRUPTED_CODE, why, "the study", [root], root)
+        from fastmdxplora.simulation.resume import how_a_resume_finds
+
+        own = (how_a_resume_finds(root) or {}).get("own")
+        if own:
+            # Its analyses ended in an error of their own, which a resume
+            # refuses: analysed again, as its round's sentence says.
+            argv = ("explore", "--output", str(root), "--include", "analysis", "report",
+                    "--rerun")
+            return replace(
+                remedy, why=f"Its analyses of its joined pieces ended in an error: {own}",
+                fix="Put right what its analyses said, then analyse it again.",
+                command="fastmdx " + " ".join(argv), argv=argv, price=None)
+        unpriced = remedy.fix[remedy.fix.find(" The price is not given"):] if (
+            " The price is not given" in remedy.fix) else ""
+        return replace(remedy, fix="Run its analyses and report over the joined pieces."
+                                   + unpriced)
+    if stands.get("join_owed"):
+        # Its last piece ran to its end, and its process ended before the
+        # piece was joined (`telemetry._its_join_owed`): said in its own
+        # words, never as a day of silence; `fastmdx resume` joins it.
+        why = str(stands.get("latest_error") or "Its last piece was not joined.")
+        # The study's own resume (`_resume` gives a run of several's), as
+        # the health card gives it.
+        if stands.get("status") == "failed":
+            # What failed the join (its own refusal, said above) is put right
+            # first: the same join run at once fails the same way, so it is
+            # the person's to run, not run from here at once.
+            return replace(_resume(JOIN_FAILED_CODE, why, "the study", [root], root,
+                                   price=False),
+                           fix="Put right what failed the join (above), then join it again "
+                               "and run its analyses and report.", decision=True)
+        return replace(_resume(INTERRUPTED_CODE, why, "the study", [root], root,
+                               price=False),
+                       fix="Join its last piece, then run its analyses and report.")
     if ended == "process":
         why = ("The run ended without recording its end: its process is gone "
                "(the machine restarted, or it was ended by a scheduler or by hand).")
+    elif ended == "silence_elsewhere":
+        # Said of its own span: an hour, its process on another machine or
+        # container (`telemetry.SILENT_ELSEWHERE`); where is said after it.
+        why = ("Nothing has been written for an hour, and its process was recorded on "
+               "another machine or container: look there first, two runs must not write "
+               "to one study.")
     else:
         why = ("Nothing has been written for a day, and no process on this machine "
                "runs it. If it runs on another machine or under a scheduler, look "
@@ -468,6 +594,7 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
                if isinstance(p, dict)}
     stopped: list[tuple[str, Path, str]] = []
     unstarted: list[tuple[str, Path]] = []
+    ended: list[tuple[str, Path]] = []
     windows: dict[int, tuple[str, Path, dict[str, Any] | None]] = {}
     remedies: list[Remedy] = []
     for run in batch.get("runs") or []:
@@ -487,27 +614,56 @@ def _of_a_batch(root: Path, batch: dict[str, Any]) -> list[Remedy]:
             continue
         if run.get("status") != "error":
             continue
+        from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_IN_THE_ROUNDS,
+                                                 WORKER_ENDED)
+
+        if run.get("error_type") in (STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS):
+            # Stopped or cut in its study's round: fixed as the round's own
+            # sentence says (`stopping.round_ended`), never as a refusal of
+            # its own with no code and no cost.
+            continue
+        if run.get("error_type") == WORKER_ENDED:
+            # Its worker ended abruptly while it ran: carried on from its
+            # last checkpoint, as a run stopped is.
+            ended.append((run_id, folder))
+            continue
         refusal = _refusal_of_run(run)
         if run.get("error_type") == "Stopped" or _retryable(refusal):
-            stopped.append((run_id, folder, str(refusal.get("code") or "simulation.run.stopped")))
+            code = str(refusal.get("code") or "")
+            # Stopped with no refusal of its own (no phase recorded it: a
+            # broken pool's survivor, a run stopped at once): a stop, never
+            # "a refusal that has not been given a code yet".
+            stopped.append((run_id, folder, code if _retryable(refusal) else STOPPED_REFUSAL))
             continue
         if index is not None:
             windows[index] = (run_id, folder, refusal)
             continue
         remedies.append(remedy_for(refusal, study=folder, where=run_id))
-    if stopped or unstarted:
-        code = next((c for _, _, c in stopped if known(c)), "simulation.run.stopped")
-        names = [run_id for run_id, _, _ in stopped] + [run_id for run_id, _ in unstarted]
-        why = (f"{_counted(len(stopped), 'run')} stopped where "
-               f"{'it' if len(stopped) == 1 else 'they'} can be carried on"
-               if stopped else "")
+    if stopped or unstarted or ended:
+        # A run ended with its worker is carried on from its last checkpoint,
+        # as a run whose process is gone is.
+        code = next((c for _, _, c in stopped if c != STOPPED_REFUSAL),
+                    STOPPED_REFUSAL if stopped or not ended else INTERRUPTED_CODE)
+        names = ([run_id for run_id, _, _ in stopped] + [run_id for run_id, _ in ended]
+                 + [run_id for run_id, _ in unstarted])
+        parts = []
+        if stopped:
+            parts.append(f"{_counted(len(stopped), 'run')} stopped where "
+                         f"{'it' if len(stopped) == 1 else 'they'} can be carried on")
+        if ended:
+            parts.append(f"{_counted(len(ended), 'run')} ended with "
+                         f"{'its worker' if len(ended) == 1 else 'their workers'}, killed "
+                         "while running")
         if unstarted:
-            why += (" and " if why else "") + f"{_counted(len(unstarted), 'run')} did not start"
+            parts.append(f"{_counted(len(unstarted), 'run')} did not start")
+        why = ", ".join(parts[:-1]) + ((", and " if len(parts) > 2 else " and ")
+                                       if len(parts) > 1 else "") + parts[-1]
         why = why[0].upper() + why[1:] + "."
-        if code != "simulation.run.stopped":
+        if code not in (STOPPED_REFUSAL, INTERRUPTED_CODE):
             why += f" {code_for(code).summary}"
         remedy = _resume(code, why, "the study",
-                         [folder for _, folder, _ in stopped] + [f for _, f in unstarted], root,
+                         [folder for _, folder, _ in stopped] + [f for _, f in ended]
+                         + [f for _, f in unstarted], root,
                          unstarted=len(unstarted))
         remedies.insert(0, _covering(remedy, names))
     if any(refusal is not None for _, _, refusal in windows.values()):
@@ -690,12 +846,50 @@ def _resume(code: str, why: str, where: str, folders: list[Path],
     cost = (Price(production_ns=_round(production), equilibration_ns=_round(equilibration),
                   runs=len(folders), seconds=seconds, platform=platform)
             if folders and price and not unpriced else None)
+    if study is not None:
+        from fastmdxplora.batch.explorer import campaign_of
+
+        # A run of a study of several is carried on by its study's resume:
+        # its own ran it alone and left its study's round unjudged.
+        study = campaign_of(study) or study
     said = _command(["resume", str(study)]) if study else {"command": RESUME, "argv": ()}
+    # Its rule's rounds still to come may extend its runs past their plan:
+    # the price is a floor, and the ceiling is said.
+    ceiling = _the_rule_may_extend(study) if study is not None else None
+    if cost is not None and ceiling is not None:
+        cost = replace(cost, lower_bound=True)
+    from fastmdxplora.simulation.sampling_ask import length_said
+
+    rounds = (f" Its stopping rule may then extend the runs, up to its "
+              f"{length_said(ceiling)} ceiling." if ceiling is not None else "")
     return Remedy(code=code, where=where, why=why,
                   fix=(f"{family} Production already written is kept, and the "
                        "analyses run over the whole." if written or not folders
-                       else family) + unpriced,
+                       else family) + rounds + unpriced,
                   **said, price=cost)
+
+
+def _the_rule_may_extend(study: Path) -> float | None:
+    """The ceiling of a study whose stopping rule has rounds still to come
+    (not determined, nor at its ceiling): its runs may be extended past
+    their plan, up to it. None where it has no rule, its rule ended, or its
+    record is not the reader's to read (a run's page, held to the run)."""
+    where = Path(study) / "stopping.json"
+    if not record_access.can_read(where):
+        return None
+    try:
+        record = json.loads(record_access.read_text(where, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or not record.get("targets"):
+        return None
+    if str(record.get("outcome") or "running") not in ("running", "stopped", "not_applied"):
+        return None
+    try:
+        ceiling = float(record["max_duration_ns"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return ceiling if ceiling > 0 else None
 
 
 def _checkpoint_written(folder: Path) -> bool | None:
@@ -1016,6 +1210,21 @@ def _covering(remedy: Remedy, names: list[str]) -> Remedy:
     return replace(remedy, covers=tuple(names))
 
 
+def _as_its_study_plans_it(folder: Path) -> dict[str, Any]:
+    """A run's ``simulation`` block as its study planned it, from the
+    study's `batch_manifest.json` (``runs/<run>`` of the study); empty where
+    it is not planned there."""
+    if folder.parent.name != "runs":
+        return {}
+    batch = _read(folder.parent.parent / "batch_manifest.json")
+    for planned in (batch.get("planned") or []) if isinstance(batch, dict) else []:
+        if isinstance(planned, dict) and str(planned.get("run_id")) == folder.name:
+            options = planned.get("options") if isinstance(planned.get("options"), dict) else {}
+            simulation = options.get("simulation")
+            return dict(simulation) if isinstance(simulation, dict) else {}
+    return {}
+
+
 def _planned(folder: Path | None) -> tuple[float, float]:
     """(production, equilibration) in ns, as the run's own config plans them,
     resolved by the runner's own function: a run that names no length runs
@@ -1027,7 +1236,12 @@ def _planned(folder: Path | None) -> tuple[float, float]:
     from fastmdxplora.simulation.runner import plan_stages
 
     sim: dict[str, Any] = {}
-    if folder is not None:
+    if folder is not None and not os.path.lexists(Path(folder) / "resolved_config.yml"):
+        # A run that never started has no config of its own: its study's
+        # plan of it (`batch_manifest.json`'s ``planned``) says its lengths,
+        # where the package's defaults priced a run of 10 ps at hours.
+        sim = _as_its_study_plans_it(Path(folder))
+    elif folder is not None:
         resolved = Path(folder) / "resolved_config.yml"
         try:
             config = yaml.safe_load(record_access.read_text(resolved, encoding="utf-8")) or {}

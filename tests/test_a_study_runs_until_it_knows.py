@@ -407,6 +407,61 @@ class TestTheLoop:
         assert "with what was asked not determined to the precision asked" in record["said"]
         assert sum(made.calls) == pytest.approx(18.0)
 
+    def test_a_first_stop_once_the_rule_has_decided_says_the_study_finishes(
+            self, tmp_path, replicas, monkeypatch):
+        """A first stop just after the rule's last line ("Stopped at the ...
+        ceiling"), its rounds' listener still listening, said the study's
+        round ends where `fastmdx resume` carries it on; the study then
+        finished, nothing to carry on."""
+        import signal
+
+        from fastmdxplora.simulation import runner
+
+        stops: list[str] = []
+        monkeypatch.setattr(runner, "_say_stop", stops.append)
+        made = replicas([0.20, 0.201, 0.199], 0.5)
+
+        def said(text):
+            if "ceiling" in text:
+                # The signal lands as the line is said.
+                runner._LISTENING[-1]._note(signal.SIGTERM, None)
+
+        runner._listen_afresh()
+        try:
+            record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
+                                     extend_all=made.extend_all, say=said)
+        finally:
+            runner._listen_afresh()
+        assert record["outcome"] == "ceiling"
+        assert len(stops) == 1 and "the study finishes writing" in stops[0], stops
+        assert "carries it on" not in stops[0], stops
+
+    def test_a_first_stop_after_a_failed_round_does_not_say_the_rule_decided(
+            self, tmp_path, replicas, monkeypatch):
+        """A first stop as a round that failed is said, its rounds' listener
+        still listening: it said the rule had decided and the study finishes,
+        of a round `fastmdx resume` carries on."""
+        import signal
+
+        from fastmdxplora.simulation import runner
+
+        stops: list[str] = []
+        monkeypatch.setattr(runner, "_say_stop", stops.append)
+        made = replicas([0.20, 0.201, 0.199], 0.04, fail_at=1)
+
+        def said(text):
+            if text.startswith("Stopped"):
+                runner._LISTENING[-1]._note(signal.SIGTERM, None)
+
+        runner._listen_afresh()
+        try:
+            record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,
+                                     extend_all=made.extend_all, say=said)
+        finally:
+            runner._listen_afresh()
+        assert record["rounds"][-1].get("stopped_by") == "error", record
+        assert len(stops) == 1 and "has decided" not in stops[0], stops
+
     def test_disagreeing_replicas_are_extended_not_accepted(self, tmp_path, replicas):
         made = replicas([0.10, 0.30, 0.20], 0.001)
         record = run_until_known(made.runs, targets_of(RULE), RULE, record_in=tmp_path,

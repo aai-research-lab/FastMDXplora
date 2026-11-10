@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Union
@@ -395,10 +396,111 @@ def attach_file_logger(
     handler.setLevel(_to_level(env_level) if env_level else _to_level(level))
     if base.level == logging.NOTSET or base.level > handler.level:
         base.setLevel(handler.level)
+    # A line about one study reaches that study's log alone.
+    handler.addFilter(_OnlyItsOwnStudy(Path(path)))
     _mark_owned(handler, _FILE_KIND)
     base.addHandler(handler)
     _file_handler = handler
+    _say_what_was_held(Path(path))
     return base
+
+
+#: Lines about a study said before its log was attached, held until it is:
+#: (the study's folder, the logger's name, the line, the line as a run of
+#: the study says it, the run logs it was said in). A few at most, under
+#: :data:`_HELD_LOCK`: a GUI reads records from several threads.
+_HELD_FOR_A_STUDY: list[tuple[str, str, str, str | None, set[str]]] = []
+_HELD_LOCK = threading.Lock()
+
+
+_UNSAID = object()
+
+
+class _OnlyItsOwnStudy(logging.Filter):
+    """Keep a line about one study (``for_study`` on the record) out of the
+    log of any other: a line said while one study's record was read reached
+    the log of whichever study was attached, or the next one attached. A
+    line about no known study (``for_study`` None) reaches the console
+    alone. Anything without the attribute is unaffected."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self._folder = path.parent
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        study = getattr(record, "for_study", _UNSAID)
+        if study is _UNSAID:
+            return True
+        return study is not None and _same_folder(self._folder, study)
+
+
+def log_in_the_study_s_log(name: str, message: str, study: str | Path | None,
+                           *, in_a_run: str | None = None) -> None:
+    """Log ``message`` (at INFO, on the logger ``name``) on the console and in
+    the log of the study at ``study``, the folder it is in now: at once,
+    where that study's log is attached; else held, and written there when it
+    is attached (:func:`attach_file_logger`), unless another study's log is
+    attached first. Never in another study's log; on the console alone
+    where ``study`` is None.
+
+    A study of runs writes no log of its own at its root: a line held for
+    it is written in each of its runs' logs as they are attached, as
+    ``in_a_run`` says it (``message`` where None).
+
+    A line said while the study's settings were read, before its log was
+    attached, reached the console and no file: the study's own log, where
+    it is looked for afterwards, did not have it."""
+    folder = str(Path(study).expanduser()) if study else None
+    get_logger(name).info(message, extra={"for_study": folder})
+    if folder is None:
+        return
+    attached = file_logger_path()
+    if attached is not None and _same_folder(attached.parent, folder):
+        return
+    with _HELD_LOCK:
+        if not any(held[:4] == (folder, name, message, in_a_run)
+                   for held in _HELD_FOR_A_STUDY):
+            _HELD_FOR_A_STUDY.append((folder, name, message, in_a_run, set()))
+            del _HELD_FOR_A_STUDY[:-16]
+
+
+def _same_folder(one: str | Path, other: str | Path) -> bool:
+    try:
+        return Path(one).expanduser().resolve() == Path(other).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
+def _a_run_of(folder: Path, study: str) -> bool:
+    """Whether ``folder`` is one of the runs of the study at ``study``."""
+    return folder.parent.name == "runs" and _same_folder(folder.parent.parent, study)
+
+
+def _say_what_was_held(path: Path) -> None:
+    """Write, in the log just attached at ``path`` and there alone, each
+    line held for its study (:func:`log_in_the_study_s_log`), or for the
+    study it is a run of; said on the console when it was held.
+
+    A line held for a study whose log is not the one attached, nor one of
+    its runs', is dropped, not held for ever: the process has gone on to
+    another study, and the study it is about reads its record again, and
+    says it again, before it runs."""
+    folder = path.parent
+    said: list[tuple[str, str]] = []
+    with _HELD_LOCK:
+        for held in list(_HELD_FOR_A_STUDY):
+            study, name, message, in_a_run, runs = held
+            if _same_folder(folder, study):
+                _HELD_FOR_A_STUDY.remove(held)
+                said.append((name, message))
+            elif _a_run_of(folder, study):
+                if str(folder) not in runs:
+                    runs.add(str(folder))
+                    said.append((name, in_a_run or message))
+            else:
+                _HELD_FOR_A_STUDY.remove(held)
+    for name, message in said:
+        get_logger(name).info(message, extra={"for_study": str(folder), "to_console": False})
 
 
 def file_logger_path() -> Path | None:

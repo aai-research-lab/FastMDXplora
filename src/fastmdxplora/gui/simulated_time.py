@@ -50,6 +50,32 @@ def _record(root: Path) -> dict[str, Any]:
         return {}
 
 
+def _variable_step_said(root: Path, record: dict[str, Any]) -> bool:
+    """Whether the study's integrator chose its own step, from the cheapest
+    record that says: the first piece's record where it wrote one, else the
+    study's config. Asked at every poll before the pieces' clocks are read
+    (`recorded_stage_lengths`), which a fixed step never needs."""
+    from fastmdxplora.simulation.lengths import _variable_step
+
+    parameters = record.get("parameters")
+    if isinstance(parameters, dict) and parameters.get("integrator"):
+        return _variable_step(parameters)
+    import yaml
+
+    path = root / "resolved_config.yml"
+    try:
+        config = yaml.safe_load(_records.read_text(path, encoding="utf-8"))
+    except FileNotFoundError:
+        # No record and no config: nothing ran that chose its own step.
+        return False
+    except (OSError, ValueError, yaml.YAMLError):
+        # There and not read: the pieces' records decide, as they did.
+        return True
+    simulation = config.get("simulation") if isinstance(config, dict) else None
+    # A config naming no integrator ran the default, a fixed step.
+    return isinstance(simulation, dict) and _variable_step(simulation)
+
+
 def _number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
@@ -114,6 +140,21 @@ def simulated_times(root: str | Path, status: dict[str, Any], *,
             not_read = refused_said(root, Path(refusal.filename or root))
         if extended:
             production_ns, pieces = extended
+        if (extended or (not record and not not_read)) and _variable_step_said(root, record):
+            # A variable step's by the run's own clock, summed over its
+            # pieces, as the methods and a resume's answer give it: its
+            # steps times the timestep said 8 ps beside their 6.49. Read as
+            # they read it, not from the first piece's record, which a first
+            # piece stopped never wrote (6 ps beside their 4.85). None where
+            # a piece's clock is not recorded.
+            from fastmdxplora.simulation.lengths import recorded_stage_lengths
+
+            try:
+                lengths = recorded_stage_lengths(root)
+            except (OSError, ValueError):
+                lengths = {}
+            if lengths.get("variable_step"):
+                production_ns = lengths.get("production_ran_ns")
     equilibrating = running and stage in EQUILIBRATING and not production_ns
     # Ended before its production began: its equilibration was not all done,
     # and saying "0 ps production after 10 ps of equilibration" said it was.

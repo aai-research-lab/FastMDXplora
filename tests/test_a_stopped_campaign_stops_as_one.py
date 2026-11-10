@@ -214,9 +214,18 @@ class TestTheParentPassesItOn:
         killed = []
         monkeypatch.setattr(explorer.os, "kill",
                             lambda pid, number: killed.append((pid, number)))
-        stop._heard(signal.SIGTERM, None)
-        assert (os.getpid(), signal.SIGTERM) in killed
-        assert len(sent) == 2 and len(killed) == 3
+        # Raised as the stop now it is, carrying its signal, so the study
+        # records it stopped by SIGTERM before it ends; caught here, never
+        # let into pytest, which a KeyboardInterrupt ends.
+        from fastmdxplora.simulation.runner import StopNow
+
+        with pytest.raises(StopNow) as now:
+            stop._heard(signal.SIGTERM, None)
+        assert now.value.number == signal.SIGTERM and now.value.signal_name == "SIGTERM"
+        # Passed on to the workers, and this process not killed.
+        assert (os.getpid(), signal.SIGTERM) not in killed
+        assert len(sent) == 2 and sorted(killed) == [(111, signal.SIGTERM),
+                                                     (222, signal.SIGTERM)]
 
     def test_a_worker_already_gone_is_passed_over(self, clock, monkeypatch) -> None:
         def gone(pid, number):

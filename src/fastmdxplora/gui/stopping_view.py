@@ -90,6 +90,8 @@ def _measures(record: dict[str, Any]) -> list[dict[str, Any]]:
     from fastmdxplora.gui.report_dashboard import unit_of
     from fastmdxplora.gui.series import SERIES
 
+    from fastmdxplora.simulation.stopping import round_numbers
+
     rounds = record.get("rounds") if isinstance(record.get("rounds"), list) else []
     out = []
     for target in record.get("targets") or []:
@@ -98,7 +100,7 @@ def _measures(record: dict[str, Any]) -> list[dict[str, Any]]:
         name = str(target["analysis"])
         points = []
         unit = ""
-        for number, entry in enumerate(rounds, start=1):
+        for number, entry in zip(round_numbers(rounds), rounds):
             verdicts = {v.get("analysis"): v for v in entry.get("verdicts") or []
                         if isinstance(v, dict)}
             v = verdicts.get(name)
@@ -259,7 +261,8 @@ def _listed(names: list[str]) -> str:
 
 def stopping_payload(root: Path | str) -> dict[str, Any]:
     """What the Overview's "Running until it is determined" card draws."""
-    from fastmdxplora.simulation.stopping import _OUTCOME, round_decided, study_said
+    from fastmdxplora.simulation.stopping import (_OUTCOME, round_decided, rounds_judged,
+                                                  study_said)
 
     refused: list[Path] = []
     found = _record_of(Path(root), refused)
@@ -272,7 +275,15 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
     rounds = [r for r in record.get("rounds") or [] if isinstance(r, dict)]
     outcome = str(record.get("outcome") or "running")
     said = study_said(record)
-    ended = _ended_without_finishing(record, where)
+    from fastmdxplora.simulation.resume import being_carried_on
+
+    try:
+        # Going (its lock or a run's held, or going on another machine):
+        # its card says it runs, never stopped without finishing.
+        carried_on = being_carried_on(where)
+    except Exception:  # noqa: BLE001 - as its record says
+        carried_on = False
+    ended = None if carried_on else _ended_without_finishing(record, where)
     shown = outcome
     if ended is not None:
         # Its record was written while it ran: said as it stands.
@@ -280,22 +291,53 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         runs = f", in {_listed(ended['runs'])}" if ended["runs"] else ""
         if rounds:
             going = round_decided(rounds[-1], last=True, record=record)["said"]
-            said = f"Stopped without finishing{runs}, in round {len(rounds)}: {going}"
+            said = f"Stopped without finishing{runs}, in round {rounds_judged(rounds)}: {going}"
         else:
             # Killed before any round was judged: in its first piece.
             said = f"Stopped without finishing in its first piece{runs}"
         said += (f"; {ended['how']}" if ended["how"] else "") + "."
     production = _finite(rounds[-1].get("production_ns")) if rounds else 0.0
-    ceiling = _finite(record.get("max_duration_ns"))
+    production_said = _said(production)
+    from fastmdxplora.simulation.stopping import _ceiling_a_resume_uses
+
+    # The ceiling a resume uses (the study's config's, else the record's),
+    # one number on the strip, the chart's line and the sentence.
+    ceiling = _finite(_ceiling_a_resume_uses(where, record))
     # Said running only where its process is known to be (`_known_live`):
     # otherwise as the record stood when it was written.
-    live = ended is None and _known_live(record, where)
+    live = carried_on or ended is None and _known_live(record, where)
+    from fastmdxplora.simulation.stopping import round_ended, round_numbers
+
+    label = None
+    cut = None if live else round_ended(where)
+    if cut is not None:
+        # Its rule's round failed, was stopped or was cut: said as the
+        # study's status, All studies and the report say it, with what
+        # `fastmdx resume` would run (`stopping.round_ended`).
+        shown = "stopped" if cut.state in ("failed", "stopped") else "interrupted"
+        label, said, ended = cut.label, f"{cut.said} {cut.carry_on_on_a_page}", None
+        from fastmdxplora.gui.workspace import study_state
+
+        try:
+            # The study's word, as its header and All studies give it: a run
+            # whose resume was refused fails the study whose round stopped.
+            if cut.state != "failed" and study_state(where) == "failed":
+                label = "Failed"
+        except Exception:  # noqa: BLE001 - the round's own word stands
+            pass
+        reached = [ns for _name, ns in cut.productions if ns is not None]
+        if reached:
+            production = max(reached)
+            production_said = (_said(min(reached)) + " to " + _said(max(reached))
+                               if max(reached) - min(reached) > 1e-6
+                               else _said(production))
     return {
         "ok": True,
         "outcome": shown,
         "recorded_outcome": outcome,
         "live": live,
-        "outcome_label": ("Stopped without finishing" if ended is not None
+        "outcome_label": (label if label is not None
+                          else "Stopped without finishing" if ended is not None
                           else "Running" if live
                           else _OUTCOME.get(outcome, outcome.replace("_", " "))),
         "said": said,
@@ -304,16 +346,25 @@ def stopping_payload(root: Path | str) -> dict[str, Any]:
         "independent_starts": str(record.get("independent_starts") or "required"),
         "runs": [str(r) for r in record.get("runs") or []],
         "production_ns": production,
-        "production_said": _said(production),
+        "production_said": production_said,
+        "carry_on": " ".join(cut.argv) if cut is not None else "",
+        # Its rule never applied (`stopping.rule_owed`): no measure judged.
+        "not_applied": cut is not None and cut.said.startswith(
+            "Its stopping rule was not applied"),
         "measures": _measures(record),
+        # Numbered as the rule judged them (`round_numbers`): a catch-up is
+        # shown as part of the round it carries on.
         "rounds": [{"round": n, "production_ns": _finite(r.get("production_ns")),
                     "production_said": _said(_finite(r.get("production_ns"))),
                     "decision": str(r.get("decision") or ""),
                     "more_ns": _finite(r.get("more_ns")),
+                    "catch_up": bool(r.get("brought_up")),
                     # As the report and the Timeline say it.
-                    "decided": round_decided(r, last=n == len(rounds), record=record)["said"]}
-                   for n, r in enumerate(rounds, start=1)],
-        "next": _next_piece(record, where) if ended is None else None,
+                    "decided": round_decided(r, last=i == len(rounds) - 1,
+                                             record=record)["said"]}
+                   for i, (n, r) in enumerate(zip(round_numbers(rounds), rounds))],
+        "rounds_judged": rounds_judged(rounds),
+        "next": _next_piece(record, where) if ended is None and cut is None else None,
         # Changes whenever the record does, so the page redraws only then.
         "version": f"{len(rounds)}:{shown}:{live}:{_stamp(where)}",
     }

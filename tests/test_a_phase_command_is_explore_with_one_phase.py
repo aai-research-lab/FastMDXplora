@@ -239,6 +239,8 @@ def test_a_simulation_run_again_takes_its_pieces_with_it(tmp_path):
     for name in ("simulation", "joined", "segment-001", "analysis"):
         (root / name).mkdir(parents=True)
         (root / name / "x").write_text("1")
+    # Finished: only an analysis that did is saved (`analysis_finished`).
+    (root / "analysis" / "analysis_manifest.json").write_text("{}")
     said: list[str] = []
 
     assert make_way(root, ["simulation"], keep=True, say=said.append) == [
@@ -246,7 +248,7 @@ def test_a_simulation_run_again_takes_its_pieces_with_it(tmp_path):
     kept = root / "previous" / "simulation"
     assert sorted(p.name for p in kept.iterdir()) == ["joined", "segment-001", "x"]
     assert not (root / "joined").exists() and (root / "previous" / "analysis" / "x").is_file()
-    assert said[1].startswith("analysis: written from the simulation before, so kept in")
+    assert said[1].startswith("analysis: written from the simulation before, so saved in")
 
 
 def test_the_bundle_leaves_what_was_replaced_out(tmp_path):

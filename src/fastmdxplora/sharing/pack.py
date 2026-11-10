@@ -92,7 +92,10 @@ _ONLY_ALL_NAMES = frozenset({
     "system.xml", "state.xml", "integrator.xml", "solvated.pdb", "state_final.xml",
     "state_minimized.xml", "complex_for_pka.pdb", "retained.pdb", "report.pdf",
     "slides.pptx", "dashboard.html", "simulation.log", "fastmdxplora.log",
-    "checkpoint.chk.json", "checkpoint.chk.sha256"})
+    "checkpoint.chk.json", "checkpoint.chk.sha256",
+    # A checkpoint's set a kill left part moved (`runner._write_checkpoint_set`):
+    # its waiting files go with the checkpoint they belong to, never without it.
+    "checkpoint.chk.new", "checkpoint.chk.json.new", "checkpoint.chk.sha256.new"})
 _ONLY_ALL_SUFFIXES = frozenset({".chk", ".mp4", ".webm"})
 _MEDOID = re.compile(r"_medoid_\d+\.pdb$")
 
@@ -172,9 +175,12 @@ def finished_manifest(root: Path) -> dict[str, Any]:
         raise ShareRefused(f"{root} holds no FastMDXplora study (no manifest.json).",
                            code="environment.share.not_a_study")
     try:
-        from fastmdxplora.gui.telemetry import status_as_it_stands
+        # The study's state, as every page reads it (`workspace.study_state`,
+        # its rule's round first): its live record alone read a study whose
+        # rule was never applied as finished.
+        from fastmdxplora.gui.workspace import study_state
 
-        status = str(status_as_it_stands(root).get("status") or "").lower()
+        status = str(study_state(root) or "").lower()
     except Exception:  # noqa: BLE001 - the Manifest still says how each phase ended
         status = ""
     if status in ("running", "starting", "paused"):
@@ -182,9 +188,11 @@ def finished_manifest(root: Path) -> dict[str, Any]:
                            "finished.", code="environment.share.not_finished")
     short = [str(p.get("name")) for p in manifest["phases"]
              if isinstance(p, dict) and str(p.get("status")) not in ("ok", "skipped")]
-    if short or status in ("stopped", "failed", "interrupted"):
+    if status in ("stopped", "failed", "interrupted"):
+        _refuse_short(root, status, short=short)
+    if short:
         raise ShareRefused(
-            f"The study in {root} did not finish ({', '.join(short) or status}); share it "
+            f"The study in {root} did not finish ({', '.join(short)}); share it "
             "once it has, after `fastmdx resume` where it stopped.",
             code="environment.share.not_finished")
     if not (root / "resolved_config.yml").is_file():
@@ -192,6 +200,36 @@ def finished_manifest(root: Path) -> dict[str, Any]:
                            "ran, which a shared study is opened by.",
                            code="environment.share.not_finished")
     return manifest
+
+
+#: How a study that did not finish ended, where no round of its rule says.
+_ENDED_SAID = {"stopped": "It was stopped.", "failed": "It ended with an error.",
+               "interrupted": "It ended without recording why."}
+
+
+def _refuse_short(root: Path, state: str, *, unless_unsaid: bool = False,
+                  short: list[str] | None = None) -> None:
+    """Refused, a study that did not finish, as every page reads it: its
+    rule's round's sentence (`stopping.round_ended`) and the study's
+    command; where no round says, the phases it did not finish (``short``).
+    ``unless_unsaid``: where no round says how it ended, its runs say it
+    instead."""
+    try:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        ended = round_ended(root)
+    except Exception:  # noqa: BLE001 - its state still says it did not finish
+        ended = None
+    if ended is None and unless_unsaid:
+        return
+    if ended is None and short:
+        raise ShareRefused(
+            f"The study in {root} did not finish ({', '.join(short)}); share it once it has, "
+            f"after `fastmdx resume {root}`.", code="environment.share.not_finished")
+    said = ended.said if ended is not None else _ENDED_SAID.get(state, "It did not finish.")
+    raise ShareRefused(
+        f"The study in {root} did not finish: {said} Share it once it has, after "
+        f"`fastmdx resume {root}`.", code="environment.share.not_finished")
 
 
 def _finished_runs(root: Path) -> dict[str, Any]:
@@ -226,6 +264,10 @@ def _finished_runs(root: Path) -> dict[str, Any]:
                  else f"Runs of the study in {root} are still going")
         raise ShareRefused(f"{which}; share the study once every run has finished.",
                            code="environment.share.not_finished")
+    if state in ("stopped", "failed", "interrupted"):
+        # As every page reads it, before its runs: each run's record alone
+        # shared a round that failed, or a rule never applied, as finished.
+        _refuse_short(root, state, unless_unsaid=True)
     results = {str(r.get("run_id")): r for r in (batch.get("runs") if isinstance(
         batch.get("runs"), list) else []) if isinstance(r, dict)}
     named = {str(e.get("run_id")): _system_named(e.get("system"))
@@ -265,6 +307,8 @@ def _finished_runs(root: Path) -> dict[str, Any]:
         named[run_id] = named.get(run_id) or _system_named(member.get("system"))
         if named[run_id]:
             systems.append(named[run_id])
+    if state in ("stopped", "failed", "interrupted"):
+        _refuse_short(root, state)
     if not (root / "resolved_config.yml").is_file():
         raise ShareRefused(f"The study in {root} has no resolved_config.yml, the Config of "
                            "all its runs, which a shared study is opened by.",

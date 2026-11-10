@@ -307,7 +307,7 @@ def build_dashboard(
         output_folder=project_root.as_posix(),
         live_html=live_html,
         stages=_stage_steps(manifest, live_status, run_stages(project_root)),
-        study_state=_study_state(manifest, live_status),
+        study_state=_study_state(manifest, live_status, root=project_root),
         platform=str(live_status.get("platform") or ""),
         report=_report_for_page(project_root, output_dir,
                                 include_bundle_link=include_bundle_link,
@@ -934,6 +934,17 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
                 if because else
                 f"mean {_format_metric_value(mean)}{unit}, too short to be determined"
                 ) + _image_noted(record)
+    from fastmdxplora.statistics import withheld_reason
+
+    too_few = withheld_reason(found)
+    if too_few:
+        # Its verdict and its figures as the Overview and the table give
+        # them: one judged by an earlier version on fewer samples than this
+        # one determines a mean on is not determined, its error not given.
+        from fastmdxplora.statistics import four_figures
+
+        return (f"mean {four_figures(mean)}{unit}, not determined: "
+                f"{too_few.split('. ', 1)[0].rstrip('.')}") + _image_noted(record)
     error = found.get("standard_error")
     text = (f"mean {_with_its_error(mean, error)}{unit}" if _finite(error) and error > 0
             else f"mean {_format_metric_value(mean)}{unit}")
@@ -942,12 +953,9 @@ def _what_the_analysis_found(data_path: Path) -> str | None:
         text += " after equilibration"
     samples = found.get("effective_samples")
     if _finite(samples):
-        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+        from fastmdxplora.statistics import independent_samples_said
 
-        count = int(round(samples))
-        text += f", {count} independent sample{'s' if count != 1 else ''}"
-        if samples < MINIMUM_EFFECTIVE_SAMPLES:
-            text += ", too few to determine the mean"
+        text += f", {independent_samples_said(samples)}"
     return text + _image_noted(record)
 
 
@@ -1151,6 +1159,14 @@ def _analysis_sections(
 ) -> list[DashboardSection]:
     grouped: dict[str, list[DashboardPanel]] = {section: [] for section in SECTION_ORDER}
     seen_sources: set[str] = set()
+    # A figure an earlier version plotted with the error of a mean this
+    # version withholds is said so in its caption, as under it in the report.
+    from fastmdxplora.gui.analysis_overview import plotted_since
+
+    try:
+        since = plotted_since(project_root)
+    except Exception:  # noqa: BLE001 - the page stands without the notes
+        since = {}
 
     for source in _discover_analysis_images(project_root):
         rel = source.relative_to(project_root).as_posix()
@@ -1176,6 +1192,8 @@ def _analysis_sections(
             # its row on the Analysis page says it.
             noted = _analysis_noted(project_root / "analysis" / folder / source.name).removeprefix("; ")
             summary = noted[:1].upper() + noted[1:] + "." if noted else ""
+        if since.get(rel):
+            summary = f"{summary} {since[rel]}".strip()
         grouped[section].append(
             DashboardPanel(
                 title=title,
@@ -1210,7 +1228,7 @@ def _analysis_sections(
                 original_source=rel,
                 original_href=_href(source, output_dir),
                 mode="artifact fallback",
-                summary="",
+                summary=since.get(rel, ""),
                 category=section,
             )
         )
@@ -1685,9 +1703,21 @@ def _stage_steps(
     return steps
 
 
-def _study_state(manifest: dict[str, Any], live_status: dict[str, Any] | None) -> tuple[str, str]:
+def _study_state(manifest: dict[str, Any], live_status: dict[str, Any] | None, *,
+                 root: Path | None = None) -> tuple[str, str]:
     """What the sidebar's dot and word say: the manifest's verdict, or,
-    before it is written, the live record's."""
+    before it is written, the live record's; for a run whose rule's round
+    failed, was stopped or was cut, that (`stopping.round_ended`), as the
+    GUI's status and All studies say it."""
+    if root is not None:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        try:
+            ended = round_ended(root)
+        except Exception:  # noqa: BLE001 - said from the manifest
+            ended = None
+        if ended is not None:
+            return ended.state, "error" if ended.state == "failed" else "waiting"
     recorded = _project_status(manifest)
     if manifest.get("phases"):
         if recorded == "ok":

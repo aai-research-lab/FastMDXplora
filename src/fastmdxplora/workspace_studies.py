@@ -99,18 +99,20 @@ def with_error(value: float, error: float | None, *, sign: bool = False) -> str:
 
 
 def mean_said(side: dict[str, Any] | None) -> str:
-    """One recorded mean, its error and unit, or why there is none."""
+    """One recorded mean, its error and unit, or why there is none, and its
+    notes beside it as every page joins them: its image note (``noted``),
+    then its drift note (``unseen``)."""
+    from fastmdxplora.statistics import noted_beside
+
     if not side:
         return "not recorded"
+    notes = noted_beside(side.get("noted")) + noted_beside(side.get("unseen"))
     if side.get("withheld"):
-        noted = f"; {side['noted']}" if side.get("noted") else ""
-        return f"not determined ({side['withheld']}){noted}"
+        return f"not determined ({side['withheld']}){notes}"
     mean, error, unit = side.get("mean"), side.get("error"), side.get("unit") or ""
     if mean is None:
         return "not recorded"
-    # Its image note beside it, as every page says it (`image_note`).
-    noted = f"; {side['noted']}" if side.get("noted") else ""
-    return f"{with_error(mean, error)} {unit}".strip() + noted
+    return f"{with_error(mean, error)} {unit}".strip() + notes
 
 
 def why_not(row: dict[str, Any]) -> str:

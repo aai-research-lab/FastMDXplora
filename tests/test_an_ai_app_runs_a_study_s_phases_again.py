@@ -79,7 +79,7 @@ def test_the_person_is_asked_and_a_no_runs_nothing(workspace):
 
     assert said == "Not run: the person did not go ahead."
     assert asked and asked[0].startswith("Run analysis and report again on study?")
-    assert "kept in previous/" in asked[0]
+    assert "saved in previous/" in asked[0]
     after = (workspace.root / "study" / "analysis" / "analysis_manifest.json").read_bytes()
     assert after == before and not (workspace.root / "study" / "previous").exists()
 

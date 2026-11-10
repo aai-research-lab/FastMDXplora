@@ -278,7 +278,9 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     is: a record of one run linked to another's, or to the study's, is a
     link out of it and refused. Nothing else of the study is admitted. None
     for a study of its own."""
-    if inside.parent.name != "runs":
+    from fastmdxplora.batch.explorer import campaign_of
+
+    if inside.parent.name != "runs" or campaign_of(inside) is None:
         return None
     from fastmdxplora.gui.problems_view import admitted_for_problems
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE
@@ -289,6 +291,11 @@ def _a_run_in_its_study(inside: Path) -> tuple[Path, Callable[[Path], bool]] | N
     def admitted(path: Path) -> bool:
         try:
             parts = path.relative_to(study).parts
+            if not parts:
+                # The study's folder, only as the way to its records
+                # admitted here (its process record, read as a lock is:
+                # whether it goes on another machine, `resume.going_elsewhere`).
+                return path.resolve() == study.resolve()
             if len(parts) == 1:
                 return (parts[0] in (RECORD, RUN_PROCESS_FILE, "batch_manifest.json", runs.name)
                         and path.resolve() == study / parts[0])
@@ -609,6 +616,37 @@ def _refusals_said(answer: dict[str, Any]) -> str:
                      + (", so what it says is not shown" if len(records) == 1
                         else ", so what they say is not shown"))
     return "; ".join(parts) + "."
+
+
+def stopping_card(root: Path) -> Any:
+    """The rule's card of the study open, or of the study a run of several
+    belongs to: the study's card, read in the study's own held read
+    (`_confined`: its record, config, batch manifest and process records),
+    so a run's page says what a resume of the study does, from the ceiling
+    its config now sets, as the study's page does."""
+    from fastmdxplora.gui.stopping_view import stopping_payload
+
+    in_its_study = _a_run_in_its_study(root.resolve()) if root.is_dir() else None
+    if in_its_study is not None:
+        from fastmdxplora.gui.telemetry import _study_of
+
+        # Only a run its study names (`telemetry._study_of`): a study of
+        # its own saved in a folder named ``runs`` has its own card.
+        if _confined(root, lambda inside: _study_of(inside) == inside):
+            in_its_study = None
+    if in_its_study is None:
+        return _said_not_read(_confined(root, stopping_payload))
+    study, inside = in_its_study[0], root.resolve()
+    answer = _confined(study, stopping_payload)
+    if isinstance(answer, dict) and answer.get("unavailable"):
+        # Each record it did not read named from the run's page, as a
+        # read of that page names it (`_named_from`).
+        why = answer.get("unavailable_why") or {}
+        named = {name: _named_from(inside, study, name) for name in answer["unavailable"]}
+        answer = {**answer, "unavailable": sorted(named.values()),
+                  "unavailable_why": {named[name]: said for name, said in why.items()
+                                      if name in named}}
+    return _said_not_read(answer)
 
 
 def _said_not_read(answer: Any) -> Any:
@@ -1931,11 +1969,7 @@ def make_handler(
                         root, lambda inside: secondary_structure(inside, of))))
                 return
             if path == "/api/stopping":
-                from fastmdxplora.gui.stopping_view import stopping_payload
-
-                # Read from the study's own records only (`_confined`): its
-                # record, batch manifest and process records.
-                self._send_json(_said_not_read(_confined(root, stopping_payload)))
+                self._send_json(stopping_card(root))
                 return
             if path == "/api/again":
                 # What can be run again on the study on screen, and why not,
@@ -4487,7 +4521,7 @@ def _results_payload(root: Path) -> dict[str, Any]:
                                           extended=extended,
                                           production_not_read=production_not_read),
         "phases": _phase_records(manifest),
-        "analyses": _analysis_records(analysis_manifest, artifacts, plots),
+        "analyses": _analysis_records(analysis_manifest, artifacts, plots, root),
         "dashboard": dashboard,
         "plots": plots,
         "key_plots": [plot for plot in plots if plot["title"] in KEY_PLOT_TITLES][:6],
@@ -4844,6 +4878,23 @@ def _summary_records(
                   else "in progress")
     else:
         status = "not run"
+    state = None
+    if phase_statuses:
+        # One reading for both rows: the study's state, as its header and
+        # every page read it (`workspace.study_state`). Its Manifest is its
+        # first piece's, or its run's before its rule's round, and read
+        # completed beside a round that failed or was cut, or beside a run
+        # whose process was gone ("completed" over "interrupted").
+        try:
+            from fastmdxplora.gui.workspace import study_state
+
+            state = study_state(root)
+        except Exception:  # noqa: BLE001 - the Manifest's word stands
+            state = None
+        if state in ("completed", "stopped", "failed", "interrupted"):
+            status = state
+        elif state == "running":
+            status = "in progress"
     frames = _first_present(
         analysis_manifest.get("n_frames"),
         sim_manifest.get("n_production_frames"),
@@ -4864,6 +4915,14 @@ def _summary_records(
         # Its live record not read, or a piece's: not the manifest's word,
         # nor the first piece's, in its place.
         latest = "not read"
+    elif state == "running" and str(latest).lower() == "waiting":
+        # A run waiting for its study's next round: going, and said so on
+        # both rows, as its status card says it.
+        status = "waiting"
+    elif status in ("completed", "stopped", "failed", "interrupted") and latest != status:
+        # The live record is a piece's or the run's own, and said
+        # "completed" beside a round that stopped: the one reading on both.
+        latest = status
     records = [
         {"label": "Project status", "value": status},
         {"label": "Latest status", "value": str(latest or "—")},
@@ -4882,6 +4941,18 @@ def _summary_records(
     ]
     if extended:
         records[4]["value"] += f" in {extended[1]} pieces"
+        # Its last piece not joined: its frames are of the pieces before it
+        # (`records_answer._span_analysed`), as the Agent says.
+        try:
+            from fastmdxplora.gui.records_answer import _span_analysed
+            from fastmdxplora.simulation.resume import _extended_since_it_finished
+
+            span = _span_analysed(root) if _extended_since_it_finished(root) else None
+        except Exception:  # noqa: BLE001 - a record, not a verdict
+            span = None
+        if span is not None and span < float(extended[0]) - 1e-6:
+            records[4]["value"] += ", its last not joined"
+            records[2]["value"] += f" (of its first {say_length(span)}, joined)"
     elif production_not_read:
         records[4]["value"] = "not read"
     return records
@@ -5289,6 +5360,7 @@ def _analysis_records(
     analysis_manifest: dict[str, Any],
     artifacts: list[dict[str, str]],
     plots: list[dict[str, str]],
+    root: Path | None = None,
 ) -> list[dict[str, Any]]:
     results = analysis_manifest.get("results")
     if not isinstance(results, dict):
@@ -5305,10 +5377,17 @@ def _analysis_records(
             ]
         return []
 
+    from fastmdxplora.gui.report_dashboard import (
+        ANALYSIS_SECTION_BY_FOLDER, SECTION_ANCHORS, SECTION_THEME)
+
     records: list[dict[str, Any]] = []
     for name, raw in results.items():
         data = raw if isinstance(raw, dict) else {}
         prefix = f"analysis/{name}/"
+        # The Analysis page's section it belongs in, so one that did not
+        # finish has a card there saying what to set: with no figure it had
+        # none, and the grid that showed it is hidden beside the sections.
+        section = ANALYSIS_SECTION_BY_FOLDER.get(str(name), "")
         related = [record for record in artifacts if record["path"].startswith(prefix)]
         plot = next(
             (
@@ -5319,16 +5398,43 @@ def _analysis_records(
             ),
             None,
         )
+        # What its record says it could not do for memory: the figures not
+        # plotted and the files not saved, said on the page with what to
+        # set (the section counted three figures and showed them, and said
+        # nothing of the map not plotted); and whether it was refused before
+        # it ran, not "did not finish".
+        findings = (_load_json(root / "analysis" / str(name) / "options.json").get("findings")
+                    if root is not None else None)
+        findings = findings if isinstance(findings, dict) else {}
+        # Each named by the title its card would have had (the line named
+        # files, "cluster_hierarchical_dendrogram.png", beside cards titled
+        # "Hierarchical dendrogram").
+        from fastmdxplora.gui.report_dashboard import _figure_title_from_path
+
+        not_plotted = [
+            {"file": str(file), "said": str(said),
+             "title": (_figure_title_from_path(Path("analysis") / str(name) / str(file))
+                       if key == "figures_not_plotted" else str(file))}
+            for key in ("figures_not_plotted", "not_saved")
+            if isinstance(findings.get(key), dict)
+            for file, said in findings[key].items()
+        ]
+        refused = findings.get("refused") if isinstance(findings.get("refused"), dict) else {}
         records.append(
             {
                 "name": str(name),
                 "title": PLOT_TITLE_ALIASES.get(str(name).lower(), _humanize_stem(str(name))),
+                "not_plotted": not_plotted,
+                "refused_before_it_ran": bool(refused.get("before_it_ran")),
                 "status": str(data.get("status") or "unknown"),
                 "message": str(data.get("message") or ""),
                 "started_at": data.get("started_at"),
                 "finished_at": data.get("finished_at"),
                 "artifacts": related,
                 "plot": plot,
+                "section": section,
+                "section_anchor": SECTION_ANCHORS.get(section, ""),
+                "theme": SECTION_THEME.get(section, ""),
             }
         )
     return records

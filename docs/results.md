@@ -269,8 +269,13 @@ each join:
 The naive number is not merely imprecise. It is confidently wrong, with a
 standard error on it that says otherwise.
 
-The report finds the joins itself, so this is handled for you where
-FastMDXplora joined the run. Doing it by hand:
+When FastMDXplora loads a joined trajectory, its sidecar supplies the joins;
+these follow stride and frame selection. Analyses use them to withhold an
+error if the segment means resolve a drift, and the report reads that saved
+verdict. Thermodynamic analyses use each energy column's own segment rows.
+This additional guard leaves the existing single-series estimate unchanged
+when it does not find a drift; full per-segment pooling is available through
+`summarise_segments`. Doing that by hand:
 
 ```python
 from fastmdxplora.analysis.joining import joins_beside
@@ -288,6 +293,38 @@ error should be read as a lower bound. Segment means that *climb or fall* say
 the system had not equilibrated at the scale of the whole run — that is a refusal,
 `analysis.sampling.drifting`, and the remedy is a longer run rather than more
 pooling.
+
+With **three or four contributing segments**, the test fits a weighted
+straight-line trend against where each segment mean sits in time (the centre
+frame of the frames it averages), using each segment mean's own standard
+error. The slope must be significant at 0.05 against those errors where the
+line's residuals are consistent with them; a jump or unordered offsets can have
+a large fitted slope too, so where the residuals are not, the errors do not
+judge the slope. The slope must also
+be significant against the means' own scatter about an unweighted line
+(Student's t on k - 2 degrees of freedom): with one or two residual degrees of
+freedom the errors cannot be checked, and offsets between segments larger than
+their errors, in no order, were otherwise called a trend in 12% to 40% of runs.
+At three segments this asks for a nearly straight line, so a real trend is
+called less often than at four (see the counts).
+With **five or more segments**, the existing order-permutation test is used.
+Fewer than three segments give no drift test. The pooled record and a drift
+refusal identify the method in `drift_test`, and a withheld mean's record
+saves its refusal's code (`withheld_code`), by which the report and the
+Overview tell a mean still drifting from one withheld for other reasons.
+
+Where a line fails its fit check, the short-run test's `drift_p` is the
+scatter's alone. A mean of three or four segments not called drifting has not
+been shown stationary: its record saves `drift_unseen`, and every page says
+beside the mean how large a steady drift the segments tested could miss, in
+its own units, first segment to last: worked out when the record is written
+for the tested segments' own errors and centres in time (41 times the error
+of their pooled mean for three equal pieces, 16 for four, about that for
+pieces of unequal length with equal errors, more where their errors differ), times the means' scatter about the line where it exceeds
+their errors, or, where fewer than three of its segments
+could be tested, that drift between them was not tested. Substantial unexplained scatter still qualifies the
+error as a lower bound. See the [method, assumptions and fixed synthetic
+checks](short-segment-drift.md) for the formulas and validation counts.
 
 ```
 equilibrated  mean=10.005 het=0.7   drift_p=0.30   qualified=False

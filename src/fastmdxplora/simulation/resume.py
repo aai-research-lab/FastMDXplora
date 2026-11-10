@@ -431,8 +431,6 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     last segment, not from where its first run stopped, and what it has
     done is then counted across all of its segments.
     """
-    import yaml
-
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
     root = Path(parent).expanduser().resolve()
@@ -446,11 +444,9 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     _refuse(resolved)
     if not _records.is_file(resolved):
         return Continuation(**empty, refusal="the study has no resolved_config.yml")
-    try:
-        config = yaml.load(_records.read_text(resolved, encoding="utf-8"),
-                           Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
-    except (OSError, yaml.YAMLError) as exc:
-        return Continuation(**empty, refusal=f"the study's config could not be read: {exc}")
+    config, why = _read_config(resolved)
+    if config is None:
+        return Continuation(**empty, refusal=f"the study's config could not be read: {why}")
     verdict = segmentability(config)
     if not verdict.allowed:
         return Continuation(**empty, refusal=verdict.reason)
@@ -472,6 +468,7 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     sim = dict(config.get("simulation") or {})
     dt_fs = float(sim.get("timestep_fs") or 2.0)
     dt_ns = dt_fs * 1e-6
+    # Checked by `_read_config`, as the numbers below are.
     # A stated zero is zero, as the runner reads it.
     nvt_ns = sim.get("nvt_duration_ns")
     npt_ns = sim.get("npt_duration_ns")
@@ -641,7 +638,9 @@ def last_segment(study: str | Path) -> Path:
 
 def extended_production(study: str | Path) -> tuple[float, int] | None:
     """Production across an extended study's pieces, and how many pieces
-    ran; None for a study that ran in one.
+    ran; None for a study that ran in one, and for one where a piece's
+    ``resolved_config.yml`` does not read as a config, so what it ran is
+    not known (:func:`production_unreadable` says why).
 
     An extension writes its own folder inside the study (``segment-001``
     onward) and leaves the study's own ``simulation_parameters.json`` as
@@ -660,6 +659,10 @@ def extended_production(study: str | Path) -> tuple[float, int] | None:
         if not any(folder.name[8:].isdigit()
                    for folder in _records.glob(Path(study), "segment-*")):
             return None
+        # A piece's config that does not read: what it ran is not known, so
+        # nothing is summed (`production_unreadable` says why).
+        if production_unreadable(study) is not None:
+            return None
         ran = [piece for piece in survey_segments(study) if piece.trajectory is not None]
     except OutsideWorkspace:
         raise
@@ -668,6 +671,72 @@ def extended_production(study: str | Path) -> tuple[float, int] | None:
     if len(ran) < 2:
         return None
     return production_done_ns(study), len(ran)
+
+
+def _read_config(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """A piece's ``resolved_config.yml`` as a config, or None and why: not
+    there or not read, not UTF-8, not YAML, not a mapping of settings, or a
+    simulation block whose timestep or lengths are not numbers. Each of
+    these raised where the production was counted, and the study's stage
+    lengths with it."""
+    import yaml
+
+    from fastmdxplora.refusals import OutsideWorkspace
+
+    try:
+        text = _records.read_text(path, encoding="utf-8")
+    except OutsideWorkspace:
+        raise
+    except UnicodeDecodeError:
+        return None, "it is not UTF-8 text"
+    except OSError as exc:
+        return None, f"it could not be read ({exc.strerror or exc})"
+    try:
+        config = yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
+    except yaml.YAMLError:
+        return None, "it is not YAML"
+    if not isinstance(config, dict):
+        return None, "it is not a mapping of settings"
+    simulation = config.get("simulation")
+    if simulation is None:
+        return config, None
+    if not isinstance(simulation, dict):
+        return None, "its `simulation` is not a mapping of settings"
+    for key in ("timestep_fs", "duration_ns", "nvt_duration_ns", "npt_duration_ns",
+                "production_steps", "nvt_steps", "npt_steps"):
+        value = simulation.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 \
+                or value != value or (key == "timestep_fs" and value == 0):
+            return None, f"its `simulation.{key}` ({value!r}) is not a length"
+    return config, None
+
+
+def production_unreadable(study: str | Path) -> str | None:
+    """Why the production of a study carried on in pieces is not known: the
+    first piece whose ``resolved_config.yml`` is there and does not read
+    as a config (:func:`_read_config`), named by its folder; None where
+    every one that is there reads."""
+    import re
+
+    root = Path(study)
+    try:
+        folders = [root] + sorted(
+            (folder for folder in _records.glob(root, "segment-*")
+             if re.fullmatch(r"segment-\d+", folder.name)),
+            key=lambda folder: int(folder.name[8:]))
+    except OSError:
+        return None
+    for folder in folders:
+        resolved = folder / "resolved_config.yml"
+        if not _records.is_file(resolved):
+            continue
+        _config, why = _read_config(resolved)
+        if why is not None:
+            where = "the study's" if folder == root else f"{folder.name}'s"
+            return f"{where} resolved_config.yml does not read: {why}"
+    return None
 
 
 def _refuse(*paths: Path) -> None:
@@ -704,8 +773,6 @@ def production_done_ns(study: str | Path) -> float:
     """Production across the pieces of this study: each finished piece at
     its length, each stopped one as far as its checkpoint, and a piece
     stopped before its first checkpoint not at all."""
-    import yaml
-
     from fastmdxplora.analysis.joining import survey_segments
     from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
@@ -737,10 +804,8 @@ def production_done_ns(study: str | Path) -> float:
         if not found.finished and str((read_checkpoint_sidecar(checkpoint) or {})
                                       .get("stage") or "") != "production":
             continue
-        try:
-            config = yaml.load(_records.read_text(resolved, encoding="utf-8"),
-                               Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
-        except (OSError, yaml.YAMLError):
+        config, _why = _read_config(resolved)
+        if config is None:
             continue
         piece = continuation_of(folder)
         total += piece.production_done_ns if piece.production_done_ns else float(
@@ -802,11 +867,14 @@ def study_to_continue(config: dict[str, Any] | None) -> Path | None:
 def extend_study(study: str | Path, *, total_ns: float | None = None,
                  more_ns: float | None = None,
                  analyse: bool = True,
-                 device_index: str | int | None = None) -> dict[str, Any]:
+                 device_index: str | int | None = None,
+                 checkpoint_interval_steps: int | None = None) -> dict[str, Any]:
     """Run the next segment, join the study, and analyse the whole.
 
     A study being carried on by another process is said, not carried on
-    twice.
+    twice. ``checkpoint_interval_steps`` is how often the new piece writes
+    its checkpoint, where the extension's config sets it; otherwise the
+    study's.
 
     Three steps, so that asking for more sampling is one instruction
     rather than three: simulate the segment into the study; join every
@@ -817,10 +885,19 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
     a discontinuity is worse than one that never ran.
     """
     root = Path(study).expanduser().resolve()
+    # A study, or a run of one, going elsewhere or run or held by another
+    # process here (its lock, its study's or another run's), is refused
+    # before anything is written: an extension run into a live run joined
+    # a trajectory that is not one run.
+    held = _held_elsewhere(root)
+    if held:
+        return {"ok": False, "stage": "planning",
+                "error": held.replace(_STILL_GOING, _STILL_GOING_TO_EXTEND)}
     try:
         with _carrying_on(root):
             return _extend_study(root, total_ns=total_ns, more_ns=more_ns, analyse=analyse,
-                                 device_index=device_index)
+                                 device_index=device_index,
+                                 checkpoint_interval_steps=checkpoint_interval_steps)
     except _CarriedOnElsewhere:
         return {"ok": False, "stage": "planning", "error": _STILL_GOING_TO_EXTEND}
 
@@ -828,7 +905,8 @@ def extend_study(study: str | Path, *, total_ns: float | None = None,
 def _extend_study(study: str | Path, *, total_ns: float | None = None,
                   more_ns: float | None = None,
                   analyse: bool = True,
-                  device_index: str | int | None = None) -> dict[str, Any]:
+                  device_index: str | int | None = None,
+                  checkpoint_interval_steps: int | None = None) -> dict[str, Any]:
     """The work of :func:`extend_study`, under the study's lock."""
     import yaml
 
@@ -869,6 +947,14 @@ def _extend_study(study: str | Path, *, total_ns: float | None = None,
         # The device this run was given now, where a campaign shares out
         # its cards, rather than the one it had before it stopped.
         plan.config.setdefault("simulation", {})["device_index"] = device_index
+    if checkpoint_interval_steps is not None:
+        # Asked of this piece, as a run on a machine with a wall time asks
+        # for checkpoints often enough to lose little at the stop. The
+        # study's own was used whatever the extension said, so a piece of
+        # 6,000 steps with the study's 10,000 wrote none, and a stop lost
+        # all of it.
+        plan.config.setdefault("simulation", {})[
+            "checkpoint_interval_steps"] = int(checkpoint_interval_steps)
 
     segment = Path(plan.config["output"])
     config_path = segment.with_name(segment.name + ".yml")
@@ -944,6 +1030,33 @@ def _frames_to_keep(root: Path, *, last_too: bool = True
                  "the middle of the trajectory."}
 
 
+def _save_what_is_replaced(root: Path) -> list[str]:
+    """Save the study's analysis and report in `previous/` before the
+    join's own run over them, as `--rerun` does: the analysis there may be
+    one the person chose (`fastmdx analyze --rerun --trajectory`), and the
+    join's replaced it with nothing left of it. The phases saved.
+
+    Only an analysis that finished (its manifest written) is saved, and an
+    analysis of the join is never saved over one saved before: a resume
+    stopped in its own analyses left an unfinished one, or one of the join
+    without its report, and the next resume saved it in place of the
+    person's. What is not saved is replaced by the join's analyses."""
+    from fastmdxplora.replaced import PREVIOUS, analysis_finished, make_way, outputs_of
+    from fastmdxplora.utils.logging import get_logger
+
+    if not outputs_of(root, "analysis"):
+        return []
+    # Finished as `--rerun` reads it (`make_way` saves no other).
+    record = analysis_finished(root / "analysis")
+    if record is None:
+        return []
+    given = record.get("trajectory_input")
+    of_the_join = (isinstance(given, str) and Path(given).parts[-2:] == ("joined", "production.dcd"))
+    if of_the_join and _records.exists(root / PREVIOUS / "analysis"):
+        return []
+    return make_way(root, ["analysis"], keep=True, say=get_logger(__name__).info)
+
+
 def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | None,
                       keep_frames: dict[int, int] | None,
                       analyse: bool = True) -> dict[str, Any]:
@@ -958,6 +1071,12 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     # Every finished segment, in one trajectory, in the study's own folder.
     joined_dir = root / "joined"
     joined_dir.mkdir(parents=True, exist_ok=True)
+    owed = joined_dir / ANALYSIS_OWED
+    if analyse:
+        # Said before the join is written, taken away only once the study's
+        # analyses and report of it have run: a study stopped anywhere
+        # between read as finished, its report of the first piece alone.
+        _write_atomically(owed, json_dumps({"segment": segment_text}))
     # The trajectory's own topology, not the system's. A run that saved a
     # selection -- "not water", almost always -- writes frames of those
     # atoms and a matching trajectory_topology.pdb beside them; joining
@@ -973,6 +1092,11 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
 
         return {"ok": False, "stage": "joining", "segment": segment_text,
                 "error": str(exc), "refusal": refusal_of(exc).as_dict()}
+    # When, in the record: a copy that does not carry the files' times
+    # carries this (an analysis chosen after the join is told by it).
+    from datetime import datetime, timezone
+
+    record = {**record, "joined_at": datetime.now(timezone.utc).isoformat()}
     (joined_dir / "joined.json").write_text(
         json_dumps(record), encoding="utf-8")
 
@@ -980,36 +1104,378 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
         return {"ok": True, "segment": segment_text, "joined": record,
                 "analysed": False}
 
-    # The study's analyses and report, over the whole trajectory.
-    whole = dict(config)
+    # The study's analyses and report, over the whole trajectory, run from
+    # the study's own config at its whole length, which is in its place
+    # before they start and after they end. Run from the last piece's, the
+    # analysis wrote the piece's over the study's `resolved_config.yml`
+    # until it ended: a study stopped then was read as its last piece (no
+    # minimisation, no equilibration, its own length), and with the first
+    # piece's step count beside that length it was refused by `fastmdx
+    # resume`. A copy beside the joined trajectory says, to a resume, what
+    # the study's config was where the analysis was stopped before it was
+    # put back. The segments themselves are never touched; the study's own
+    # analysis and report are replaced, since they described a shorter
+    # trajectory than the study now has.
+    resolved = root / "resolved_config.yml"
+    kept = _the_study_s_config_text(root)
+    whole_text = _keep_the_study_s_config(root, kept)
+    import yaml
+
+    try:
+        own = yaml.safe_load(whole_text) if whole_text is not None else None
+    except yaml.YAMLError:
+        own = None
+    if not isinstance(own, dict):
+        # Run from the last piece's config instead, the analysis wrote it
+        # over the study's, and nothing put the study's back. Said, and the
+        # analysis left owed.
+        return {"ok": False, "stage": "analysis", "segment": segment_text, "joined": record,
+                "error": "The study's resolved_config.yml does not read as a config, so "
+                         "the joined trajectory is not analysed: correct it and resume."}
+    _write_atomically(joined_dir / STUDY_CONFIG_COPY, whole_text)
+    whole = dict(own)
     whole["output"] = str(root)
     whole["include_phase"] = ["analysis", "report"]
+    whole.pop("exclude_phase", None)
     analysis = dict(whole.get("analysis") or {})
     analysis["trajectory"] = str(joined_dir / "production.dcd")
     topology = root / "simulation" / "trajectory_topology.pdb"
     if topology.is_file():
         analysis["topology"] = str(topology)
+    else:
+        analysis.pop("topology", None)
     whole["analysis"] = analysis
-    # The study's own analysis and report are replaced on purpose: they
-    # described a shorter trajectory than the study now has, and leaving
-    # them would leave a report whose numbers are for a run that is no
-    # longer the whole of it. The segments themselves are never touched.
-    resolved = root / "resolved_config.yml"
+    ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
     try:
-        kept = resolved.read_text(encoding="utf-8")
+        _write_atomically(resolved, whole_text)
+        (joined_dir / STUDY_CONFIG_COPY).unlink(missing_ok=True)
     except OSError:
-        kept = None
-    FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+        from fastmdxplora.utils.logging import get_logger
+
+        get_logger(__name__).warning(
+            "The study's resolved config could not be written back.")
+    failed = [result for result in ran if result.status != "ok"]
+    if failed:
+        from fastmdxplora.simulation.runner import STOPPED_CODE
+
+        # Its answer is in the study's Manifest; the analysis stays owed.
+        # Said in the phase it ended in (the report's, or the analyses'),
+        # and as a stop where it was asked to stop, as a piece's is.
+        ended = [phase for result in failed for phase in getattr(result, "phases", None) or ()
+                 if getattr(phase, "status", None) == "error"]
+        return {"ok": False, "stage": ended[0].name if ended else "analysis",
+                "stopped": any((getattr(phase, "refusal", None) or {}).get("code")
+                               == STOPPED_CODE for phase in ended),
+                "segment": segment_text, "joined": record,
+                "error": failed[0].message or "The analyses of the joined trajectory "
+                                              "did not finish."}
     _production_carried_on(root, record)
-    _keep_the_study_s_config(root, kept)
+    owed.unlink(missing_ok=True)
+    _phases_after_ended_well(root)
     return {"ok": True, "segment": segment_text, "joined": record,
             "analysed": True, "trajectory": str(joined_dir / "production.dcd")}
 
 
-def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
-    """The study's resolved config as the study, not as its last piece.
+def _phases_after_ended_well(root: Path) -> None:
+    """The study's record said as its analyses and report ending well leave
+    it (`telemetry.phases_after_ended_well`), where a stop in them is the
+    last thing it says; a record, never the outcome."""
+    try:
+        from fastmdxplora.gui.telemetry import phases_after_ended_well
 
-    Analysing the joined trajectory runs the study's analysis and report
+        phases_after_ended_well(root)
+    except Exception:  # noqa: BLE001 - a record, never the outcome
+        return
+
+
+#: Beside the joined trajectory from before the pieces are joined until the
+#: study's analyses and report of the join have run: a study stopped between
+#: is owed them, and `fastmdx resume` runs them (``did: analysed``).
+ANALYSIS_OWED = "analysis_owed.json"
+
+
+def analysis_owed(root: str | Path) -> bool:
+    """Whether the study's analyses and report of its joined pieces are
+    owed: the one reading `fastmdx resume` and the GUI take.
+
+    Owed where a join of its pieces was begun and they have not run since
+    (:data:`ANALYSIS_OWED`), and where a study stopped after its join by a
+    version that wrote no such marker left an analysis that is not of the
+    join: its `analysis/analysis_manifest.json` names a first piece's
+    trajectory (`simulation/production.dcd`), or the join read whole (no
+    stride, first or last frame) at a count of frames other than
+    `joined/joined.json`'s. An analysis the person chose is not owed
+    (`_chosen_by_the_person`). A study with no join, or no analysis
+    recorded, owes none by this reading.
+
+    Owed is not going: the GUI asks `being_carried_on` before it says so."""
+    root = Path(root)
+    try:
+        if _records.is_file(root / "joined" / ANALYSIS_OWED):
+            return True
+        return _analysis_not_of_the_join(root)
+    except OSError:
+        return False
+
+
+#: What `_analysis_not_of_the_join` read, by the two records' times and
+#: sizes: the GUI asks at every poll of a page.
+_NOT_OF_THE_JOIN: dict[tuple[Any, ...], bool] = {}
+
+
+def _analysis_not_of_the_join(root: Path) -> bool:
+    import json
+
+    joined = root / "joined" / "joined.json"
+    manifest = root / "analysis" / "analysis_manifest.json"
+    if not _records.is_file(joined) or not _records.is_file(manifest):
+        return False
+    try:
+        key = (str(root), *((s.st_mtime_ns, s.st_size) for s in
+                            (_records.stat(joined), _records.stat(manifest))),
+               _config_stamp(root), _config_stamp(root, "manifest.json"))
+    except OSError:
+        return False
+    # Read once: a clear by another of the GUI's threads between a test of
+    # the key and its read raised KeyError in the status route.
+    cached = _NOT_OF_THE_JOIN.get(key)
+    if cached is not None:
+        return cached
+    owed = False
+    try:
+        frames = json.loads(_records.read_text(joined, encoding="utf-8")).get("frames")
+        record = json.loads(_records.read_text(manifest, encoding="utf-8"))
+    except (OSError, ValueError, AttributeError):
+        record = None
+    if isinstance(record, dict):
+        given = record.get("trajectory_input")
+        parts = Path(given).parts if isinstance(given, str) and given else ()
+        # A first piece's frames, the study's own or, in a copy made by an
+        # older version, the original's; a piece carried on is never
+        # analysed alone by a study.
+        first = (parts[-2:] == ("simulation", "production.dcd")
+                 and not (len(parts) > 2 and parts[-3].startswith("segment-")))
+        loaded = record.get("load_kwargs") if isinstance(record.get("load_kwargs"), dict) else {}
+        whole = all(loaded.get(key) is None for key in ("stride", "first", "last"))
+        counted = record.get("n_frames")
+        short = (parts[-2:] == ("joined", "production.dcd") and whole
+                 and isinstance(frames, int) and not isinstance(frames, bool)
+                 and isinstance(counted, int) and not isinstance(counted, bool)
+                 and counted != frames)
+        owed = (first or short) and not _chosen_by_the_person(root, given, joined)
+    if len(_NOT_OF_THE_JOIN) > 512:
+        _NOT_OF_THE_JOIN.clear()
+    _NOT_OF_THE_JOIN[key] = owed
+    return owed
+
+
+def _config_stamp(root: Path, name: str = "resolved_config.yml") -> tuple[int, int] | None:
+    """The study's resolved config's time and size, which name the
+    trajectory a person chose (or its Manifest's, which says when its
+    analysis began): None where it is not there."""
+    try:
+        stat = _records.stat(root / name)
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def _chosen_by_the_person(root: Path, given: Any, joined: Path) -> bool:
+    """Whether the analysis on record is of a trajectory the person named
+    (`fastmdx analyze --rerun --trajectory`), not one a join owes: the
+    study's resolved config names it as `analysis.trajectory`, and it was
+    begun after the join (`_analysed_after_the_join`).
+
+    A study's own first run names its first piece there too, and a version
+    that wrote no marker left it so when stopped after its join; that
+    analysis was written before the join, and is owed. The join's own
+    analysis names the join, and the study's config is put back without
+    it, so a config that names no trajectory, or the join, chose none."""
+    import os
+
+    import yaml
+
+    if not isinstance(given, str) or not given:
+        return False
+    try:
+        config = yaml.safe_load(_records.read_text(root / "resolved_config.yml",
+                                                   encoding="utf-8"))
+    except (OSError, ValueError, yaml.YAMLError):
+        return False
+    analysis = config.get("analysis") if isinstance(config, dict) else None
+    named = analysis.get("trajectory") if isinstance(analysis, dict) else None
+    if not isinstance(named, str) or not named:
+        return False
+
+    def where(path: str) -> str:
+        return os.path.normpath(os.path.join(str(root), os.path.expanduser(path)))
+
+    if where(named) != where(given) or where(named) == where(str(root / "joined" / "production.dcd")):
+        return False
+    return _analysed_after_the_join(root, joined)
+
+
+def _recorded_time(path: Path, phase: str, key: str) -> float | None:
+    """``key`` (`started_at`, `finished_at`) of ``phase`` in the Manifest
+    at ``path``, as a time; None where it is not recorded."""
+    import json
+
+    try:
+        record = json.loads(_records.read_text(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    phases = record.get("phases") if isinstance(record, dict) else None
+    for entry in phases if isinstance(phases, list) else []:
+        if isinstance(entry, dict) and (entry.get("name") or entry.get("phase")) == phase:
+            return _a_time(entry.get(key))
+    return None
+
+
+def _a_time(value: Any) -> float | None:
+    from datetime import datetime, timezone
+
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.timestamp()
+
+
+def _analysed_after_the_join(root: Path, joined: Path) -> bool:
+    """Whether the study's analysis on record was begun after its pieces
+    were joined, by the times the records hold, which a copy carries: its
+    Manifest's analysis `started_at` against the join's `joined_at`, or,
+    from a version that wrote none, the last piece's simulation
+    `finished_at`. The files' own times are not read: `cp -r`, `scp -r`
+    or a download without them writes the files in their copy order.
+    Not after where either time is not recorded."""
+    import json
+
+    started = _recorded_time(root / "manifest.json", "analysis", "started_at")
+    if started is None:
+        return False
+    try:
+        record = json.loads(_records.read_text(joined, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict):
+        return False
+    joined_at = _a_time(record.get("joined_at"))
+    if joined_at is None:
+        pieces = [index for index in record.get("segments") or []
+                  if isinstance(index, int) and not isinstance(index, bool) and index > 0]
+        if not pieces:
+            return False
+        joined_at = _recorded_time(root / f"segment-{max(pieces):03d}" / "manifest.json",
+                                   "simulation", "finished_at")
+    return joined_at is not None and started > joined_at
+
+
+def _the_analysis_chosen(root: Path) -> bool:
+    """Whether the analysis on record is one the person chose after the
+    join, and no join's analyses are owed by its marker: the reading
+    `analysis_owed` takes, so resume and the GUI agree."""
+    import json
+
+    if _records.is_file(root / "joined" / ANALYSIS_OWED):
+        return False
+    joined = root / "joined" / "joined.json"
+    try:
+        record = json.loads(_records.read_text(root / "analysis" / "analysis_manifest.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    given = record.get("trajectory_input") if isinstance(record, dict) else None
+    return _records.is_file(joined) and _chosen_by_the_person(root, given, joined)
+
+
+def _report_of_the_chosen(root: Path) -> dict[str, Any]:
+    """The study's report written over the analysis the person chose, as
+    `fastmdx report --output` writes it, from the study's config as the
+    join's analyses run from it (`_keep_the_study_s_config`): its whole
+    length, never a step count beside a duration it disagrees with, which
+    an analyze of an extended study by an earlier version wrote and the
+    config's check refuses. A refusal is the answer, never a traceback."""
+    from fastmdxplora import FastMDXplora
+    from fastmdxplora.refusals import refusal_of
+
+    resolved = root / "resolved_config.yml"
+    whole_text = _keep_the_study_s_config(root, _the_study_s_config_text(root), chosen=True)
+    import yaml
+
+    try:
+        own = yaml.safe_load(whole_text) if whole_text is not None else None
+    except yaml.YAMLError:
+        own = None
+    if not isinstance(own, dict):
+        return {"ok": False, "stage": "report",
+                "error": "The study's resolved_config.yml does not read as a config, so "
+                         "its report is not written: correct it and resume."}
+    joined_dir = root / "joined"
+    _write_atomically(joined_dir / STUDY_CONFIG_COPY, whole_text)
+    whole = dict(own)
+    whole["output"] = str(root)
+    whole["include_phase"] = ["report"]
+    whole.pop("exclude_phase", None)
+    try:
+        ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+    except Exception as exc:  # noqa: BLE001 - said as the answer, as every stage's
+        said = refusal_of(exc)
+        ran = None
+    try:
+        _write_atomically(resolved, whole_text)
+        (joined_dir / STUDY_CONFIG_COPY).unlink(missing_ok=True)
+    except OSError:
+        pass
+    if ran is None:
+        return {"ok": False, "stage": "report", "error": said.message,
+                "refusal": said.as_dict()}
+    failed = [result for result in ran if result.status != "ok"]
+    if failed:
+        return {"ok": False, "stage": "report",
+                "error": failed[0].message or "The report did not finish."}
+    return {"ok": True, "reported_only": True,
+            "detail": "Production was complete and its analysis is the one chosen "
+                      "after the join (fastmdx analyze --rerun --trajectory); its report "
+                      "was written over it."}
+
+
+#: The study's config at its whole length, beside the joined trajectory
+#: while its analyses run again: where they are stopped before it is put
+#: back in `resolved_config.yml`, the next join reads it from here.
+STUDY_CONFIG_COPY = "study_resolved_config.yml"
+
+
+def _the_study_s_config_text(root: Path) -> str | None:
+    """The study's own `resolved_config.yml` as text: the copy a join left
+    beside the joined trajectory where its analysis was stopped before the
+    study's was put back, else the file; None where neither reads."""
+    for path in (root / "joined" / STUDY_CONFIG_COPY, root / "resolved_config.yml"):
+        try:
+            return _records.read_text(path, encoding="utf-8")
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """``text`` into ``path`` through a file beside it, so a reader finds
+    the old or the new, never half of one."""
+    partial = path.with_name(path.name + ".new")
+    partial.write_text(text, encoding="utf-8")
+    partial.replace(path)
+
+
+def _keep_the_study_s_config(root: Path, kept: str | None, *,
+                             chosen: bool = False) -> str | None:
+    """The study's resolved config as the study, not as its last piece,
+    put in its place; the text written, None where it is not a config.
+
+    Analysing the joined trajectory ran the study's analysis and report
     from the last piece's config, and that run wrote it over the study's
     `resolved_config.yml`: its `resume_from`, its own length, no
     minimisation or equilibration, and the joined trajectory's path. The
@@ -1017,12 +1483,15 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
     extension. Put back as the study wrote it, with `duration_ns` the
     production of every piece, it runs the study to its whole length; an
     extended study analysed again in place finds its joined trajectory
-    itself (`analysis.analyze.study_trajectory`).
+    itself (`analysis.analyze.study_trajectory`). Each write is whole, so a
+    reader never finds half a file. ``chosen`` leaves its `analysis` as
+    it is: the trajectory the person chose is how that analysis is known
+    as theirs (`_chosen_by_the_person`).
     """
     import yaml
 
     if not kept:
-        return
+        return None
     resolved = root / "resolved_config.yml"
     header = "".join(line for line in kept.splitlines(keepends=True)
                      if line.startswith("#"))
@@ -1033,21 +1502,29 @@ def _keep_the_study_s_config(root: Path, kept: str | None) -> None:
     try:
         # Put back first: what the pieces add up to is counted against the
         # study's own plan, its equilibration included.
-        resolved.write_text(kept, encoding="utf-8")
+        _write_atomically(resolved, kept)
         if not isinstance(config, dict):
-            return
-        simulation = dict(config.get("simulation") or {})
+            return None
+        simulation = config.get("simulation")
+        simulation = dict(simulation) if isinstance(simulation, dict) else {}
         simulation.pop("production_steps", None)
         simulation["duration_ns"] = round(production_done_ns(root), 9)
         config["simulation"] = simulation
-        resolved.write_text(header + yaml.safe_dump(config, sort_keys=False,
-                                                    default_flow_style=False),
-                            encoding="utf-8")
+        if isinstance(config.get("analysis"), dict) and not chosen:
+            from fastmdxplora.config.recorded import leave_the_study_s_own_files
+
+            # Its own frames, found where it is (a copy named the original's).
+            config["analysis"] = dict(config["analysis"])
+            leave_the_study_s_own_files(config["analysis"], config.get("output"), root)
+        text = header + yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
+        _write_atomically(resolved, text)
+        return text
     except OSError:
         from fastmdxplora.utils.logging import get_logger
 
         get_logger(__name__).warning(
             "The study's resolved config could not be written back.")
+        return None
 
 
 def _production_carried_on(root: Path, joined: dict[str, Any]) -> None:
@@ -1218,7 +1695,11 @@ def frames_before_checkpoint(segment: str | Path) -> int | None:
 #: What `resume_study` did, as a program reads it.
 RESUMED_NOTHING = "nothing"
 RESUMED_ANALYSIS = "analysed"
+#: Only the report, over an analysis the person chose after the join.
+RESUMED_REPORT = "reported"
 RESUMED_PRODUCTION = "continued"
+#: Its stopping rule applied to its runs as they stand, nothing simulated.
+RESUMED_JUDGED = "judged"
 RESUMED_FROM_START = "restarted"
 
 
@@ -1334,6 +1815,32 @@ def _length_asked_of(aside: Path) -> tuple[float | None, str | None, str | None]
         return None, None, None
 
 
+def _checkpoint_interval_asked(root: Path) -> int | None:
+    """The checkpoint interval the study's newest extension was asked to run
+    at (its ``segment-NNN.yml``, which stays where its folder was set
+    aside), so the piece that carries it on writes its checkpoints as
+    often; None where none was asked or the config does not read."""
+    import re
+
+    import yaml
+
+    newest = None
+    for path in _records.glob(root, "segment-*.yml"):
+        found = re.fullmatch(r"segment-(\d+)\.yml", path.name)
+        if found and (newest is None or int(found.group(1)) > newest[0]):
+            newest = (int(found.group(1)), path)
+    if newest is None:
+        return None
+    try:
+        config = yaml.safe_load(_records.read_text(newest[1], encoding="utf-8"))
+        value = config["simulation"]["checkpoint_interval_steps"]
+    except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError):
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
 def _owed_by_the_last_piece(root: Path) -> float | None:
     """What the study's last extension was asked to run and did not, where
     it stopped past a checkpoint; None for the study's own piece, a piece
@@ -1359,7 +1866,8 @@ def _owed_by_the_last_piece(root: Path) -> float | None:
     return owed if owed > 0 else None
 
 
-def _the_last_piece_s_answer(root: Path) -> tuple[str, str, float, float] | None:
+def _the_last_piece_s_answer(root: Path, *, lengths: bool = True
+                             ) -> tuple[str, str, float, float] | None:
     """(its folder's name, why it stopped, the length it was asked to run
     and how far past the study's plan that reaches, in ns) where the
     study's last numbered piece stopped
@@ -1376,13 +1884,16 @@ def _the_last_piece_s_answer(root: Path) -> tuple[str, str, float, float] | None
     found = max(pieces, key=lambda each: each.index)
     last = found.directory
     try:
-        config = yaml.safe_load((last / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+        config = yaml.safe_load(_records.read_text(last / "resolved_config.yml",
+                                                   encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
         config = {}
     config = config if isinstance(config, dict) else {}
     _finished, stopped = _finished_record(last, config)
     if stopped is None:
         return None
+    if not lengths:
+        return last.name, stopped, 0.0, 0.0
     # Where the piece was asked to end, against the plan: the production
     # of every piece before it, and its own length.
     past = asked = 0.0
@@ -1425,13 +1936,15 @@ def _extended_since_it_finished(root: Path) -> bool:
         return False
     if numbered:
         try:
-            joined = json.loads((root / "joined" / "joined.json").read_text(encoding="utf-8"))
+            joined = json.loads(_records.read_text(root / "joined" / "joined.json",
+                                                   encoding="utf-8"))
             taken = {int(index) for index in joined.get("segments") or []}
         except (OSError, ValueError, TypeError, AttributeError):
             taken = set()
         if max(numbered) not in taken:
             return True
-    if not any(path.is_dir() for path in root.glob(f"segment-*{NEVER_CHECKPOINTED}*")):
+    if not any(_records.is_dir(path)
+               for path in _records.glob(root, f"segment-*{NEVER_CHECKPOINTED}*")):
         return False
     try:
         checkpoint = extension_of(root).checkpoint
@@ -1475,11 +1988,10 @@ def _still_running(root: Path) -> bool:
     running by the very command sent to carry it on."""
     import json
 
-    from fastmdxplora import record_access
     from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
 
     try:
-        record = json.loads(record_access.read_text(root / RUN_PROCESS_FILE, encoding="utf-8"))
+        record = json.loads(_held_alone(root / RUN_PROCESS_FILE))
     except (OSError, ValueError):
         return False
     pid = record.get("pid") if isinstance(record, dict) else None
@@ -1490,6 +2002,48 @@ def _still_running(root: Path) -> bool:
     from fastmdxplora.gui.exploration import _process_is_this_run
 
     return bool(_process_is_this_run(pid, root, record))
+
+
+def _held_alone(path: Path) -> str:
+    """A record's text, read where the read is held (`record_access`), or,
+    where that hold does not admit it (a run's page asking of its study),
+    in a hold of its own over that record only, never through a link: a
+    reader held to a run has nothing refused for it."""
+    from fastmdxplora import record_access
+
+    scope = record_access._scope.get()
+    try:
+        inside = scope is None or path.absolute().is_relative_to(scope.root)
+    except (OSError, ValueError):
+        inside = True
+    if inside:
+        # Where the read is held: refused there as any record of it is.
+        return record_access.read_text(path, encoding="utf-8")
+    held = path.parent.resolve()
+    with record_access.confined_records(
+            path.parent, lambda place: place.parent == held and place.name == path.name):
+        return record_access.read_text(path, encoding="utf-8")
+
+
+def _the_resume_that_died(root: Path, started: dict[str, Any]) -> bool:
+    """Whether a run's process record is that of a resume that carried its
+    study on and died (`stopping.CARRIED_ON_BY`, its marker left): a record
+    of that resume, not a run of it that never wrote its end, so the run
+    reads as its Manifest says (its rule owed, `stopping.rule_owed`)."""
+    import json
+
+    from fastmdxplora.batch.explorer import campaign_of
+    from fastmdxplora.simulation.stopping import CARRIED_ON_BY, RECORD, _a_resume_died
+
+    study = campaign_of(root) or root
+    try:
+        record = json.loads(_held_alone(study / RECORD))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or not _a_resume_died(record):
+        return False
+    marked = record.get(CARRIED_ON_BY)
+    return isinstance(marked, dict) and marked.get("pid") == started.get("pid")
 
 
 def _this_process_and_its_parents() -> set[int]:
@@ -1533,13 +2087,14 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
 
     manifest = root / "manifest.json"
     try:
-        record = json.loads(manifest.read_text(encoding="utf-8"))
+        record = json.loads(_records.read_text(manifest, encoding="utf-8"))
     except (OSError, ValueError):
         return False, None
     try:
-        started = json.loads((root / RUN_PROCESS_FILE).read_text(encoding="utf-8"))
+        started = json.loads(_records.read_text(root / RUN_PROCESS_FILE, encoding="utf-8"))
         began = datetime.fromisoformat(str(started["started_at"])).timestamp()
-        if manifest.stat().st_mtime < began:
+        if _records.stat(manifest).st_mtime < began and not _the_resume_that_died(
+                root, started):
             return False, None
     except (OSError, ValueError, KeyError, TypeError):
         pass
@@ -1551,6 +2106,10 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
         if not isinstance(phase, dict):
             continue
         name = str(phase.get("name") or phase.get("phase") or "a phase")
+        if stopped_at_its_end(root, phase):
+            # Stopped at its last step: its production is whole.
+            states[name] = "ok"
+            continue
         if phase.get("status") == "error":
             if (phase.get("refusal") or {}).get("retryable") is True:
                 return False, None
@@ -1559,8 +2118,8 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     # Carried on in pieces after the run that began production was stopped:
     # that run never wrote its record, and the pieces wrote theirs in their
     # own folders, so the study's record holds only the analyses the join
-    # ran. A joined trajectory newer than the first piece's is the setup and
-    # the production done and put together. The study's config, put back
+    # ran. A joined trajectory (`study_trajectory`) is the setup and the
+    # production done and put together. The study's config, put back
     # after the join, plans every phase, so they are read here and not from
     # a config that named only the analyses.
     if any(states.get(p) not in ("ok", "skipped") for p in ("setup", "simulation")):
@@ -1576,6 +2135,86 @@ def _finished_record(root: Path, config: dict[str, Any]) -> tuple[bool, str | No
     return all(states.get(p) in ("ok", "skipped") for p in planned), None
 
 
+def _its_stop_at_its_end_said_whole(root: Path) -> bool:
+    """A run's Manifest, its simulation stopped when asked at the last step
+    of a whole production (`stopped_at_its_end`), written as the run it is
+    once a resume has run what came after it: its simulation "ok", the
+    stop saved beside it (``stopped_at_its_end``). Every reader of the
+    Manifest (the fixes, the Agent's remedies, the run's page, the
+    Overview and the timeline) then reads the run as completed, as its
+    state does, where they offered `fastmdx resume` for a run with nothing
+    to carry on. Whether it was so written."""
+    import json
+
+    manifest = root / "manifest.json"
+    try:
+        # Its own record, never one linked out of the study (rewritten here).
+        record = json.loads(_records.read_own_text(manifest, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    phases = record.get("phases") if isinstance(record, dict) else None
+    if not isinstance(phases, list):
+        return False
+    changed = False
+    for phase in phases:
+        if stopped_at_its_end(root, phase):
+            phase["stopped_at_its_end"] = {"message": phase.get("message"),
+                                          "refusal": phase.pop("refusal", None)}
+            phase["status"] = "ok"
+            phase["message"] = ("Production ran to its last step, where it was stopped "
+                                "when asked: the run is whole.")
+            if not phase.get("artifacts"):
+                # What it wrote, as a simulation that ended ok lists it.
+                phase["artifacts"] = _written_by_the_simulation(root / "simulation")
+            changed = True
+    if changed:
+        _write_atomically(manifest, json.dumps(record, indent=2))
+    return changed
+
+
+def _written_by_the_simulation(simulation: Path) -> list[str]:
+    """The files a simulation stopped at its last step wrote, as its record
+    lists them (``artifacts_written``, written at the stop), else as they
+    are there."""
+    import json
+
+    from fastmdxplora.simulation.pipeline import artifacts_of_a_whole_production
+
+    try:
+        said = json.loads(_records.read_own_text(simulation / "simulation_parameters.json",
+                                                 encoding="utf-8"))
+        written = [str(path) for path in said.get("artifacts_written") or []]
+    except (OSError, ValueError, AttributeError, TypeError):
+        written = []
+    if not written:
+        written = artifacts_of_a_whole_production(simulation)
+    if "simulation_parameters.json" not in written and (
+            simulation / "simulation_parameters.json").is_file():
+        written.append("simulation_parameters.json")
+    return written
+
+
+def stopped_at_its_end(root: str | Path, phase: Any) -> bool:
+    """Whether a run's Manifest records its simulation stopped when asked
+    where its production had reached its end (`joining.piece_finished`, the
+    one reading of a stretch of production's end): the stop is said, and
+    the simulation is whole, so its state is read from its later phases,
+    never stopped for good by it."""
+    from fastmdxplora.analysis.joining import piece_finished
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    if not isinstance(phase, dict) or phase.get("status") != "error":
+        return False
+    if str(phase.get("name") or phase.get("phase") or "") != "simulation":
+        return False
+    if (phase.get("refusal") or {}).get("code") != STOPPED_CODE:
+        return False
+    try:
+        return piece_finished(Path(root) / "simulation")
+    except Exception:  # noqa: BLE001 - not known whole
+        return False
+
+
 # Held by the process carrying a study on, for as long as it does: a second
 # resume or extension of the same study, from another process, is refused
 # rather than running the same stretch into the same next piece.
@@ -1584,6 +2223,12 @@ CARRYING_ON_FILE = ".fastmdxplora-carrying-on"
 # carrying the same study on is let in (none does today).
 _CARRYING = threading.RLock()
 _carried_here: dict[Path, int] = {}
+
+
+#: How often, and how far apart, a resume tries the study's lock before it
+#: says a run is still going: a probe holds it for far less than this.
+_LOCK_TRIES = 10
+_LOCK_WAIT_S = 0.01
 
 
 class _CarriedOnElsewhere(CodedError, Exception):
@@ -1605,10 +2250,19 @@ def _carrying_on(root: Path) -> Iterator[None]:
         # Only a study is locked: a folder that is not one is said to be
         # so, with nothing left in it.
         if not _carried_here.get(root) and (root / "resolved_config.yml").is_file():
-            try:
-                handle = _lock(root / CARRYING_ON_FILE)
-            except StartRefused:
-                raise _CarriedOnElsewhere() from None
+            # The GUI asks whether it is held by taking it shared for an
+            # instant (`_lock_held`): a resume starting in that instant was
+            # refused as still going. Tried again over some 100 ms.
+            import time
+
+            for attempt in range(_LOCK_TRIES):
+                try:
+                    handle = _lock(root / CARRYING_ON_FILE)
+                    break
+                except StartRefused:
+                    if attempt == _LOCK_TRIES - 1:
+                        raise _CarriedOnElsewhere() from None
+                    time.sleep(_LOCK_WAIT_S)
         _carried_here[root] = _carried_here.get(root, 0) + 1
     try:
         yield
@@ -1621,12 +2275,407 @@ def _carrying_on(root: Path) -> Iterator[None]:
                 _unlock(handle)
 
 
+def _the_lock_s_text(path: Path) -> str | None:
+    """The text of a study's lock, opened with no link followed, without
+    blocking, and read only where it is a regular file; None otherwise (no
+    lock). Raises OSError where it cannot be opened."""
+    import os
+    import stat as stat_module
+
+    from fastmdxplora.record_access import _opened_without_links
+
+    descriptor = _opened_without_links(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+    if not stat_module.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        return None
+    with os.fdopen(descriptor, encoding="utf-8") as stream:
+        return stream.read()
+
+
+def being_carried_on(root: str | Path) -> bool:
+    """Whether a run of the study is going now: a resume or an extension
+    holds its lock (:data:`CARRYING_ON_FILE`) in this process or another,
+    joining its pieces, analysing them or writing their report, or its run
+    record names a process that is alive (`_still_running`). Asked by the
+    GUI before it says a study owes its analysis: the analysis a resume is
+    running is not owed, and `fastmdx resume` would be refused.
+
+    The lock is tried where the process it names is alive on this machine,
+    and whatever machine it names otherwise: on a file system shared by
+    several (a cluster's nodes, the GUI on another), a lock held anywhere
+    is held, and the process there cannot be asked. Where the file system
+    does not carry locks between machines it is not seen. A resume
+    starting as it is tried tries again (`_carrying_on`). Going too while
+    any of its runs' locks is held (a round's extension holds its run's),
+    or while its process record is another machine's or container's and
+    its records were written within a day (`going_elsewhere`)."""
+    root = Path(root).expanduser()
+    try:
+        root = root.resolve()
+    except OSError:
+        pass
+    with _CARRYING:
+        if _carried_here.get(root):
+            return True
+    if _a_lock_held(root / CARRYING_ON_FILE):
+        return True
+    # A round's extension holds the lock of the run it extends: the study
+    # is going while any of its runs' locks is held.
+    if any(_a_lock_held(run / CARRYING_ON_FILE) for run in _its_runs(root)):
+        return True
+    if going_elsewhere(root):
+        return True
+    try:
+        return _still_running(root)
+    except Exception:  # noqa: BLE001 - a record, not a verdict
+        return False
+
+
+def _its_runs(root: Path) -> list[Path]:
+    """The folders of a study's runs (``runs/<run>``), where it has any;
+    none through a link (a ``runs`` linked out of the study is not walked)."""
+    runs = root / "runs"
+    try:
+        if runs.is_symlink() or not runs.is_dir():
+            return []
+        return sorted(folder for folder in runs.iterdir()
+                      if not folder.is_symlink() and folder.is_dir())
+    except OSError:
+        return []
+
+
+def _a_lock_held(path: Path, *, but: set[int] | frozenset[int] = frozenset()) -> bool:
+    """Whether another process holds the lock at ``path`` (a study's or a
+    run's :data:`CARRYING_ON_FILE`): one on this machine, alive, holding
+    it; one on another machine sharing the file system, holding it there.
+    Not one of ``but`` (on this machine: this process's and those above
+    it, where a worker asks of the study its parent carries on)."""
+    import json
+
+    from fastmdxplora.orchestrator import record_is_from_elsewhere
+
+    try:
+        if path.is_symlink():
+            # A link at the lock's name is no lock of the study's: not
+            # opened (a link to a FIFO hung a reader), and not a record it
+            # refused either, so every page reads the study the same.
+            record = None
+        else:
+            # The study's own lock, read for the process it names and never
+            # shown: not one of its results, so not refused as one (that had
+            # the study said "Not read" once its process died holding it),
+            # but opened as `record_access` opens a record: no link, without
+            # blocking, a regular file only (a FIFO at its name hung the
+            # GUI's study list); anything else is no lock.
+            record = json.loads(_the_lock_s_text(path) or "null")
+    except (OSError, ValueError):
+        record = None
+    pid = record.get("pid") if isinstance(record, dict) else None
+    if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0:
+        if record_is_from_elsewhere(record) or _from_another_host(record):
+            return _lock_taken(path)
+        return pid not in but and _lock_held(path, pid)
+    return False
+
+
+def _the_lock_s_process(path: Path) -> int | None:
+    """The process a lock names, as `_a_lock_held` reads it; None where it
+    names none (no lock, a link, not a regular file)."""
+    import json
+
+    try:
+        if path.is_symlink():
+            return None
+        record = json.loads(_the_lock_s_text(path) or "null")
+    except (OSError, ValueError):
+        return None
+    pid = record.get("pid") if isinstance(record, dict) else None
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
+
+
+def _the_process_s(study: Path) -> int | None:
+    """The process the study's own process record names, where it is this
+    machine's; None otherwise."""
+    import json
+
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE, record_is_from_elsewhere
+
+    try:
+        record = json.loads(_the_lock_s_text(study / RUN_PROCESS_FILE) or "null")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record_is_from_elsewhere(record) or _from_another_host(
+            record):
+        return None
+    pid = record.get("pid")
+    return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
+
+
+def _from_another_host(record: dict[str, Any]) -> bool:
+    """Whether a process record was written on another machine, or in a
+    process namespace of this boot other than this process's (a container
+    beside it): its process cannot be asked from here, so it is not known
+    to have ended. A record of this machine before its last boot is not:
+    every process of that boot has ended."""
+    from fastmdxplora.orchestrator import this_machine
+
+    here = this_machine()
+    there = record.get("host")
+    if isinstance(there, str) and there and here.get("host") and there != here["host"]:
+        return True
+    boot = record.get("boot")
+    if isinstance(boot, str) and boot and here.get("boot") and boot != here["boot"]:
+        return False
+    space = record.get("pidns")
+    return bool(isinstance(space, str) and space and here.get("pidns")
+                and space != here["pidns"])
+
+
+def _process_records(root: Path) -> list[Path]:
+    """Where a study and its runs keep the record of the process running
+    them: the study, each run, and each of their pieces."""
+    from fastmdxplora.orchestrator import RUN_PROCESS_FILE
+
+    import json
+
+    folders = [root, *_its_runs(root)]
+    found = []
+    for folder in folders:
+        found.append(folder / RUN_PROCESS_FILE)
+        # A piece its run's join took in is part of the run, its process
+        # long ended (a record a killed process left there is not read as
+        # going once a resume finished the run).
+        try:
+            joined = json.loads(_the_lock_s_text(folder / "joined" / "joined.json") or "null")
+            taken = {int(i) for i in (joined.get("segments") or [])} if isinstance(
+                joined, dict) else set()
+        except (OSError, ValueError, TypeError):
+            taken = set()
+        try:
+            for piece in sorted(folder.glob("segment-*")):
+                try:
+                    index = int(piece.name.split("-", 1)[1])
+                except ValueError:
+                    # A piece set aside (``segment-001-stopped-before-its-
+                    # checkpoint``) has ended: not read as going.
+                    continue
+                if index not in taken:
+                    found.append(piece / RUN_PROCESS_FILE)
+        except OSError:
+            pass
+    return found
+
+
+def another_host_said(root: str | Path) -> str:
+    """Where the process running the study or one of its runs was recorded,
+    where that is another machine or container ("on node17", "in another
+    container of this machine"); empty otherwise. Read without following a
+    link, as the lock is."""
+    import json
+
+    from fastmdxplora.orchestrator import this_machine
+
+    for path in _process_records(Path(root)):
+        try:
+            if path.is_symlink():
+                continue
+            record = json.loads(_the_lock_s_text(path) or "null")
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict) and _from_another_host(record):
+            host = record.get("host")
+            return (f"on {host}" if isinstance(host, str) and host
+                    and host != this_machine()["host"]
+                    else "in another container of this machine")
+    return ""
+
+
+#: How long a study whose process record is another machine's or
+#: container's may go unwritten before it is taken to have ended there,
+#: and read as its records say it ended (the user's decision of 11-05):
+#: an hour. `fastmdx resume --taken-over` carries it on before that, for a
+#: person who knows its process there has ended.
+ANOTHER_HOST_QUIET_SECONDS = 3600
+
+
+def _last_written(root: Path) -> float | None:
+    """When the study's records were last written, on one clock with
+    telemetry's (`telemetry.how_the_run_ended`): the newest of each process
+    record's heartbeat (``alive_at``) and each live record's own
+    `last_update_timestamp` (of the study, its runs and their pieces), the
+    stamps the writing machine's clock gave, so a copy that does not keep
+    file times reads the same; where none says one, when its process and
+    round records were last written."""
+    import json
+    import os
+    import time
+
+    from fastmdxplora.gui.telemetry import STATUS_FILE, _timestamp_age_seconds
+
+    folders = {path.parent for path in _process_records(root)}
+    stamps = []
+    # The heartbeat each live process stamps in its own record in every
+    # phase (`orchestrator.stamp_alive`, ``alive_at``), on the clock that
+    # wrote it: a long setup, analysis or join writes no live record.
+    for path in _process_records(root):
+        try:
+            record = json.loads(_the_lock_s_text(path) or "null")
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict):
+            for key in ("alive_at", "started_at"):
+                age = _timestamp_age_seconds(str(record.get(key) or ""))
+                if age is not None:
+                    stamps.append(time.time() - age)
+    for folder in folders:
+        try:
+            record = json.loads(_the_lock_s_text(folder / "simulation" / STATUS_FILE) or "null")
+        except (OSError, ValueError):
+            continue
+        age = _timestamp_age_seconds(str(record.get("last_update_timestamp") or "")) if (
+            isinstance(record, dict)) else None
+        if age is not None:
+            stamps.append(time.time() - age)
+    if stamps:
+        return max(stamps)
+    written = []
+    for place in [*_process_records(root), root / "stopping.json"]:
+        try:
+            written.append(os.lstat(place).st_mtime)
+        except OSError:
+            continue
+    return max(written) if written else None
+
+
+def _clock(when: float) -> str:
+    """A time of day as this machine says it, its zone named (``14:05
+    UTC+01:00``, as a page reached from another zone reads it), with its
+    date where it is not today."""
+    import time
+
+    local = time.localtime(when)
+    day = time.strftime("%Y-%m-%d", local)
+    offset = time.strftime("%z", local)
+    zone = f"UTC{offset[:3]}:{offset[3:]}" if len(offset) == 5 else "UTC"
+    said = f"{time.strftime('%H:%M', local)} {zone}"
+    return said if day == time.strftime("%Y-%m-%d") else f"{day} {said}"
+
+
+def going_elsewhere(root: str | Path) -> str:
+    """The sentence of a study going on another machine or container: its
+    process record is another's (`another_host_said`), which cannot be asked
+    from here, and its records were written within
+    `ANOTHER_HOST_QUIET_SECONDS` (`_last_written`), with when it can be
+    resumed from here and how before then. Empty otherwise: once quiet it
+    reads as its records say it ended."""
+    import shlex
+    import time
+
+    root = Path(root)
+    where = another_host_said(root)
+    last = _last_written(root) if where else None
+    if last is None or time.time() - last > ANOTHER_HOST_QUIET_SECONDS:
+        return ""
+    return (f"It is going {where}, which cannot be asked from here: its records were last "
+            f"written at {_clock(last)}. It can be resumed from here after "
+            f"{_clock(last + ANOTHER_HOST_QUIET_SECONDS)}, or now with `fastmdx resume "
+            f"--taken-over {shlex.quote(str(root))}` once it has ended there.")
+
+
+#: Why `fastmdx resume --taken-over` is refused: it overrides only a
+#: process on another machine or container.
+_HELD_HERE = ("A process on this machine holds this study; --taken-over carries on only a "
+              "study whose process was on another machine or container.")
+
+
+def _held_elsewhere(root: Path, *, taken_over: bool = False) -> str:
+    """Why a resume of ``root`` (a study, or a run of one) is refused before
+    it writes anything: a process on this machine running it, the study's
+    lock or one of its runs' held by another process, or the study going on
+    another machine; empty where nothing else carries it on. This process's
+    own holds are its own. ``taken_over``: the person knows the process on
+    the other machine or container has ended, so only what is held on this
+    machine refuses it."""
+    from fastmdxplora.batch.explorer import campaign_of
+
+    study = campaign_of(root) or root
+    with _CARRYING:
+        if _carried_here.get(study) or _carried_here.get(root):
+            return ""
+    # A run of the study resumed by a worker of the resume that holds the
+    # study's lock: that resume's own, and so are its other runs' locks,
+    # held by its other workers.
+    above = _this_process_and_its_parents()
+    if root != study and (_the_lock_s_process(study / CARRYING_ON_FILE) in above
+                          or _the_process_s(study) in above):
+        # Or of the study's run itself (its rule extending its runs in
+        # workers, each holding its run's lock).
+        return ""
+    refused = _HELD_HERE if taken_over else _STILL_GOING
+    try:
+        if _still_running(study) or (root != study and _still_running(root)):
+            return refused
+    except Exception:  # noqa: BLE001 - its locks still say
+        pass
+    # A lock held now proves its process has not ended, wherever it runs:
+    # refused, --taken-over too, naming the lock.
+    for lock in [study / CARRYING_ON_FILE, *(run / CARRYING_ON_FILE for run in _its_runs(study))]:
+        if _a_lock_held(lock, but=above):
+            held = lock.relative_to(study).as_posix()
+            return (f"{_STILL_GOING} Its lock {held} is held now." if not taken_over else
+                    f"Its lock {held} is held now, so the process holding it has not ended; "
+                    "--taken-over carries on only a study no process holds.")
+    going = "" if taken_over else going_elsewhere(study)
+    return f"{_STILL_GOING} {going}" if going else ""
+
+
+def _lock_held(path: Path, pid: int) -> bool:
+    """Whether the process ``pid``, alive, holds the lock on ``path``."""
+    import os
+
+    from fastmdxplora.gui.exploration import _process_alive
+
+    if pid == os.getpid() or not _process_alive(pid):
+        return False
+    if os.name == "nt":
+        # A lock there cannot be tried without taking it: the process the
+        # record names, alive, is the answer.
+        return True
+    return _lock_taken(path)
+
+
+def _lock_taken(path: Path) -> bool:
+    """Whether a process, here or on another machine sharing the file
+    system, holds the lock on ``path``: taken shared for an instant. Not
+    on Windows, where it cannot be tried without taking it."""
+    import os
+
+    if os.name == "nt":
+        return False
+    import fcntl
+
+    try:
+        handle = os.open(path, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(handle)
+    return False
+
+
 _STILL_GOING = "A run of this study is still going. Resume it once it has stopped."
 _STILL_GOING_TO_EXTEND = "A run of this study is still going. Extend it once it has stopped."
 
 
 def resume_study(study: str | Path, *,
-                 device_index: str | int | None = None) -> dict[str, Any]:
+                 device_index: str | int | None = None,
+                 taken_over: bool = False) -> dict[str, Any]:
     """Carry a study that stopped part-way on to the end of its plan.
 
     A study being carried on by another process is said, not carried on
@@ -1636,7 +2685,8 @@ def resume_study(study: str | Path, *,
 
     - finished: nothing (``did`` is ``"nothing"``);
     - production complete, analyses or report not: those, over the whole
-      trajectory (``"analysed"``);
+      trajectory (``"analysed"``); only the report, over an analysis the
+      person chose after the join (``"reported"``);
     - production begun: the rest of it, from the last sealed checkpoint,
       then the join and the analyses, as extending a study does
       (``"continued"``);
@@ -1657,8 +2707,17 @@ def resume_study(study: str | Path, *,
     A study of several runs is carried on run by run
     (:func:`resume_batch`). ``device_index`` puts a run's simulation on the
     device given, where a campaign shares out its cards again.
+    ``taken_over``: the person knows the process on the other machine or
+    container that last ran it has ended (`fastmdx resume --taken-over`);
+    what is held on this machine still refuses it.
     """
     root = Path(study).expanduser().resolve()
+    # Refused before anything is written while another process carries the
+    # study or one of its runs on (a resume rewrote a run's report, then
+    # was refused at the run a round was extending).
+    held = _held_elsewhere(root, taken_over=taken_over)
+    if held:
+        return {"study": str(root), "ok": False, "did": RESUMED_NOTHING, "error": held}
     try:
         with _carrying_on(root):
             return _resume_study(root, device_index=device_index)
@@ -1668,11 +2727,18 @@ def resume_study(study: str | Path, *,
 
 def _resume_study(study: str | Path, *,
                   device_index: str | int | None = None) -> dict[str, Any]:
-    """The work of :func:`resume_study`, under the study's lock."""
+    """The work of :func:`resume_study`, under the study's lock.
+
+    A study of one run whose rule's round failed, was stopped or was cut
+    (`stopping.round_ended`, which says what this runs): its run carried on
+    as any study's is, then its rule applied again from that round, as a
+    study of several runs has it applied after its runs are carried on
+    (`resume_batch`). Its process record is this resume's while it runs,
+    so the study reads going, and a resume cut in turn reads cut. A run
+    not carried on leaves the round said as it ended, never running."""
     import yaml
 
-    from fastmdxplora import FastMDXplora
-    from fastmdxplora.analysis.joining import survey_segments
+    from fastmdxplora.simulation.stopping import round_ended, round_not_carried_on
 
     root = Path(study).expanduser().resolve()
     base = {"study": str(root)}
@@ -1687,22 +2753,237 @@ def _resume_study(study: str | Path, *,
                                    if piece.is_dir()):
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": _STILL_GOING}
+    # Stopped while its pieces' analyses ran again: the study's own config,
+    # at its whole length, is put back before anything reads it.
+    # Put back once: left there, every later resume wrote it over an edit
+    # made to the study's config since.
+    copy = root / "joined" / STUDY_CONFIG_COPY
+    try:
+        _write_atomically(resolved, _records.read_text(copy, encoding="utf-8"))
+        copy.unlink()
+    except (OSError, ValueError):
+        pass
+    owed = None if root in _JUDGED_AGAIN_HERE else round_ended(root, resuming=True)
+    if owed is None and (root in _JUDGED_AGAIN_HERE or not _its_rule_not_applied(root)):
+        return _carry_the_run_on(root, base, device_index=device_index)
+    from fastmdxplora.simulation.stopping import runs_kept_below_the_ceiling
+
+    if owed is not None and runs_kept_below_the_ceiling(root):
+        # A ceiling lowered below the length its cut extension runs to:
+        # nothing is run, as the round's sentence says.
+        return {**base, "ok": False, "did": RESUMED_NOTHING, "error": owed.as_text(),
+                "round_ended": owed.as_record()}
+    from fastmdxplora.orchestrator import _hold_run_process, _release_run_process
+
+    # Read before the hold: a process record newer than its Manifest says
+    # the run never got to say how it ended (`_finished_record`).
+    try:
+        standing = _where_it_stands(root)
+    except (OSError, ValueError, StudyError, yaml.YAMLError):
+        standing = None
+    finished = standing is not None and not _carried_on_first(standing)
+    _hold_run_process(root, rewrite=True)
+    from fastmdxplora.simulation.stopping import carried_on_marked
+
+    carried = True
+    # Its record says this resume carries it on, before its work: one that
+    # dies reads cut, never stopped when asked by an earlier stop's words.
+    marked = carried_on_marked(root)
+    marked.__enter__()
+    try:
+        if finished:
+            answer = _judge_the_run_again(root, base)
+        else:
+            answer = _carry_the_run_on(root, base, device_index=device_index,
+                                       standing=standing, said_whole=False)
+            carried = bool(answer.get("ok"))
+            if carried:
+                judged = _judge_the_run_again(root, base)
+                # What the carrying on did, where the rule then ran nothing.
+                answer = {**judged, "did": (answer.get("did") if judged.get("did")
+                                            == RESUMED_JUDGED else judged.get("did"))}
+    except KeyboardInterrupt as stopped:
+        # Ctrl+C outside a production and outside the rule's rounds (a
+        # piece's join, the rule about to be applied): a stop asked, said
+        # as the study then stands, where it ended in a traceback.
+        answer = {**base, "ok": False, "did": RESUMED_NOTHING, "stopped": True,
+                  "error": stopped_in_a_resume(stopped)}
+        carried = False
+    finally:
+        marked.__exit__(None, None, None)
+        _release_run_process(root)
+    if not carried:
+        # Said as the round's end where its record said it went on.
+        round_not_carried_on(root, "the run", answer)
+    # Read with the hold given back: a process record newer than its
+    # Manifest read as a run that never said how it ended.
+    ended = round_ended(root, resuming=True)
+    if ended is not None:
+        # What carries it on, as every page says it (its own refusal
+        # advised an extension outside the rule, in ns).
+        answer.update(ok=False, error=ended.as_text(), round_ended=ended.as_record())
+    elif "round_ended" in answer:
+        # Said under the hold, which read it so: it ended as the rule decides.
+        answer.update(ok=True)
+        answer.pop("error", None)
+        answer.pop("round_ended", None)
+    if ended is None and answer.get("ok"):
+        # Its rule applied: the run stopped at its end said whole, last.
+        _said_whole_last(root)
+    return answer
+
+
+def _said_whole_last(root: Path) -> bool:
+    """What a resume says it finished, written last, after the work it
+    stands for (its analyses and report run, its rule applied): the live
+    record said as they leave it (`_phases_after_ended_well`), then the
+    Manifest's simulation, stopped when asked at its last step, said whole
+    (`_its_stop_at_its_end_said_whole`). A resume ended anywhere before the
+    Manifest's leaves the run read stopped (`telemetry.status_as_it_stands`
+    reads a stop at its end not yet said whole so), with `fastmdx resume`
+    offered, and that resume finishes it; the live record is written
+    again by it whatever it says. Whether either record was changed."""
+    import json
+
+    live = root / "simulation" / "live_status.json"
+
+    def said() -> Any:
+        try:
+            return json.loads(_records.read_own_text(live, encoding="utf-8")).get("status")
+        except (OSError, ValueError, AttributeError):
+            return None
+
+    before = said()
+    _phases_after_ended_well(root)
+    rewritten = _its_stop_at_its_end_said_whole(root)
+    return rewritten or said() != before
+
+
+#: What a resume of one run stopped by Ctrl+C outside its production says.
+STOPPED_IN_A_RESUME = ("Stopped when asked (Ctrl+C) before the resume finished; "
+                       "`fastmdx resume` carries it on from there.")
+
+
+def stopped_in_a_resume(stopped: BaseException) -> str:
+    """`STOPPED_IN_A_RESUME`, named by the stops it took where it was a stop
+    now (`runner.StopNow.said`): a second SIGTERM was said Ctrl+C. A further
+    stop once its study heard one (`runner.StoppedAgain`) is named by its
+    signal."""
+    from fastmdxplora.simulation.runner import StopNow, StoppedAgain
+
+    if isinstance(stopped, StoppedAgain):
+        return STOPPED_IN_A_RESUME.replace("(Ctrl+C)", f"({stopped.said()})")
+    if not isinstance(stopped, StopNow):
+        return STOPPED_IN_A_RESUME
+    return STOPPED_IN_A_RESUME.replace("Stopped when asked (Ctrl+C)",
+                                       f"Stopped at once when asked ({stopped.said()})")
+
+
+def _its_rule_not_applied(root: Path) -> bool:
+    """Whether a study of one run has a stopping rule its run was stopped
+    (or killed) before: its record planned, or said stopped before the rule
+    was applied. Its resume carries the run on and then applies the rule,
+    as `stopping.json` says, where it ran only the run's analyses."""
+    import json
+
+    from fastmdxplora.simulation.stopping import (RECORD, STOPPED_BEFORE_THE_RULE,
+                                                  STOPPED_BEFORE_THE_RULE_AGAIN)
+
+    try:
+        record = json.loads(_records.read_text(root / RECORD, encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or str(record.get("outcome")) not in ("stopped", "running"):
+        return False
+    return (not record.get("rounds")
+            or record.get("said") in (STOPPED_BEFORE_THE_RULE, STOPPED_BEFORE_THE_RULE_AGAIN))
+
+
+def _where_it_stands(root: Path, *, lengths: bool = True) -> tuple[bool, str | None, bool, Any]:
+    """How a study of one run stands, as its resume reads it: (finished,
+    the answer it stopped with, extended since it finished or owing the
+    analyses of its pieces, its last piece's own answer). Raises on a
+    config not read or pieces that cannot be told apart. Read through
+    `record_access`, so a page held to the study reads nothing its links
+    lead out to; ``lengths`` False leaves out how far the last piece was
+    asked to run, which only the resume's own refusal says."""
+    import yaml
+
+    from fastmdxplora.analysis.joining import survey_segments
+
+    config = yaml.safe_load(_records.read_text(root / "resolved_config.yml",
+                                               encoding="utf-8")) or {}
+    finished, stopped = _finished_record(root, config)
+    # Pieces that cannot be told apart (two folders for one number) are
+    # said here, as an answer, before anything reads them.
+    survey_segments(root)
+    # Stopped after its pieces were joined and before their analyses
+    # and report had run: not finished, whatever its Manifest says.
+    extended = finished and (_extended_since_it_finished(root) or analysis_owed(root))
+    # A piece carried on that stopped with an answer of its own gives
+    # the same one when run again: said, not set aside and run again,
+    # whether the study had finished or not.
+    piece = (_the_last_piece_s_answer(root, lengths=lengths)
+             if extended or not finished else None)
+    return finished, stopped, extended, piece
+
+
+def _carried_on_first(standing: tuple[bool, str | None, bool, Any]) -> bool:
+    """Whether a resume carries the run on (its piece cut, its analyses
+    owed) before its rule's round is judged again, from how it stands."""
+    finished, stopped, extended, piece = standing
+    return not finished or stopped is not None or extended or piece is not None
+
+
+def how_a_resume_finds(root: str | Path) -> dict[str, Any] | None:
+    """What `fastmdx resume` finds in a study of one run (or one run of
+    several), as `_carry_the_run_on` reads it, for `stopping.round_ended`
+    to say what the resume does: ``piece`` (the folder of a last piece that
+    stopped with an answer of its own, given again), ``own`` (the answer
+    the run itself stopped with, in its analyses or report, given again),
+    ``carried_on_first`` (an extension cut or its pieces' analyses owed,
+    carried on before the round is judged), ``analyses_owed`` and
+    ``unjoined`` (a piece the join has not taken in). None
+    where it is not read."""
+    import yaml
+
+    root = Path(root)
+    try:
+        standing = _where_it_stands(root, lengths=False)
+    except (OSError, ValueError, StudyError, yaml.YAMLError):
+        return None
+    _finished, stopped, _extended, piece = standing
+    return {"piece": root / piece[0] if piece is not None else None,
+            "own": stopped if piece is None else None,
+            "carried_on_first": (_carried_on_first(standing) and stopped is None
+                                 and piece is None),
+            "analyses_owed": analysis_owed(root),
+            # A piece the join has not taken in (one stopped at its last step).
+            "unjoined": _extended_since_it_finished(root)}
+
+
+def _carry_the_run_on(root: Path, base: dict[str, Any], *,
+                      device_index: str | int | None = None,
+                      standing: tuple[bool, str | None, bool, Any] | None = None,
+                      said_whole: bool = True) -> dict[str, Any]:
+    """A study of one run carried on to the end of its plan, its rule's
+    rounds aside; ``standing`` is how it stood (`_where_it_stands`), where
+    read before this resume took its process record. ``said_whole`` False
+    leaves a run stopped at its end said stopped, for its rule to be
+    applied before it is said whole (`_said_whole_last`)."""
+    import yaml
+
+    from fastmdxplora import FastMDXplora
+    from fastmdxplora.analysis.joining import survey_segments
+
+    resolved = root / "resolved_config.yml"
     try:
         config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as exc:
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": f"The study's config could not be read: {exc}"}
-    finished, stopped = _finished_record(root, config)
     try:
-        # Pieces that cannot be told apart (two folders for one number) are
-        # said here, as an answer, before anything reads them.
-        survey_segments(root)
-        extended = finished and _extended_since_it_finished(root)
-        # A piece carried on that stopped with an answer of its own gives
-        # the same one when run again: said, not set aside and run again,
-        # whether the study had finished or not.
-        piece_said = (_the_last_piece_s_answer(root)
-                      if extended or not finished else None)
+        finished, stopped, extended, piece_said = standing or _where_it_stands(root)
     except (StudyError, ValueError) as exc:
         return {**base, "ok": False, "did": RESUMED_NOTHING, "error": str(exc)}
     if extended:
@@ -1737,8 +3018,18 @@ def _resume_study(study: str | Path, *,
                 "error": f"The study stopped with an answer, not an interruption "
                          f"({stopped}). Running it again would give the same one."}
     if finished:
+        # Stopped at its end with nothing after it to run (its analyses not
+        # asked), or by a resume ended before it said the run whole: said
+        # so now, where it said stopped.
+        if said_whole and _said_whole_last(root):
+            # A resume ended before it said the run whole: its records
+            # finished now, said as what this one did, not "Nothing to do".
+            return {**base, "ok": True, "did": RESUMED_RECORDS,
+                    **_production_now(root, {"ok": True}),
+                    "detail": RECORDS_FINISHED}
         return {**base, "ok": True, "did": RESUMED_NOTHING,
-                "detail": "The study finished; there is nothing to carry on."}
+                **_production_now(root, {"ok": True}),
+                "detail": NOTHING_TO_CARRY_ON}
 
     # An extension stopped before its first checkpoint left nothing to go
     # on from: the piece before it is carried on instead.
@@ -1766,10 +3057,33 @@ def _resume_study(study: str | Path, *,
             asked = owed
             plan = extension_of(root, more_ns=asked)
     if plan.possible:
-        answer = extend_study(root, more_ns=asked, device_index=device_index)
+        # Before and after by one reading, so what the resume ran is their
+        # difference (by the clock for a variable-step run, where steps
+        # times the timestep was given before it and its clock after).
+        from fastmdxplora.simulation.lengths import _variable_step
+
+        simulation = config.get("simulation") if isinstance(config, dict) else None
+        if _variable_step(simulation if isinstance(simulation, dict) else {}):
+            before = _production_now(root, {"ok": True})
+        else:
+            # A fixed step's is its steps times the timestep, as the
+            # checkpoints count them, the pieces' records after it: the same
+            # length, given also where the first piece, stopped, wrote none.
+            before = {"production_done_ns": round(plan.production_done_ns, 9),
+                      "production_done_source": FROM_CHECKPOINT_STEPS}
+        # The plan as it now stands: an extension asked for past the study's
+        # own plan is part of it (the done and before are the study's
+        # totals, so 0.006 planned beside 0.008 done read 2 ps past it).
+        planned = plan.production_planned_ns
+        if asked is not None:
+            planned = max(planned, plan.production_done_ns + float(asked))
+        answer = extend_study(root, more_ns=asked, device_index=device_index,
+                              checkpoint_interval_steps=_checkpoint_interval_asked(root))
         return {**base, **answer, "did": RESUMED_PRODUCTION,
-                "production_done_ns": plan.production_done_ns,
-                "production_planned_ns": plan.production_planned_ns}
+                **_production_now(root, answer),
+                **{key.replace("production_done", "production_done_before"): value
+                   for key, value in before.items()},
+                "production_planned_ns": round(planned, 9)}
 
     done = plan.production_done_ns
     planned = plan.production_planned_ns
@@ -1785,9 +3099,22 @@ def _resume_study(study: str | Path, *,
                     refusal["error"], code="simulation.resume.unsealed", path=str(root)))
                 return {**base, "ok": False, "did": RESUMED_ANALYSIS,
                         "stage": "joining", **refusal, "refusal": said.as_dict()}
+            if _the_analysis_chosen(root):
+                # The person's analysis, chosen after the join (`fastmdx
+                # analyze --rerun --trajectory`), its report moved aside by
+                # that rerun: the GUI says the study completed, and what is
+                # owed is the report of it, not the join's analyses over it.
+                answer = _report_of_the_chosen(root)
+                if answer.get("ok"):
+                    _phases_after_ended_well(root)
+                return {**base, **answer, "did": RESUMED_REPORT,
+                        **_production_now(root, answer)}
+            saved = _save_what_is_replaced(root)
             answer = _join_and_analyse(root, config, segment=None,
                                        keep_frames=keep_frames or None)
-            return {**base, **answer, "did": RESUMED_ANALYSIS}
+            return {**base, **answer, "did": RESUMED_ANALYSIS,
+                    **({"saved_in_previous": saved} if saved else {}),
+                    **_production_now(root, answer)}
         whole = dict(config)
         whole["output"] = str(root)
         whole["include_phase"] = ["analysis", "report"]
@@ -1805,9 +3132,11 @@ def _resume_study(study: str | Path, *,
         if topology.is_file():
             analysis.setdefault("topology", str(topology))
         whole["analysis"] = analysis
-        FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+        ran = FastMDXplora(config_data=whole, output_dir=str(root)).explore(force=True)
+        if all(result.status == "ok" for result in ran) and said_whole:
+            _said_whole_last(root)
         return {**base, "ok": True, "did": RESUMED_ANALYSIS,
-                "production_done_ns": done, "production_planned_ns": planned}
+                **_production_now(root, {"ok": True}), "production_planned_ns": planned}
 
     if done > 0:
         # Production began and cannot be carried on from what is there: a
@@ -1848,8 +3177,36 @@ def _resume_study(study: str | Path, *,
                 "error": failed[0].message or "Run again from its start, it did "
                                               "not finish."}
     return {**base, "ok": True, "did": RESUMED_FROM_START,
+            **_production_now(root, {"ok": True}),
             "detail": "Production had not begun, or not as far as its first "
                       "checkpoint; the study was run from its start."}
+
+
+def _production_now(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
+    """The study's production once carried on, as its records give it
+    (`lengths.recorded_stage_lengths`, the methods' reading: a variable-step
+    run's by its clock), and from what; nothing where the carrying on did
+    not end well. In every answer that ends well, and before a production
+    is carried on by the same reading. A resume said what was done before
+    it ran, 0.004 ns for a study that then held 2,000 + 6,000 steps."""
+    if not answer.get("ok"):
+        return {}
+    from fastmdxplora.simulation.lengths import recorded_stage_lengths
+
+    try:
+        said = recorded_stage_lengths(root)
+    except (OSError, ValueError):
+        return {"production_done_ns": None, "production_done_source": "not read"}
+    found = {"production_done_ns": said.get("production_ran_ns"),
+             "production_done_source": said.get("production_ran_source")}
+    if said.get("production_ran_ns") is None and said["production"].get("said"):
+        found["production_done_said"] = said["production"]["said"]
+    return found
+
+
+#: Where a fixed-step study's production before a resume carried it on is
+#: read from (``production_done_before_source``).
+FROM_CHECKPOINT_STEPS = "steps times the timestep, from the checkpoints"
 
 
 #: What `resume_batch` did, as a program reads it.
@@ -1877,6 +3234,70 @@ def _found_from(root: Path, given: Any) -> Any:
         if (base / path).is_file():
             return str((base / path).resolve())
     return given
+
+
+#: Studies of one run whose rule this process is applying again.
+_JUDGED_AGAIN_HERE: set[Path] = set()
+
+
+def _judge_the_run_again(root: Path, base: dict[str, Any]) -> dict[str, Any]:
+    """A study of one run whose rule's round failed, was stopped or was cut
+    (`stopping.round_ended`): its rule applied again over its rounds so far,
+    as its record states it (the run's own config holds none), extending
+    the run until what it asks is determined, and its report written again
+    with the record. Said finished, with nothing run, before."""
+    import json
+
+    from fastmdxplora.batch.explorer import BatchExplorer, _within_the_rounds
+    from fastmdxplora.simulation.stopping import (RECORD, _ceiling_a_resume_uses, round_ended,
+                                                  run_until_known, targets_of)
+
+    try:
+        record = json.loads(_records.read_text(root / RECORD, encoding="utf-8"))
+        measures = [{key: value for key, value in target.items() if value is not None}
+                    for target in record["targets"]]
+        # The ceiling `round_ended` says it runs to: the study's config's.
+        ceiling = _ceiling_a_resume_uses(root, record)
+        stop_when = {"measures": measures,
+                     "max_duration_ns": float(record["max_duration_ns"] if ceiling is None
+                                              else ceiling),
+                     "independent_starts": str(record.get("independent_starts")
+                                               or "not_required")}
+        targets = targets_of(stop_when)
+    except (OSError, ValueError, KeyError, TypeError, StudyError) as exc:
+        return {**base, "ok": False, "did": RESUMED_NOTHING,
+                "error": f"The study's record of its rounds could not be read: {exc}"}
+    rounds = [entry for entry in record.get("rounds") or [] if isinstance(entry, dict)]
+    _JUDGED_AGAIN_HERE.add(root)
+    try:
+        with _within_the_rounds():
+            judged = run_until_known([root], targets, stop_when, record_in=root,
+                                     earlier_rounds=rounds)
+        BatchExplorer._report_again(root)
+    finally:
+        _JUDGED_AGAIN_HERE.discard(root)
+    ended = round_ended(root)
+    # Said as what ran: production carried on where a round extended it,
+    # else only the rule applied (it judged the run as it stands).
+    extended = any(entry.get("decision") in ("extend", "stopped")
+                   for entry in (judged or {}).get("rounds", [])[len(rounds):]
+                   if isinstance(entry, dict))
+    answer = {**base, "ok": ended is None,
+              "did": RESUMED_PRODUCTION if extended else RESUMED_JUDGED,
+              "rule_said": str((judged or {}).get("said") or ""),
+              **_production_now(root, {"ok": True})}
+    if ended is not None:
+        answer["error"] = ended.as_text()
+        answer["round_ended"] = ended.as_record()
+    return answer
+
+
+#: What a resume of a finished study says.
+NOTHING_TO_CARRY_ON = "The study finished; there is nothing to carry on."
+#: What a resume did that finished the records of a run whose production,
+#: analyses and rule were done (`_said_whole_last`), and what it says.
+RESUMED_RECORDS = "records"
+RECORDS_FINISHED = "The run's records were finished: it reads completed."
 
 
 def resume_batch(root: str | Path) -> dict[str, Any]:
@@ -1918,17 +3339,82 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
     config["output"] = str(root)
     try:
         batch = BatchExplorer(config_data=config, output_dir=str(root), resume=True)
-        results = batch.run()
+        from fastmdxplora.simulation.stopping import carried_on_marked
+
+        # Its record says this resume carries it on, before its work.
+        with carried_on_marked(root):
+            results = batch.run()
     except Exception as exc:  # noqa: BLE001 - said, not raised, as a resume is
         from fastmdxplora.refusals import refusal_of
 
         return {**base, "ok": False, "did": RESUMED_NOTHING, "error": str(exc),
                 "refusal": refusal_of(exc).as_dict()}
-    listed = [{"run": r.run_id, "status": r.status, "message": r.message}
+    # Each run's production, as a study of one gives its own, where it
+    # ended well and its folder is known.
+    listed = [{"run": r.run_id, "status": r.status, "message": r.message,
+               **(_production_now(Path(r.output_dir), {"ok": r.status == "ok"})
+                  if r.output_dir else {})}
               for r in results]
     failed = [r for r in results if r.status != "ok"]
-    answer = {**base, "ok": not failed, "did": RESUMED_RUNS, "runs": listed}
-    if failed:
+    from fastmdxplora.batch.explorer import RESUME_REFUSED
+    from fastmdxplora.simulation.stopping import round_ended
+
+    refused = [r.run_id for r in results if getattr(r, "error_type", None) == RESUME_REFUSED]
+
+    # Every run carried on, and the rule's round failed again, or a run not
+    # carried on and the round left as it ended: not done.
+    ended = round_ended(root)
+    # Every run finished and its rule judged them at these lengths already:
+    # nothing was run, and the study says so, not that its runs were carried on.
+    quiet = all(r.status == "ok" and r.message == NOTHING_TO_CARRY_ON for r in results)
+    # Its runs finished: nothing ran where its rule judged them at these
+    # lengths already, or only its rule was applied, no round extending them.
+    did = (RESUMED_NOTHING if quiet and getattr(batch, "_rule_ran_nothing", False)
+           else RESUMED_JUDGED if quiet and not getattr(batch, "_rule_extended", True)
+           else RESUMED_RUNS)
+    from fastmdxplora.batch.explorer import (CUT_IN_THE_ROUNDS, STOPPED_ERROR_TYPE,
+                                             STOPPED_IN_THE_ROUNDS, WORKER_ENDED,
+                                             _was_stopped)
+
+    # A run stopped when asked, in the round it carried on or not: a stop
+    # asked, which the CLI exits 130 for. Not where a worker ended abruptly
+    # (killed): no stop was asked, its saved survivor aside, and it exits 1
+    # as `fastmdx explore` does (`ended_by_a_stop_asked`).
+    stopped = any(_was_stopped(r) or getattr(r, "error_type", None) == STOPPED_IN_THE_ROUNDS
+                  for r in results) and not any(
+        getattr(r, "error_type", None) == WORKER_ENDED for r in results)
+    # A run ended in an error of its own (its worker killed, say), as
+    # `fastmdx explore` counts it: exit 1, whatever its round left the study
+    # as (a round stopped when asked before said 130 beside "Batch failed").
+    erred = any(r.status == "error" and not _was_stopped(r)
+                and getattr(r, "error_type", None) not in (
+                    STOPPED_ERROR_TYPE, STOPPED_IN_THE_ROUNDS, CUT_IN_THE_ROUNDS,
+                    RESUME_REFUSED)
+                for r in results)
+    answer = {**base, "ok": not failed and ended is None, "did": did,
+              "runs": listed, **({"refused": refused} if refused else {}),
+              **({"stopped": True} if stopped else {}),
+              **({"erred": True} if erred else {})}
+    if not failed and ended is None and did != RESUMED_NOTHING:
+        import json as _json
+
+        from fastmdxplora.simulation.stopping import RECORD
+
+        # What its rule decided, said last, as a study of one says it.
+        try:
+            record = _json.loads((root / RECORD).read_text(encoding="utf-8"))
+            if str(record.get("outcome") or "") in ("met", "ceiling", "rounds", "stopped"):
+                answer["rule_said"] = str(record.get("said") or "")
+        except (OSError, ValueError, AttributeError):
+            pass
+    if ended is not None:
+        # What carries it on, as every page says it, said last in the study's
+        # summary, so not said again: a run's own refusal advised an
+        # extension outside the rule, in ns.
+        answer["error"] = ended.as_text()
+        answer["said_above"] = True
+        answer["round_ended"] = ended.as_record()
+    elif failed:
         answer["error"] = (f"{len(failed)} of {len(results)} runs did not finish: "
                            + "; ".join(f"{r.run_id}: {r.message}" for r in failed[:3]))
     return answer

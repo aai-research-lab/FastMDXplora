@@ -703,10 +703,12 @@ class FastMDXplora:
         # Plan goes to file/audit; the presenter shows headers visually.
         logger.debug("Plan: %s", " -> ".join(plan))
 
-        if prepared is not None and not _same_directory(
+        if prepared is not None and "simulation" in plan and not _same_directory(
                 prepared, self.output_dir / "setup"):
             # Recorded as this run's setup, so the manifest names the system
             # that was simulated and readers of the setup record can find it.
+            # Only where this run simulates it: a report or an analysis
+            # written again was recorded as a setup skipped, at its time.
             now = datetime.now(timezone.utc).isoformat()
             self.results.append(PhaseResult(
                 name="setup", status="skipped", output_dir=prepared,
@@ -876,7 +878,9 @@ class FastMDXplora:
                          if plan.possible else str(plan.refusal)))
             self.results = [result]
             return self.results
-        answer = extend_study(root, total_ns=total, more_ns=more)
+        answer = extend_study(root, total_ns=total, more_ns=more,
+                              checkpoint_interval_steps=simulation.get(
+                                  "checkpoint_interval_steps"))
         if not answer.get("ok"):
             result = RunResult(run_id="s1", system=system, status="error",
                                output_dir=root, message=str(answer.get("error")),
@@ -1430,7 +1434,7 @@ class FastMDXplora:
             # and it read Running until a day of silence. It is the same
             # stop, recorded as one, so `fastmdx resume` carries it on.
             error = (stopped.as_error() if isinstance(stopped, RunStopped)
-                     else _stopped_by_ctrl_c(phase))
+                     else _stopped_by_ctrl_c(phase, stopped))
             return PhaseResult(
                 name=phase,
                 status="error",
@@ -1712,7 +1716,10 @@ class FastMDXplora:
         resolved = {
             "system": self.system,
             "system_id": getattr(self, "_system_id", None),
-            "output": str(self.output_dir),
+            # Run again over a recorded simulation, the study is where it
+            # is, not where the command was given from (`--output cp1/Xc`).
+            "output": str(self.output_dir if recorded is None
+                          else Path(self.output_dir).absolute()),
             "verbose": self.verbose,
             "explain": bool(getattr(get_presenter(), "explain", True)),
             "include_phase": include,
@@ -1889,14 +1896,33 @@ def record_is_from_elsewhere(record: dict) -> bool:
     return False
 
 
-def _stopped_by_ctrl_c(phase: str) -> StudyError:
-    """A phase ended by Ctrl+C, as the retryable stop it is."""
-    from fastmdxplora.simulation.runner import STOPPED_CODE
+def _stopped_by_ctrl_c(phase: str, stopped: BaseException | None = None) -> StudyError:
+    """A phase ended by Ctrl+C, or by the signals of a stop now
+    (`runner.StopNow`: a second SIGTERM was recorded as Ctrl+C, and a Ctrl-C
+    then a SIGTERM by the last alone), as the retryable stop it is."""
+    import signal
 
+    from fastmdxplora.simulation.runner import STOPPED_CODE, StopNow
+
+    name = (stopped.signal_name if isinstance(stopped, StopNow) else
+            signal.Signals.SIGINT.name)
+    if not isinstance(stopped, StopNow) or stopped.said() == "Ctrl+C twice":
+        said = "Ctrl+C"
+    elif stopped.first == stopped.number:
+        said = f"a second {stopped.signal_name}"
+    else:
+        said = f"{stopped.said()},"
+    from fastmdxplora.simulation.runner import (run_again_argv, run_again_before_its_price,
+                                                run_again_cwd)
+
+    # A budget's setup stage: a resume ran setup alone and read it finished.
+    again = run_again_before_its_price()
     return StudyError(
-        f"The run was stopped by Ctrl+C in its {phase} phase, before it "
-        "finished; `fastmdx resume` carries it on.",
-        code=STOPPED_CODE, signal="SIGINT", checkpoint_on_frame=False)
+        f"The run was stopped by {said} in its {phase} phase, before it finished; "
+        f"{again or '`fastmdx resume` carries it on'}.",
+        code=STOPPED_CODE, signal=name, checkpoint_on_frame=False,
+        **({"run_again": again, "run_again_argv": run_again_argv(),
+            "run_again_cwd": run_again_cwd()} if again else {}))
 
 
 def _was_a_stop(result: Any) -> bool:
@@ -1942,39 +1968,215 @@ def _holds() -> dict[Path, int]:
     return _HOLDS
 
 
-def _record_run_process(output_dir: Path) -> None:
-    import atexit
+#: How often a running process stamps its own process records
+#: (``alive_at``), in every phase, from a thread of its own (`_heartbeat`):
+#: the study's readers on another machine count an hour of quiet from it
+#: (`resume.ANOTHER_HOST_QUIET_SECONDS`, twelve of these), never from the
+#: phase's own writes, which a long setup, analysis or join does not make.
+HEARTBEAT_SECONDS = 300.0
+#: Set for a test's study only, to stamp more often than every 5 minutes.
+HEARTBEAT_ENV = "FASTMDX_HEARTBEAT_SECONDS"
+_HEARTBEAT: list[threading.Thread] = []
+
+
+def _heartbeat_every() -> float:
+    try:
+        return max(0.05, float(os.environ.get(HEARTBEAT_ENV) or HEARTBEAT_SECONDS))
+    except ValueError:
+        return HEARTBEAT_SECONDS
+
+
+def _put_in_place(path: Path, text: str) -> None:
+    """``text`` written whole to ``path``: to a file beside it first, made
+    new with a name no other writer has (`tempfile.mkstemp`, never through
+    a link), then put in its place in one step (`os.replace`), so a reader
+    never finds it empty or cut short, and a write cut (a kill, a full
+    disk) leaves the record as it was. A temporary such a cut left beside
+    it, of a process no longer alive, is removed. Raises OSError where it
+    could not be written."""
+    import tempfile
+
+    from fastmdxplora.record_access import _umask
+
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f"{path.name}.{os.getpid()}.",
+                                        suffix=".tmp")
+    try:
+        # Readable as a file written in place is (the umask's mode, not the
+        # owner-only one `mkstemp` gives): a lab's shared study is read by
+        # the group, its record from another machine among it.
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            os.fchmod(stream.fileno(), 0o666 & ~_umask())
+            stream.write(text)
+        os.replace(name, path)
+    except BaseException:
+        # A stop now (a KeyboardInterrupt) too: its temporary, of this
+        # process, was left beside the record (`_clear_cut_temporaries`
+        # passes over a live process's own).
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+        raise
+    _clear_cut_temporaries(path)
+
+
+def _clear_cut_temporaries(path: Path) -> None:
+    """Temporaries beside ``path`` (``<record>.<pid>.<...>.tmp``) of a
+    process on this machine no longer alive: a stamp cut by a kill."""
+    from fastmdxplora.gui.exploration import _process_alive
+
+    try:
+        beside = list(path.parent.glob(f"{path.name}.*.tmp"))
+    except OSError:
+        return
+    for left in beside:
+        try:
+            pid = int(left.name[len(path.name) + 1:].split(".", 1)[0])
+        except ValueError:
+            continue
+        try:
+            if pid != os.getpid() and not left.is_symlink() and not _process_alive(pid):
+                left.unlink()
+        except Exception:  # noqa: BLE001 - left as it is
+            pass
+
+
+def _mark_written_here(path: Path) -> None:
+    """The record at ``path`` noted as the one this process wrote last."""
+    try:
+        stat = path.stat()
+        _RECORDS_WRITTEN_HERE[_key(path)] = (stat.st_ino, stat.st_mtime_ns)
+    except OSError:
+        pass
+
+
+def stamp_alive(path: Path) -> None:
+    """``alive_at`` written into a process record of this process, every
+    other field as it stands (put in place whole, `_put_in_place`);
+    nothing where the record names another process (its number, and its
+    start where this machine says). A record this process wrote last that
+    no longer parses (cut short before records were put in place whole) is
+    written again."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    try:
+        record = json.loads(text)
+    except ValueError:
+        record = None
+        try:
+            stat = path.stat()
+            ours = _RECORDS_WRITTEN_HERE.get(_key(path)) == (stat.st_ino, stat.st_mtime_ns)
+        except OSError:
+            ours = False
+        if ours:
+            # A record of this process cut in place (before records were put
+            # in place whole): written again; a full disk leaves it so.
+            try:
+                _write_run_process(path)
+            except OSError:
+                return
+            _mark_written_here(path)
+        return
+    if not isinstance(record, dict) or record.get("pid") != os.getpid():
+        return
+    ticks = process_start_ticks(os.getpid())
+    if "start_ticks" in record and ticks is not None and record["start_ticks"] != ticks:
+        return
+    record["alive_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        _put_in_place(path, json.dumps(record))
+    except OSError:
+        return
+    _mark_written_here(path)
+
+
+def _heartbeat() -> None:
+    """Stamp every process record this process holds, for as long as it
+    lives: a daemon thread, so it ends with the process."""
+    import time
+
+    while True:
+        time.sleep(_heartbeat_every())
+        _beat_once()
+
+
+def _beat_once() -> None:
+    """One heartbeat: each record held here stamped; a stamp that fails
+    (a full disk) is no end of the heartbeat."""
+    with _HOLDS_LOCK:
+        held = [key for key, count in _holds().items() if count > 0]
+        for folder in held:
+            try:
+                stamp_alive(Path(folder) / RUN_PROCESS_FILE)
+            except Exception:  # noqa: BLE001 - the heartbeat lives on
+                pass
+
+
+def _start_heartbeat() -> None:
+    """The heartbeat thread, started once in each process that writes a
+    process record (a study's, a resume's, a worker's)."""
+    if _HEARTBEAT and _HEARTBEAT[0].is_alive() and _HEARTBEAT[0].ident is not None:
+        return
+    _HEARTBEAT.clear()
+    thread = threading.Thread(target=_heartbeat, name="fastmdx-heartbeat", daemon=True)
+    _HEARTBEAT.append(thread)
+    thread.start()
+
+
+def _write_run_process(path: Path) -> None:
+    """This process's record written at ``path``, put in place whole. Its
+    start in ticks since boot, beside the boot (`this_machine`): the
+    process is the run only while its number and start both match."""
     import sys
 
-    path = Path(output_dir) / RUN_PROCESS_FILE
-    # Its start in ticks since boot, beside the boot (`this_machine`): the
-    # process is the run only while its number and start both match.
     ticks = process_start_ticks(os.getpid())
+    now = datetime.now(timezone.utc).isoformat()
+    _put_in_place(path, json.dumps({
+        "pid": os.getpid(),
+        "argv": list(sys.argv),
+        "started_at": now,
+        "alive_at": now,
+        **this_machine(),
+        **({"start_ticks": ticks} if ticks is not None else {}),
+    }))
+
+
+def _remove_at_exit(folder: Path) -> None:
+    """`_remove_if_written_here` at the process's exit, under the holds'
+    lock, so no heartbeat in flight writes the record back after it."""
+    with _HOLDS_LOCK:
+        _remove_if_written_here(folder)
+
+
+def _record_run_process(output_dir: Path) -> None:
+    import atexit
+
+    path = Path(output_dir) / RUN_PROCESS_FILE
     try:
-        path.write_text(json.dumps({
-            "pid": os.getpid(),
-            "argv": list(sys.argv),
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            **this_machine(),
-            **({"start_ticks": ticks} if ticks is not None else {}),
-        }), encoding="utf-8")
+        _write_run_process(path)
         written = True
     except OSError:
-        # Perhaps left empty or cut short (a full disk): this process's,
-        # to remove as its own (`_forget_run_process`).
+        # Not written (a full disk): the record there, if any, as it was.
         written = False
     key = _key(path)
-    try:
-        stat = key.stat()
-        identity: tuple[int, int] | None = (stat.st_ino, stat.st_mtime_ns)
-    except OSError:
-        identity = None
+    identity: tuple[int, int] | None = None
+    if written:
+        # Only the record this process put in place is noted as its own: a
+        # write that failed left the one there (another process's, perhaps).
+        try:
+            stat = key.stat()
+            identity = (stat.st_ino, stat.st_mtime_ns)
+        except OSError:
+            identity = None
     first = key not in _RECORDS_WRITTEN_HERE
     _RECORDS_WRITTEN_HERE[key] = identity
     if first and (written or identity is not None):
         # For a run that raised past its end, and an orchestrator made and
         # never run: removed at exit, where it is still this process's.
-        atexit.register(_remove_if_written_here, key.parent)
+        atexit.register(_remove_at_exit, key.parent)
+    _start_heartbeat()
 
 
 def _written_by_this_process(record: Any) -> bool:
@@ -2000,8 +2202,37 @@ def _hold_run_process(output_dir: Path, *, rewrite: bool = False) -> None:
         holds = _holds()
         key = _key(output_dir)
         holds[key] = holds.get(key, 0) + 1
-        if rewrite or not (Path(output_dir) / RUN_PROCESS_FILE).exists():
+        path = Path(output_dir) / RUN_PROCESS_FILE
+        if rewrite or not path.exists() or _names_an_ended_process(path):
             _record_run_process(Path(output_dir))
+
+
+def _names_an_ended_process(path: Path) -> bool:
+    """Whether the record at ``path`` names a process of this machine, its
+    boot and its process namespace that has ended (its number gone, or
+    given to a process begun since): one a killed process left (a worker
+    killed, a study run again with `--force-overwrite`). A run taking its
+    hold writes it over, so the folder names the process now running it; a
+    record of another machine or container, a live process's, or one that
+    cannot be read is left as it is."""
+    from fastmdxplora.gui.exploration import _process_alive
+
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or record_is_from_elsewhere(record):
+        return False
+    space, here = record.get("pidns"), this_machine().get("pidns")
+    if isinstance(space, str) and space and here and space != here:
+        return False
+    pid = record.get("pid")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    if not _process_alive(pid):
+        return True
+    ticks, now = record.get("start_ticks"), process_start_ticks(pid)
+    return isinstance(ticks, int) and now is not None and ticks != now
 
 
 def _release_run_process(output_dir: Path) -> None:

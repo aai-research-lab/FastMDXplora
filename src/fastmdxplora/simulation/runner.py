@@ -27,6 +27,7 @@ import csv
 import json
 import math
 import shutil
+import threading as _threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -126,9 +127,9 @@ def check_integrator(name: str, *, temperature_K: float, friction_per_ps: float,
             "samples no defined ensemble. Use `langevin_middle`.",
             code="config.option.not_permitted", option="integrator",
             context="simulation", given=key,
-            # The suggestion first; brownian left out, as it needs a friction
-            # the default does not have.
-            permitted=["langevin_middle", "langevin", "variable_langevin"],
+            # The suggestion first; brownian last, permitted too, with the
+            # friction it needs (refused below where it has too little).
+            permitted=["langevin_middle", "langevin", "variable_langevin", "brownian"],
             suggestion="langevin_middle")
     if key == "brownian":
         least = least_brownian_friction(temperature_K, timestep_fs)
@@ -879,29 +880,36 @@ def _grid_by_the_cell(simulation: Any, script_in: Callable[[Any], str],
                     "cell as equilibration left it.")
 
 
-def _write_checkpoint_pair(simulation: Any, chk_path: Path) -> None:
-    """Write the context's checkpoint and its seal as a pair.
+def _write_checkpoint_set(simulation: Any, chk_path: Path, sidecar: dict[str, Any]) -> None:
+    """Write the context's checkpoint, its sidecar and its seal as one set.
 
-    The checkpoint and its seal are one fact in two files, so they are
-    written as a pair: both to .new, then renamed in, the checkpoint first
-    and the seal second. A kill during the writes leaves the live pair
-    untouched; a kill between the two renames leaves a new checkpoint whose
-    seal has not landed, and the .new seal it was written with is still
-    there for the loader to verify against. There is no moment at which a
-    whole checkpoint cannot be shown to be whole.
+    The three are one fact in three files. Each is written whole beside its
+    place (``.new``), then put in place, the checkpoint first, its sidecar
+    second and its seal last. A kill while they are written leaves the set
+    before it as it was; a kill between the moves leaves a checkpoint whose
+    seal still waits beside it (``.new``), and the readers take the set it
+    seals (`verify_checkpoint`, `read_checkpoint_sidecar`). The sidecar and
+    the seal were written in place after the checkpoint, so a kill there
+    left a checkpoint at the new step, its sidecar at the old one and an
+    empty seal, which nothing could resume.
     """
     import hashlib
     import os as _os
 
+    # A set a kill left part moved is finished first, and what is left of an
+    # earlier write cleared, so this write's files never pair with its.
+    _finish_checkpoint_set(chk_path)
     payload = simulation.context.createCheckpoint()
-    new_chk = chk_path.with_suffix(chk_path.suffix + ".new")
+    side_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_SIDECAR_SUFFIX)
     seal_path = chk_path.with_suffix(chk_path.suffix + CHECKPOINT_DIGEST_SUFFIX)
-    new_seal = seal_path.with_suffix(seal_path.suffix + ".new")
+    new_chk, new_side, new_seal = (path.with_suffix(path.suffix + ".new")
+                                   for path in (chk_path, side_path, seal_path))
     new_chk.write_bytes(payload)
-    new_seal.write_text(
-        f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
-        encoding="utf-8")
+    write_checkpoint_sidecar(chk_path, into=new_side, **sidecar)
+    new_seal.write_text(f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
+                        encoding="utf-8")
     _os.replace(new_chk, chk_path)
+    _os.replace(new_side, side_path)
     _os.replace(new_seal, seal_path)
 
 
@@ -948,12 +956,238 @@ STOP_REPEAT_SECONDS = 2.0
 #: When this process was first asked to stop, shared by everything here that
 #: listens, so the request is counted once whichever of them hears it.
 _first_stop_at: float | None = None
+#: Whether a Ctrl-C (SIGINT) was among the stops heard.
+_ctrl_c_heard = False
+#: The signal of the first stop heard (SIGTERM for the GUI's Stop), so a
+#: stop now is named by both it took (`StopNow.said`).
+_first_stop_signal: int | None = None
+#: How many stops now this process has raised (`_a_stop_now`), and the
+#: signals of the last, so what records a phase it ended as stopped
+#: (`orchestrator._run_phase`) can be told it was one and let it on
+#: (`BatchExplorer._report_again`). Counted, not held: the exception
+#: held its frames, a study's, for the life of the process.
+_stops_now = 0
+_last_stop_now_signals: tuple[int, int] | None = None
+
+
+class StopNow(KeyboardInterrupt):
+    """A second stop obeyed at once (`_stop_now`), carrying the signal that
+    asked it: a stop asked, which a run's phase, its study's rounds and the
+    study record as such, named by that signal (a second SIGTERM was
+    recorded as Ctrl+C). A KeyboardInterrupt, so what no listener here
+    handles ends as one did; a bare KeyboardInterrupt, which no listener
+    heard, is not a stop asked, and keeps its meaning (a round it reaches
+    is cut, as a kill leaves it)."""
+
+    def __init__(self, number: int, first: int | None = None) -> None:
+        super().__init__(number)
+        self.number = int(number)
+        #: The first of the two stops it took (a Ctrl-C, then a SIGTERM).
+        self.first = int(first) if first is not None else self.number
+
+    @property
+    def signal_name(self) -> str:
+        return _signal_said(self.number, ctrl_c=False)
+
+    def said(self) -> str:
+        """The two stops it took, as a person reads them: "SIGTERM twice",
+        "Ctrl+C twice", or "Ctrl+C, then SIGTERM" where they differed (a
+        Ctrl-C then a SIGTERM was named by the last alone)."""
+        if self.first == self.number:
+            return f"{_signal_said(self.number)} twice"
+        return f"{_signal_said(self.first)}, then {_signal_said(self.number)}"
+
+
+def _signal_said(number: int, *, ctrl_c: bool = True) -> str:
+    import signal as _signal
+
+    if ctrl_c and number == _signal.SIGINT:
+        return "Ctrl+C"
+    try:
+        return _signal.Signals(number).name
+    except ValueError:
+        return f"signal {number}"
+
+
+def stop_said(stopped: BaseException) -> str:
+    """How a stop that ended something is named to a person: "Ctrl+C" for
+    SIGINT, or a bare KeyboardInterrupt, else its signal."""
+    import signal as _signal
+
+    if isinstance(stopped, StopNow) and stopped.number != _signal.SIGINT:
+        return stopped.signal_name
+    return "Ctrl+C"
 
 
 def _listen_afresh() -> None:
-    """Forget an earlier stop: a new run, or its production, is starting."""
-    global _first_stop_at
+    """Forget an earlier stop: a new run, or its production, is starting.
+    Not where the study in this process has heard one (`_StopInTheStudy`):
+    the count is the study's, never reset inside it, so a second stop is
+    obeyed at once wherever it lands (a run's report written again after
+    the rule's last round forgot the first, and the second was dropped)."""
+    global _first_stop_at, _ctrl_c_heard, _first_stop_signal
+    if any(isinstance(listener, _StopInTheStudy) and listener.signal is not None
+           for listener in list(_LISTENING)):
+        return
     _first_stop_at = None
+    _ctrl_c_heard = False
+    _first_stop_signal = None
+
+
+def _a_stop_asked_here() -> None:
+    """A stop asked without a signal (the GUI's Stop in this process),
+    counted as a first SIGTERM is: a Ctrl-C after it is the stop under way,
+    and a second one means now. Not counted, a Ctrl-C after the GUI's Stop
+    stopped a run at once, before its frame."""
+    import time
+
+    global _first_stop_at, _ctrl_c_heard, _first_stop_signal
+    if _first_stop_at is None:
+        import signal as _signal
+
+        _first_stop_at = time.monotonic()
+        _ctrl_c_heard = False
+        _first_stop_signal = _signal.SIGTERM
+
+
+#: Said where a Ctrl-C is the stop under way (`_a_stop_heard`'s "again"
+#: for a Ctrl-C), by the study's process and a run's production: nothing
+#: said, a person pressed again, and that meant now.
+CTRL_C_UNDER_WAY = ("Ctrl+C received: the stop asked already is under way (a run in "
+                    "production ends at its next frame). Press Ctrl+C again to stop now.")
+
+
+#: Set in a worker of a parallel study's pool: its parent says the stop
+#: lines, once, and the workers say none of what a person reads.
+_IN_A_POOL_WORKER = False
+#: The terminal while a run's output goes to its own log (`_QuietBanner`
+#: of a study of several runs, one after another): a stop's lines are said
+#: there too, where the person who asked reads.
+_TERMINAL_FD: int | None = None
+#: Held to read and write that terminal, and to give it back: the GUI's
+#: Stop, in a thread of its own, wrote to a descriptor the run had closed,
+#: or one since handed to another file. Reentrant, as a signal's listener
+#: may say a line on the thread that holds it.
+_TERMINAL_LOCK = _threading.RLock()
+
+
+def _say_stop(text: str) -> None:
+    """A stop's line: logged, and said on the terminal where a run's output
+    goes to its log. Not in a pool worker, whose parent says it."""
+    import os as _os
+
+    if _IN_A_POOL_WORKER:
+        return
+    logger.warning("%s", text)
+    with _TERMINAL_LOCK:
+        terminal = _TERMINAL_FD
+        if terminal is not None:
+            try:
+                _os.write(terminal, (text + "\n").encode("utf-8", "replace"))
+            except OSError:
+                pass
+
+
+def _the_study_of(folder: Any) -> str:
+    """The study a listener's folder is of, as `fastmdx resume` takes it: a
+    run of a study of several (``runs/<run>``), or a piece of one
+    (``segment-NNN``), is resumed by its study. Decided by the study's own
+    records, its batch manifest naming the run, never by a folder's name: a
+    study of one run is its own folder, and one in a folder named
+    ``runs`` was taken for a run of the folder above."""
+    from pathlib import Path as _Path
+
+    if not folder:
+        return ""
+    here = _Path(folder)
+    if here.name.startswith("segment-"):
+        here = here.parent
+    if here.parent.name == "runs" and _names_the_run(here.parent.parent, here.name):
+        here = here.parent.parent
+    return str(here)
+
+
+def _names_the_run(study: Any, run: str) -> bool:
+    """Whether ``study``'s batch manifest names ``run`` among its runs, planned
+    or ended."""
+    try:
+        manifest = json.loads((Path(study) / "batch_manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(manifest, dict):
+        return False
+    named = [entry for key in ("planned", "runs")
+             for entry in (manifest.get(key) if isinstance(manifest.get(key), list) else [])]
+    return any(isinstance(entry, dict) and str(entry.get("run_id")) == run for entry in named)
+
+
+def _stop_now(number: int) -> None:
+    """A second stop obeyed at once. In the study's own process it is raised
+    as :class:`StopNow`, whatever the signal, so the study's records say it
+    stopped when asked, by that signal, before it ends (a SIGTERM ended it
+    there and then, its round's record left "running"); a pool worker ends
+    as the signal would end it, its parent saying the rest."""
+    import os as _os
+    import signal as _signal
+
+    if number == _signal.SIGINT or not _IN_A_POOL_WORKER:
+        now = _a_stop_now(number)
+        raise now
+    _os.kill(_os.getpid(), number)
+
+
+def _a_stop_now(number: int) -> StopNow:
+    """The :class:`StopNow` to raise for ``number``, counted (`_stops_now`),
+    and every study and round listening here told it is under way: a
+    further stop is that one, and says nothing (a third stop was another
+    stop now, said twice, and cut the study's records as they were
+    written)."""
+    global _stops_now, _last_stop_now_signals
+    now = StopNow(number, first=_first_stop_signal)
+    _stops_now += 1
+    _last_stop_now_signals = (now.number, now.first)
+    for listener in list(_LISTENING):
+        if isinstance(listener, _StopInTheRounds):
+            listener.now_under_way = True
+    return now
+
+
+def _the_last_stop_now() -> StopNow:
+    """The last stop now raised here (`_a_stop_now`), raised again where what
+    it ended took it as its own."""
+    import signal as _signal
+
+    number, first = _last_stop_now_signals or (_signal.SIGINT, _signal.SIGINT)
+    return StopNow(number, first=first)
+
+
+def _a_stop_now_absorbed(before: int, what: str = "the run", *,
+                         next_: str = "the study writes its records and comparison") -> None:
+    """A stop now raised since ``before`` (`_stops_now`) that what it
+    ended took as its own (a run's phase recorded it, `orchestrator._run_phase`;
+    a round's extension, `resume.extend_study`) while the study goes on: no
+    longer under way, so a further stop is a stop now again, and ends the
+    study, and said so (its line had said the study ends at once). Left
+    under way, every further stop was ignored while the study finished,
+    minutes perhaps, and only a kill ended it."""
+    if _stops_now == before:
+        return
+    under_way = [listener for listener in list(_LISTENING)
+                 if isinstance(listener, _StopInTheRounds) and listener.now_under_way]
+    for listener in under_way:
+        listener.now_under_way = False
+    if under_way:
+        _say_stop(f"Stopped at once: {what} ends where `fastmdx resume` carries it on, and "
+                  f"{next_}. A further stop ends it at once.")
+
+
+def stop_now_said(number: int) -> str:
+    """How a first stop's line says to stop now: a Ctrl-C after a SIGTERM
+    is the same stop, so after one it takes two."""
+    import signal as _signal
+
+    return ("Press Ctrl+C again to stop now." if number == _signal.SIGINT
+            else "Send SIGTERM again, or press Ctrl+C twice, to stop now.")
 
 
 def _a_stop_heard(number: int | None = None) -> str:
@@ -961,18 +1195,28 @@ def _a_stop_heard(number: int | None = None) -> str:
 
     ``"first"`` for the first; ``"again"`` for the same SIGTERM delivered
     twice within :data:`STOP_REPEAT_SECONDS`; ``"now"`` for a later one, or
-    any second Ctrl-C, which means stop at once.
+    a second Ctrl-C, which means stop at once. A first Ctrl-C after a
+    SIGTERM is ``"again"``: the stop it asks is the one under way. A worker
+    of a broken pool has the pool's SIGTERM before a person's Ctrl-C reaches
+    its group, and took that Ctrl-C as stop now, losing the save at its
+    frame; two Ctrl-C still mean now.
     """
     import signal as _signal
     import time
 
-    global _first_stop_at
+    global _first_stop_at, _ctrl_c_heard, _first_stop_signal
     now = time.monotonic()
+    ctrl_c = number == _signal.SIGINT
     if _first_stop_at is None:
         _first_stop_at = now
+        _ctrl_c_heard = ctrl_c
+        _first_stop_signal = number
         return "first"
-    if number == _signal.SIGINT:
-        return "now"
+    if ctrl_c:
+        if _ctrl_c_heard:
+            return "now"
+        _ctrl_c_heard = True
+        return "again"
     return "again" if now - _first_stop_at < STOP_REPEAT_SECONDS else "now"
 
 
@@ -1003,6 +1247,9 @@ class _StopRequests:
         self.signal: int | None = None
         #: Asked without a signal, by the GUI in this process.
         self.asked_here = False
+        #: Asked before this production began (the study's round noted it):
+        #: it takes no step.
+        self.before_it_began = False
         self.at_step: int | None = None
         self.on_frame = False
         self._previous: dict[int, Any] = {}
@@ -1035,26 +1282,46 @@ class _StopRequests:
                 self._previous[number] = _signal.signal(number, self._note)
             except (ValueError, OSError):  # pragma: no cover - a platform without it
                 continue
+        # A stop the study's round noted before this production began (a
+        # catch-up piece's start): it stops at its first frame.
+        pending = next((listener for listener in reversed(_LISTENING[:-1])
+                        if isinstance(listener, _StopInTheRounds)
+                        and listener.signal is not None), None)
+        if pending is not None and self.signal is None:
+            self.signal, self.asked_here = pending.signal, pending.asked_here
+            self.before_it_began = True
+            # Still the one stop: a Ctrl-C now is it under way.
+            global _first_stop_at, _ctrl_c_heard, _first_stop_signal
+            import time
+
+            if _first_stop_at is None:
+                # Counted afresh; left as it is where the study counts it already.
+                _first_stop_at = time.monotonic()
+                _ctrl_c_heard = pending.signal == _signal.SIGINT and not pending.asked_here
+                _first_stop_signal = pending.signal
+            #: The study whose round noted it: its resume carries the round on.
+            self.study = pending.folder
         return self
 
     def _note(self, number: int, _frame: Any) -> None:
-        import os as _os
         import signal as _signal
 
         heard = _a_stop_heard(number)
-        if heard == "again":
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == _signal.SIGINT:
+                _say_stop(CTRL_C_UNDER_WAY)
             return
-        if self.signal is None:
+        if heard == "first":
             self.signal = number
-            logger.warning(
-                "%s received: production will stop at the next frame, where it "
-                "can be carried on, if that can be reached within %.0f s. "
-                "Send it again to stop now.", self.name, stop_grace_seconds())
+            _say_stop(
+                f"{self.name} received: production will stop at the next frame, where it "
+                f"can be carried on, if that can be reached within {stop_grace_seconds():.0f} "
+                f"s. {stop_now_said(number)}")
             return
+        _say_stop(f"Stopping now: the run ends at once; `fastmdx resume "
+                  f"{_the_study_of(self.folder)}` carries it on from its last checkpoint.")
         self._restore()
-        if number == _signal.SIGINT:
-            raise KeyboardInterrupt
-        _os.kill(_os.getpid(), number)
+        _stop_now(number)
 
     def _restore(self) -> None:
         import signal as _signal
@@ -1070,10 +1337,317 @@ class _StopRequests:
         if self in _LISTENING:
             _LISTENING.remove(self)
         self._restore()
+        _the_study_heard(self)
         return False
 
     def ask_here(self) -> str:
         return _asked_here(self)
+
+
+class _StopInTheRounds(_StopRequests):
+    """SIGTERM and SIGINT while a study's stopping rule judges and extends
+    its runs, outside a run's production (a piece's join and analyses,
+    between runs, a catch-up piece's start), noted rather than obeyed at
+    once, as production notes them: the round ends stopped when asked once
+    the run it extends has answered, and a production begun after the stop
+    stops at its first frame. A KeyboardInterrupt raised there recorded the
+    round cut, or was lost where Python ignores it (in a weakref callback),
+    and the study ran on. A second is obeyed at once, and any after it is
+    that one (``now_under_way``), until it ends."""
+
+    #: A stop now is under way (`_a_stop_now`): a further stop says nothing.
+    now_under_way = False
+    #: The rule's decision is said (`stopping.run_until_known`): every run
+    #: has ended, and a first stop ends no round.
+    decided = False
+
+    def _note(self, number: int, _frame: Any) -> None:
+        import signal as _signal
+
+        if self.now_under_way:
+            return
+        heard = _a_stop_heard(number)
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == _signal.SIGINT:
+                _say_stop(CTRL_C_UNDER_WAY)
+            return
+        if heard == "first":
+            self.signal = number
+            if self.decided:
+                _say_stop(f"{self.name} received: its stopping rule has decided, every run has "
+                          "ended, and the study finishes writing its reports and comparison. "
+                          f"{stop_now_said(number)}")
+                return
+            _say_stop(
+                f"{self.name} received: the study's round ends once the run it extends has "
+                f"answered, where `fastmdx resume` carries it on. {stop_now_said(number)}")
+            return
+        _say_stop(f"Stopping now: the study's round ends at once; `fastmdx resume "
+                  f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
+        self._listening_on_until_it_ends()
+        _stop_now(number)
+
+    def _listening_on_until_it_ends(self) -> None:
+        """After a stop now, still listening, silent, until this listener
+        ends: Python's own handlers put back, a fourth SIGTERM ended the
+        process (143) and a fourth Ctrl-C raised a bare KeyboardInterrupt.
+        Not in a pool worker, which ends by the signal itself."""
+        if _IN_A_POOL_WORKER:
+            self._restore()
+
+
+    def ask_here(self) -> str:
+        """Asked to stop without a signal (the GUI in this process), as a
+        first SIGTERM asks, said as the rounds stop: no production need be
+        running (a join, between runs)."""
+        import signal as _signal
+
+        if self.signal is not None:
+            return "Stopping: asked already."
+        self.signal, self.asked_here = _signal.SIGTERM, True
+        _a_stop_asked_here()
+        _say_stop("Stop asked from the GUI: the study's round ends once the run it "
+                  "extends has answered, where `fastmdx resume` carries it on.")
+        return ("Stopping: the study's round ends once the run it extends has answered, "
+                "and `fastmdx resume` carries it on.")
+
+
+#: Set by the CLI's command (`cli.main.main`) while it runs: a study that
+#: heard a stop notes it (`_A_STUDY_HEARD_A_STOP`), and once the command's
+#: work is done (`_quiet_if_a_study_heard_a_stop`) a further stop is the
+#: stop under way (`_quiet_once_stopped`).
+_QUIET_ONCE_STOPPED = False
+#: A study of the command heard a stop (`_StopInTheStudy.__exit__`).
+_A_STUDY_HEARD_A_STOP = False
+#: Whether the last study in this process heard a stop, set as it ends
+#: (`_StopInTheStudy.__exit__`), whoever called it.
+_THE_LAST_STUDY_HEARD_A_STOP = False
+#: In the environment, so a pool's workers read it too, while a study with
+#: a budget runs its setup stage and its pricing (`agent.staged`): what runs
+#: it again, said in place of `fastmdx resume` by its stop lines, which ran
+#: setup alone there and read the study finished.
+RUN_AGAIN_BEFORE_ITS_PRICE = "FASTMDXPLORA_RUN_AGAIN_BEFORE_ITS_PRICE"
+
+
+def _run_again() -> dict[str, Any]:
+    import os
+
+    given = os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE) or ""
+    try:
+        said = json.loads(given) if given else {}
+    except ValueError:
+        said = {"said": given}
+    return said if isinstance(said, dict) else {}
+
+
+def run_again_before_its_price() -> str | None:
+    """What runs the study again, where its setup stage and pricing run
+    (`RUN_AGAIN_BEFORE_ITS_PRICE`), as a clause; else None."""
+    return str(_run_again().get("said") or "") or None
+
+
+def run_again_argv() -> list[str]:
+    """The command that runs it again there, as the arguments after
+    `fastmdx`: none where the study was not run from a command line."""
+    return [str(word) for word in _run_again().get("argv") or []]
+
+
+def run_again_cwd() -> str:
+    """Where that command was run from, so its paths, as typed, mean what
+    they meant there: "" where there is no command."""
+    return str(_run_again().get("cwd") or "")
+
+
+#: A study of the command said its summary once asked to stop, with what
+#: carries it on (`BatchExplorer._print_summary`): a further stop then
+#: says nothing more (`cli.main`).
+_ITS_STOP_SAID = False
+
+
+def _quiet_if_a_study_heard_a_stop() -> None:
+    """Quiet for the rest of the command (`_quiet_once_stopped`), where one
+    of its studies heard a stop: called once the command's work is done
+    (`cli.main._then_quiet_once_stopped`), not as each study ends. As a
+    study ended, the work after it (a resume's join, a budget's pricing,
+    a second study) ran with SIGINT and SIGTERM ignored."""
+    if _QUIET_ONCE_STOPPED and _A_STUDY_HEARD_A_STOP:
+        _quiet_once_stopped()
+
+
+class StoppedAgain(KeyboardInterrupt):
+    """A further stop once the command's study heard one
+    (`_stopped_when_asked_again`), carrying its signal: a bare
+    KeyboardInterrupt was said "(Ctrl+C)" for a SIGTERM."""
+
+    def __init__(self, number: int) -> None:
+        super().__init__(number)
+        self.number = int(number)
+
+    def said(self) -> str:
+        return _signal_said(self.number)
+
+
+def _stopped_when_asked_again(number: int, _frame: Any) -> None:
+    """A further stop once the command's study heard one, until its work is
+    done: a KeyboardInterrupt (:class:`StoppedAgain`), which the command
+    says "stopped when asked" and exits 130 for. A SIGTERM after a resume's
+    summary, as it read its runs' records, ended the process by the signal
+    (143)."""
+    raise StoppedAgain(number)
+
+
+def _a_further_stop_ends_the_command() -> None:
+    """SIGINT and SIGTERM raise KeyboardInterrupt (`_stopped_when_asked_again`)
+    for the rest of the command's work, its study having heard a stop; then
+    quiet (`_quiet_if_a_study_heard_a_stop`), and the command's own handlers
+    put back as `cli.main.main` returns."""
+    import signal as _signal
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for number in (_signal.SIGINT, _signal.SIGTERM):
+        try:
+            _signal.signal(number, _stopped_when_asked_again)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+
+
+def _quiet_once_stopped() -> None:
+    """SIGINT and SIGTERM ignored for the rest of the command, its study
+    stopped and recorded: a stop after its summary is the stop under way."""
+    import signal as _signal
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for number in (_signal.SIGINT, _signal.SIGTERM):
+        try:
+            _signal.signal(number, _signal.SIG_IGN)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            continue
+
+
+class _StopInTheStudy(_StopInTheRounds):
+    """SIGTERM and SIGINT to a study's own process for the whole of it
+    (`BatchExplorer.run`), wherever nothing nearer listens: its first
+    pieces, between its runs, before and after its rounds, while its
+    comparison and summary are written. A second stop at any of these ended
+    the process (a SIGTERM's 143) with its records left "running". A stop a
+    nearer listener noted is noted here as it ends (`_the_study_heard`).
+
+    A first stop noted where no run is going: no further run starts, and a
+    production or a round begun after it stops at once where it can be
+    carried on (`_StopRequests.__enter__`). Where a run is going outside
+    its production (``in_a_run``), that run's phase ends there as the stop
+    it is, which `fastmdx resume` runs again: a Ctrl-C as one with no
+    listener (a KeyboardInterrupt), a SIGTERM as a pool worker's
+    (`RunStopped`). A second is obeyed at once (:class:`StopNow`). Not asked
+    by the GUI in this process (`_listener_for`)."""
+
+    #: A run of the study is going in this process (one after another).
+    in_a_run = False
+    #: What the study is doing where no run goes, as a first stop says what
+    #: it does: "preparation" (one preparation shared by its windows, which
+    #: goes on), "finishing" (every run ended: its reports and comparison
+    #: are written, and nothing is left to resume), or None (between runs).
+    stage: str | None = None
+
+    def _note(self, number: int, _frame: Any) -> None:
+        import signal as _signal
+
+        if self.now_under_way:
+            return
+        heard = _a_stop_heard(number)
+        if heard == "again" or (heard == "first" and self.signal is not None):
+            if number == _signal.SIGINT:
+                _say_stop(CTRL_C_UNDER_WAY)
+            return
+        again = run_again_before_its_price()
+        if heard == "first":
+            self.signal = number
+            if self.in_a_run:
+                _say_stop(f"{self.name} received: the run ends in the phase it is in, "
+                          + (f"and no further run starts; {again}. " if again else
+                             "which `fastmdx resume` runs again, and no further run starts. ")
+                          + stop_now_said(number))
+                if number == _signal.SIGINT:
+                    raise KeyboardInterrupt
+                from fastmdxplora.refusals import RunStopped
+
+                raise RunStopped(self.name)
+            _say_stop(f"{self.name} received: " + {
+                "preparation": "the shared preparation goes on to its end, and no run "
+                               "starts after it; " + (f"{again}." if again else
+                                                      "`fastmdx resume` runs them."),
+                "finishing": "every run has ended, and the study finishes writing its "
+                             "reports and comparison.",
+            }.get(self.stage, f"no further run starts, and the study ends; {again}." if again
+                  else "no further run starts, and the study ends where "
+                       "`fastmdx resume` carries it on.")
+                + f" {stop_now_said(number)}")
+            return
+        _say_stop(f"Stopping now: the study ends at once; {again}." if again else
+                  f"Stopping now: the study ends at once; `fastmdx resume "
+                  f"{_the_study_of(self.folder)}` carries it on from its last checkpoints.")
+        self._listening_on_until_it_ends()
+        _stop_now(number)
+
+    def __enter__(self) -> "_StopInTheStudy":
+        global _ITS_STOP_SAID
+        # A new study: what an earlier one's summary said is not of this one.
+        _ITS_STOP_SAID = False
+        super().__enter__()
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        global _A_STUDY_HEARD_A_STOP, _THE_LAST_STUDY_HEARD_A_STOP
+        # Whatever the caller (the Agent, a notebook): a stop heard as the
+        # study ended leaves every run of it ok (`agent.staged`).
+        _THE_LAST_STUDY_HEARD_A_STOP = self.signal is not None
+        if _QUIET_ONCE_STOPPED and self.signal is not None:
+            # Put back as the raising handler, not the command's own and
+            # then it: a SIGTERM between the two ended the process (143).
+            for number in self._previous:
+                self._previous[number] = _stopped_when_asked_again
+        super().__exit__(*exc)
+        if _QUIET_ONCE_STOPPED and self.signal is not None:
+            _A_STUDY_HEARD_A_STOP = True
+            _a_further_stop_ends_the_command()
+        return False
+
+
+def _the_study_heard(listener: Any) -> None:
+    """A stop ``listener`` noted, noted by the study it is of as that listener
+    ends (`_StopInTheStudy`), where the study has none: what the study does
+    after it (its next run, its rounds) is asked to stop as well."""
+    number = getattr(listener, "signal", None)
+    if number is None or number < 0 or isinstance(listener, _StopInTheStudy):
+        return
+    study = next((one for one in reversed(list(_LISTENING))
+                  if isinstance(one, _StopInTheStudy)), None)
+    if study is not None and study.signal is None:
+        study.signal, study.asked_here = number, bool(getattr(listener, "asked_here", False))
+
+
+def listening_for_the_study(folder: Any) -> Any:
+    """The listener for the whole of the study at ``folder`` (`_StopInTheStudy`),
+    as a context; one that listens for nothing in a worker of a parallel
+    study's pool, whose own listener stops its run, and within what listens
+    already (a run's extension in its study's round, whose listener notes a
+    stop in its join and stops its production at its first frame)."""
+    from contextlib import nullcontext
+
+    if _IN_A_POOL_WORKER or _LISTENING:
+        return nullcontext(None)
+    return _StopInTheStudy(folder=folder)
+
+
+def a_stop_asked_in_the_rounds() -> bool:
+    """Whether a stop was asked while the study's rule extends its runs
+    (`_StopInTheRounds`): no further run's extension is begun."""
+    return any(isinstance(listener, _StopInTheRounds) and listener.signal is not None
+               for listener in list(_LISTENING))
 
 
 #: What in this process listens for a stop now, newest last: a production
@@ -1090,9 +1664,10 @@ def _asked_here(stop: "_StopRequests") -> str:
         return "Stopping: asked already."
     stop.signal = _signal.SIGTERM
     stop.asked_here = True
-    logger.warning(
+    _a_stop_asked_here()
+    _say_stop(
         "Stop asked from the GUI: production will stop at the next frame, where it "
-        "can be carried on, if that can be reached within %.0f s.", stop_grace_seconds())
+        f"can be carried on, if that can be reached within {stop_grace_seconds():.0f} s.")
     return ("Stopping: production ends at its next frame with a checkpoint there, "
             "and `fastmdx resume` carries it on.")
 
@@ -1127,6 +1702,11 @@ def _listener_for(root: Any) -> Any:
         return there == here or there.startswith(here.rstrip(_os.sep) + _os.sep)
 
     for listener in reversed(list(_LISTENING)):
+        # The study's own (`_StopInTheStudy`) hears signals only: the GUI in
+        # the run's process is refused outside production, as it was, and
+        # says where to stop the run, never "Stopping" where nothing stops.
+        if isinstance(listener, _StopInTheStudy):
+            continue
         if within(getattr(listener, "folder", None)):
             return listener
     return None
@@ -1173,19 +1753,31 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                          timestep_fs: float) -> None:
     """Write the checkpoint a stopped run is carried on from, and end it.
 
-    Raises the retryable refusal a resume reads as an interruption.
+    Raises the retryable refusal a resume reads as an interruption. A stop
+    landing at or past the run's planned end (in its last frame interval)
+    ends a run whose production is whole: its sidecar says it finished, and
+    its live record says production completed, the run stopped (the
+    exception's ``finished``), so the join and every page read the piece
+    as whole. It still raises, so the study stops where it was asked to.
     """
     from fastmdxplora.refusals import StudyError
 
     step = int(stop.at_step or 0)
+    whole = bool(stop.on_frame) and 0 < int(planned_steps) <= step
     done_ns = step * float(timestep_fs) / 1e6
     planned_ns = int(planned_steps) * float(timestep_fs) / 1e6
     frame = step // int(trajectory_interval_steps) if trajectory_interval_steps else None
     where = checkpoint.parent.parent
-    if stop.on_frame and step > 0:
-        _write_checkpoint_pair(simulation, checkpoint)
-        write_checkpoint_sidecar(checkpoint, step=step, finished=False, **sidecar)
-        said = (f"A checkpoint was written on frame {frame}, so `fastmdx resume "
+    if step == 0 and getattr(stop, "before_it_began", False):
+        said = ("It was asked before its first step, so nothing of it is saved; `fastmdx "
+                f"resume {getattr(stop, 'study', None) or where}` carries the study's round "
+                "on, this run from the piece before it.")
+    elif stop.on_frame and step > 0:
+        _write_checkpoint_set(simulation, checkpoint, dict(
+            step=step, finished=whole, time_ps=_time_ps(simulation), **sidecar))
+        said = (f"Its production had reached its end, so the run is whole; `fastmdx "
+                f"resume {where}` goes on from there." if whole else
+                f"A checkpoint was written on frame {frame}, so `fastmdx resume "
                 f"{where}` carries it on from there, and the joined trajectory "
                 "keeps its spacing.")
     else:
@@ -1196,12 +1788,17 @@ def _end_the_stopped_run(simulation: Any, stop: _StopRequests, *,
                 "after it.")
     from fastmdxplora.simulation.sampling_ask import length_said
 
-    raise StudyError(
+    error = StudyError(
         f"Production was stopped by {_who_asked(stop.name)} at step {step:,} "
         f"({length_said(done_ns)} of {length_said(planned_ns)}). {said}",
         code=STOPPED_CODE,
         details={"signal": stop.name, "step": step,
                  "checkpoint_on_frame": bool(stop.on_frame and step > 0)})
+    #: Production whole: said completed in its live record, with its frames
+    #: and its length (steps times the timestep, as a run that ended says it).
+    error.finished, error.frames = whole, frame
+    error.duration_ns = done_ns if whole else None
+    raise error
 
 
 def _who_asked(signal_name: str) -> str:
@@ -1247,22 +1844,13 @@ def _attach_checkpoint_reporter(
                 return inner.describeNextReport(sim)
 
             def report(self, sim, state):
-                _write_checkpoint_pair(sim, chk_path)
-                try:
-                    # Sealed as it is written, not only at a clean finish.
-                    # The seal says the file is whole -- that a kill did not
-                    # tear the write -- and that is as true of a checkpoint
-                    # at step 2,000 as of the last one. Sealing only at the
-                    # end made the marker say "this run finished" instead,
-                    # so the checkpoint a killed run leaves, the one worth
-                    # resuming from, looked damaged when it was intact. The
-                    # seal goes after the checkpoint, so a process killed
-                    # between the two leaves no seal and is still refused.
-                    seal_checkpoint(chk_path)
-                    write_checkpoint_sidecar(
-                        chk_path, step=int(sim.currentStep), finished=False, **sidecar)
-                except Exception:  # noqa: BLE001 - the checkpoint itself was written
-                    logger.debug("Could not write the checkpoint sidecar.")
+                # Sealed as it is written, not only at a clean finish: the
+                # seal says the file is whole, as true of a checkpoint at
+                # step 2,000 as of the last one. Written as one set with
+                # its sidecar (`_write_checkpoint_set`).
+                _write_checkpoint_set(sim, chk_path, dict(
+                    step=int(sim.currentStep), finished=False, time_ps=_time_ps(sim),
+                    **sidecar))
 
         reporter = _WithSidecar()
     simulation.reporters.append(reporter)
@@ -1667,6 +2255,12 @@ def _run_md_stage(
     chunk = min(max(total // 50, 1), 5000)
     done = 0
     started = _time.monotonic()
+    if stop is not None and getattr(stop, "before_it_began", False):
+        # A stop the study's round noted before this production began: it
+        # takes no step, nothing of it is owed, and none is run past the
+        # grace a frame further on would cost.
+        stop.at_step, stop.on_frame = 0, False
+        return 0
     while done < total:
         this = min(chunk, total - done)
         if stop is not None:
@@ -1735,6 +2329,13 @@ def _run_md_stage_with_live_metrics(
     remaining = int(n_steps)
     interval = max(1, int(telemetry_interval or DEFAULT_STATE_INTERVAL_STEPS))
     started = _time.monotonic()
+    if stop is not None and getattr(stop, "before_it_began", False):
+        # A stop the study's round noted before this production began: it
+        # takes no step (`_end_the_stopped_run` says so), where it ran a
+        # frame interval past the grace; a stop heard as a plain run's
+        # production begins is taken after its first chunk, as always.
+        stop.at_step, stop.on_frame = 0, False
+        return current_step
     while remaining > 0:
         chunk = min(interval, remaining)
         if stop is not None:
@@ -1894,7 +2495,8 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
                              timestep_fs: float, study: str | Path | None = None,
                              system_digest: str | None = None,
                              finished: bool | None = None,
-                             trajectory_interval_steps: int | None = None) -> Path:
+                             trajectory_interval_steps: int | None = None,
+                             time_ps: float | None = None, into: Path | None = None) -> Path:
     """What a checkpoint is, beside it: the stage that wrote it, the step,
     the ensemble and temperature, the timestep, and the study.
 
@@ -1915,11 +2517,17 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
     set. A killed run never reaches the record written at the end of the
     phase, and without the interval the frames that precede a checkpoint
     cannot be counted, nor the time a frame represents.
+
+    ``time_ps`` is the state's time at the checkpoint, the production's own
+    clock (reset to zero as production begins). A variable-step integrator
+    chooses its own step, so a stopped piece's length in time is this, and
+    nothing else gives it where the energy log wrote no row at that step.
     """
     import json
 
     checkpoint = Path(path)
-    sidecar = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    sidecar = (Path(into) if into is not None
+               else checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX))
     sidecar.write_text(json.dumps({
         "stage": str(stage), "step": int(step), "ensemble": str(ensemble),
         "temperature_K": float(temperature_K), "timestep_fs": float(timestep_fs),
@@ -1928,9 +2536,22 @@ def write_checkpoint_sidecar(path: str | Path, *, stage: str, step: int,
         **({} if finished is None else {"finished": bool(finished)}),
         **({} if trajectory_interval_steps is None
            else {"trajectory_interval_steps": int(trajectory_interval_steps)}),
+        **({} if time_ps is None else {"time_ps": float(time_ps)}),
         "written_at": datetime.now(timezone.utc).isoformat(),
     }, indent=1), encoding="utf-8")
     return sidecar
+
+
+def _time_ps(simulation: Any) -> float | None:
+    """The simulation's time in ps, None where it does not say."""
+    try:
+        from openmm import unit
+
+        time = simulation.context.getTime().value_in_unit(unit.picosecond)
+        time = float(time)
+    except Exception:  # noqa: BLE001 - a record of a checkpoint, never its failure
+        return None
+    return time if time == time and time >= 0 else None
 
 
 def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
@@ -1940,6 +2561,10 @@ def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
 
     checkpoint = Path(path)
     sidecar = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    if _the_set_s_sidecar_waits(checkpoint):
+        # Put in place before its sidecar, which waits beside it (a kill
+        # between the moves, `_write_checkpoint_set`).
+        sidecar = sidecar.with_suffix(sidecar.suffix + ".new")
     if not _records.is_file(sidecar):
         return None
     try:
@@ -1947,6 +2572,60 @@ def read_checkpoint_sidecar(path: str | Path) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _seals(checkpoint: Path, seal: Path) -> bool:
+    """Whether ``seal`` is the seal of the checkpoint in place."""
+    import hashlib
+
+    try:
+        size, digest = seal.read_text(encoding="utf-8").split()
+        payload = checkpoint.read_bytes()
+        return len(payload) == int(size) and hashlib.sha256(payload).hexdigest() == digest
+    except (OSError, ValueError):
+        return False
+
+
+def _finish_checkpoint_set(checkpoint: Path) -> None:
+    """A checkpoint's set left part moved by a kill (`_write_checkpoint_set`)
+    finished: its waiting sidecar and seal moved in where they belong to the
+    checkpoint in place; then what is left of a write (``.new``) removed.
+    Called only where nothing else writes the set: by its writer, and by a
+    resume that has loaded it."""
+    import os as _os
+
+    checkpoint = Path(checkpoint)
+    side = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX)
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
+    waiting = [path.with_suffix(path.suffix + ".new") for path in (checkpoint, side, seal)]
+    try:
+        if _the_set_s_sidecar_waits(checkpoint):
+            _os.replace(waiting[1], side)
+        if waiting[2].is_file() and _seals(checkpoint, waiting[2]):
+            _os.replace(waiting[2], seal)
+        for leftover in waiting:
+            leftover.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _the_set_s_sidecar_waits(checkpoint: Path) -> bool:
+    """Whether the checkpoint in place is the one the seal waiting beside it
+    seals, with its sidecar waiting too: a kill between the moves of
+    `_write_checkpoint_set`. Read only where those wait, so a checkpoint's
+    readers hash it only then."""
+    import hashlib
+
+    seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX + ".new")
+    side = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_SIDECAR_SUFFIX + ".new")
+    try:
+        if not (seal.is_file() and side.is_file()):
+            return False
+        size, digest = seal.read_text(encoding="utf-8").split()
+        payload = checkpoint.read_bytes()
+        return len(payload) == int(size) and hashlib.sha256(payload).hexdigest() == digest
+    except (OSError, ValueError):
+        return False
 
 
 def check_continuation(path: str | Path, *, minimize: bool, nvt_steps: int,
@@ -2016,12 +2695,17 @@ def seal_checkpoint(path: str | Path) -> Path:
     """
     import hashlib
 
+    import os as _os
+
     checkpoint = Path(path)
     payload = checkpoint.read_bytes()
     seal = checkpoint.with_suffix(checkpoint.suffix + CHECKPOINT_DIGEST_SUFFIX)
-    seal.write_text(
+    # Whole or not at all: a seal cut by a kill was empty, and refused.
+    beside = seal.with_name(seal.name + ".tmp")
+    beside.write_text(
         f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n",
         encoding="utf-8")
+    _os.replace(beside, seal)
     return seal
 
 
@@ -2050,8 +2734,21 @@ def verify_checkpoint(path: str | Path, *, require_seal: bool = False) -> bool:
     import hashlib
 
     checkpoint = Path(path)
-    seal = next((candidate for candidate in _seal_candidates(checkpoint)
-                 if candidate.is_file()), _seal_candidates(checkpoint)[0])
+    candidates = [candidate for candidate in _seal_candidates(checkpoint) if candidate.is_file()]
+    if len(candidates) > 1:
+        # The seal in place and one waiting beside it: whichever seals the
+        # checkpoint in place is its seal (a kill between the moves of
+        # `_write_checkpoint_set`, or before them).
+        payload = checkpoint.read_bytes()
+        for candidate in candidates:
+            try:
+                size_text, digest = candidate.read_text(encoding="utf-8").split()
+                size = int(size_text)
+            except (OSError, ValueError):
+                continue
+            if len(payload) == size and hashlib.sha256(payload).hexdigest() == digest:
+                return True
+    seal = candidates[0] if candidates else _seal_candidates(checkpoint)[0]
     if not seal.is_file():
         if require_seal:
             raise MissingResultError(
@@ -2134,6 +2831,8 @@ def load_checkpoint(omm: dict, simulation: Any, path: str | Path, *,
             code="simulation.resume.checkpoint_rejected",
             path=str(checkpoint),
         ) from exc
+    # A killed write's leftovers beside the set it read, cleared.
+    _finish_checkpoint_set(checkpoint)
     return checkpoint
 
 
@@ -3401,14 +4100,12 @@ def run_simulation(
         # to know that a run's trajectory has no frames past its checkpoint.
         checkpoint_path = output_dir / "checkpoint.chk"
         try:
-            with checkpoint_path.open("wb") as fh:
-                fh.write(simulation.context.createCheckpoint())
-            seal_checkpoint(checkpoint_path)
-            write_checkpoint_sidecar(
-                checkpoint_path, stage="production", step=int(simulation.currentStep),
+            _write_checkpoint_set(simulation, checkpoint_path, dict(
+                stage="production", step=int(simulation.currentStep),
                 ensemble="npt" if wants_npt_production else "nvt", temperature_K=float(temperature_K),
                 timestep_fs=float(timestep_fs), study=str(output_dir.parent), finished=True,
-                trajectory_interval_steps=int(trajectory_interval_steps))
+                trajectory_interval_steps=int(trajectory_interval_steps),
+                time_ps=_time_ps(simulation)))
         except Exception:  # noqa: BLE001 - a run that finished still finished
             logger.warning(
                 "Could not write a sealed checkpoint to %s; this run is "
@@ -3450,7 +4147,21 @@ def run_simulation(
             )
 
     except Exception as exc:
-        if telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
+        if (telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE
+                and getattr(exc, "finished", False)):
+            # Stopped at its end: its production is whole, as its sidecar
+            # says, and the run stopped where it was asked to, its later
+            # phases still to run (a piece's run ends here: the join reads
+            # it whole, `joining.piece_finished`).
+            telemetry.event(str(exc), level="warning")
+            # The run's own step (its equilibration's and this), and every
+            # frame its production wrote: the pages count the whole run on.
+            telemetry.mark_stage("production", "completed", status="stopped",
+                                 latest_error=str(exc), current_step=current_step,
+                                 current_frame_count=exc.frames,
+                                 simulation_time_completed_ns=(
+                                     float(current_step) * float(timestep_fs) / 1_000_000.0))
+        elif telemetry is not None and getattr(exc, "code", None) == STOPPED_CODE:
             # Asked to stop, and stopped where it can be carried on: the
             # stage it was in stays the one it was in, not a failed one.
             telemetry.event(str(exc), level="warning")

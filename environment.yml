@@ -41,6 +41,7 @@ dependencies:
   - mdtraj>=1.9.7
   - matplotlib>=3.5
   - scikit-learn>=1.0
+  - threadpoolctl>=2.0
   - pandas>=1.4
   - python-pptx>=0.6.21
   - scipy>=1.7

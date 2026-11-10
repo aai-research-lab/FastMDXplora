@@ -468,6 +468,14 @@ def _write_markdown(
     lines: list[str] = []
     lines.append("# Cross-run comparison report")
     lines.append("")
+    if root is not None:
+        from fastmdxplora.simulation.stopping import round_ended
+
+        # Its runs each ended well and its rule's round did not: said
+        # before the runs are compared as if the study had completed.
+        ended = round_ended(root)
+        if ended is not None:
+            lines += [f"**{ended.label}.** {ended.as_text()}", ""]
 
     # An umbrella study is one experiment sampled in pieces, not several
     # experiments. Its windows differ because each is held at a different
@@ -533,7 +541,9 @@ def _write_markdown(
                for a in summary_keys]
     lines.append("| " + " | ".join(header) + " |")
     lines.append("|" + "|".join(["---"] * len(header)) + "|")
-    whole = qualified = False
+    whole = False
+    # The marked means: withheld by their runs' analyses, or by this version.
+    qualified: set[bool] = set()
     noted: list[str] = []
     for run in runs:
         rid = run["run_id"]
@@ -551,8 +561,11 @@ def _write_markdown(
                 cell += " (all frames)"
                 whole = True
             if mean["qualified"]:
-                cell += " \\*"
-                qualified = True
+                # One mark for a mean its run withheld, another for one this
+                # version withholds: one footnote served both.
+                since = bool(mean.get("by_this_version"))
+                cell += " \u2021" if since else " \\*"
+                qualified.add(since)
             if mean.get("noted"):
                 cell += " \u2020"
                 noted.append(f"{rid}, {_OVERLAY_ANALYSES[a][0]}: {mean['noted']}.")
@@ -564,8 +577,19 @@ def _write_markdown(
                  + (" Where a run recorded none, the mean of every frame is given and "
                     "marked (all frames)." if whole else ""))
     if qualified:
-        lines += ["", "\\* Not determined: the run's analysis found the series too "
-                  "short, or with too few independent samples, for its mean to be determined."]
+        from fastmdxplora.statistics import MINIMUM_EFFECTIVE_SAMPLES
+
+        # Said of a mean its run called determined as this version's verdict:
+        # "the run's analysis found the series too short" was said of it.
+        if False in qualified:
+            lines += ["", "\\* Not determined: the run's analysis found the series too "
+                          "short, or with too few independent samples, for its mean to be "
+                          "determined."]
+        if True in qualified:
+            lines += ["", f"\u2021 Not determined: its run called it determined on fewer "
+                          f"than the {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples this "
+                          "version determines a mean on, and this version withholds it "
+                          "(Analyze again to record this version's verdict)."]
     for line in noted:
         lines += ["", f"\u2020 {line}"]
     lines.append("")
@@ -575,7 +599,7 @@ def _write_markdown(
         lines.extend(_across_the_replicas(root))
         from fastmdxplora.simulation.stopping import stopping_section
 
-        lines.extend(stopping_section(root))
+        lines.extend(stopping_section(root, ended_said_above=True))
 
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -658,6 +682,7 @@ def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     """The mean an analysis recorded (`findings.mean`), or None where it
     recorded none."""
     from fastmdxplora.image_note import note_of, said_short
+    from fastmdxplora.statistics import too_few_by_these_rules, withheld_reason
 
     record = (findings or {}).get("mean") if isinstance(findings, dict) else None
     if not isinstance(record, dict):
@@ -665,13 +690,20 @@ def _recorded_mean(findings: dict[str, Any] | None) -> dict[str, Any] | None:
     value = record.get("mean")
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
         return None
+    # Withheld as every page reads it (`statistics.withheld_reason`), and
+    # then with no error: a mean an earlier version called determined had
+    # its error beside the mark "Not determined", in the table, the CSV and
+    # the trend.
+    withheld = withheld_reason(record)
     error = record.get("standard_error")
     error = (float(error) if isinstance(error, (int, float)) and not isinstance(error, bool)
-             and np.isfinite(error) else None)
+             and np.isfinite(error) and not withheld else None)
     discard = record.get("discard")
     return {"mean": float(value), "error": error,
             "discard": int(discard) if isinstance(discard, (int, float)) else None,
-            "qualified": record.get("not_a_measurement") or None, "recorded": True,
+            "qualified": withheld, "recorded": True,
+            # Withheld by this version, not by its run's analysis.
+            "by_this_version": too_few_by_these_rules(record) is not None,
             # Its image note (`image_note`), said beside it in the table.
             "noted": said_short(note_of(record)) or None}
 
@@ -734,6 +766,15 @@ def _across_the_replicas(root: Path) -> list[str]:
         return []
     if summary.get("refused") or not summary.get("replicas"):
         return []
+    try:
+        # The replicas' means were written again from the start they share:
+        # each run's report from its records as they now are, here too, as
+        # `FastMDXplora.compare()` builds this after runs are run again.
+        from fastmdxplora.batch.explorer import write_the_reports_again
+
+        write_the_reports_again(root)
+    except Exception as exc:  # noqa: BLE001 - the comparison stands without it
+        logger.warning("The runs' reports were not written again: %s", exc)
     lines = ["## Across the replicas", "",
              f"These runs are replicas: {summary.get('why')}. That spread is set "
              "here against the error each run estimated for itself.", "",

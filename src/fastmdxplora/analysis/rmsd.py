@@ -34,6 +34,68 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.refusals import StudyError
 
 
+#: Selections offered where the one given matches fewer atoms than a
+#: superposition needs, the first that matches enough named: the backbone
+#: (alanine dipeptide's caps and its one residue give eight in PDBFixer's
+#: alanine-dipeptide.pdb: ACE's C and O, ALA's N, CA, C and O, NME's N and
+#: its methyl carbon, named C there; seven where that is named CH3), then the
+#: protein's heavy atoms, then every heavy atom but water's.
+SELECTIONS_THAT_ALIGN = ("backbone", "protein and not element H",
+                         "not water and not element H")
+
+
+def selection_that_aligns(traj: md.Trajectory, needed: int = 3) -> tuple[str, int] | None:
+    """The first of :data:`SELECTIONS_THAT_ALIGN` matching at least
+    ``needed`` atoms of ``traj``, with how many it matches; None where none
+    does."""
+    for selection in SELECTIONS_THAT_ALIGN:
+        try:
+            found = len(traj.topology.select(selection))
+        except Exception:  # noqa: BLE001 -- a selection this topology cannot make
+            continue
+        if found >= needed:
+            return selection, found
+    return None
+
+
+def refuse_too_few_to_align(analysis: Analysis, traj: md.Trajectory,
+                            atom_idx: np.ndarray) -> None:
+    """Refuse an analysis that superposes frames on fewer atoms than a
+    superposition needs (``min_atoms_to_align``), naming the selection that
+    would work here.
+
+    On one atom (alanine dipeptide's one alpha carbon, the default
+    selection) every frame superposes onto every other exactly, so every
+    RMSD read 0 and a clustering found one cluster, said as results. The
+    plan leaves such an analysis out by its default selection, but one named
+    in ``include`` or given its own selection was run.
+    """
+    needed = int(getattr(analysis, "min_atoms_to_align", 0) or 0)
+    found = len(atom_idx)
+    if found >= needed:
+        return
+    selection = analysis.selection if analysis.selection is not None else "all"
+    works = selection_that_aligns(traj, needed)
+    atoms = f"{found} atom" + ("" if found == 1 else "s")
+    remedy = (f"Set `selection: {works[0]}` under the analysis's "
+              f"`options: {{{analysis.name}: ...}}`, which matches {works[1]} atoms here."
+              if works else
+              f"No selection of {needed} or more atoms of a molecule was found here, so "
+              f"{analysis.name} does not apply to this system.")
+    # Worded so that the command line's rule for a run too short for an
+    # analysis (`_TOO_FEW_FRAMES` in `cli/main.py`: a frame and "needs",
+    # "only" or "at least") does not read it as one: it read "superposes the
+    # frames ... needs 3" so, and a study that named the analysis ended with
+    # exit 0 and no failure said.
+    raise StudyError(
+        f"{remedy} {analysis.description or analysis.name} superposes each structure "
+        f"on `{selection}`, which matches {atoms} here, and a superposition is defined "
+        f"on {needed} or more: on one atom each structure fits every other exactly, "
+        f"each RMSD 0, and on two their separation alone is compared.",
+        code="analysis.selection.arity", expression=selection, expected=needed,
+        found=found, option="selection", selection_that_works=works[0] if works else None)
+
+
 class RMSD(Analysis):
     """Per-frame root-mean-square deviation.
 
@@ -115,6 +177,7 @@ class RMSD(Analysis):
             , code="analysis.option.out_of_range")
 
         if self.align:
+            refuse_too_few_to_align(self, traj, atom_idx)
             # MDTraj's rmsd() with atom_indices implicitly aligns before
             # computing the distance.
             rmsd_nm = md.rmsd(traj, traj, frame=ref, atom_indices=atom_idx)

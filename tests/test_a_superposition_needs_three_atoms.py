@@ -19,13 +19,14 @@ import inspect
 
 import mdtraj as md
 import numpy as np
+import pytest
 
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.rmsd import RMSD
 from fastmdxplora.analysis.rmsf import RMSF
 
 
-def _trajectory(n_ca: int) -> md.Trajectory:
+def _trajectory(n_ca: int, frames: int = 3) -> md.Trajectory:
     """A trajectory whose protein carries `n_ca` alpha carbons."""
     top = md.Topology()
     chain = top.add_chain()
@@ -36,7 +37,7 @@ def _trajectory(n_ca: int) -> md.Trajectory:
                               ("C", md.element.carbon),
                               ("O", md.element.oxygen)):
             top.add_atom(name, element, residue)
-    xyz = np.random.default_rng(0).random((3, top.n_atoms, 3)).astype(np.float32)
+    xyz = np.random.default_rng(0).random((frames, top.n_atoms, 3)).astype(np.float32)
     return md.Trajectory(xyz, top)
 
 
@@ -123,3 +124,39 @@ class TestAMoleculeTooSmallToAlignIsSkipped:
         and hydrogen bonds; the gate is about alignment, not about size."""
         plan = self._plan(_trajectory(1))
         assert "rg" in plan
+
+
+class TestRunOnOneAtomItIsRefused:
+    """The plan leaves them out by their default selection, but an analysis
+    named in `include` (as the GUI writes a study's analyses) was run: on
+    alanine dipeptide's one CA every RMSD read 0, and clustering found one
+    cluster, said as results, while dimred refused with "nothing to
+    decompose"."""
+
+    @pytest.mark.parametrize("name", ["rmsd", "cluster", "dimred"])
+    def test_it_is_refused_with_the_selection_that_works(self, name) -> None:
+        from fastmdxplora.analysis.orchestrator import get_analysis_class
+        from fastmdxplora.refusals import StudyError, refusal_of
+
+        # Frames enough for five clusters.
+        traj = _trajectory(1, frames=20)
+        with pytest.raises(StudyError) as raised:
+            get_analysis_class(name)().compute(traj)
+        refusal = refusal_of(raised.value)
+        assert refusal.code == "analysis.selection.arity"
+        said = str(raised.value)
+        # What to set first, with the atoms it matches here.
+        assert said.startswith("Set `selection: backbone`"), said
+        assert "matches 4 atoms here" in said and "matches 1 atom here" in said, said
+
+    def test_run_whole_it_fails_and_says_why_and_its_selection_works(self, tmp_path) -> None:
+        import re
+
+        traj = _trajectory(1)
+        result = RMSD(output_dir=tmp_path).run(traj)
+        assert result.status == "error"
+        assert not (tmp_path / "rmsd" / "rmsd.dat").exists()
+        named = re.search(r"`selection: ([^`]+)`", result.message)
+        assert named, result.message
+        rmsd = RMSD(selection=named.group(1)).compute(traj)
+        assert rmsd[0] == 0.0 and np.all(rmsd[1:] > 0.0)

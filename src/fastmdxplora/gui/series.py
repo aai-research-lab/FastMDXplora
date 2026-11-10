@@ -217,14 +217,21 @@ def _over_time(root: Path, analysis: str, label: str, unit: str,
 
     mean = None
     if found is not None and int(found.get("n_frames") or n) == n:
+        from fastmdxplora.statistics import withheld_reason
+
         discard = _non_negative_int(found.get("discard")) or 0
+        # The verdict the table beside it reads (`statistics.withheld_reason`):
+        # no band and no error where it withholds the mean. A mean an earlier
+        # version called determined on too few independent samples was
+        # plotted with its band beside the table's "not determined".
+        withheld = withheld_reason(found)
         mean = {
             "value": _finite(found.get("mean")),
-            "error": _finite(found.get("standard_error")),
+            "error": None if withheld else _finite(found.get("standard_error")),
             "effective_samples": _finite(found.get("effective_samples")),
             "discard": discard,
             "from_x": x[discard] if discard < n else None,
-            "not_a_measurement": found.get("not_a_measurement") or None,
+            "not_a_measurement": withheld,
             # Its image note beside its verdict, as the table says it.
             "noted": _noted(found) or None,
         }

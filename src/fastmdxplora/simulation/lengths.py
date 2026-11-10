@@ -214,7 +214,10 @@ def _refused(path: object) -> bool:
 def _piece_clock(folder: object) -> tuple[float | None, str]:
     """One piece's production by its own clock (ps), and from what.
 
-    A piece that finished: its final state's time. A piece that stopped:
+    The state's time its checkpoint's record gives (``time_ps``), where it
+    gives one: at its end for a piece that finished, at its last checkpoint
+    for one that stopped. Otherwise, a piece that finished: its final
+    state's time. A piece that stopped:
     its time at its last checkpoint, which is where the piece after it
     continued from (the sidecar's ``step``, read in its energy log or its
     state). Its energy log runs on to wherever it was stopped, and those
@@ -234,12 +237,27 @@ def _piece_clock(folder: object) -> tuple[float | None, str]:
     side = read_checkpoint_sidecar(folder / "checkpoint.chk") or {}
     state = _state_time(folder)
     finished = side.get("finished")
-    if not isinstance(finished, bool):
+    if isinstance(finished, bool):
+        # One reading of its end (`joining.piece_finished`): a piece stopped
+        # at its last step, said not finished before the runner said so,
+        # ran to its end.
+        from fastmdxplora.analysis.joining import piece_finished
+
+        finished = piece_finished(folder)
+    else:
         # A sidecar from before it said so: only a clean finish writes the
         # final state (`joining._finished`).
         finished = state is not None
     step = (_count(side.get("step"))
             if str(side.get("stage") or "").lower() == "production" else None)
+    # The state's time as the checkpoint was written, read first: where the
+    # piece after it continued from, whether or not the energy log wrote a
+    # row at its step (checkpoints sit on frames, the log's rows every
+    # 1,000 steps), and a finished piece's end.
+    said_time = _number(side.get("time_ps"))
+    if step is not None and said_time is not None and said_time >= 0:
+        where = "its end" if finished else "its last checkpoint"
+        return said_time, f"its checkpoint record at step {step:,}, {where}"
     if finished and state is not None:
         return state[0], "its final state"
     if step is None:
@@ -507,10 +525,12 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
       (``segment-NNN/simulation/...``), the timestep then from the study's
       checkpoint record; and whether it was minimized, where the config is
       not read, from its minimized state;
-    - the platform and precision, which each piece chose for itself, from
-      the first piece's own live status, else a platform the config names,
-      else the first piece's record that gives one; where the pieces' differ,
-      each piece's, as ``platforms`` (:func:`_platform`).
+    - the platform and precision, which each piece chose for itself: the
+      first piece's from its own live status, else the study's log
+      (``fastmdxplora.log``), else a platform the config names; a later
+      piece's from its own record. Where the pieces' differ, or the first
+      piece's is not known, each piece's, as ``platforms``
+      (:func:`_platform`), never a later piece's said as the first's.
 
     ``read_from["settings"]`` names the record each run setting came from.
 
@@ -615,8 +635,9 @@ def unwritten_record(root: object) -> tuple[dict, dict]:
 def _platform(root: object, pieces: list, parameters: dict, beside: dict,
               settings_from: dict) -> None:
     """The platform and precision a study ran on, where its own record was
-    never written. The first piece's is its own live status's, else a
-    platform the config names; a later piece's is its record's, said by its
+    never written. The first piece's is its own live status's, else what
+    the study's log says its run selected, else a platform the config names;
+    a later piece's is its record's, said by its
     folder. One platform for the study only where the first piece's is
     known and every piece's agrees; otherwise each piece's, as
     ``platforms``, the first piece's None where it is not recorded: a
@@ -625,9 +646,10 @@ def _platform(root: object, pieces: list, parameters: dict, beside: dict,
 
     from fastmdxplora import record_access
 
-    status, _ = _first_piece_status(root)
+    status, status_refused = _first_piece_status(root)
     status = status or {}
     first = status.get("platform") if isinstance(status.get("platform"), str) else None
+    logged, log_refused = (None, False) if first is not None else _platform_logged(root)
     each: dict = {}
     for folder in pieces:
         try:
@@ -643,9 +665,23 @@ def _platform(root: object, pieces: list, parameters: dict, beside: dict,
         if isinstance(status.get("precision"), str) and status.get("precision_applied") is not False:
             parameters["precision"] = status["precision"]
             settings_from["precision"] = STATUS_RECORD
+    elif logged is not None:
+        # The study's own log, where the first piece's run said what it
+        # selected (`runner`): what ran, which a platform the config asks
+        # for is only where it was not "auto".
+        first, precision = logged
+        beside["platform_used"] = first
+        settings_from["platform"] = LOG_OF_THE_STUDY
+        if precision is not None:
+            parameters["precision"] = precision
+            settings_from["precision"] = LOG_OF_THE_STUDY
     elif parameters.get("platform") not in (None, "auto"):
         settings_from["platform"] = CONFIG_RECORD
         first = parameters["platform"]
+    elif status_refused or log_refused:
+        # Linked out of the study, the first piece's live status or log may
+        # say: not read, not "not recorded".
+        beside["first_piece_platform"] = NOT_READ
     if first is not None and parameters.get("precision") is not None \
             and "precision" not in settings_from:
         settings_from["precision"] = CONFIG_RECORD
@@ -666,20 +702,44 @@ def _platform(root: object, pieces: list, parameters: dict, beside: dict,
         + [where for _, where in each.values()])
 
 
+#: The study's own log, which says the platform its first piece's run
+#: selected.
+LOG_OF_THE_STUDY = "fastmdxplora.log"
+
+
+def _platform_logged(root: object) -> tuple[tuple[str, str | None] | None, bool]:
+    """The platform the first piece's run selected and the precision it
+    applied (None where the platform has none), as the study's own log says
+    it last ("Selected OpenMM platform: CUDA (precision=mixed)"); and
+    whether a read held to the study refused the log."""
+    import re
+
+    from fastmdxplora import record_access
+
+    path = root / LOG_OF_THE_STUDY
+    refused = _refused(path)
+    try:
+        log = record_access.read_text(path, encoding="utf-8", errors="replace")
+    except (OSError, ValueError, TypeError):
+        return None, refused
+    found = re.findall(r"Selected OpenMM platform: (\S+) \(([^)\n]*)\)", log)
+    if not found:
+        return None, refused
+    name, said = found[-1]
+    applied = re.match(r"precision=(\w+)", said)
+    return (name, applied.group(1) if applied else None), refused
+
+
 def last_piece_stopped(root: object) -> bool:
     """Whether a study carried on in pieces has its last piece stopped
-    before its end: no final state, and no sidecar saying it finished."""
-    from fastmdxplora import record_access
-    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+    before its end, by the join's reading (`joining.piece_finished`): a
+    piece whose checkpoint is at its last step is not."""
+    from fastmdxplora.analysis.joining import piece_finished
 
     pieces = _segments(root)
     if not pieces:
         return False
-    folder = pieces[-1] / "simulation"
-    finished = (read_checkpoint_sidecar(folder / "checkpoint.chk") or {}).get("finished")
-    if isinstance(finished, bool):
-        return not finished
-    return not record_access.is_file(folder / "state_final.xml")
+    return not piece_finished(pieces[-1] / "simulation")
 
 
 def _held() -> bool:
@@ -717,9 +777,14 @@ def recorded_stage_lengths(study: object) -> dict:
       with ``steps`` None and the plan beside it as ``first_piece_steps``
       (the whole study's, read from its config, as ``planned_steps``), or
       "not recorded", with why, where a piece's clock at that step is not
-      there, "not read" where a piece is linked out of the study; a fixed
+      there, "not read" where a piece is linked out of the study (a study
+      of one piece stopped in its production, which wrote no record, is
+      read so too, by its checkpoint record's time); a fixed
       step's summed production whose last piece stopped says so in
       ``production_ran_said``;
+    - ``variable_step``: whether the run's integrator chose its own step,
+      as what is read here says, so a reader decides it as these lengths
+      were decided;
     - ``frames_kept``: for every mean an analysis recorded (its own, and
       those held one level down, as `analysis.base` collects them), the
       frames it analysed, those discarded as equilibration, and those left
@@ -771,9 +836,16 @@ def _recorded(root: object) -> dict:
             record, read_from = unwritten_record(root)
         except OutsideWorkspace:
             record = {}
+    variable = _variable_step(record.get("parameters") or {})
+    if state == NOT_RECORDED and not record:
+        # A study of one piece stopped in its production wrote no record:
+        # its own config says whether its integrator chose its step, and
+        # its checkpoint's record its time there.
+        variable = _a_stopped_piece_s_own_step(root)
     said = stage_lengths(record)
     said["record"] = state
     said["read_from"] = read_from
+    said["variable_step"] = variable
     unwritten = state == NOT_RECORDED and bool(record)
     if state == NOT_READ:
         for stage, _, _ in STAGES:
@@ -810,6 +882,17 @@ def _recorded(root: object) -> dict:
         said["frames_saved"], said["frames_saved_source"] = None, NOT_READ
         # Its pieces are counted by their folders, a refused one among them.
         said["pieces"] = 1 + len(_segments(root))
+    unreadable = None
+    if not extended and not refused and _segments(root):
+        from fastmdxplora.simulation.resume import production_unreadable
+
+        # A piece's config that does not read: what the pieces ran is not
+        # known, said so, never the first piece's alone.
+        unreadable = production_unreadable(root)
+        if unreadable is not None:
+            said["production_ran_ns"], said["production_ran_source"] = None, NOT_RECORDED
+            said["production_ran_said"] = f"not recorded: {unreadable}"
+            said["pieces"] = 1 + len(_segments(root))
     # The plan the production's steps are: the first piece's, from the
     # study's own record or the first piece's status; the whole study's,
     # from its config; none, where nothing gave them.
@@ -854,7 +937,7 @@ def _recorded(root: object) -> dict:
             source = "not recorded: the pieces were not joined"
         said["frames_saved"], said["frames_saved_source"] = frames, source
 
-    if _variable_step(record.get("parameters") or {}):
+    if variable:
         # Its own clock, as the methods give it: steps times the timestep is
         # not a variable step's length.
         clock = production_clock(root)
@@ -879,6 +962,11 @@ def _recorded(root: object) -> dict:
                                      "last checkpoint" if clock["stopped"] else "")
                                   + plan + "."}
             said["production_ran_ns"], said["production_ran_source"] = ns, FROM_CLOCK
+            if unreadable is not None:
+                # The clock is read from the pieces' states and checkpoints,
+                # not their configs: a config that does not read leaves it
+                # known, and it is not said "not recorded" beside its number.
+                said.pop("production_ran_said", None)
         else:
             source = NOT_READ if clock["source"] == NOT_READ or refused else NOT_RECORDED
             said["production"] = {**said["production"], "ns": None, "source": source,
@@ -891,8 +979,53 @@ def _recorded(root: object) -> dict:
             said["production_ran_ns"], said["production_ran_source"] = None, source
         said["pieces"] = clock["pieces"]
 
+    # A run not split into pieces only: a study of pieces whose length is not
+    # recorded (a piece's config that does not read, a piece not read) says
+    # so, never its first piece's plan.
+    if (not extended and not variable and said["production_ran_ns"] is None
+            and state == "read" and not _segments(root)
+            and said.get("production_ran_source") not in (NOT_READ,)
+            and not said.get("production_ran_said")
+            and isinstance(said["production"].get("ns"), (int, float))):
+        from pathlib import Path
+
+        from fastmdxplora.analysis.joining import piece_finished
+
+        # Stopped at its last step, its record unwritten past it: whole, so
+        # what it ran is its plan (`joining.piece_finished`).
+        try:
+            whole = piece_finished(Path(str(root)) / "simulation")
+        except Exception:  # noqa: BLE001 - not known whole
+            whole = False
+        if whole:
+            said["production_ran_ns"] = said["production"]["ns"]
+            said["production_ran_source"] = FROM_STEPS
     said["frames_kept"] = _frames_kept(root)
     return said
+
+
+def _a_stopped_piece_s_own_step(root: object) -> bool:
+    """Whether a study of one piece, stopped in its production before it
+    wrote its record, ran an integrator that chose its own step: its
+    checkpoint's record says production, and its own config (not a piece's:
+    it has none) names such an integrator."""
+    import yaml
+
+    from fastmdxplora import record_access
+    from fastmdxplora.simulation.runner import read_checkpoint_sidecar
+
+    if _segments(root):
+        return False
+    side = read_checkpoint_sidecar(root / "simulation" / "checkpoint.chk") or {}
+    if str(side.get("stage") or "").lower() != "production":
+        return False
+    try:
+        config = yaml.safe_load(record_access.read_text(root / CONFIG_RECORD,
+                                                        encoding="utf-8")) or {}
+    except (OSError, ValueError, yaml.YAMLError):
+        return False
+    simulation = config.get("simulation") if isinstance(config, dict) else None
+    return _variable_step(simulation if isinstance(simulation, dict) else {})
 
 
 def _frames_kept(root: object) -> dict:

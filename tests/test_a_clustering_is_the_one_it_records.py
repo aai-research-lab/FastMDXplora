@@ -80,6 +80,14 @@ def _three_states(n_frames: int = 90) -> md.Trajectory:
     return _alpha_carbons(np.array(xyz), time_ps=10.0 * (np.arange(n_frames) + 1))
 
 
+def _matrix(traj: md.Trajectory, analysis: Cluster) -> np.ndarray:
+    """The frames' matrix the clustering used, made again: the analysis
+    frees its own before it plots the map."""
+    from fastmdxplora.analysis.cluster import _pairwise_rmsd
+
+    return _pairwise_rmsd(traj, analysis.select_atoms(traj))
+
+
 @pytest.fixture(scope="module")
 def run(tmp_path_factory):
     out = tmp_path_factory.mktemp("states")
@@ -98,7 +106,7 @@ class TestWhatTheClusteringLeavesBehind:
         saved = np.load(folder / "cluster_rmsd_matrix.npz")
 
         assert saved["rmsd_nm"].shape == (traj.n_frames, traj.n_frames)
-        assert np.allclose(saved["rmsd_nm"], analysis._distances, atol=1e-6)
+        assert np.allclose(saved["rmsd_nm"], _matrix(traj, analysis), atol=1e-6)
         assert np.allclose(saved["time_ns"], traj.time / 1000.0)
         assert np.array_equal(saved["frames"], np.arange(traj.n_frames))
         assert (folder / "cluster_rmsd_matrix.png").is_file()
@@ -112,7 +120,7 @@ class TestWhatTheClusteringLeavesBehind:
 
         traj, analysis, _result, _folder = run
         fig, ax = plt.subplots()
-        _plot_distance_matrix(ax, analysis._distances, np.arange(traj.n_frames),
+        _plot_distance_matrix(ax, _matrix(traj, analysis), np.arange(traj.n_frames),
                               traj.time / 1000.0)
         labels = (ax.get_xlabel(), ax.get_ylabel(), fig.axes[-1].get_ylabel())
         plt.close(fig)
@@ -125,7 +133,7 @@ class TestWhatTheClusteringLeavesBehind:
 
         assert table["fraction"].sum() == pytest.approx(1.0)
         assert table["frames"].sum() == traj.n_frames
-        distances = analysis._distances
+        distances = _matrix(traj, analysis)
         for row in table.itertuples():
             members = np.nonzero(labels == row.cluster)[0]
             summed = distances[np.ix_(members, members)].sum(axis=1)

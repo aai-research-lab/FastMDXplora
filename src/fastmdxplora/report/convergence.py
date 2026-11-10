@@ -107,6 +107,20 @@ class Assessment:
     #: Why the analyses' record gives this mean no error, where it gives
     #: none (`statistics.summarise`); None where the mean is determined.
     withheld: str | None = None
+    #: The error the analyses' record gives, as recorded; None where no
+    #: record gives one.
+    recorded_error: float | None = None
+    #: The fields taken from the analyses' record as written ("mean",
+    #: "standard_error", "effective_samples", "discard", "n_frames",
+    #: "verdict"); the others are worked out here from the series.
+    recorded: frozenset[str] = frozenset()
+    #: The refusal code the mean is withheld under (``analysis.sampling.*``),
+    #: from its record or its reason; empty where it carries none.
+    withheld_code: str = ""
+    #: For a joined run of three or four segments not called drifting, how
+    #: large a drift could go unseen with that few
+    #: (:func:`fastmdxplora.statistics.drift_unseen_said`); empty otherwise.
+    unseen: str = ""
 
     @property
     def standard_error(self) -> float:
@@ -115,10 +129,18 @@ class Assessment:
         printed an error for every mean, so it gave one beside a mean the
         Analysis page said was not determined.
 
-        Dividing by the frame count instead would understate it by the square
-        root of the correlation time -- a factor of three or four is ordinary.
+        The recorded error as written where there is one: worked out again
+        here it can differ from it (the error of a run with frames
+        discarded is the whole run's scaled to the frames kept). Without a
+        record, from the independent samples: dividing by the frame count
+        instead would understate it by the square root of the correlation
+        time -- a factor of three or four is ordinary.
         """
-        if self.withheld is not None or self.effective_samples < 2:
+        if self.withheld is not None:
+            return float("nan")
+        if self.recorded_error is not None:
+            return float(self.recorded_error)
+        if "verdict" in self.recorded or self.effective_samples < 2:
             return float("nan")
         return float(self.spread / np.sqrt(self.effective_samples))
 
@@ -148,12 +170,24 @@ class Assessment:
         """
         # Withheld for its trend, a mean has not equilibrated whatever the
         # thirds say: the trend is judged against its own error, which the
-        # thirds' test is not, and the one series has one verdict.
-        if "still drifting" in str(self.withheld or "").lower():
+        # thirds' test is not, and the one series has one verdict. By the
+        # record's code, not its words: one withheld as drifting between a
+        # joined run's segments was said equilibrated, its words not being
+        # "still drifting".
+        from fastmdxplora.statistics import DRIFTING_CODES
+
+        if self.withheld is not None and self.withheld_code in DRIFTING_CODES:
             return False
         if not self.drift_is_measurable:
             return None
         return abs(self.drift_in_noise) < 2.0
+
+    @property
+    def drifts_between_segments(self) -> bool:
+        """Whether the mean is withheld as drifting between the segments of
+        a joined run (``analysis.sampling.drifting``)."""
+        return (self.withheld is not None
+                and self.withheld_code == "analysis.sampling.drifting")
 
     @property
     def has_settled(self) -> bool | None:
@@ -167,19 +201,29 @@ class Assessment:
         return self.has_equilibrated
 
     def as_record(self) -> dict[str, Any]:
+        # A value the analyses recorded as recorded: rounded here and again
+        # where it is said, SASA's recorded 4.759155 was saved as 4.75915 and
+        # said 4.7591 where every other page says 4.7592. One worked out
+        # here to six significant figures at least, not five places: an
+        # error of 0.0017484 saved as 0.00175 was given as 0.0018 in the
+        # report's table and 0.0017 on every other page.
+        def as_saved(field: str, value: float) -> float:
+            return float(value) if field in self.recorded else _six_figures(value)
+
+        error = self.standard_error
         return {
             "observable": self.name,
             "frames": self.n_frames,
-            # Six significant figures at least, not five places: an error of
-            # 0.0017484 kept as 0.00175 was given as 0.0018 in the report's
-            # table and 0.0017 on every other page.
-            "mean": _six_figures(self.mean),
+            "mean": as_saved("mean", self.mean),
             "spread": _six_figures(self.spread),
             "frames_per_independent_sample": round(self.correlation_frames, 2),
-            "effective_samples": round(self.effective_samples, 2),
+            "effective_samples": (float(self.effective_samples)
+                                  if "effective_samples" in self.recorded
+                                  else round(self.effective_samples, 2)),
             "discard": self.discard,
-            "standard_error": (None if np.isnan(self.standard_error)
-                               else _six_figures(self.standard_error)),
+            "standard_error": None if np.isnan(error) else as_saved("standard_error", error),
+            # What the record held, and so what was worked out here.
+            "recorded": sorted(self.recorded),
             "determined": self.is_determined,
             "withheld": self.withheld,
             "sampled_enough": self.is_sampled_enough,
@@ -191,6 +235,7 @@ class Assessment:
             "settled": self.has_equilibrated,
             "drift_measurable": self.drift_is_measurable,
             "drift_in_noise": round(self.drift_in_noise, 2),
+            "drifting_between_segments": self.drifts_between_segments,
         }
 
 
@@ -269,7 +314,9 @@ def assess_series(name: str, values: Any,
         # The series as given: the joins are its frame numbers, and
         # summarise_segments moves them past values that are not finite.
         pooled, withheld = summarise_segments(
-            np.asarray(values, dtype=np.float64).ravel(), joins)
+            np.asarray(values, dtype=np.float64).ravel(), joins,
+            unit=(record.get("unit") or record.get("units") or None)
+            if isinstance(record, dict) else None)
         if pooled is None:
             # The joined run supports no mean -- drifting segments, or too
             # few independent samples once the joins are accounted for.
@@ -293,21 +340,59 @@ def assess_series(name: str, values: Any,
             reason = withheld
     else:
         equilibrated, reason = summarise(series)
+    recorded: set[str] = set()
+    recorded_error: float | None = None
+    frames = int(n)
     if isinstance(record, dict) and _number(record.get("mean")) is not None:
-        # The analysis's own record, as written.
-        discard = int(_number(record.get("discard")) or 0)
+        # The analysis's own record, as written: its mean, error, discard,
+        # independent samples and verdict, none worked out again.
+        found = _number(record.get("discard"))
+        discard = int(found) if found is not None else (
+            int(equilibrated.discard) if equilibrated else 0)
         effective = _number(record.get("effective_samples"))
         spread = _number(record.get("standard_deviation"))
+        if equilibrated is None:
+            # Withheld before any equilibration was found: the record's own
+            # numbers stand in for it.
+            from fastmdxplora.statistics import Equilibrated
+
+            equilibrated = Equilibrated(
+                discard=discard, inefficiency=1.0, effective_samples=1.0,
+                mean=float(record["mean"]), standard_error=float("nan"),
+                standard_deviation=0.0)
         equilibrated = _replace_summary(
             equilibrated, mean=float(record["mean"]), discard=discard,
             effective_samples=effective if effective is not None else (
-                equilibrated.effective_samples if equilibrated else 1.0),
+                equilibrated.effective_samples),
             standard_deviation=spread if spread is not None else (
-                equilibrated.standard_deviation if equilibrated else 0.0))
-        reason = record.get("not_a_measurement") or None
-        if reason is None and _number(record.get("standard_error")) is None:
+                equilibrated.standard_deviation))
+        recorded |= {"mean", "verdict"}
+        recorded |= {"discard"} if found is not None else set()
+        recorded |= {"effective_samples"} if effective is not None else set()
+        # The verdict every page reads (`statistics.withheld_reason`): one an
+        # earlier version called determined on too few independent samples
+        # was tabled with its error.
+        from fastmdxplora.statistics import withheld_reason
+
+        reason = withheld_reason(record)
+        recorded_error = _number(record.get("standard_error"))
+        if reason is None and recorded_error is None:
             reason = "No error was recorded."
+        if reason is None:
+            recorded.add("standard_error")
+    elif isinstance(record, dict) and record.get("not_a_measurement"):
+        # No mean recorded, and why: the verdict is the record's, the mean
+        # beside it worked out here from the series.
+        reason = record["not_a_measurement"]
+        recorded.add("verdict")
+    if isinstance(record, dict) and _number(record.get("n_frames")) is not None:
+        frames = int(record["n_frames"])
+        recorded.add("n_frames")
+    from fastmdxplora.statistics import drift_unseen_said, withheld_code
+
     code = str(getattr(getattr(reason, "refusal", None), "code", "") or "")
+    if not code and isinstance(record, dict):
+        code = withheld_code(record)
     if not code and isinstance(reason, str) and reason.startswith(
             "This run is not long against its own correlation time"):
         code = "analysis.sampling.correlation_unresolved"
@@ -317,7 +402,7 @@ def assess_series(name: str, values: Any,
                  else float(n / autocorrelation_time(series)))
     return Assessment(
         name=name,
-        n_frames=int(n),
+        n_frames=frames,
         discard=discard,
         mean=float(equilibrated.mean) if equilibrated else float(series.mean()),
         spread=(float(equilibrated.standard_deviation) if equilibrated
@@ -335,6 +420,10 @@ def assess_series(name: str, values: Any,
         correlation_is_measurable=code != "analysis.sampling.correlation_unresolved",
         drift_is_measurable=bool(kept.size >= 6),
         withheld=str(reason) if reason else None,
+        recorded_error=recorded_error,
+        recorded=frozenset(recorded),
+        withheld_code=code if reason else "",
+        unseen="" if reason else drift_unseen_said(record),
     )
 
 
@@ -382,6 +471,8 @@ def assess_run(
     have to carry it separately. Absent for a run that went through in one
     piece, which is most of them.
     """
+    from fastmdxplora.statistics import independent_samples_said
+
     records = records or {}
     assessments = {name: assess_series(name, values, joins=joins, record=records.get(name))
                    for name, values in series.items() if values is not None}
@@ -432,8 +523,12 @@ def assess_run(
     temperature = assessments.get("temperature")
     if temperature is not None and target_temperature_K:
         away = abs(temperature.mean - target_temperature_K)
+        # Said as the mean temperature, so the Report traces it to its
+        # record; one no record holds is said so.
         verdicts["temperature"] = (away <= _TEMPERATURE_LIMIT_K,
-                                   f"{temperature.mean:.1f} K against {target_temperature_K:.1f} K")
+                                   f"mean temperature {temperature.mean:.1f} K"
+                                   + _worked_out(temperature, "mean")
+                                   + f" against a target of {target_temperature_K:.1f} K")
         if away > _TEMPERATURE_LIMIT_K:
             findings.append(
                 f"The mean temperature was {temperature.mean:.1f} K against a "
@@ -446,11 +541,23 @@ def assess_run(
                       if a.has_equilibrated is False]
     undecidable = [a.name for a in assessments.values()
                    if a.has_equilibrated is None]
-    if still_drifting:
+    # Drifting between a joined run's segments, said with its record's own
+    # refusal (its p and remedy), one line a mean: their means need not
+    # move one way at every step, so "in one direction" is not said of them.
+    between = sorted((a for a in assessments.values() if a.drifts_between_segments),
+                     key=lambda a: said_as(a.name))
+    within = [name for name in still_drifting
+              if not assessments[name].drifts_between_segments]
+    if within:
         findings.append(
-            "Still moving in one direction: " + _named(still_drifting)
+            "Still moving in one direction: " + _named(within)
             + ". The run has not finished equilibrating, so averages over it "
             "describe the approach rather than the state."
+        )
+    for drifting in between:
+        findings.append(
+            "Not equilibrated at the scale of the whole run: "
+            + said_as(drifting.name) + ". " + str(drifting.withheld).strip()
         )
 
     if undecidable:
@@ -500,10 +607,14 @@ def assess_run(
     if thin:
         verdicts["sampled"] = (False, "too few: " + _named(thin))
     elif measurable:
+        fewest = min(measurable, key=lambda a: a.effective_samples)
+        # What the number counts said beside it, so the Report traces it to
+        # the record of that mean's independent samples.
         verdicts["sampled"] = (
             None if unmeasurable else True,
-            "fewest: " + said_as(min(measurable, key=lambda a: a.effective_samples).name)
-            + f", {min(a.effective_samples for a in measurable):.0f}"
+            f"fewest: {said_as(fewest.name)}, "
+            + independent_samples_said(fewest.effective_samples)
+            + _worked_out(fewest, "effective_samples")
             + ("; the rest cannot be counted" if unmeasurable else ""))
     elif assessments:
         verdicts["sampled"] = (None, "no observable's correlation time could be resolved")
@@ -524,15 +635,32 @@ def assess_run(
         passed, detail = verdicts.get(key, (None, "not recorded by this run"))
         checks.append({"check": key, "said": said, "passed": passed, "detail": detail})
 
+    # Tested on three or four segments and not called drifting: how large a
+    # drift that few could miss, said beside the verdicts as every page says
+    # it, not as something the run cannot support.
+    unseen = []
+    for name, assessment in sorted(assessments.items(), key=lambda item: said_as(item[0])):
+        if assessment.unseen and assessment.is_determined:
+            said = said_as(name)
+            unseen.append(f"{said[:1].upper()}{said[1:]}: {assessment.unseen[:1].upper()}"
+                          f"{assessment.unseen[1:]}.")
+
     return {
         "observables": {name: a.as_record() for name, a in assessments.items()},
         "findings": findings,
+        "drift_unseen": unseen,
         "checks": checks,
         # The single question somebody wants answered, and the honest answer
         # for most short runs is no.
         "interpretable": not (thin or still_drifting or unmeasurable
                               or undecidable),
     }
+
+
+def _worked_out(assessment: Assessment, field: str) -> str:
+    """Said after a number worked out here from the series, where no record
+    holds it; nothing after one read from its record."""
+    return "" if field in assessment.recorded else " (worked out here; no record holds it)"
 
 
 def _six_figures(value: float) -> float:

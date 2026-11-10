@@ -1999,7 +1999,9 @@
       actionHost.hidden = true;
     }
 
-    const sections = Array.isArray(payload.analysis_sections) ? payload.analysis_sections : [];
+    const sections = withUnfinished(
+      Array.isArray(payload.analysis_sections) ? payload.analysis_sections : [],
+      Array.isArray(payload.analyses) ? payload.analyses : []);
     // Protein-ligand interactions named only where there is a ligand's
     // analysis (`report_dashboard.analysis_subtitle`).
     setText("analysis-subtitle", sections.some((section) => section.theme === "The ligand")
@@ -2021,9 +2023,16 @@
 
     const sectionHtml = (section) => {
       const panels = Array.isArray(section.panels) ? section.panels : [];
+      // An analysis that did not finish first, saying what to set.
+      const unfinished = (section.unfinished || []).map((analysis) => {
+        const name = String(analysis.name || "");
+        const answers = name && !named.has(name);
+        if (answers) named.add(name);
+        return unfinishedCardHtml(analysis, answers);
+      }).join("");
       // Reuse the same card structure the flat grid uses so both routes
       // through this view look identical.
-      const cards = panels.map((panel) => {
+      const cards = unfinished + panels.map((panel) => {
         // Show the figure the analysis produced. Those are drawn at
         // publication settings (6.5x4.2in, 300 dpi, 9-11pt type); the report's
         // compact restyled variant is smaller and would look different from
@@ -2070,13 +2079,32 @@
       // theme, and its figures' titles and captions.
       const search = [section.title, section.theme,
         ...panels.map((panel) => `${panel.title || ""} ${panel.summary || ""}`)].join(" ");
+      // The figures and files its analyses' records say were not made for
+      // memory, counted beside the figures and said in a line with what to
+      // set: the section said "3 figures" and showed them, the map among
+      // those not plotted said nowhere.
+      const missing = section.notPlotted || [];
+      const figures = missing.filter((each) => /\.(png|svg)$/i.test(each.file)).length;
+      // "refused" where every analysis of it without a figure was refused
+      // before it ran, as its card says, not "not finished".
+      const notRun = section.unfinished || [];
+      const count = panels.length || !notRun.length
+        ? `${panels.length} figure${panels.length === 1 ? "" : "s"}`
+        : notRun.every((analysis) => analysis.refused_before_it_ran) ? "refused" : "not finished";
+      const note = missing.length
+        ? `<p class="analysis-section-count" data-not-plotted>Not ${figures ? "plotted" : "saved"} for memory: ${
+            escapeHTML(missing.map((each) => each.title || each.file).join(", "))}. ${
+            escapeHTML(whatToSet(missing[0].said).replace(/`/g, ""))}</p>`
+        : "";
       return `
         <section class="analysis-section" id="analysis-section-${escapeAttr(section.anchor || "")}"
                  data-search="${escapeAttr(search)}">
           <div class="analysis-section-heading">
             <h3 class="analysis-section-title">${escapeHTML(section.title || "")}</h3>
-            <span class="analysis-section-count">${panels.length} figure${panels.length === 1 ? "" : "s"}</span>
+            <span class="analysis-section-count">${count}${figures
+              ? `, ${figures} not plotted` : ""}</span>
           </div>
+          ${note}
           <div class="analysis-grid">${cards}</div>
         </section>`;
     };
@@ -2379,6 +2407,69 @@
     );
   }
 
+  /* What a failed or refused analysis says to set: its sentence that
+   * starts "Set `...`", else its first sentence. */
+  function whatToSet(message) {
+    const said = String(message || "").replace(/^[a-z_]+: /, "");
+    // Or, for a figure whose canvas no stride makes smaller, the room to add.
+    return (/Set `[^`]+`.*?\.(?=\s|$)/.exec(said)
+      || /Its canvas is the same at any stride.*?\.(?=\s|$)/.exec(said)
+      || /^.*?\.(?=\s|$)/.exec(said) || [said])[0];
+  }
+
+  /* The sections with a card for each analysis that failed or was refused,
+   * in the section it belongs in (`section`, `theme` from the server): it
+   * made no figure, so no section held it, and the grid that showed it is
+   * hidden beside the sections. A section it has none of yet is placed
+   * after the last of its theme's. */
+  function withUnfinished(sections, analyses) {
+    const failed = analyses.filter((analysis) => analysis.section
+      && /^(error|failed)$/i.test(String(analysis.status || "")));
+    // And what a finished one's record says was not plotted for memory.
+    const short = analyses.filter((analysis) => analysis.section
+      && !failed.includes(analysis) && (analysis.not_plotted || []).length);
+    if (!failed.length && !short.length) return sections;
+    const merged = sections.map((section) => ({...section}));
+    short.forEach((analysis) => {
+      const section = merged.find((each) => each.title === analysis.section);
+      if (section) section.notPlotted = [...(section.notPlotted || []), ...analysis.not_plotted];
+    });
+    failed.forEach((analysis) => {
+      let section = merged.find((each) => each.title === analysis.section);
+      if (!section) {
+        section = {title: analysis.section, anchor: analysis.section_anchor || "",
+                   theme: analysis.theme || "", panels: []};
+        let at = -1;
+        merged.forEach((each, i) => { if (each.theme === section.theme) at = i; });
+        merged.splice(at >= 0 ? at + 1 : merged.length, 0, section);
+      }
+      section.unfinished = [...(section.unfinished || []), analysis];
+    });
+    return merged;
+  }
+
+  /* A card for an analysis that did not finish: what to set, then all it
+   * said, its settings plain (no backticks). */
+  function unfinishedCardHtml(analysis, answers) {
+    const title = analysis.section || analysis.title || humanise(analysis.name || "Analysis");
+    const said = String(analysis.message || "").replace(/^[a-z_]+: /, "");
+    const set = whatToSet(said);
+    // The "Set ..." sentence once, wherever it stands in the message: the
+    // card said it in its frame and again in its body.
+    const rest = said.replace(set, "").replace(/\s{2,}/g, " ").trim();
+    // One refused before it ran did not start, so it did not "not finish".
+    const why = analysis.refused_before_it_ran
+      ? "the analysis was refused before it ran" : "the analysis did not finish";
+    return `
+        <article class="analysis-card" data-state="failed"${answers ? ` data-analysis="${escapeAttr(analysis.name || "")}"` : ""}>
+          <div class="ac-header">
+            <div class="ac-title">${escapeHTML(title)}</div>
+          </div>
+          <div class="ac-frame ac-no-plot"><div class="ac-set">Not plotted: ${why}. ${escapeHTML(set.replace(/`/g, ""))}</div></div>
+          <div class="ac-body">${escapeHTML(rest.replace(/`/g, ""))}</div>
+        </article>`;
+  }
+
   function analysisCardHtml(analysis, plot) {
     const status = String(analysis.status || "unknown").toLowerCase();
     const title = analysis.title || humanise(analysis.name || "Analysis");
@@ -2391,9 +2482,18 @@
       : svgArtifact;
     const dataArtifact = artifacts.find((item) => !/\.(png|jpe?g|gif|svg)$/i.test(item?.path || item?.name || ""));
     const primary = dataArtifact || artifacts[0] || displayPlot;
+    // An analysis that failed or was refused has no figure because it did
+    // not finish: what it said, below, says what to set. "Re-run the
+    // analysis" was said of a clustering refused for memory, which run
+    // again as it was is refused again.
+    const failed = status === "error" || status === "failed";
+    const setting = failed ? whatToSet(analysis.message) : "";
     const image = displayPlot?.href
       ? `<div class="ac-frame"><img src="${escapeAttr(displayPlot.href)}" alt="${escapeAttr(title)}" loading="lazy"></div>`
-      : `<div class="ac-frame ac-no-plot"><div class="muted">No saved figure file was found for this analysis. Re-run the analysis with this revised version to generate PNG and SVG figures.</div></div>`;
+      : failed
+        ? `<div class="ac-frame ac-no-plot"><div class="muted">Not plotted: ${analysis.refused_before_it_ran
+            ? "the analysis was refused before it ran" : "the analysis did not finish"}. ${escapeHTML(setting.replace(/`/g, "") || "What it said is below.")}</div></div>`
+        : `<div class="ac-frame ac-no-plot"><div class="muted">No saved figure file was found for this analysis. Re-run the analysis with this revised version to generate PNG and SVG figures.</div></div>`;
     const links = [];
     if (displayPlot?.href) {
       links.push(`<a class="file-action" href="${escapeAttr(displayPlot.href)}" target="_blank" rel="noopener">Open figure</a>`);

@@ -118,7 +118,7 @@ def _system_path(root: Path) -> str:
         tools.mkdir()
         for folder in (Path("/usr/bin"), Path("/bin")):
             for tool in (folder.iterdir() if folder.is_dir() else ()):
-                if tool.name not in _STOOD_IN and not (tools / tool.name).exists():
+                if tool.name not in _STOOD_IN and not os.path.lexists(tools / tool.name):
                     (tools / tool.name).symlink_to(tool)
     return str(tools)
 

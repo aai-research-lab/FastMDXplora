@@ -100,8 +100,10 @@ def _histidines(system: str) -> int:
 #: resolution: the size estimate is within 3% of setup on the structures it
 #: was checked on (1099), so 10% separates a number read from the estimate
 #: from one guessed; a box width is set by the padding and the solute's
-#: extent, and 5% is a tenth of the usual padding on a small protein. Counts
-#: of residues, atoms selected and histidines are exact.
+#: extent, and 5% of 1AKE's (7.9 nm at the 2.0 nm default padding) is 0.39
+#: nm, a fifth of that padding, so a width read at the 1.0 nm padding before
+#: it (6.9 nm, 13% less) is told apart. Counts of residues, atoms selected
+#: and histidines are exact.
 QUESTIONS: tuple[Question, ...] = (
     Question("particles_1l2y",
              "About how many atoms will the solvated system have if I simulate "
@@ -112,7 +114,8 @@ QUESTIONS: tuple[Question, ...] = (
              "With the default settings, how wide will the box be for 1AKE, face "
              "to face, in nm?",
              "preview_setup", lambda: _preview("1AKE")["width_nm"], 0.05,
-             "a twentieth of the width is a tenth of the default padding here"),
+             "a twentieth of the width (7.9 nm) is 0.39 nm, a fifth of the 2.0 nm default "
+             "padding: a width at the 1.0 nm padding before it (6.9 nm) is told apart"),
     Question("residues_1ubq",
              "How many protein residues does 1UBQ have?",
              "inspect_structure", lambda: _counted("1UBQ")["protein_residues"], 0.0,

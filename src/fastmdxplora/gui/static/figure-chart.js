@@ -799,7 +799,9 @@
     var x = { low: 0, high: data.leaves * 10, label: data.truncated
       ? "Frames (the last " + data.leaves + " branches of " + data.frames + ")"
       : "Frames (" + data.frames + ")", ticks: false };
-    var y = { low: 0, high: top * 1.06 || 1, label: data.y_label };
+    var unit = data.unit ? " " + data.unit : "";
+    var y = { low: 0, high: top * 1.06 || 1,
+              label: data.y_label + (data.unit ? " (" + data.unit + ")" : "") };
     var map = axes(f, x, y);
     data.icoord.forEach(function (xs, i) {
       var ys = data.dcoord[i];
@@ -818,7 +820,7 @@
       var at = pointer(f, event);
       if (!inside(f, at)) { f.tip.hidden = true; return; }
       var height = y.low + (f.plot.bottom - at.y) / (f.plot.bottom - f.plot.top) * (y.high - y.low);
-      showTip(f, at.x, at.y, ["distance " + format(height)],
+      showTip(f, at.x, at.y, ["distance " + format(height) + unit],
               data.cut != null ? "merges below the cut are coloured by their cluster" : "");
     });
     f.svg.addEventListener("mouseleave", function () { f.tip.hidden = true; });
@@ -1278,7 +1280,11 @@
       rows = [["quantity", data.x_label || "value", "standard error"]];
       (data.bars || []).forEach(function (b) { rows.push([b.label, b.value, b.error]); });
     } else if (data.kind === "dendrogram") {
-      rows = [["link", "x1", "x2", "x3", "x4", "height1", "height2", "height3", "height4", "cluster"]];
+      // The heights in the linkage's distance, with its unit (nm).
+      var per = data.unit ? " (" + data.unit + ")" : "";
+      rows = [["link", "x1", "x2", "x3", "x4"].concat([1, 2, 3, 4].map(function (k) {
+        return "height" + k + per;
+      }), ["cluster"])];
       data.icoord.forEach(function (xs, i) {
         rows.push([i].concat(xs, data.dcoord[i], [data.groups[i]]));
       });
@@ -1373,6 +1379,17 @@
           });
         }
         mode(true);
+        // A note on the figure (MDS refused for memory beside a
+        // projection, as the record and the report say), below the plot
+        // and the figure both: still shown when the card shows the figure.
+        if (data.figure_note) {
+          var note = document.createElement("p");
+          note.className = "muted small figure-note";
+          // One line for each method refused.
+          note.style.whiteSpace = "pre-line";
+          note.textContent = data.figure_note;
+          box.parentNode.insertBefore(note, box.nextSibling);
+        }
         box.setAttribute("data-figure-ready", "plotted");
         if (window.ResizeObserver) {
           var width = chart.clientWidth;

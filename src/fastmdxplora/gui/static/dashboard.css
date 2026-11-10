@@ -4711,8 +4711,13 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
         background: transparent;
     }
     .brand-product { font-size: var(--text-xl); }
-    .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: 0; }
-    .sidebar-study .study-name { font-size: var(--text-sm); }
+    /* The study's state said whole ("Interrupted" was cut to "Interrupte"
+       at 390 px): the card is at least as wide as its state, never its
+       name, which gives way to it (cut short, it no longer pushed the
+       account button to a row of its own). */
+    .sidebar-study { padding: 0; border-bottom: none; flex: 1; min-width: min-content; }
+    .sidebar-study .study-name { font-size: var(--text-sm); width: 0; min-width: 100%; }
+    .sidebar-study-card .status-text { flex: none; }
     .sidebar-foot { position: static; margin: 0; background: transparent; }
     .sidebar-account-text, .sidebar-account-caret { display: none; }
     .sidebar .sidebar-nav {
@@ -5018,6 +5023,11 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
 .agent-cite:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .agent-cite-value { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary); }
 .agent-cite.is-withheld .agent-cite-value { color: var(--text-muted); }
+/* A chip that wraps reads from its left edge; its image note on a line of
+   its own, after the value and its verdict. */
+.agent-cite { flex-wrap: wrap; text-align: left; max-width: 100%; }
+.agent-cite.is-noted { border-radius: 12px; }
+.agent-cite-note { flex-basis: 100%; font-size: var(--text-xs); color: var(--text-muted); }
 .analysis-card.is-cited { outline: 2px solid var(--accent); outline-offset: 3px; }
 .agent-plan dt { color: var(--text-muted); }
 .agent-plan dd { margin: 0; color: var(--text-primary); }
@@ -5695,6 +5705,10 @@ html[data-page="viewer"] .page-shell { --shell-pad-bottom: 0px; padding-bottom: 
     .sidebar .sidebar-brand .brand-product { font-size: var(--text-lg); }
     .sidebar .sidebar-account-gear { display: none; }
     .sidebar .sidebar-foot .sidebar-account { padding: 4px; }
+}
+@media (max-width: 480px) {
+    /* A phone's header holds the study's state whole beside its buttons. */
+    .sidebar { column-gap: 8px; }
 }
 
 /* ===========================================================================

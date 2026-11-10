@@ -93,6 +93,30 @@ worth retrying. See [FastMDXplora refusals](refusals.md).
 
 `artifacts` are paths relative to that phase's directory.
 
+A simulation phase stopped when asked (`simulation.run.stopped`) is rewritten
+`ok` once `fastmdx resume` has carried the run on, with the stop it came back
+from beside it, its message and refusal as they were: under `carried_on_from`
+where its production was carried on in pieces and joined, and under
+`stopped_at_its_end` where the stop landed at the last step of a whole
+production (its message then says so). A run stopped at its last step lists
+the files it wrote in `artifacts`, and its `simulation_parameters.json` gives
+its `n_production_frames` and `duration_ns_actual`, as a run that ended does.
+A reader of the Manifest alone reads such a run completed, as it is.
+
+A resume writes what it finished in this order: the run's analyses and report,
+then its stopping rule applied (`stopping.json`), then its live status, and
+the Manifest's `stopped_at_its_end` last. A resume ended before that last
+write leaves the run read stopped, with `fastmdx resume` offered, and that
+resume finishes what is left.
+
+A run given `setup_from` records its `setup` as `skipped`, with `taken_from`
+naming the prepared system it simulated; a run that simulates nothing (an
+analysis or a report written again) records no setup. A study of several runs
+writes each run's report again once its rounds end: that `report` record carries
+`"written_again": true`, the run's other phases keep their records from before,
+and the study's timeline places that report after its last round, not as a step
+before it.
+
 ---
 
 ## Why `environment` is there
@@ -243,11 +267,20 @@ its clock too, `duration_ns` "from the run's clock"; its
 `duration_ns_actual` is steps times the timestep, not its length.
 
 A piece stopped before its end is read at its last checkpoint, the step in
-`checkpoint.chk.json` that the next piece continued from, by its energy
-log's row at that step: the log runs on past it, and those steps were run
-again. Where no row falls on that step, production is "not recorded",
-naming the piece; where the piece is linked out of the study, "not read". A
-last piece that stopped is said as its production to its last checkpoint.
+`checkpoint.chk.json` that the next piece continued from, by the state's
+time the checkpoint's record gives (`time_ps`), else its energy log's row at
+that step: the log runs on past it, and those steps were run again. Where
+neither gives it (a record from before `time_ps`, and no row on that step),
+production is "not recorded", naming the piece; where the piece is linked
+out of the study, "not read". A last piece that stopped is said as its
+production to its last checkpoint. Where a piece's `resolved_config.yml` does
+not read as a config (not UTF-8, not a mapping, a length that is not a
+number), the summed production is "not recorded", `production_ran_said`
+naming the file and why; a variable-step study's is still read by its
+pieces' clocks, which no config gives. Where no live status gives the first piece's
+platform, the study's `fastmdxplora.log` does ("Selected OpenMM platform"),
+`read_from` then naming it; where the live status or log is linked out of
+the study, the methods say the first piece's platform is not read.
 
 A study carried on in pieces whose first piece was stopped before writing
 its simulation record is read from:
@@ -324,7 +357,7 @@ two files at the campaign root:
 
 | File | What it records |
 |---|---|
-| `batch_manifest.json` | The campaign: `n_runs`, the `execution` block, every system, the sweep, and a result record per run |
+| `batch_manifest.json` | The campaign: `n_runs`, the `execution` block, every system, the sweep, and a result record per run; `round_ended` (its `state`, `said` and `command`) where its stopping rule's last round failed, was stopped, or was cut by its process ending; what `fastmdx resume` would run is read when asked (it rests on the study's config and runs as they stand), not saved. A run stopped or cut in a round is recorded with `error_type` `StoppedInTheRounds` or `CutInTheRounds`, fixed as the round says |
 | `members.json` | What each member concluded, and whether the spread between members is an error or a result |
 
 An umbrella study also writes `pmf.json`. See

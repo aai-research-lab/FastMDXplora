@@ -704,6 +704,11 @@ CODES: tuple[Code, ...] = (
          "or nothing has been written for a day.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
          detail_keys=("ended_by",)),
+    Code("simulation.round.join_failed",
+         "A stopping rule's round whose extension ran to its end and failed as "
+         "it was joined: its piece is whole, and is joined again once what the "
+         "join refused is put right.",
+         Kind.SEMANTIC, Disclosure.NOTHING),
     Code("simulation.resume.checkpoint_truncated",
          "A checkpoint that is not the whole file that was written.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
@@ -807,7 +812,9 @@ CODES: tuple[Code, ...] = (
          detail_keys=("analysis", "needs")),
     Code("analysis.memory.matrix_too_large",
          "The frames' pairwise matrix, and the copies clustering or MDS makes "
-         "of it, would not fit in the memory this process can take.",
+         "of it, or under an address-space limit what the libraries and "
+         "figures map besides, would not fit in the memory this process can "
+         "take.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.7",
          detail_keys=("frames", "bytes_needed", "bytes_available", "stride")),
     Code("analysis.data.not_this_system",
@@ -859,10 +866,10 @@ CODES: tuple[Code, ...] = (
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
          detail_keys=("frames", "drift_in_spread", "trend_in_errors", "needed")),
     Code("analysis.sampling.drifting",
-         "The segment means move in order across the run, so it had not "
+         "The segment means support a trend across the run, so it had not "
          "equilibrated at the scale of the whole run.",
          Kind.INSUFFICIENT, Disclosure.FIELD_ONLY,
-         detail_keys=("drift_p", "heterogeneity", "span", "segments")),
+         detail_keys=("drift_p", "heterogeneity", "span", "segments", "drift_test")),
     Code("analysis.sampling.not_equilibrated",
          "No equilibrated region was detected, so there is nothing to "
          "average over.",
@@ -1439,13 +1446,20 @@ class RunStopped(BaseException):
         self.signal_name = signal_name
 
     def as_error(self) -> "StudyError":
+        from fastmdxplora.simulation.runner import (run_again_argv, run_again_before_its_price,
+                                                    run_again_cwd)
+
+        # A budget's setup stage: a resume ran setup alone and read it finished.
+        again = run_again_before_its_price()
         return StudyError(
             f"The run was stopped by {self.signal_name} outside production, "
-            "before it finished; `fastmdx resume` runs again the phase it "
-            "was in.",
+            f"before it finished; {again or '`fastmdx resume` runs again the phase it was in'}.",
             code="simulation.run.stopped",
             details={"signal": self.signal_name, "step": None,
-                     "checkpoint_on_frame": False})
+                     "checkpoint_on_frame": False,
+                     **({"run_again": again, "run_again_argv": run_again_argv(),
+                         "run_again_cwd": run_again_cwd()}
+                        if again else {})})
 
 
 def refusal_of(value: Any) -> Refusal:

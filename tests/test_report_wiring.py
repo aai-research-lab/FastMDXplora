@@ -2526,16 +2526,19 @@ class TestTheResultsCarryTheMeasurement:
     def test_the_mean_and_its_error_are_stated(self) -> None:
         from fastmdxplora.report.document import _findings_notes
 
+        # Enough independent samples for this version to determine it: an
+        # earlier version's record of 8.1 is withheld now, as every page
+        # withholds it (`statistics.withheld_reason`).
         notes = _findings_notes({"mean": {
             "mean": 0.01208, "standard_error": 0.00292,
-            "effective_samples": 8.1, "discard": 40,
+            "effective_samples": 12.1, "discard": 40,
         }})
         said = " ".join(notes)
 
         # The error to two figures, the mean to the same place: as the GUI
         # beside the report gives it.
         assert "0.0121 ± 0.0029" in said
-        assert "8 independent samples" in said
+        assert "12 independent samples" in said
         assert "discarding 40 frames" in said
 
     def test_a_mean_that_is_not_a_measurement_says_so(self) -> None:

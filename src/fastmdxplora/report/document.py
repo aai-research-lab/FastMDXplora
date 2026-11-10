@@ -107,6 +107,21 @@ def _caption_of_figure(folder: Path, analysis: str, stem: str) -> str:
     return caption
 
 
+def _plotted_since(project_root: Path) -> dict[str, str]:
+    """The figures an earlier version plotted with the error of a mean this
+    version withholds, with what is said under each
+    (:func:`fastmdxplora.gui.analysis_overview.plotted_since`); none where
+    they cannot be read."""
+    from fastmdxplora.gui.analysis_overview import plotted_since
+
+    try:
+        return plotted_since(project_root)
+    except Exception:  # noqa: BLE001 - the report stands without the notes
+        logger.warning("Could not read which figures an earlier version plotted",
+                       exc_info=True)
+        return {}
+
+
 def _load_json_safely(path: Path) -> dict | None:
     from fastmdxplora import record_access
 
@@ -176,13 +191,40 @@ def _study_in_one_paragraph(project_root: Path) -> str | None:
         said.append(f"The prepared system contained {atoms:,} atoms")
 
     duration = (sim or {}).get("duration_ns_actual") or (sim or {}).get("duration_ns")
+    # A study carried on in pieces ran for all of them, as the protocol
+    # paragraph says: the first piece's record alone said "20 ps" of 120.
+    from fastmdxplora.refusals import OutsideWorkspace
+
+    outside = False
+    try:
+        from fastmdxplora.simulation.resume import extended_production
+
+        extended = extended_production(project_root)
+    except OutsideWorkspace:
+        # A piece linked out of the study is not read: how long the study
+        # ran is not known here, and the first piece's length is not it.
+        extended, outside = None, True
+    except Exception:  # noqa: BLE001 - the first piece's record stands
+        extended = None
+    pieces = ""
+    # Recorded under `parameters`, with the top level read as a fallback
+    # for manifests written before that nesting.
+    temperature = sim.get("temperature_K")
+    at = f" at {temperature:g} K" if isinstance(temperature, (int, float)) else ""
+    if outside:
+        duration = None
+        said.append(("and was simulated" if said else "The system was simulated")
+                    + f"{at} in pieces, one of them outside the study's folder, so how "
+                    "long is not said here")
+    if extended is not None and extended[0] > 0:
+        duration, pieces = extended[0], f" in {extended[1]} pieces"
     if isinstance(duration, (int, float)) and duration > 0:
-        length = (f"{duration * 1000:.0f} ps" if duration < 1
-                  else f"{duration:.3g} ns")
-        # Recorded under `parameters`, with the top level kept as a fallback
-        # for manifests written before that nesting.
-        temperature = sim.get("temperature_K")
-        at = f" at {temperature:g} K" if isinstance(temperature, (int, float)) else ""
+        from fastmdxplora.simulation.sampling_ask import length_said
+
+        # Under 1 ns as every page says it (`length_said`): "1 ps" was said
+        # of a 1.2 ps run beside "its 1.2 ps".
+        length = (length_said(duration) if duration < 1
+                  else f"{duration:.3g} ns") + pieces
         said.append(("and was simulated" if said else "The system was simulated")
                     + f" for {length}{at}")
 
@@ -294,8 +336,10 @@ def _summary_section(phase_context: PhaseContext, project_root: Path) -> str:
 
 
 def _recorded_means(project_root: Path) -> dict[str, dict[str, Any]]:
-    """Each analysis's mean record, by name, as the analysis wrote it."""
+    """Each analysis's mean record, by name, as the analysis wrote it, its
+    verdict as this version reads it."""
     from fastmdxplora import record_access
+    from fastmdxplora.statistics import withheld_reason
 
     means: dict[str, dict[str, Any]] = {}
     for path in sorted(record_access.glob(project_root / "analysis", "*/options.json")):
@@ -303,6 +347,13 @@ def _recorded_means(project_root: Path) -> dict[str, dict[str, Any]]:
         found = document.get("findings") if isinstance(document, dict) else None
         record = found.get("mean") if isinstance(found, dict) else None
         if isinstance(record, dict):
+            # With the verdict every page reads (`statistics.withheld_reason`):
+            # a mean an earlier version called determined on fewer independent
+            # samples than this one determines a mean on is withheld here too,
+            # so the Methods name it among those given no error.
+            withheld = withheld_reason(record)
+            if withheld and not record.get("not_a_measurement"):
+                record = {**record, "not_a_measurement": withheld}
             means[path.parent.name] = record
     return means
 
@@ -485,11 +536,14 @@ def _methods_section(project_root: Path, phase_context: PhaseContext,
             # The list is the first piece's record; the study is its pieces.
             lines.append("")
             more = extended[1] - 1
+            # Under 1 ns in ps, as every page gives a length: "0.0006 ns".
+            from fastmdxplora.simulation.sampling_ask import length_said
+
             lines.append(
                 f"These are the first piece's. {more} more piece"
                 + ("s" if more != 1 else "")
                 + f" extended the study, each from the checkpoint of the one "
-                f"before, to {extended[0]:.3g} ns of production in all; each "
+                f"before, to {length_said(extended[0])} of production in all; each "
                 "piece's own record is in its `segment-NNN/simulation` folder.")
         lines.append("")
         lines.extend(_settings_listed(_resolve_derived(dict(sim_params), record=sim),
@@ -642,6 +696,10 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
                                         report_dir=report_dir))
         lines.append("")
 
+    # The figures an earlier version plotted with the error of a mean this
+    # version withholds, said so under each: the report embedded them with
+    # that error in their legend beside its own "not determined".
+    since = _plotted_since(project_root)
     summary_fig = report_dir / "analysis_summary.png"
     summary_manifest = report_dir / "analysis_summary_manifest.json"
     if summary_fig.is_file():
@@ -649,6 +707,9 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
         lines.append("")
         lines.append(f"![Analysis summary]({_link_from(report_dir, summary_fig)})")
         lines.append("")
+        if report_dir == project_root / "report" and since.get("report/analysis_summary.png"):
+            lines.append(f"_{_md_text(since['report/analysis_summary.png'])}_")
+            lines.append("")
         if summary_manifest.is_file():
             lines.append(
                 "_Panel inclusion and skipped optional source figures are recorded "
@@ -784,6 +845,10 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
                 lines.append(f"![{_md_text(_caption_of_figure(figs_dir, analysis, fig.stem))}]"
                              f"({_link_from(report_dir, fig)})")
                 lines.append("")
+                note = since.get(f"analysis/{analysis}/{fig.name}")
+                if note:
+                    lines.append(f"_{_md_text(note)}_")
+                    lines.append("")
         else:
             lines.append("_No figure was produced for this analysis._")
             lines.append("")
@@ -967,9 +1032,17 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
     thermo = ((_load_json_safely(project_root / "analysis" / "thermodynamics" / "options.json")
                or {}).get("findings") or {}).get("thermodynamics")
     if isinstance(thermo, dict):
+        # Its quantities' frame count is the thermodynamics' own
+        # (`samples`, the rows of the energy log it read), not the
+        # trajectory's: the two coincide only where the state and the
+        # trajectory are written at one interval.
+        samples = thermo.get("samples")
+        counted = (isinstance(samples, int) and not isinstance(samples, bool)
+                   and samples > 0)
         for name in ("potential_energy", "temperature", "density"):
             if isinstance(thermo.get(name), dict):
-                records[name] = thermo[name]
+                records[name] = ({"n_frames": samples, **thermo[name]} if counted
+                                 else thermo[name])
 
     setup = _setup_record(project_root)
     sim = _load_json_safely(
@@ -1021,7 +1094,17 @@ def _convergence_section(project_root: Path) -> str:
     from fastmdxplora.report.convergence import said_as
     from fastmdxplora.statistics import four_figures, with_its_error
 
+    # Read from the analyses' records, as written, where they hold it: the
+    # table worked each mean out again, and gave SASA's recorded 4.7592 as
+    # 4.7591. What no record holds is worked out here, and said so.
+    worked_out: dict[str, list[str]] = {}
     for record in assessed["observables"].values():
+        recorded = set(record.get("recorded") or ())
+        missing = worked_out.setdefault(said_as(record["observable"]), [])
+        missing += [said for field, said in (("n_frames", "frame count"), ("mean", "mean"),
+                                             ("discard", "frames discarded"),
+                                             ("effective_samples", "independent samples"))
+                    if field not in recorded]
         error = record["standard_error"]
         determined = record.get("determined", error is not None) and error is not None
         # The mean to the place its error allows, as every page gives it,
@@ -1030,6 +1113,8 @@ def _convergence_section(project_root: Path) -> str:
         mean, _, uncertainty = said.partition(" \u00b1 ")
         if not determined:
             mean, uncertainty = four_figures(record["mean"]), "not determined"
+        elif "standard_error" not in recorded:
+            missing.append("error")
         lines.append(
             f"| {said_as(record['observable'])} | {record['frames']:,} | "
             f"{record.get('discard', 0):,} | "
@@ -1041,6 +1126,14 @@ def _convergence_section(project_root: Path) -> str:
             + " |"
         )
     lines.append("")
+    lines.append(_what_was_worked_out(worked_out, any(
+        record.get("recorded") for record in assessed["observables"].values())))
+    lines.append("")
+    # Beside the verdicts: on three or four segments, how large a drift
+    # could go unseen.
+    if assessed.get("drift_unseen"):
+        lines.append(" ".join(assessed["drift_unseen"]))
+        lines.append("")
 
     checks = assessed.get("checks") or []
     if checks:
@@ -1075,6 +1168,20 @@ def _convergence_section(project_root: Path) -> str:
                 "the same box samples the same contact. A larger box, in a new study "
                 "(a box cannot grow mid-run), is what would support one.")
     asked = _what_more_sampling_needs(project_root)
+    # The means drifting between a joined run's segments, by name, with their
+    # remedy: the paragraph named only those withheld for want of sampling.
+    drifting = [said_as(record["observable"]) for record in
+                sorted(assessed["observables"].values(), key=lambda r: said_as(r["observable"]))
+                if record.get("drifting_between_segments")]
+    if drifting:
+        listed = (drifting[0] if len(drifting) == 1
+                  else ", ".join(drifting[:-1]) + " and " + drifting[-1])
+        between = (f"{listed[:1].upper()}{listed[1:]} "
+                   f"{'is' if len(drifting) == 1 else 'are'} drifting between the joined "
+                   "run's segments, so the remedy is a longer run; no record says how "
+                   "much longer.")
+        asked = (asked + "\n\n" + between if asked
+                 else f"**What would support it.** {between}")
     if asked and image:
         from fastmdxplora.image_note import longer_run_said, recorded_finding
 
@@ -1100,6 +1207,37 @@ def _convergence_section(project_root: Path) -> str:
         )
         lines.append("")
     return "\n".join(lines)
+
+
+def _what_was_worked_out(worked_out: dict[str, list[str]], any_recorded: bool) -> str:
+    """What the Convergence table read from the analyses' records and what
+    it worked out here from the series, where no record holds it (each
+    observable's fields not recorded, by its name). The records are named
+    only where some observable has one: with none, the sentence said them
+    the analyses' records and then that no record held them."""
+    said = []
+    if any_recorded:
+        said.append("Where an analysis recorded them, the frame counts, the frames "
+                    "discarded, the independent samples, the means and their errors are its "
+                    "record, as written.")
+    said.append("Whether each observable equilibrated is judged here, over the frames its "
+                "mean is taken over, unless its record withheld the mean as drifting, within "
+                "those frames or between the segments of a joined run.")
+    counted = sorted(name for name, missing in worked_out.items() if "frame count" in missing)
+    if counted:
+        said.append(f"No record holds the frame count of {_and(counted)}: the table counts "
+                    + ("it" if len(counted) == 1 else "them") + " from the series.")
+    alike: dict[tuple[str, ...], list[str]] = {}
+    for name, missing in worked_out.items():
+        rest = tuple(field for field in missing if field != "frame count")
+        if rest:
+            alike.setdefault(rest, []).append(name)
+    if alike:
+        parts = [f"the {_and(list(missing))} of {_and(sorted(names))}"
+                 for missing, names in alike.items()]
+        said.append("No record holds " + "; nor ".join(parts)
+                    + ": the table works these out here from the series, by the same rules.")
+    return " ".join(said)
 
 
 def _image_finding(project_root: Path) -> dict[str, Any] | None:
@@ -1193,17 +1331,29 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     of transitions -- kept in ``options.json`` for anyone who wants them. What
     belongs in a document is what they amount to.
     """
+    from fastmdxplora.image_note import note_of
+    from fastmdxplora.statistics import withheld_reason
+
     notes: list[str] = []
 
     # What the analysis found. Recorded for every per-frame analysis and
     # shown nowhere: a results section carried a figure and the settings that
     # produced it, and no number.
     measured = findings.get("mean")
+    # Withheld as every page reads it: by its record, or by this version's
+    # count of a mean an earlier version called determined on too few
+    # independent samples, which was given here with its error.
+    withheld = withheld_reason(measured)
     if isinstance(measured, dict) and measured.get("mean") is not None:
         from fastmdxplora.statistics import with_its_error
 
         error = measured.get("standard_error")
         error = error if isinstance(error, (int, float)) and error > 0 else None
+        if withheld:
+            # Its record says the mean is not a measurement: no error beside
+            # it, as every page says it (an error was given with "from 9
+            # independent samples" beside a mean withheld for them).
+            error = None
         value = with_its_error(measured["mean"], error)
         if measured.get("unit"):
             value += f" {measured['unit']}"
@@ -1218,17 +1368,30 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
             said += f" after discarding {discarded:,} " + (
                 "frame" if discarded == 1 else "frames")
         notes.append(said + ".")
-    if isinstance(measured, dict) and measured.get("not_a_measurement"):
-        reason = str(measured["not_a_measurement"])
-        # "The remedy is a longer run, or better, replicas": neither lifts
-        # the bias of a solute in contact with its image in every frame the
-        # mean uses, as the Convergence part says of the run.
-        from fastmdxplora.image_note import note_of
+        from fastmdxplora.statistics import drift_unseen_said
 
+        # A joined run of three or four segments not called drifting: how
+        # large a drift that few could miss, as every page says it.
+        unseen = "" if withheld else drift_unseen_said(measured)
+        if unseen:
+            notes.append(f"{unseen[:1].upper()}{unseen[1:]}.")
+    if withheld:
+        from fastmdxplora.statistics import too_few_by_these_rules
+
+        # A mean this version withholds that its run called determined: "not
+        # determined" in words, its count said once (the line above gives it).
+        this_version = too_few_by_these_rules(measured, counted=False)
+        reason = (f"Not determined: {this_version[:1].lower()}{this_version[1:]}"
+                  if this_version else withheld)
+        # "The remedy is a longer run" (", or better, replicas" in some):
+        # neither lifts the bias of a solute in contact with its image in
+        # every frame the mean uses, as the Convergence part says of the run.
         note = note_of(measured)
         if ("remedy is a longer run" in reason and note is not None
                 and note.get("frames_under_close") == note.get("frames_used")):
-            reason += (" Neither lifts the bias of the solute's own image, in contact with "
+            remedies = ("Neither a longer run nor replicas lift" if "replicas" in reason
+                        else "A longer run does not lift")
+            reason += (f" {remedies} the bias of the solute's own image, in contact with "
                        "it in every frame this mean uses: a larger box, in a new study, does.")
         notes.append(reason)
     if findings.get("made_whole"):
@@ -1237,6 +1400,10 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
     # paragraph, said once, in its section; on each other analysis whose
     # frames it met its image in, a line pointing there.
     image = findings.get("solute_image")
+    if image is None and note_of(measured) is not None:
+        # A record whose note is on its mean alone (`mean.solute_image`)
+        # gets the line from that note.
+        image = measured["solute_image"]
     pointer = image_note_said(image)
     # Once: the end-to-end distance's reason holds the note's own sentence.
     said = image.get("said") if isinstance(image, dict) and "frames_used" in image else None
@@ -1529,8 +1696,42 @@ def build_document(
     doc = "\n\n".join(sections) + "\n"
     md_path = output_dir / "report.md"
     md_path.write_text(doc, encoding="utf-8")
+    _save_the_starts_read(project_root, output_dir)
 
     return ["report.md"]
+
+
+#: Beside ``report.md``: the start shared with its replicas that each mean
+#: the report read was taken from, by analysis (None where its record held
+#: none). A study compares it with each record as it ends
+#: (`batch.explorer.reported_before_the_shared_start`), and writes the
+#: report again where they differ. With ``mean_rules``, the rules its means
+#: were judged by (`gui.report_page`).
+RECORDS_READ = "records_read.json"
+
+
+def _save_the_starts_read(project_root: Path, output_dir: Path) -> None:
+    """Save which shared start each mean the report read was taken from, and
+    the rules it judged them by."""
+    from fastmdxplora import record_access
+
+    starts: dict[str, Any] = {}
+    try:
+        for path in sorted(record_access.glob(project_root / "analysis", "*/options.json")):
+            found = (_load_json_safely(path) or {}).get("findings")
+            mean = found.get("mean") if isinstance(found, dict) else None
+            if isinstance(mean, dict):
+                starts[path.parent.name] = mean.get("start_shared_with_replicas")
+        # And the rules its means were judged by (`statistics.MEAN_RULES`):
+        # the Report page says of a report written by an earlier version
+        # which of its means this version withholds.
+        from fastmdxplora.statistics import MEAN_RULES
+
+        (output_dir / RECORDS_READ).write_text(json.dumps(
+            {"start_shared_with_replicas": starts, "mean_rules": MEAN_RULES},
+            indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not save which records the report read: %s", exc)
 
 
 def _software_versions() -> dict[str, str]:

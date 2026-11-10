@@ -106,10 +106,43 @@ def test_the_analysis_page_analyses_again_after_asking(tmp_path) -> None:
         session.server.shutdown()
     assert ticked == ["rmsd"]
     assert "with the 2 analyses ticked" in said and "Nothing is simulated." in said
-    assert "kept in previous/" in said and "The report is written again too" in said
+    assert "saved in previous/" in said and "The report is written again too" in said
     assert asked.count("POST") == 1
     assert _made(root) == ["rmsd", "rg"] and _made(root / "previous") == ["rmsd"]
     assert errors == []
+
+
+def test_the_panel_says_an_unfinished_analysis_is_removed(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora import again
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study")
+    # Stopped part-way: its analyses written, not its manifest.
+    (root / "analysis" / "analysis_manifest.json").unlink()
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.wait_for_selector("#analysis-again-ask .again-choices")
+            said = page.text_content("#analysis-again-ask .again-said")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    # It said "The analysis/ and report/ there now are kept in previous/, in
+    # place of what was kept there before": the unfinished analysis put over
+    # the one saved there, where it is removed and the saved one stays.
+    assert "kept" not in said and "did not finish is removed" in said, said
+    # One wording with what `fastmdx mcp` and the Agent are told.
+    rule = again.saved_said(("analysis", "report"))
+    assert rule in said and rule in again.plan(root, ["analysis"]).said()
 
 
 def test_a_state_sent_before_the_run_began_is_not_its_end(tmp_path) -> None:

@@ -156,6 +156,7 @@ hosting
 
 manifest
 results
+short-segment-drift
 sharing
 analyses
 interactions

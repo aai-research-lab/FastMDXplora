@@ -159,13 +159,20 @@ def _tiles(root: Path) -> dict[str, Any]:
     try:
         overview = overview_of(root)
     except Exception:  # noqa: BLE001 - a panel must never break the page
-        return {"tiles": [], "more": 0, "means": 0, "determined": 0, "not_read": 0,
-                "analyses": 0, "judged_earlier": []}
+        return {"tiles": [], "more": 0, "means": 0, "determined": 0, "noted": 0,
+                "not_read": 0, "analyses": 0, "judged_earlier": [], "withheld_since": []}
     rows = overview.get("rows") or []
     tiles: list[dict[str, Any]] = []
     # A mean whose record was not read is neither determined nor not: it
     # is counted apart, as not read.
-    means = determined = not_read = 0
+    means = determined = noted = not_read = 0
+    # The means this version withholds that an earlier version called
+    # determined, by name: analysing again records this version's verdict.
+    since: list[str] = []
+    # The means withheld as drifting between a joined run's segments, by
+    # name: the lead says so, with the remedy, where it counted them and
+    # explained only those withheld for want of sampling.
+    drifting: list[str] = []
     for row in rows:
         name = row.get("analysis")
         if name == "rmsf":
@@ -195,6 +202,12 @@ def _tiles(root: Path) -> dict[str, Any]:
                 continue
             means += 1
             determined += bool(quantity.get("determined"))
+            # The means its image note is beside, not every note.
+            noted += bool(quantity.get("image_noted"))
+            if quantity.get("withheld_since"):
+                since.append(str(quantity.get("label") or row.get("title") or name))
+            if quantity.get("drifting"):
+                drifting.append(str(quantity.get("label") or row.get("title") or name))
             series = name if (quantity.get("key") == "mean" and name in _SERIES_OF) else None
             tiles.append({
                 "kind": "mean",
@@ -212,18 +225,41 @@ def _tiles(root: Path) -> dict[str, Any]:
                 "series": series,
                 # Its image note beside the verdict, which it does not change,
                 # and the analysis's paragraph of it on hover.
-                "noted": quantity.get("noted") or "",
+                "noted": quantity.get("image_said") or "",
                 "noted_why": quantity.get("noted_why") or "",
+                # What its joined run's drift test could miss, a sentence
+                # of its own, said whole on the card.
+                "unseen": quantity.get("unseen") or "",
             })
     shown = tiles[:MOST_TILES]
     # The means not shown, as the heading counts means: the RMSF tile is
     # not one, and "11 more not shown" was said of ten.
     more = sum(1 for tile in tiles[MOST_TILES:] if tile.get("kind") == "mean")
+    # How many of the means carry an image note: the lead and the Agent's
+    # answers say it once, beside "determined".
     return {"tiles": shown, "more": more, "means": means,
-            "determined": determined, "not_read": not_read, "analyses": len(rows),
-            "biased": bool(overview.get("biased")),
+            "determined": determined, "noted": noted, "not_read": not_read,
+            "analyses": len(rows), "biased": bool(overview.get("biased")),
             "judged_earlier": list(overview.get("judged_earlier") or []),
-            "lead": _lead(root, means, determined, not_read)}
+            "withheld_since": since,
+            "lead": _lead(root, means, determined, not_read, noted, len(since),
+                          drifting)}
+
+
+def means_counted(means: int, determined: int) -> str:
+    """How many of a run's ``means`` are determined, as the Overview's lead
+    counts them (no full stop): "Its mean is determined", "2 of 3 means are
+    not determined". The Agent's answers count them so (`records_answer`):
+    they said "4 observables ... each mean is determined" of a run whose
+    lead counted one."""
+    undetermined = means - determined
+    if determined >= means:
+        return "Its mean is determined" if means == 1 else f"All {means} means are determined"
+    return ("Its mean is not determined" if means == 1
+            else "Neither mean is determined" if means == 2 and not determined
+            else f"None of its {means} means is determined" if not determined
+            else f"{undetermined} of {means} means "
+                 f"{'is' if undetermined == 1 else 'are'} not determined")
 
 
 def _in_a_line(why: str) -> str:
@@ -245,7 +281,39 @@ def _in_a_line(why: str) -> str:
     return line[:-1] + "." if line.endswith((";", ":")) else line
 
 
-def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[str, Any] | None:
+def withheld_since_said(count: int, undetermined: int) -> str:
+    """How many of the ``undetermined`` means this version withholds that an
+    earlier version called determined, and what records this version's
+    verdict on them; empty for none. Said by the Overview's lead and the
+    Agent's answers, which counted only those withheld for want of
+    sampling."""
+    if not count:
+        return ""
+    which = (("it" if count == 1 else "them") if count >= undetermined
+             else f"{count} of the {undetermined}")
+    return (f"This version withholds {which}, which an earlier version called "
+            "determined: Analyze again to record this version's verdict.")
+
+
+def drifting_said(names: "list[str]") -> str:
+    """The means withheld as drifting between a joined run's segments, by
+    name, and their remedy; empty for none. No record says how much longer
+    such a run must be: the drift, not the count of samples, withholds it."""
+    if not names:
+        return ""
+    # In a list, an ordinary word in lower case; "Rg" and "SASA" as they are.
+    said = [name if index == 0 or len(name.split()[0]) <= 2
+            or not name.split()[0][1:].islower() else name[:1].lower() + name[1:]
+            for index, name in enumerate(names)]
+    listed = said[0] if len(said) == 1 else ", ".join(said[:-1]) + " and " + said[-1]
+    return (f"{listed} {'is' if len(said) == 1 else 'are'} drifting between the joined "
+            "run's segments, so the remedy is a longer run; no record says how much "
+            "longer.")
+
+
+def _lead(root: Path, means: int, determined: int, not_read: int = 0,
+          noted: int = 0, since: int = 0,
+          drifting: "list[str] | tuple[str, ...]" = ()) -> dict[str, Any] | None:
     """The sentence the Overview of one run leads with: how many of its
     means are determined and, where they are not, how much longer the run
     would have to be and what that costs here, as the analyses asked for it
@@ -254,7 +322,12 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
     for the rest, at this run's own speed). Where the records do not say
     how much longer, that is said, never guessed; a result whose record
     was not read is counted apart, and a record the ask was not read from
-    named (`record_access`)."""
+    named (`record_access`). Where any mean carries an image note, how many,
+    and what lifts it (:func:`fastmdxplora.image_note.noted_said`). ``since``
+    of the means this version withholds that an earlier version called
+    determined (:func:`withheld_since_said`). ``drifting`` names the means
+    withheld as drifting between a joined run's segments
+    (:func:`drifting_said`)."""
     unread = ("" if not not_read else
               f" {not_read} result{' was' if not_read == 1 else 's were'} not read: "
               f"{'it says' if not_read == 1 else 'each says'} why below.")
@@ -263,15 +336,19 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
             return None
         return {"said": unread.strip(), "undetermined": 0, "means": 0, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
-    from fastmdxplora.image_note import determined_said, longer_run_said, recorded_finding
+    from fastmdxplora.image_note import (determined_said, longer_run_said, noted_said,
+                                         recorded_finding)
 
+    # Said as plain text on the page: the code marks are left out.
+    finding = recorded_finding(root)
+    image_noted = noted_said(finding, noted, means).replace("`", "")
+    image_noted = f" {image_noted}" if image_noted else ""
     if determined >= means:
-        said = ("Its mean is determined." if means == 1
-                else f"All {means} means are determined.")
+        said = means_counted(means, determined) + "."
         # Determined, and still biased where the solute met its own image
         # in every frame: never said determined alone.
-        image = determined_said(recorded_finding(root), means)
-        said += f" {image}" if image else ""
+        image = determined_said(finding, means).replace("`", "")
+        said += (f" {image}" if image else "") + image_noted
         return {"said": said + unread, "undetermined": 0, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
     from fastmdxplora import record_access
@@ -279,11 +356,16 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
                                                       sampling_asked_for)
 
     undetermined = means - determined
-    counted = ("Its mean is not determined" if means == 1
-               else "Neither mean is determined" if means == 2 and not determined
-               else f"None of its {means} means is determined" if not determined
-               else f"{undetermined} of {means} means "
-                    f"{'is' if undetermined == 1 else 'are'} not determined")
+    counted = means_counted(means, determined)
+    drift = drifting_said(list(drifting))
+    drift = f" {drift}" if drift else ""
+    analyse = withheld_since_said(since, undetermined)
+    if analyse and since >= undetermined:
+        # None of them asks for a longer run.
+        return {"said": f"{counted}. {analyse}{image_noted}{unread}",
+                "undetermined": undetermined, "means": means, "more_ns": None,
+                "seconds": None, "platform": "", "lower_bound": False}
+    analyse = f" {analyse}" if analyse else ""
     before = record_access.refused()
     try:
         ask = sampling_asked_for(root)
@@ -299,9 +381,10 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
     if ask is None:
         why = (f"is not said: {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} "
                f"not read." if refused else "is not in the records: each says why below.")
-        lifted = longer_run_said(recorded_finding(root))
-        why += f" {lifted}" if lifted else ""
-        return {"said": f"{counted}. How much longer would determine {them} {why}" + unread,
+        lifted = longer_run_said(finding).replace("`", "")
+        why += analyse + (f" {lifted}" if lifted else "") + image_noted
+        return {"said": f"{counted}.{drift} How much longer would determine {them} {why}"
+                + unread,
                 "undetermined": undetermined, "means": means, "more_ns": None,
                 "seconds": None, "platform": "", "lower_bound": False}
     asking = len(ask.analyses)
@@ -312,17 +395,18 @@ def _lead(root: Path, means: int, determined: int, not_read: int = 0) -> dict[st
     if ask.seconds is not None:
         on = f" on {ask.platform}" if ask.platform else ""
         said += f", {duration_said(ask.seconds)} at this run's speed{on}"
-    said += "."
+    said += "." + analyse
     if ask.lower_bound:
         said += (" A floor: the run is too short to resolve its own correlation time, "
                  "so run that much and estimate again.")
+    said += drift
     if refused:
         said += (f" {', '.join(refused)} {'was' if len(refused) == 1 else 'were'} not read, "
                  f"so what {'it says' if len(refused) == 1 else 'they say'} is not counted "
                  f"here.")
     # Not a longer run alone, where the solute met its image in every frame.
-    lifted = longer_run_said(recorded_finding(root))
-    said += (f" {lifted}" if lifted else "") + unread
+    lifted = longer_run_said(finding).replace("`", "")
+    said += (f" {lifted}" if lifted else "") + image_noted + unread
     return {"said": said, "undetermined": undetermined, "means": means,
             "more_ns": ask.more_ns, "seconds": ask.seconds, "platform": ask.platform,
             "lower_bound": ask.lower_bound}
@@ -451,8 +535,18 @@ def _thermodynamics(root: Path) -> dict[str, Any]:
                 # Its image note beside its verdict, as every page says it.
                 from fastmdxplora.image_note import note_of, paragraph_beside, said_short
 
+                from fastmdxplora.statistics import drift_unseen_said
+
                 short = said_short(note_of(entry))
-                means[key]["noted"] = short or None
+                # And, for a joined run of three or four segments, how large
+                # a drift could go unseen, as the Analysis page says it.
+                unseen = drift_unseen_said(entry, unit) if means[key].get("determined") else ""
+                means[key]["noted"] = (f"{short}. {unseen}" if short and unseen
+                                       else short or unseen or None)
+                # Each apart, for a page that marks them apart (Compare of
+                # two studies): the drift note is no image note.
+                means[key]["image_said"] = short or None
+                means[key]["unseen"] = unseen or None
                 # The analysis's paragraph, said as its where it counts the
                 # union of the rows, not this mean's.
                 means[key]["noted_why"] = (paragraph_beside(note_of(entry), {
@@ -672,11 +766,12 @@ def _said(record: dict[str, Any], unit: str, of: int | None) -> dict[str, Any] |
     if mean is None:
         return None
     error = _number(record.get("standard_error"))
-    reason = record.get("not_a_measurement")
+    # Withheld as every page reads it (`statistics.withheld_reason`).
+    from fastmdxplora.statistics import withheld_reason
+
+    reason = withheld_reason(record)
     determined = not reason and error is not None
     said = with_its_error(mean, error) if determined else _four_figures(mean)
-    if isinstance(reason, dict):
-        reason = reason.get("message") or reason.get("reason") or ""
     return {
         "mean": mean, "error": error if determined else None,
         "said": f"{said} {unit}".strip(), "number": said, "determined": determined,

@@ -73,6 +73,27 @@
     return node;
   }
 
+  /* A mark after a cell's mean, with the space before it, in a span that
+   * does not wrap, so a mark never goes to a line alone ("‡" did, beside
+   * "299.77 ± 0.67 K †") and two marks stay together. */
+  function marked(node, mark) {
+    var span = node.querySelector(".compare-marks");
+    if (!span) {
+      span = make("span", "compare-marks");
+      span.style.whiteSpace = "nowrap";
+      node.appendChild(span);
+    }
+    span.appendChild(document.createTextNode(" " + mark));
+  }
+
+  /* A cell's hover text with a sentence added: after a space where what is
+   * there already ends in a full stop ("image.. With" was said), else
+   * after one. */
+  function titleJoined(title, line) {
+    if (!title) return line;
+    return title + (/\.$/.test(title) ? " " : ". ") + line;
+  }
+
   /* A setting's name, a line allowed to break after each dot and
    * underscore ("setup.random_seed"), never inside a word. */
   function settingName(name) {
@@ -294,7 +315,7 @@
       top.appendChild(make("th", "", label));
     });
     table.appendChild(top);
-    var noMean = [], noted = [], notedResolved = [];
+    var noMean = [], noted = [], unseen = [], notedResolved = [];
     found.forEach(function (m) {
       var row = make("tr");
       row.dataset.analysis = m.analysis;
@@ -310,11 +331,18 @@
           // Its image note beside it (image_note.py), said in full under
           // the table: a difference from it may be that bias.
           var line = side.noted.charAt(0).toUpperCase() + side.noted.slice(1) + ".";
-          node.appendChild(document.createTextNode(" †"));
+          marked(node, "†");
           node.classList.add("is-noted");
-          node.title = (node.title ? node.title + ". " : "") + line;
+          node.title = titleJoined(node.title, line);
           noted.push("† " + said + ", " + (m.label || m.analysis) + ": " + side.noted + ".");
           if (m.versus && m.versus.resolved && notedResolved.indexOf(m) < 0) notedResolved.push(m);
+        }
+        if (side && side.mean != null && side.unseen) {
+          // What its joined run's drift test could miss, with its own mark
+          // as the runs compared give it: no image note, and no bias.
+          marked(node, "\u2021");
+          node.title = titleJoined(node.title, side.unseen + ".");
+          unseen.push("\u2021 " + said + ", " + (m.label || m.analysis) + ": " + side.unseen + ".");
         }
         row.appendChild(node);
         if (side && side.mean == null && side.withheld) {
@@ -359,14 +387,22 @@
     noted.forEach(function (line) {
       host.appendChild(make("p", "muted small compare-noted", line));
     });
+    // The image-bias sentence right after the image notes it is about,
+    // before the drift notes.
     if (notedResolved.length) {
-      // As the runs compared say it (runs_compared.py).
+      // As the runs compared say it (runs_compared.py), of the settings
+      // that differ: two studies differ in more than one.
       var one = notedResolved.length === 1;
+      var differ = (data.settings || []).length;
       host.appendChild(make("p", "muted small compare-noted",
         (one ? "One resolved difference has" : notedResolved.length + " resolved differences have") +
         " a mean that may be biased by the solute's own image: " + (one ? "it" : "each") +
-        " may be that bias and not the setting."));
+        " may be that bias" + (differ === 1 ? " and not the setting."
+          : differ > 1 ? " and not the settings that differ." : ".")));
     }
+    unseen.forEach(function (line) {
+      host.appendChild(make("p", "muted small compare-unseen", line));
+    });
     // Resolved or not is said of two measurements; of two replicas read
     // alone no row is judged so, and the rule is not said beside them.
     var judged = found.some(function (m) { return m.versus && m.versus.error_of !== "alone"; });

@@ -53,7 +53,7 @@ What is kept, what is repaired, and how it is protonated.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14 |
+| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14. A protein residue's charge state comes from its residue type's model pKa (PDBFixer), not shifted by its surroundings, and a histidine's tautomer from its hydrogen bonds (set either with `residue_states`); a ligand's from PROPKA, run on the complex |
 | `residue_states` | map | none | Protonation states in place of setup's own, by chain and number: `{A:57: HIP}`. HIS takes HID, HIE or HIP; ASP ASH or ASP; GLU GLH or GLU; LYS LYN or LYS |
 | `model` | int | none | Which model of a file holding several (an NMR ensemble) to prepare, as the file numbers them; unset, the first. Swept, replicas that start from different structures, which a stopping rule counts as independent starts |
 | `protonation_margin` | float | `1.0` | How close a ligand's pKa may come to the pH before setup stops rather than pick a charge state |
@@ -185,7 +185,7 @@ is a time, so the number of steps follows the timestep: at 4 fs, 1.5 ns is
 | `production_steps` | int | what 2 ns is at the timestep | In place of `duration_ns`; both are refused unless they say the same length |
 | `nvt_steps` | int | what 500 ps is at the timestep | In place of `nvt_duration_ns`; both are refused unless they say the same length |
 | `npt_steps` | int | what 1 ns is at the timestep | In place of `npt_duration_ns`; both are refused unless they say the same length |
-| `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume |
+| `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume, in the box NPT equilibration ended with (its last box, not its mean) |
 | `stop_when` | map | — | Run until what the study is for is known, rather than for a fixed length. See below |
 
 `stop_when` states the quantities the study is for, how well each must be determined,
@@ -233,7 +233,11 @@ mismatch. Metadynamics and steered runs cannot be split at all — see
 
 Every checkpoint FastMDXplora writes has a sidecar beside it,
 `checkpoint.chk.json`: the stage that wrote it, the step, the ensemble, the
-temperature, the timestep, the study. A run resuming from a production
+temperature, the timestep, the study, and the state's time at the step
+(`time_ps`, production's own clock). A study extended in place writes its
+next piece's checkpoints every `checkpoint_interval_steps` where the
+extension's config sets it beside `extra_ns`, else at the study's interval;
+`fastmdx resume` carries a stopped piece on at the interval it asked for. A run resuming from a production
 checkpoint must continue it — `minimize: false`, `nvt_steps: 0`,
 `npt_steps: 0`, the same timestep. A plan that would minimise or
 equilibrate the checkpoint again is refused, with the reason: it throws the
@@ -258,9 +262,9 @@ this for you — see [Continuing a study that stopped](agent.md#continuing-a-stu
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `verlet`, `variable_langevin`, `variable_verlet`. The two Verlet ones have no thermostat and are refused; `brownian` needs a friction of about 100 per ps at 2 fs and 300 K |
+| `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `variable_langevin`. `brownian` needs a friction of about 100 per ps at 2 fs and 300 K. `verlet` and `variable_verlet` (no thermostat) are not offered; an older record naming one reads |
 | `timestep_fs` | int or float | `2.0` | Integrator timestep |
-| `integrator_error_tolerance` | float | `0.001` | Variable-timestep integrators only |
+| `integrator_error_tolerance` | float | `0.001` | The variable-timestep integrator (`variable_langevin`) only |
 | `random_seed` | int | unset | Integrator seed. Fixes the dynamics, not the solvation |
 
 ### Enhanced sampling
@@ -286,7 +290,7 @@ Every key each block takes is in
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `restrain` | str or list | — | What to hold still during equilibration. A selection, or a list of restraint blocks |
+| `restrain` | str or list | — | What to hold still during equilibration. A selection, or a list of restraint blocks. Each selection is parsed with MDTraj before a run |
 | `restraint_release` | list | `[1000, 500, 100, 0]` | Force constants stepped through during equilibration, in kJ/mol/nm² |
 | `restrain_production` | bool | `false` | Keep restraints on during production |
 

@@ -176,49 +176,72 @@ def _unwritten_simulation(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         return {}, {}
 
 
+def _study_named(path: str) -> str | None:
+    """The study folder a recorded path names, by its name alone: a
+    ``segment-NNN`` stands for the study above it, a checkpoint in a
+    study's ``simulation`` folder for that study. Read the same on any
+    machine, a Windows path included; None where the name is no study's (a
+    home folder, ``~user``, a drive, ``.``)."""
+    import re
+    from pathlib import PurePosixPath
+
+    parts = list(PurePosixPath(path.replace("\\", "/")).parts)
+    if len(parts) >= 2 and parts[-2] == "simulation" and parts[-1].endswith(".chk"):
+        parts = parts[:-2]
+    if parts and re.fullmatch(r"segment-\d+", parts[-1]):
+        parts = parts[:-1]
+    name = parts[-1] if parts else ""
+    if (name in ("", "/", ".", "..") or name.startswith("~")
+            or re.fullmatch(r"[A-Za-z]:/?", name)):
+        return None
+    return name
+
+
 def _started_from(record: dict[str, Any]) -> str | None:
     """Where a study's own record or config says it was started from,
     another study's checkpoint, as the methods say it: "the study `X`", by
     the folder's name alone (the path is the machine's), or "another study"
     where the name is not a study's; None where it was not started so.
 
-    One name per origin: the checkpoint's own record's study (the record's
-    ``continues.study``, from the sidecar) where it is there, else the study
-    folder of ``simulation.resume_from``, which is a study's only in its
-    layout, ``<study>/simulation/<checkpoint>.chk`` (or a
-    ``segment-NNN``'s). Nothing outside the study is opened to tell.
+    One origin, one name: the folder of the checkpoint the run read,
+    ``simulation.resume_from``, where its layout is a study's,
+    ``<study>/simulation/<checkpoint>.chk`` (or a ``segment-NNN``'s); else
+    the study the checkpoint's own record says wrote it (the record's
+    ``continues.study``, from the sidecar), which is where the checkpoint
+    was written, not where it was read: a study copied from ``csG`` to
+    ``csKc`` and continued from the copy started from ``csKc``. Nothing
+    outside the study is opened to tell.
     """
-    import re
-    from pathlib import PurePath
+    from pathlib import PurePosixPath
 
     parameters = record.get("parameters") if isinstance(record, dict) else None
     named = parameters.get("resume_from") if isinstance(parameters, dict) else None
     continues = record.get("continues") if isinstance(record, dict) else None
-    name = None
-    if isinstance(continues, dict) and isinstance(continues.get("study"), str) \
-            and continues["study"]:
-        folder = PurePath(continues["study"])
-        if re.fullmatch(r"segment-\d+", folder.name):
-            folder = folder.parent
-        name = folder.name or None
-    elif isinstance(named, str) and named:
-        parts = PurePath(named.replace("\\", "/")).parts
-        if len(parts) >= 3 and parts[-2] == "simulation" and parts[-1].endswith(".chk"):
-            owner = parts[-3]
-            if re.fullmatch(r"segment-\d+", owner):
-                owner = parts[-4] if len(parts) >= 4 else ""
-            name = owner if owner not in ("", "/", "~", ".", "..") else None
-    else:
+    written_in = (continues["study"] if isinstance(continues, dict)
+                  and isinstance(continues.get("study"), str) and continues["study"]
+                  else None)
+    if not (isinstance(named, str) and named) and written_in is None:
         return None
+    name = None
+    if isinstance(named, str) and named:
+        parts = PurePosixPath(named.replace("\\", "/")).parts
+        if len(parts) >= 3 and parts[-2] == "simulation" and parts[-1].endswith(".chk"):
+            name = _study_named(named)
+    if name is None and written_in is not None:
+        name = _study_named(written_in)
     if not name:
         return "another study"
     # A backtick in the name would end the code span early.
     return (f"the study `` {name} ``" if "`" in name else f"the study `{name}`")
 
 
-def _platforms_said(platforms: dict[str, Any]) -> str:
+def _platforms_said(platforms: dict[str, Any], *, unread: bool = False) -> str:
     """Each piece's platform (``{"the first piece": X or None, "segment-NNN":
-    Y, ...}``), the first piece's said not recorded where it is None."""
+    Y, ...}``), the first piece's said not recorded where it is None, or not
+    read where its live status or log is linked out of the study
+    (``unread``)."""
+    unsaid = ("not read, its live status or log being linked out of the study"
+              if unread else "not recorded")
     first = platforms.get("the first piece")
     later = [(name, used) for name, used in platforms.items() if name != "the first piece"]
     if first is not None:
@@ -229,23 +252,26 @@ def _platforms_said(platforms: dict[str, Any]) -> str:
         numbers = [int(name[8:]) for name in names]
         if len(names) == 1:
             which = names[0]
+        elif len(names) == 2:
+            which = f"{names[0]} and {names[1]}"
         elif numbers == list(range(numbers[0], numbers[0] + len(numbers))):
             which = f"{names[0]} to {names[-1]}"
         else:
             which = ", ".join(names[:-1]) + " and " + names[-1]
         return (f"Simulations used OpenMM on the {later[0][1]} platform for {which}; the "
-                "first piece's platform is not recorded.")
-    return ("The first piece's platform is not recorded; "
+                f"first piece's platform is {unsaid}.")
+    return (f"The first piece's platform is {unsaid}; "
             + ", ".join(f"{name} ran on {used}" if index == 0 else f"{name} on {used}"
                         for index, (name, used) in enumerate(later)) + ".")
 
 
-def _equilibrates(record: dict[str, Any]) -> bool:
-    """Whether a record gives either equilibration stage any steps."""
+def _equilibrated_for_none(record: dict[str, Any]) -> bool:
+    """Whether a record gives both equilibration stages as 0: known, not
+    merely unsaid."""
     from fastmdxplora.simulation.lengths import stage_lengths
 
     lengths = stage_lengths(record)
-    return any(lengths[stage]["steps"] for stage in ("nvt", "npt"))
+    return all(lengths[stage]["steps"] == 0 for stage in ("nvt", "npt"))
 
 
 def _stopped_before_its_record(root: Any) -> bool:
@@ -729,7 +755,7 @@ def methods_paragraphs(
             # checkpoint written before production is minimised and
             # equilibrated from, so production continued only where
             # nothing ran before it.
-            if not _get(sim, "minimize", default=True) and not _equilibrates(record):
+            if _get(sim, "minimize", default=True) is False and _equilibrated_for_none(record):
                 protocol.append(f"Production continued from the checkpoint of {started_from}; "
                                 "no minimisation or equilibration was run.")
             else:
@@ -995,7 +1021,10 @@ def methods_paragraphs(
             # Each piece chose its own: one platform said of the study would
             # be one piece's hardware, and a segment's is never said as the
             # first piece's.
-            protocol.append(_platforms_said(platforms))
+            from fastmdxplora.simulation.lengths import NOT_READ
+
+            protocol.append(_platforms_said(
+                platforms, unread=record.get("first_piece_platform") == NOT_READ))
         elif platform:
             protocol.append(
                 f"Simulations used OpenMM on the {platform} platform"
@@ -1176,7 +1205,11 @@ def _stopping_sentences(stopping: dict[str, Any], units: dict[str, str]) -> list
     produced = last.get("production_ns")
     at = (f", at {length_said(produced)} of production" + (" per run" if replicas else "")
           if isinstance(produced, (int, float)) and not isinstance(produced, bool) else "")
-    count = f"{len(rounds)} round" + ("s" if len(rounds) != 1 else "")
+    from fastmdxplora.simulation.stopping import rounds_judged
+
+    # Rounds the rule judged: a catch-up is part of the round it carries on.
+    judged = rounds_judged(rounds)
+    count = f"{judged} round" + ("s" if judged != 1 else "")
     outcome = stopping.get("outcome")
     # What stopped it, as the report's table and the Timeline say it.
     decided = round_decided(last, last=True, record=stopping)

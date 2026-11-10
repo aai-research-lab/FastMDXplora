@@ -151,7 +151,12 @@ from what is being replaced: `fastmdx analyze --rerun` sets the report aside
 too, and says the command that writes it again. `--force-overwrite` removes
 them; `--rerun` keeps them in `previous/<phase>` (`previous/analysis`,
 `previous/report`), one copy of each, in place of what was kept there
-before, with the phase's record from the Manifest beside it. `previous/` is
+before, with the phase's record from the Manifest beside it.
+
+An analysis is saved there only where it finished (its
+`analysis_manifest.json` written): one stopped part-way is removed with its
+report, and what `previous/` holds of them is left as it is. A setup or
+simulation run again is saved there whatever its analysis did. `previous/` is
 left out of the report's bundle. A study of several runs is run again run
 by run, and the comparison of its runs built again; so is that comparison
 when one run of it is analysed again on its own (`--output study/runs/a`).
@@ -670,7 +675,19 @@ outside the study's folder, or a name is not known.
 ```bash
 fastmdx resume runs/study          # says what it did
 fastmdx resume runs/study --json   # the same, as one line of JSON
+fastmdx resume runs/study --taken-over   # its process on another node has ended
 ```
+
+A study whose process was recorded on another machine or in another
+container (a cluster node, a job requeued elsewhere) cannot be asked from
+here whether that process still runs. Another container on the same host is
+told apart only on Linux, where a process's namespace can be read. While its
+records were written within the last hour, `resume` refuses it, saying when
+it can be resumed from here; after an hour of nothing written it is carried
+on as any stopped study is.
+`--taken-over` carries it on at once, for when you know the process there
+has ended; a process on this machine holding the study still refuses it,
+and the GUI never runs it (its Fixes card shows the command, for you to run).
 
 Reads how far a study got and does what is left: nothing, the analyses and
 report, the rest of production from its last sealed checkpoint, or the whole
@@ -679,7 +696,32 @@ several systems, an umbrella study's windows) is carried on run by run, and
 what it says across them is rebuilt. It exits 0 when the study is finished,
 whether or not it ran anything, and 1 when it could not carry the study on,
 with the reason and what would fix it, its command and its price here
-(`remedies` in the JSON). See
+(`remedies` in the JSON). Where it ends well it says the study's
+production now, as the methods give it (a variable-step run's by its clock):
+`production_done_ns` and `production_done_source` in the JSON; where it
+carried production on, `production_done_before_ns` and
+`production_done_before_source`, by the same length before it ran (its
+clock for a variable-step study, its steps times the timestep for a fixed
+one), so their difference is what it ran, and `production_planned_ns`, the
+plan with any extension it carried on. A study of several runs gives each
+run's production in its entry under `runs`.
+
+A study stopped after its pieces were joined and
+before their analyses and report had run (`joined/analysis_owed.json` is
+there, or its analysis is of a first piece the person did not choose) is
+analysed, not read as finished. The analysis it had, where it finished, is
+saved in `previous/analysis` first, and the answer names each phase saved
+(`saved_in_previous`; "Its analysis from before is saved in
+previous/analysis.").
+
+Where the analysis is one the person chose after the join and only its report
+is missing, the report alone is written over it: `did` is `reported` (with
+`reported_only`), and the answer names the command that chose it, `fastmdx
+analyze --rerun --trajectory`. A setting the study's config refuses is said in
+the answer (`ok: false`, `refusal`), never as a traceback.
+
+With `--json` the answer is the one line on
+stdout; what the runs print goes to stderr, the C libraries' output included. See
 [When it stops early](production.md#when-it-stops-early) and
 [What would fix it](refusals.md#what-would-fix-it-and-what-it-costs).
 
@@ -788,7 +830,7 @@ fastmdx report --output runs/study --rerun --no-slides --no-bundle
 # Add an analysis to a finished study; its report is set aside to write again
 fastmdx analyze --output runs/study --analyses rmsd rg sasa --rerun
 
-# Watch a run in the browser while it happens
+# Watch a run in the GUI while it happens
 fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete
 
 # Check a selection before a study depends on it

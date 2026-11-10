@@ -367,6 +367,9 @@ def _hierarchy(root: Path, method: str) -> dict[str, Any] | None:
         "groups": [groups[int(merge)] for merge in laid["color_list"]],
         "leaves": len(laid["leaves"]), "frames": n, "truncated": truncated,
         "cut": cut, "x_label": "Frame", "y_label": "Distance",
+        # The merges' heights are the linkage's distance: RMSD, or Ward's
+        # distance between the points, in nm either way.
+        "unit": "nm",
     }
 
 
@@ -594,7 +597,32 @@ def _projection(root: Path, method: str) -> dict[str, Any] | None:
         "x": x, "y": y, "t": t, "t_label": t_label, "frames": frames,
         "axes": _axes_of(root, method), "unit": unit, "linked": _linked(root),
         "thinned": len(rows) if len(keep) < len(rows) else None,
+        "figure_note": _mds_refused(root),
     }
+
+
+def _mds_refused(root: Path) -> str:
+    """The methods refused for memory beside a projection that ran, one
+    short line each (:func:`fastmdxplora.analysis.dimred.refused_notes`):
+    the card carried each refusal's whole text, the cgroup's path in it, a
+    paragraph under the figure. The whole text is in the record and the
+    report. A record of MDS refused alone (``mds_refused``, before each
+    method was recorded) is said as MDS's matrix."""
+    from fastmdxplora.analysis.dimred import refused_notes
+
+    try:
+        record = json.loads(_records.read_text(root / "analysis" / "dimred" / "options.json",
+                                               encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    findings = record.get("findings") if isinstance(record, dict) else None
+    if not isinstance(findings, dict):
+        return ""
+    refused = findings.get("methods_refused")
+    refused = dict(refused) if isinstance(refused, dict) else {}
+    if isinstance(findings.get("mds_refused"), dict) and "mds" not in refused:
+        refused = {"mds": {}, **refused}
+    return "\n".join(refused_notes(refused))
 
 
 def _landscape(root: Path, method: str) -> dict[str, Any] | None:
@@ -702,6 +730,9 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
         return None
     record = _findings(root, "thermodynamics").get("thermodynamics")
     record = record if isinstance(record, dict) else {}
+    # Withheld as every page reads it: an earlier version's verdict too.
+    from fastmdxplora.statistics import withheld_reason
+
     bars = []
     for row in _table(path):
         key = str(row.get("observable") or "")
@@ -710,7 +741,7 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
             continue
         samples = _number(row.get("effective_samples"))
         entry = record.get(key) if isinstance(record.get(key), dict) else {}
-        if entry.get("not_a_measurement") or not math.isfinite(error):
+        if withheld_reason(entry) or not math.isfinite(error):
             # Not determined, as the table above it says: no error to plot.
             # The card plotted one for every mean the table called not
             # determined, its note saying otherwise.
@@ -731,7 +762,7 @@ def _thermodynamics(root: Path) -> dict[str, Any] | None:
     apart = [f"{_OBSERVABLES.get(k, k)}: held constant by the run, not sampled"
              if "value" in v else f"{_OBSERVABLES.get(k, k)}: not determined"
              for k, v in record.items()
-             if isinstance(v, dict) and v.get("not_a_measurement")
+             if isinstance(v, dict) and withheld_reason(v)
              and _OBSERVABLES.get(k, k) not in [b["label"] for b in bars]]
     if not bars and not apart:
         return None

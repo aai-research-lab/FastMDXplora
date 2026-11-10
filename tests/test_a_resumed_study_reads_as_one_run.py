@@ -286,7 +286,7 @@ def test_a_piece_stopped_is_said_as_the_study(tmp_path, monkeypatch):
         {"name": "simulation", "status": "error", "message": STOP,
          "refusal": {"code": "simulation.run.stopped"}}]}), encoding="utf-8")
     said = read_study_status(root)["latest_error"]
-    assert "segment-001" not in said and f"fastmdx resume {root}`" in said
+    assert "segment-001" not in said and f"fastmdx resume, given this study ({root.name})" in said
     [fix] = remedies_of(root)
     assert fix.why == said and "segment-001" not in " ".join(fix.argv)
 

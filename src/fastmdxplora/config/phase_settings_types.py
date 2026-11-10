@@ -81,10 +81,7 @@ class SimulateSettings(TypedDict, total=False):
     resume_unsealed: bool
     resume_from: str
     minimize: bool
-    integrator: Literal[
-        'langevin_middle', 'langevin', 'brownian', 'verlet', 'variable_langevin',
-        'variable_verlet'
-    ]
+    integrator: Literal['langevin_middle', 'langevin', 'brownian', 'variable_langevin']
     integrator_error_tolerance: float
     minimize_tolerance_kjmol_per_nm: float
     minimize_max_iterations: int

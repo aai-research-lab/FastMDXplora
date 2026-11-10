@@ -138,6 +138,9 @@
     // changes with the records, not the text.
     var shown = data.marked || data.html;
     var drawn = shown + JSON.stringify(data.records_changed || []);
+    /* And the line above it on an earlier version's report, which changes
+     * when the study is analysed again (report_page.py). */
+    drawn += data.withheld_since || "";
     if (doc.dataset.rendered === drawn) return;
     doc.dataset.rendered = drawn;
     doc.innerHTML = shown;
@@ -154,6 +157,11 @@
     var rows = (data.not_produced || []).slice();
     /* A record of the study not read (a link out of it): said with them. */
     if (data.not_read) rows.push({ artifact: "", reason: data.not_read, kind: "not read" });
+    /* A report an earlier version wrote: how many of its means this
+     * version withholds, and to write it again (report_page.py). */
+    if (data.withheld_since) {
+      rows.unshift({ artifact: "", reason: data.withheld_since, kind: "earlier version" });
+    }
     notices.hidden = !rows.length;
     rows.forEach(function (row) {
       var block = document.createElement("div");
@@ -284,9 +292,13 @@
   /* A sentence, its command (``terminal``, its last words) set as code. */
   function withCommand(said, text, terminal) {
     text = String(text || "");
-    if (terminal && text.slice(-terminal.length) === terminal) {
-      said.textContent = text.slice(0, text.length - terminal.length);
+    var at = terminal ? text.lastIndexOf(terminal) : -1;
+    if (at >= 0) {
+      // Its command set as code where the sentence gives it, its last
+      // words or within it (a round's carry-on goes on after it).
+      said.textContent = text.slice(0, at);
       said.appendChild(commandNode(terminal));
+      said.appendChild(document.createTextNode(text.slice(at + terminal.length)));
     } else {
       said.textContent = text;
     }
@@ -365,7 +377,7 @@
       "Write " + (several ? "each run's report" : "the report") + " again from " +
       "this study's records? The report, its slides, PDF, dashboard.html and " +
       "bundle are written again as the study's report settings ask. The report " +
-      "there now is kept in previous/, in place of what was kept there before. " +
+      "there now is saved in previous/, in place of what was saved there before. " +
       "Nothing is simulated or analysed."));
     var yes = node("button", "primary-btn fix-confirm", "Yes, write it");
     yes.type = "button";
@@ -396,8 +408,17 @@
     if (writing === null || running || app.started_at !== writing) return;
     if (app.returncode === null || app.returncode === undefined) return;
     writing = null;
+    if (app.again_round) {
+      // Done over a round left unfinished: said so, with that round and
+      // the command that carries it on, as the terminal says it.
+      say("Written again. " + app.again_round.said, app.again_round.terminal);
+      load();
+      return;
+    }
     if (app.returncode !== 0 || app.error) {
-      say(app.error || "It stopped before the report was written again; its log is in the side panel.");
+      // A failure's own command (its round's carry-on) set as code too.
+      say(app.error || "It stopped before the report was written again; its log is in the side panel.",
+          app.error ? app.error_terminal : "");
       return;
     }
     say("Written again.");

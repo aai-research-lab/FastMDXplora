@@ -118,9 +118,12 @@ def test_an_extended_study_analysed_in_place_reads_its_joined_trajectory(tmp_pat
     later = time.time() + 5
     os.utime(joined, (later, later))
     assert study_trajectory(root) == (joined, topology)
-    # Simulated again in place after the join: the join is not its trajectory.
+    # A first piece newer than its join is a copy of the study (cp, rsync,
+    # scp give each file the time it was copied), not a study simulated
+    # again in place, which moves its join aside first: the join is still
+    # its trajectory, not its first piece of 1,000 frames in 10,000.
     os.utime(own, (later + 5, later + 5))
-    assert study_trajectory(root) == (None, None)
+    assert study_trajectory(root) == (joined, topology)
 
 
 def _joined_study(tmp_path: Path) -> tuple[Path, Path, Path]:

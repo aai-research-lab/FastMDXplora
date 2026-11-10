@@ -214,6 +214,7 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
         _set_title_font(slide)
 
         # Optional subtitle just under the title
+        top = Inches(1.55)
         if subtitle:
             sub_box = slide.shapes.add_textbox(
                 Inches(0.5), Inches(1.1), slide_w - Inches(1.0), Inches(0.4)
@@ -224,9 +225,12 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
             p.text = _slide_text(subtitle)
             p.font.size = Pt(12)
             p.font.italic = True
+            # A note of two lines (an earlier version's figure) pushes the
+            # figure down rather than running over it.
+            if len(subtitle) > 110:
+                top = Inches(1.85)
 
         # Available region for the figure
-        top = Inches(1.55)
         margin = Inches(0.3)
         avail_w = slide_w - 2 * margin
         avail_h = slide_h - top - margin
@@ -256,6 +260,7 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
 
     project_root = orchestrator.output_dir
     phase_context = load_phase_context(project_root)
+    since = _plotted_since(project_root)
 
     _section_slide("Workflow", _workflow_lines(phase_context))
 
@@ -296,7 +301,8 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
 
         summary_figure = project_root / "report" / "analysis_summary.png"
         if summary_figure.is_file():
-            _image_slide("Analysis summary", summary_figure)
+            _image_slide("Analysis summary", summary_figure,
+                         subtitle=since.get("report/analysis_summary.png", ""))
 
         region_figure = project_root / "report" / "region_highlight_summary.png"
         if region_figure.is_file():
@@ -310,6 +316,11 @@ def _build_pptx(orchestrator: "FastMDXplora", title: str, out_path: Path) -> Non
             figures = sorted(sub_dir.glob("*.png"))
             for fig_path in figures:
                 heading, subtitle = _figure_title(analysis, fig_path)
+                # Plotted by an earlier version with an error this version
+                # withholds: said on its slide, as under it in the report.
+                note = since.get(f"analysis/{analysis}/{fig_path.name}")
+                if note:
+                    subtitle = f"{subtitle}. {note}" if subtitle else note
                 _image_slide(heading, fig_path, subtitle=subtitle)
     else:
         _section_slide(
@@ -468,6 +479,9 @@ def _findings_bullets(project_root: Path) -> list[str]:
     for name, record in assessed["observables"].items():
         error = record["standard_error"]
         value = with_its_error(record["mean"], error)
+        if not record.get("determined"):
+            # Withheld: said so, not given bare as though it were a result.
+            value += ", not determined"
         note = {True: "", False: " (still drifting)",
                 None: " (too short to say if equilibrated)"}[record.get("equilibrated", record.get("settled"))]
         # Its image note beside it, as every page says it.
@@ -500,6 +514,15 @@ def _image_notes(project_root: Path) -> dict[str, str]:
         notes[name] = said_short(note_of((thermo or {}).get(name)
                                          if isinstance(thermo, dict) else None))
     return {name: said for name, said in notes.items() if said}
+
+
+def _plotted_since(project_root: Path) -> dict[str, str]:
+    """The figures an earlier version plotted with the error of a mean this
+    version withholds, as the report says them under each
+    (:func:`fastmdxplora.report.document._plotted_since`)."""
+    from fastmdxplora.report.document import _plotted_since as plotted_since
+
+    return plotted_since(project_root)
 
 
 def _load_analysis_manifest(analysis_dir: Path) -> dict:

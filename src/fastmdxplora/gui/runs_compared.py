@@ -111,6 +111,7 @@ def _measure(name: str, runs: list[dict[str, Any]], found: dict[str, dict[str, A
              replicas: bool, labels: dict[str, str]) -> dict[str, Any]:
     from fastmdxplora.gui.report_dashboard import unit_of
     from fastmdxplora.image_note import note_of, said_short
+    from fastmdxplora.statistics import drift_unseen_said, withheld_reason
 
     cells: list[dict[str, Any]] = []
     unit = ""
@@ -121,7 +122,10 @@ def _measure(name: str, runs: list[dict[str, Any]], found: dict[str, dict[str, A
             cells.append({"run_id": run["run_id"], "mean": None})
             continue
         unit = unit or unit_of(name, mean)
-        withheld = mean.get("not_a_measurement") or None
+        # The verdict every page reads (`statistics.withheld_reason`): a
+        # mean an earlier version called determined on too few independent
+        # samples was compared on its error.
+        withheld = withheld_reason(mean)
         error = _finite(mean.get("standard_error"))
         cells.append({
             "run_id": run["run_id"],
@@ -134,6 +138,9 @@ def _measure(name: str, runs: list[dict[str, Any]], found: dict[str, dict[str, A
             # Its image note beside it (`image_note`): a difference from a
             # run whose solute saw its own image may be that, not the setting.
             "noted": said_short(note_of(mean)) or None,
+            # What its joined run's drift test could miss, as every page
+            # says it: a mean of three pieces beside another run's.
+            "unseen": drift_unseen_said(mean, unit_of(name, mean) or None) or None,
         })
 
     measured = [c for c in cells if c.get("mean") is not None and c.get("error") is not None]

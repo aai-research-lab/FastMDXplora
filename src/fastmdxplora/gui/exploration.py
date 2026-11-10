@@ -175,6 +175,55 @@ def _runs_that_failed(root: Path) -> list[str] | None:
             if isinstance(r, dict) and str(r.get("status") or "").lower() in FAILED_STATUSES]
 
 
+def _what_the_rerun_failed(root: Path, since: str | None = None) -> str:
+    """What a study's phases run again (`fastmdx analyze/report --rerun`)
+    that exited in error failed of, in words: each run whose analysis or
+    report phase this rerun recorded failed (started at or after ``since``,
+    the process's start), with its reason; the run named where the study is
+    of several runs or the page is a run's. A run stopped is not failed.
+    Empty where it recorded none (it failed before a phase ran): the log
+    then says why."""
+    from fastmdxplora.simulation.runner import STOPPED_CODE
+
+    root = Path(root)
+    try:
+        after = datetime.fromisoformat(since) if since else None
+        after = after if after is None or after.tzinfo else after.replace(tzinfo=timezone.utc)
+    except ValueError:
+        after = None
+    if _json_mapping(root / "batch_manifest.json"):
+        try:
+            folders = [(str(run.get("run_id")), Path(str(run.get("path"))))
+                       for run in runs_of_a_study(root) or []]
+        except Exception:  # noqa: BLE001 - the log says why
+            folders = []
+    else:
+        from fastmdxplora.batch.explorer import campaign_of
+
+        folders = [(root.name if campaign_of(root) else "", root)]
+    said = []
+    for name, folder in folders:
+        phases = _phases_recorded(folder)
+        for phase in ("analysis", "report"):
+            record = phases.get(phase) or {}
+            if str(record.get("status") or "").lower() not in FAILED_STATUSES:
+                continue
+            if (record.get("refusal") or {}).get("code") == STOPPED_CODE:
+                continue
+            try:
+                began = datetime.fromisoformat(str(record.get("started_at")))
+                began = began if began.tzinfo else began.replace(tzinfo=timezone.utc)
+            except ValueError:
+                began = None
+            if after is not None and (began is None or began < after):
+                continue  # recorded before this rerun began
+            lines = str(record.get("message") or "").replace("`", "").strip().splitlines()
+            failed = f"{name} failed in its {phase}" if name else f"The {phase} phase failed"
+            said.append(failed + (": " + lines[0].rstrip(".") if lines else "") + ".")
+            break
+    return " ".join(said)
+
+
 def _finished_cleanly(root: Path) -> bool:
     """Whether a study that is no longer running finished without a failed
     phase or run, from what it recorded."""
@@ -337,6 +386,15 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
                 ended.add(run_id)
     # The study's rounds, read once for all its runs.
     rounds = rounds_of_a_study(Path(root))
+    # Going on another machine or container (`resume.going_elsewhere`): its
+    # runs are going as the study is (`workspace.study_state`), whatever
+    # their own records last said (between its pieces, in its join).
+    from fastmdxplora.simulation.resume import going_elsewhere
+
+    try:
+        elsewhere = bool(going_elsewhere(Path(root)))
+    except Exception:  # noqa: BLE001 - as each run's records say
+        elsewhere = False
     out = []
     for entry in entries:
         run_id = str(entry["run_id"])
@@ -371,6 +429,10 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
             # Interrupted, as its card says: in a later piece, or before any
             # result was written.
             state = "interrupted"
+        elif live and live.get("join_owed") and str(live.get("status")).lower() == "interrupted":
+            # Its last piece ran to its end and its process ended before the
+            # join (`telemetry._its_join_owed`): cut, its join owed.
+            state = "interrupted"
         elif live and str(live.get("status") or "").lower() in ("failed", "error", "stopped"):
             # The run's own record says it failed or was stopped: believed
             # over the study's result, as the run's state is everywhere else
@@ -384,6 +446,11 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
             state, fraction = "completed", 1.0
         elif result.get("status") in ("failed", "error"):
             state = "failed"
+        elif result.get("status") == "skipped" and str(result.get("message") or "").startswith(
+                "Not started"):
+            # Never started, its study ended (stopped, or its pool broke):
+            # read "waiting" in a study no longer going.
+            state = "not started"
         elif live:
             stage = str(live.get("stage") or live.get("status") or "").lower()
             step, total = live.get("current_step"), live.get("total_planned_steps")
@@ -397,6 +464,21 @@ def runs_of_a_study(root: Path) -> list[dict[str, Any]] | None:
             else:
                 state = "running"
         elif folder.exists():
+            state = "running"
+        if state == "completed":
+            # Its pieces joined, their analyses and report not run (its
+            # study stopped or cut between): not completed, as its own page
+            # and health say (`telemetry._owing_its_analysis`).
+            from fastmdxplora.gui.telemetry import _owing_its_analysis
+
+            try:
+                owed = str(_owing_its_analysis(folder, {"status": "completed",
+                                                        "stage": "report"}).get("status"))
+            except Exception:  # noqa: BLE001 - a record, not a verdict
+                owed = "completed"
+            if owed in ("interrupted", "failed", "running"):
+                state = owed
+        if elsewhere and state in ("completed", "interrupted"):
             state = "running"
         out.append({"run_id": run_id, "path": str(folder), "system": entry.get("system"),
                     "values": entry.get("sweep_values") or {}, "state": state,
@@ -906,6 +988,27 @@ def _defaults_found_from(output_dir: Path) -> Any:
         return None
 
 
+def stopped_said(where: Any) -> str:
+    """What the GUI's Stop answers once the run it started has ended: a
+    study with a budget stopped in its setup stage is run again, its setup
+    first, where a resume of it ran setup alone and read it finished
+    (`agent.staged.stopped_before_its_price`)."""
+    if where is not None:
+        from fastmdxplora.agent.staged import stopped_before_its_price
+
+        again = stopped_before_its_price(Path(where))
+        if again is not None and again.get("argv"):
+            return ("Workflow stopped before its simulation began; "
+                    f"{again.get('said')}.")
+        if again is not None:
+            # No command to name (the Agent, Python): said once, not twice.
+            return ("Workflow stopped before its simulation began, and the study is run "
+                    "again from its setup.")
+    return ("Workflow stopped. A run in production ends at its next "
+            "frame with a checkpoint there, and `fastmdx resume` "
+            "carries it on.")
+
+
 @dataclass
 class DashboardRuntime:
     """Mutable state shared by all request-handler threads."""
@@ -923,6 +1026,13 @@ class DashboardRuntime:
     process_started_at: str | None = None
     process_finished_at: str | None = None
     process_returncode: int | None = None
+    #: The process started is a study's phases run again (`run_again`).
+    ran_again: bool = False
+    #: Its study's round, unfinished, after that rerun ended well (exit 0):
+    #: its sentence and the command that carries it on.
+    again_round: dict[str, str] | None = None
+    #: The command within `completion_error` set as code (its round's).
+    error_terminal: str = ""
     completion_error: str | None = None
     data_stale: bool = False
     log_path: Path | None = None
@@ -1116,6 +1226,11 @@ class DashboardRuntime:
                     # Without the timestamp and level, which the panel
                     # already shows and which crowd out the sentence.
                     detail = errors[-1].split(" - ERROR - ", 1)[1]
+            if not detail:
+                # The command's own word ("fastmdx: ..."): a study's round
+                # is said after it, and is not why it failed.
+                said = [line for line in lines if line.startswith("fastmdx: ")]
+                detail = said[-1].removeprefix("fastmdx: ") if said else ""
             if not detail and lines:
                 detail = lines[-1]
         if detail:
@@ -1142,6 +1257,39 @@ class DashboardRuntime:
         if self.process_finished_at is None:
             self.process_finished_at = _utc_now()
         where = self.running_root or self.active_root
+        if (self.ran_again and self.completion_error is None and where is not None
+                and Path(where).resolve() not in self.stopped_roots):
+            # A study's phases run again: its exit code says what they did
+            # (0 each ended well, 130 stopped, else failed), whatever round
+            # the study was left in; that round is said after it.
+            from fastmdxplora.batch.explorer import campaign_of
+            from fastmdxplora.simulation.stopping import round_ended
+
+            try:
+                ended = round_ended(campaign_of(Path(where)) or Path(where))
+            except Exception:  # noqa: BLE001 - said as its exit is
+                ended = None
+            round_said, terminal = "", ""
+            if ended is not None:
+                round_said = f"{ended.said} {ended.carry_on_on_a_page}"
+                command = " ".join(ended.argv)
+                # Its command set as code where the round's carry-on gives
+                # one (none where the resume carries no run on).
+                terminal = command if command in ended.carry_on_on_a_page else ""
+            if self.process_returncode == 0:
+                if ended is not None:
+                    self.again_round = {"said": round_said, "terminal": terminal}
+                    return
+            elif self.process_returncode == 130:
+                # Stopped by Ctrl+C: stopped, not failed.
+                self.stopped_here = True
+                return
+            else:
+                failed = (_what_the_rerun_failed(Path(where), self.process_started_at)
+                          or self._process_failure_message())
+                self.completion_error = (failed + (" " + round_said if round_said else ""))
+                self.error_terminal = terminal if round_said else ""
+                return
         if (self.process_returncode != 0 and self.completion_error is None
                 and where is not None and Path(where).resolve() in self.stopped_roots):
             # Stopped here, as asked: not a failure. Its reason was the
@@ -1330,6 +1478,9 @@ class DashboardRuntime:
                 status = "stopped"
             elif self.completion_error and viewing_running:
                 status = "failed"
+            elif self.again_round and viewing_running:
+                # Its phases run again ended well over an unfinished round.
+                status = "completed"
             elif self.process is not None and self.process_returncode == 0 and viewing_running:
                 status = "completed"
             elif self.process is not None and self.process_returncode is not None and viewing_running:
@@ -1361,7 +1512,13 @@ class DashboardRuntime:
                 "running_elsewhere_progress": (self._progress_of(self.running_root)
                                                if running and not viewing_running else None),
                 "returncode": self.process_returncode,
+                # A study's phases run again over an unfinished round: done,
+                # with that round (`_refresh_process`).
+                "again_round": self.again_round if viewing_running else None,
                 "error": self.completion_error if viewing_running else None,
+                # The command within that error set as code (a rerun's round).
+                "error_terminal": (self.error_terminal
+                                   if viewing_running and self.completion_error else ""),
                 "started_at": self.process_started_at,
                 "finished_at": self.process_finished_at,
                 "log_path": str(self.log_path) if self.log_path else None,
@@ -1389,6 +1546,7 @@ class DashboardRuntime:
         dashboard_url: str | None,
         *,
         config_path: str | Path | None = None,
+        cwd: Path | None = None,
     ) -> dict[str, Any]:
         """Start a run and take ownership of the process.
 
@@ -1406,6 +1564,7 @@ class DashboardRuntime:
         from fastmdxplora.refusals import OutsideWorkspace, refusal_of
         from fastmdxplora.runs_here import StartRefused, may_start, record_start, starting_in
 
+        self.ran_again, self.again_round, self.error_terminal = False, None, ""
         folders = self._rule_folders()
         config = None
         if config_path is not None:
@@ -1420,7 +1579,8 @@ class DashboardRuntime:
                 since = time.time()
                 try:
                     started = self._spawn_now(command, output_dir, dashboard_url,
-                                              **({"env": start.env} if start.env else {}))
+                                              **({"env": start.env} if start.env else {}),
+                                              **({"cwd": cwd} if cwd is not None else {}))
                 except OutsideWorkspace as exc:
                     # Its log is a link: nothing is written where it leads,
                     # and nothing is started.
@@ -1479,9 +1639,11 @@ class DashboardRuntime:
 
     def _spawn_now(self, command: list[str], output_dir: Path,
                    dashboard_url: str | None, *,
-                   env: Mapping[str, str] | None = None) -> dict[str, Any]:
+                   env: Mapping[str, str] | None = None,
+                   cwd: Path | None = None) -> dict[str, Any]:
         """The process itself, started and held, given ``env`` (the GPU it
-        was chosen) beside this process's environment."""
+        was chosen) beside this process's environment, run from ``cwd``
+        (else the GUI's folder)."""
         log_path = output_dir / "exploration.log"
         given = dict(env or {})
         env = os.environ.copy()
@@ -1506,7 +1668,7 @@ class DashboardRuntime:
             # server holds the handle and signals the child directly.
             process = subprocess.Popen(
                 command,
-                cwd=str(self.exploration_root),
+                cwd=str(cwd if cwd is not None else self.exploration_root),
                 env=env,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
@@ -1921,6 +2083,7 @@ class DashboardRuntime:
     def _hold(self, root: Path, record: Mapping[str, Any], pid: int) -> None:
         """Take a run this server did not start as the one it is watching."""
         self.process = _AdoptedProcess(pid, Path(root), dict(record))
+        self.ran_again, self.again_round, self.error_terminal = False, None, ""
         self.running_root = Path(root)
         self.process_started_at = str(record.get("started_at") or _utc_now())
         self.process_finished_at = None
@@ -2113,9 +2276,18 @@ class DashboardRuntime:
             refused = _fix_refused(study, list(remedy.argv))
             if refused is not None:
                 return refused
+            # Run from where the person ran it, where its paths, as typed,
+            # mean what they did: from the GUI's folder, `-c two.yml` was
+            # not found, or was another study's.
+            where = getattr(remedy, "cwd", "") or ""
+            if where and not Path(where).is_dir():
+                return {"ok": False, "error": (
+                    f"This fix is run from {where}, where it was first run, and that "
+                    "folder is not there now: " + remedy.fix)}
             self.data_stale = False
             started = self._spawn([sys.executable, "-m", "fastmdxplora", *remedy.argv],
-                                  study, dashboard_url)
+                                  study, dashboard_url,
+                                  **({"cwd": Path(where)} if where else {}))
             return {"ok": True, "error": None, "fix": remedy.as_record(), **started}
 
     def run_windows_again(self, windows: Any, *, force_constant: Any = None,
@@ -2209,6 +2381,7 @@ class DashboardRuntime:
                                   study, dashboard_url)
             if started.get("ok") is False:
                 return started
+            self.ran_again = True
             return {"ok": True, "error": None, "said": planned.said(), **started}
 
     def stop(self) -> dict[str, Any]:
@@ -2274,9 +2447,7 @@ class DashboardRuntime:
             self._refresh_process()
             return {
                 "stopped": True,
-                "detail": ("Workflow stopped. A run in production ends at its next "
-                           "frame with a checkpoint there, and `fastmdx resume` "
-                           "carries it on."),
+                "detail": stopped_said(where),
                 "state": self.snapshot(),
             }
 

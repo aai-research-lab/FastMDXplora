@@ -50,7 +50,8 @@ class TestTheTicks:
              "rmsd": _steady(centre=0.2, width=0.01, seed=2)},
             duration_ns=10, n_atoms=30000, target_temperature_K=300))
         assert all(passed is True for passed, _ in checks.values()), checks
-        assert checks["temperature"][1].endswith("K against 300.0 K")
+        assert checks["temperature"][1].endswith("K (worked out here; no record holds it) "
+                                                 "against a target of 300.0 K")
 
     def test_a_measure_still_moving_fails(self):
         rising = list(np.linspace(0.1, 0.5, 500) + 0.005 * np.random.RandomState(0).normal(size=500))

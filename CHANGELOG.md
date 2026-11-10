@@ -9,6 +9,221 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- A joined run of three or four segments can now be called drifting
+  (`analysis.sampling.drifting`, `drift_test:
+  slope_against_errors_and_scatter`): with each segment mean placed at the
+  centre frame of the frames it averages, the means' slope must stand
+  against their own errors, with a line consistent with them, and against
+  their own scatter about the line (Student's t on k - 2 degrees of
+  freedom); the permutation test could not reach 0.05 below five segments.
+  Analyses read the joins a loaded trajectory records, so a mean whose
+  segments drift is withheld (mean rules version 5), and its record saves
+  the refusal's code (`withheld_code`). Offsets between segments larger
+  than their errors, in no order, are not read as a trend (judged against
+  the errors alone they were in 12% to 40% of runs); at three segments a
+  real trend is called less often than at four (counts in
+  `docs/short-segment-drift.md`). The drift test for five or more segments
+  is as before, but analyses now apply it to their saved means too, so a
+  saved mean of a joined run of five or more segments can be withheld as
+  drifting; and a run withheld before for a segment whose correlation is
+  not resolved, or that drifts within itself, may now say `drifting` where
+  that leaves three or four segments to test. A drift refusal leads with
+  its verdict, p and remedy; one of means that step back says "trend ...
+  not one way at every step", not "move in order". At three or four
+  segments a pooled mean's error is still qualified where the means
+  scatter more than twice what their errors predict, and said not to
+  establish stationarity only where that scatter stands against its
+  chi-square at 0.05.
+- A mean withheld as drifting between a joined run's segments is said so:
+  the report's Convergence table says it has not equilibrated (it said
+  "yes" and passed the check, reading only the words "still drifting"),
+  with a finding giving the refusal and its remedy; the Overview's card
+  leads with the verdict, its p and the remedy, and its lead names the mean.
+- Where three or four segment means stray from a straight line by more than
+  their errors allow, the drift test is decided by the means' own scatter
+  about the line; it returned p 1 there and pooled a large monotone drift
+  (a real run's temperature, 177.8, 185.4, 186.6 and 192.6 K over errors of
+  0.5 to 0.7 K, is now called, p 0.024). Only four-segment counts move
+  (`docs/short-segment-drift.md`). Fitting the means against their centres
+  in time is a trade: a steady drift over unequal segments is called more
+  often (206 against 0 runs of 1,000 by index for 500, 500 and 4,000 frames),
+  a drift levelling off with a long last piece less often (336 against 710
+  for 1,000, 1,000, 1,000 and 5,000 frames, where 519 means are pooled as a
+  lower bound against 149).
+- A drift refusal says how many segments it tested and which it left out
+  and why, those left out for one reason together, and gives its amounts in
+  the quantity's unit to two figures, as the note beside a mean does (it
+  said "+13.92" beside "about 410 kJ/mol"); two segments that disagree are said not to tell a drift from
+  offsets (they were said "not drift").
+- A mean of a joined run whose test for drift between segments ran on
+  three or four segments without calling drift says beside its verdict, as a
+  sentence, how large a steady drift that few could miss, in its own units
+  first segment to last, and what that is reckoned from: X times the error
+  of the tested segments' pooled mean, X worked out when the record is
+  written for their own errors and centres in time (the smallest drift the
+  rule calls in 80% of 10,000 simulated sets, a fixed seed: 41 for three
+  equal pieces, 16 for four, 69 for pieces of 500, 500 and 4,000 frames),
+  multiplied where the means scatter about a straight line beyond their
+  errors by the root of that scatter as the rule judges it, to the one
+  decimal the note says, with how few means it was estimated from (per
+  record, an approximate range from a random sweep of layouts in
+  `docs/short-segment-drift.md`, not a bound: a drift as large as the figure
+  is called in about 89% to 100% of runs at three segments and 71% to 100%
+  at four, and goes unseen though said seen in up to about 1.8% and 6.2%,
+  lowest at three where the middle piece is far the most precise and at four
+  where the first or last piece is far the least precise, the means
+  scattering beyond their errors and the scale estimated from one or two
+  degrees of freedom; its record saves `drift_unseen`). Said also where the joined summary was withheld for a
+  segment whose correlation is not resolved and the mean stands, with the
+  segments tested and those left out; where fewer than three could be tested,
+  that drift between them was not tested. On the Overview's card (a line of
+  its own, whole), the Analysis page, the report, Compare, the Agent's
+  citation chips, its answers and its own context, after a full stop as a
+  sentence (the Agent's records answer, the Analysis page's convergence
+  panel and Compare of two studies said "; With 3 segments").
+- Compare of two studies carries a mean's drift note apart from its image
+  note, as the runs compared do: the drift note with its own mark (‡) and a
+  line of its own under the table, for every mean there, each analysis's
+  (RMSD) included, and in the Agent's text of the two compared; the image
+  mark (†) and the sentence that a resolved difference "may be biased by the
+  solute's own image" only for an image note. It marked a temperature's
+  drift note as an image note and said so of a resolved difference where no
+  mean had one, and gave no drift note beside an analysis's mean.
+- On Compare of two studies the sentence that a resolved difference "may be
+  biased by the solute's own image" follows the image notes (†), before the
+  drift notes (‡), where it read as said of a drift note; a mean with both
+  notes has its hover text joined with one full stop ("image.. With" was
+  said), and its marks stay beside it, never on a line alone.
+- The drift note's figure is worked out from the unrounded pooled error, so
+  it does not depend on the quantity's units (from the error to two figures
+  it moved by up to 5%: an error of 1.0499 said 1.0 gave a figure 4.8%
+  below its layout's 80% point), and the note says the error to two
+  figures, or to three where two would not multiply out to the figure as
+  said (more in the few notes where three would not either), so the count,
+  the scale and the error said multiply out to it: "about 55 K (42 times
+  ... 0.37 K, times 3.5)" read 42 x 0.37 x 3.5 = 54.4, and now says 0.373 K.
+- A record's drift figure is found by doubling the size of drift and then
+  halving the bracket, not one size at a time from 1: the same figure on
+  every layout in `docs/short-segment-drift.md`, in about 12 sizes read
+  for 41 where 41 were read, and 16 for 135 where 136 were.
+- The Agent's and the GUI's answers to whether a study ran long enough and
+  what would strengthen it name a mean drifting between a joined run's
+  segments and its remedy, a longer run of no length a record gives, by the
+  record's code; they said no figure was recorded and that analysing again
+  records it.
+- The report's "What would support it" names the means drifting between a
+  joined run's segments with their remedy, and its first paragraph gives an
+  extended study's joined length and pieces, or, where a piece is outside
+  the study's folder, its temperature and that its length is not said there.
+- A mean an earlier version recorded as determined on fewer independent
+  samples than this version determines a mean on reads "not determined",
+  with why and that analysing again records this version's verdict, on the
+  Overview, the Analysis page's table, its card and the convergence panel
+  alike (`analysis_overview.too_few_by_these_rules`). The card said "too
+  few to determine the mean" beside the Overview's "Determined".
+- Whether and why a mean is withheld is read by one reader
+  (`statistics.withheld_reason`) everywhere a verdict or an error is shown:
+  the Agent's citation chip and the records text it reads, the report's
+  findings, Convergence table and Methods, the Analysis page's figure (no
+  band and no error), Compare of two studies and of a study's runs, the
+  runs backing a spread, and the written comparison. A mean an earlier
+  version called determined on fewer than 10 independent samples was given
+  with its error in each.
+- Where that reader withholds a mean, no error is given with it either: the
+  written comparison's cell, its CSV (`<analysis>_standard_error`) and trend,
+  and the replicas' rows (`standard_error`, `error_as_a_replica`), so the
+  replicas' predicted error, and Compare of a study's runs, are from the runs
+  that gave an error of their own. A mean an earlier version called
+  determined read "0.0090 ± 0.0012 \*" beside "\* Not determined", and its
+  error entered the prediction.
+- The thermodynamics figure on the Analysis page plots no error for a mean
+  that reader withholds, and its note says it is not determined, as the
+  table beside it does.
+- The Agent's records answers decide whether every mean is determined from
+  the Overview's counts, not from the words of the sentence counting them:
+  "By its records, yes" was said beside "none of the production's 4
+  thermodynamic means is determined".
+- A mean this version withholds that its run called determined is said so:
+  the written comparison's footnote and the replicas' sentence say this
+  version withholds it (they said the run found it not determined), and the
+  report's findings line says "Not determined", giving the sample count
+  once.
+- The Analysis page's results table, and its Download, give no error beside
+  a mean not determined (`analysis_overview`, `error`): the CSV gave
+  0.0010 nm beside "Determined: no" for a mean this version withholds.
+- The Analysis table's independent samples are said by the one rule every
+  page says them by (`statistics.independent_samples_whole`): 9.5 read 10
+  beside a reason saying fewer than 10.
+- A figure an earlier version plotted with the error of a mean this version
+  withholds (an analysis's own figure, the thermodynamics' bars, the summary
+  figure's panels) is said so under it in the report, in its caption in
+  `dashboard.html` and on its slide, with "Analyze again to plot it again"
+  (`analysis_overview.plotted_since`). The report written by this version
+  embedded `rmsd.png` with "0.0078 ± 0.0010 nm" and its band beside its own
+  "not determined". The slides' findings say a mean not determined so; it
+  was given bare.
+- The Report page showing a report an earlier version wrote says above it
+  how many of its means this version withholds, and to write it again
+  (`withheld_since`). The report saves the rules it judged its means by
+  (`mean_rules` in `records_read.json`).
+- The Overview's lead and the Agent's "What they need, every mean withheld
+  counted" count the means this version withholds that an earlier version
+  called determined, and say to analyse again for them.
+- The replicas' sentence no longer says a run "did not determine its own
+  mean" of one its run called determined ("1 of the 3 replicas' means,
+  which its run called determined, this version withholds ..."), and the
+  written comparison marks a mean this version withholds with its own mark
+  (‡) and footnote, apart from one its run withheld (\*).
+- The Agent's citations (`cites`) give `value` alone and the image note in
+  `noted`; the chip says the value, its verdict, then the note on a line of
+  its own, left-aligned where it wraps. "Not determined" followed the note,
+  as if said of the image.
+- In a study of replicas, a run whose records the study writes again from
+  the start the replicas share (after its report, at the study's end, by
+  the stopping rule or by `FastMDXplora.compare()`) has its report written
+  again from those records. Seed 1's report said 0.07415 nm over all 100
+  frames while its record said 0.0799 nm over frames 38-99. Which reports
+  are written again is decided by content: each report saves the shared
+  start of each mean it read (`report/records_read.json`), compared with
+  the records as they end. The runs are the study's own, from its
+  manifest; a run folder linked in from outside the study is not written
+  into. Inside the stopping rule's rounds each run's extension no longer
+  writes the other runs' reports: each is written again once, after the
+  last round.
+- A run's report written again by its study records the report alone, and
+  marks it written again (`written_again` in the manifest): a run given
+  `simulation.setup_from` was recorded as set up again, at the time of the
+  report. The study's timeline places the last round before the reports
+  written again after it, for a study of replicas as for one of one run.
+- `fastmdx resume` says the study's production once carried on, as the
+  methods give it (a variable-step run's by its clock): `production_done_ns`
+  in its JSON is that, with `production_done_source`, and
+  `production_done_before_ns` what the checkpoints held before it ran. It
+  said 0.004 ns of a study that then held 2,000 + 6,000 steps. With
+  `--json` the answer is the one line on stdout, the runs' progress on
+  stderr, the console log's lines and what MDTraj's DCD plugin writes to the
+  descriptor included.
+- An extension's `checkpoint_interval_steps`, set beside `extra_ns`, is the
+  interval its piece writes checkpoints at, from the command line and from
+  Python; `fastmdx resume` carries a stopped piece on at the interval it
+  asked for. The study's own was used (`segment-001.yml` recorded 10000), so
+  a piece of 6,000 steps wrote none and a stop lost all of it.
+- The methods name the study a run started from by the folder of the
+  checkpoint it read, and the study the checkpoint's record says wrote it
+  only where that path is no study's (a study copied from `csG` to `csKc`
+  and continued from the copy was said to start from `csG`); a Windows path
+  and `~user` are read on any machine. They say "no minimisation or
+  equilibration was run" only where both stages are known to be 0, not
+  where their lengths are not recorded. Where no live status gives the first
+  piece's platform, the study's `fastmdxplora.log` does; where its live
+  status or log is linked out, its platform is "not read", not "not
+  recorded"; two pieces are "segment-001 and segment-002".
+- `rmsd`, `cluster` and `dimred` given fewer than three atoms to superpose on
+  (alanine dipeptide's one alpha carbon, named in `include`) are refused
+  (`analysis.selection.arity`), naming the selection that works here and how
+  many atoms it matches. On one atom every RMSD read 0 and clustering found
+  one cluster, said as results, while `dimred` said there was nothing to
+  decompose.
 - The line said of a run that starts from velocities assigned at another
   temperature reaches the run's manifest notes, is a warning in the live
   events, and prints once on the terminal, not twice.
@@ -323,6 +538,782 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study was polled every few seconds for as long as it was open.
 - The Analysis page names protein-ligand interactions in its subtitle only
   where the study has a ligand's analyses.
+- Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
+  CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
+  169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
+  3.13 peaked at 138.1 to 149.0, each at the map, with 7.9 to 8.1 MiB
+  held as it began: nothing of DBSCAN's. The whole-run test now says what was held as
+  the map began and the peak before it, and the tests that count memory
+  run their processes with glibc's default malloc, not settings taken
+  from the environment.
+- Every page of the docs names the interface the GUI. Four lines said "the
+  browser": where the Agent's attempts are capped, where its API key is
+  typed, the one server for `fastmdx gui` and `fastmdx agent`, and the
+  command that watches a run. The test that held three pages to it now
+  reads every page in `docs/` and the README.
+
+- The docs search reads a setting named in code in a table row's first cell
+  as a name, so "what does ligand pose do" finds the `ligand_pose` row
+  whatever the other pages hold (it fell to fifth when the drift page
+  grew).
+
+- A study whose stopping rule's round failed while it extended its runs (a
+  worker killed for memory: `BrokenProcessPool`) printed "Batch complete: 3
+  ok, 0 error(s)" after "Stopped: extending ... failed", exited 0, and was
+  read completed by the GUI and the Agent, from its runs, each of which had
+  ended well. One reading of `stopping.json` (`stopping.round_ended`) now
+  says it failed (or stopped, where asked) in the CLI's summary ("Batch
+  failed", the round's sentence and the `fastmdx resume` command with what it
+  would run, last) and exit code, `batch_manifest.json` (`round_ended`), the
+  GUI's status, sidebar, All studies and Overview (its card too, with the
+  runs' range of production), the Agent's records answers and context, and
+  the comparison report, which leads with it and says it once; the runs the
+  round extended are named, and the others said by their production, their
+  extension not finished (never "not extended": a killed worker may have run
+  part of it). A round stopped when asked exits 130; a failed run is said
+  before it. The same for a study of one run (its status, records answer and
+  report page) and for one analysed again with `--rerun`, which said "Batch
+  complete" and dropped `round_ended`; a study whose process was killed hard
+  mid round, its record left "running", is said interrupted, not completed.
+  A resume whose round fails again is not done, and a study of one run is
+  judged again by `fastmdx resume`, which said it had nothing to carry on. A
+  study whose rounds ended well is said as before.
+- `fastmdx resume` after a partial round (one run extended, another not)
+  extended every run from the shortest, so the runs extended went past the
+  ceiling (36 ps of 30 ps). The runs not at the round's length are now
+  brought up to it first, as the round's sentence says, and then judged.
+- While a study's rule extended its runs, its `batch_manifest.json` listed
+  only the plan, so each extension built the comparison across its runs from
+  none ("Comparison report needs ≥2 successful runs (found 0)"): the runs
+  that finished are written before the rounds.
+- A study of one run whose process was killed mid round was carried on by
+  `fastmdx resume` without its rule: its extension was finished, its record
+  left "running", and it then read completed. The resume now carries the
+  run's extension on to the round's length and judges it there, as the
+  round's sentence says, and holds the study's process record while it runs,
+  so the study reads running (All studies, the sidebar and the Agent said it
+  was interrupted, and to resume it), and a resume killed in turn reads
+  interrupted. A run not carried on leaves the round said failed, never
+  "running". Its status page says the round's sentence, not "The run ended
+  without recording why."
+- After an extension that failed with an answer of its own (its checkpoint
+  refused inside the piece), `fastmdx resume` gave that answer again, wrote
+  "Not applied" over the round's failure and printed "Batch complete", while
+  the round's sentence said it would extend the run. The sentence is now
+  read from what the resume does: it does not carry the round on, and names
+  the piece to move out first. The round is still said failed after it, and a
+  study with a run in error is not said "Batch complete".
+- A worker killed while the runs were extended side by side was blamed on
+  the first run, since every run of a broken pool gets the error: no run is
+  named now, and a run that reached the round's length is said extended, by
+  its production. A stop asked while an extension was past its production
+  (its analyses or report) was said failed, exit 1: it is said stopped, exit
+  130, and `fastmdx resume` of a round stopped when asked exits 130 and says
+  its sentence once.
+- A ceiling lowered below the longest run before a resume: the shorter runs
+  were brought up and judged beside it, past the ceiling. The runs are not
+  judged together now, and the round and the sentence say so, with the
+  ceiling that would judge them. The GUI shows the `fastmdx resume` command
+  as plain text, without its code marks.
+- A resume after a failed round, in a study with a run that failed before
+  its rule, said the round was not carried on for that run and carried
+  nothing on, at every resume: only the runs the round judged count now.
+- A round whose extension failed in its analyses (an error, not a piece's
+  answer) said `fastmdx resume` judges the run again, while the resume
+  refused it as an answer and advised `fastmdx resume` again. The sentence
+  is read from what the resume finds, and says to analyse the run again
+  (`fastmdx explore --output RUN --include analysis report --rerun`) before
+  resuming. Where a resume does not carry a round on, its last line is the
+  round's sentence, not an extension outside the rule in ns. A study of one
+  run is named "the run" in its round's sentence, not by its folder.
+- How a failed round's study stands was read, for every page, from its
+  pieces' records where the study's links led out of it: read now as every
+  other record of the study is, held to it.
+- A ceiling lowered below a run, where another run's extension was cut: the
+  cut piece was carried on past it. No run is carried on now. A round cut
+  while it brought one run up names that run; runs whose extension was cut,
+  or whose joined pieces' analyses are owed, are said carried on first, and
+  a study of one run cut after its join says its round on its status page.
+- A piece stopped when asked at its last step (a Ctrl-C in its last frame
+  interval) wrote its checkpoint at its full length, said not finished, and
+  every join refused it ("Segments [2] did not finish"): such a study could
+  never be resumed, while every page said `fastmdx resume` carried its round
+  on, and the resume said "Batch stopped", exit 130, with no stop asked. The
+  join now takes a piece whose checkpoint is at its last production step as
+  finished, the sentence says the resume joins it first, and a resume a run
+  refused is not counted stopped.
+- A run whose extension failed in its analyses was counted ok ("2 ok, 0
+  error(s)", the manifest, the Agent) until a resume refused it: it is
+  counted in error from its own record, before a resume as after.
+- A study of one run stopped between its round's piece and its join, its
+  record left "running" with no process record, read as owing only its
+  analyses, and the Agent gave the means of before the join as the run's: a
+  round left running with no process holding it is read cut, with what the
+  resume runs, and the Agent says its means are of the pieces before the
+  join.
+- A ceiling lowered below the length cut extensions run to: the resume
+  carries no run on, as it does below a run. Nothing then is recorded as a
+  round, the round's failure is still said, the CLI says each run as it
+  stands and "Batch stopped" with the round's sentence last, and a study of
+  runs leaves out its runs' own remedies above that sentence. An error in a
+  run's analyses is not said to give the same one again.
+- A piece stopped at its last step was joined as finished, while its own
+  records still said it stopped: after a resume that ended its study at the
+  ceiling, All studies, the Overview, the Agent and the run's health said
+  stopped for good. The runner now says a run stopped at or past its planned
+  end finished (its checkpoint's record, and production completed in its live
+  record), and records written before are read by one function
+  (`joining.piece_finished`) with the runner's own planned steps, for the
+  join and every page. A variable-step piece is read by its planned steps
+  too (its clock is not its plan), so such a study is carried on as well. A
+  resume a run refused is said refused ("Resume refused"), exit 1, not
+  stopped.
+- The Agent's note on a run whose means are of less than its production says
+  the span its means are of, says the pieces are being analysed while a
+  resume runs, names analysing again where its analyses ended in an error
+  (its "What would fix it" too), and says a last piece not joined. A study's
+  manifest counts a run stopped or cut in its rounds as the summary and the
+  Agent do, the summary says a cut run cut, `round_ended` no longer saves a
+  sentence that a raised ceiling makes stale, a resume at its ceiling adds no
+  round again, and runs stopped side by side are each named.
+- A Ctrl-C in a round of several runs exited 1 once its runs stopped in the
+  round were recorded in error: the exit code is read from the study's state
+  (130 for a round stopped when asked, 1 for a run's own error or a refused
+  resume). A study of one run stopped at the last step of its production, not
+  split into pieces, was resumed by its analyses alone, its rule never applied,
+  and read stopped for good: its resume applies the rule its record says it
+  applies, and a run whose production is whole reads completed once its
+  analyses have run. A rule changed since a study's last round is judged, not
+  skipped as "Nothing run"; a resume that ran nothing says so last.
+- A run whose round piece reached its end read completed before its pieces
+  were joined: it reads stopped, its join owed, until the join takes the
+  piece in. The runner's stop at the end writes the run's own step and its
+  frames, and a piece's frames are counted from its checkpoint unless it
+  finished cleanly, so the whole run's counts no longer fall back to its
+  first piece. A run whose analyses ended in an error says failed on its own
+  page, with `fastmdx explore --output RUN --include analysis report --rerun`,
+  as its round, the CLI and the Agent do. The Agent's span of the means
+  follows the analysis's stride, its run's length is said one way, it says a
+  next piece is being simulated (not joined) while that runs, and a study
+  being carried on never reads completed meanwhile. A refused run is counted
+  once among the errors.
+- A study of pieces whose piece config does not read was said to have run
+  its first piece's plan: the plan's length is taken only for a run not split
+  into pieces. A run stopped at its last step and resumed still recorded its
+  simulation stopped, so its fixes, the Agent's remedies, its page and the
+  timeline offered `fastmdx resume`, which did nothing: the resume now records
+  the simulation whole once what came after it has run (the stop saved beside
+  it), and a study asking no analysis reads completed by the phases it asks.
+  Runs stopped or cut in a round are recorded as such and left to the round's
+  sentence, not offered as a refusal with no code costing nothing. A resume's
+  last line says what it did (its analyses, its rule applied, nothing
+  simulated); a catch-up stopped before any run moved is not a second round;
+  a run whose extension never began is said so; a refused resume's card says
+  Failed as its header does; the Agent says a piece stopped at its end is
+  being joined; the stop at the end writes its simulated time; and the
+  header's state is not cut at 390 px.
+- A resume of a run stopped at its last step said the run whole before its
+  rule was applied: ended there, it read completed with its rule never
+  applied and no fix offered, and ended between the Manifest and the live
+  record, it read stopped for good. What a resume says it finished is now
+  written last, after its analyses, its rule and its live record, and a run
+  whose stop is not yet said whole reads stopped, with `fastmdx resume`,
+  which finishes it. The rewritten phase lists the files the run wrote, and
+  its record its frames and length; its Problems no longer list the stop.
+  A resume stopped as it carries its round on keeps the round said stopped,
+  counts its runs as they stand and exits 130; a Ctrl+C in a round outside
+  production (a join, a catch-up's start) is a stop asked, never a cut, a
+  traceback or lost. A piece run to its end and never joined reads stopped
+  with its join owed, its frames said of what is joined. A catch-up is folded
+  only into a round stopped when asked, with what it began; each extension
+  is recorded as it begins; every reader numbers rounds as judged; a batch
+  resume ends with its rule's outcome; the run page's Project status is the
+  study's state; and at 390 px the account button stays on the header's row.
+- The run page's two status rows are one reading, the study's state; a run
+  waiting for its study's next round says waiting on both. A study whose
+  rule was never applied to runs that ended well (killed before its first
+  round, or stopped before it was applied again) reads interrupted or
+  stopped with `fastmdx resume`, not completed; a run joined and not
+  analysed is not counted completed. A piece run to its end and never
+  joined says why in its own words (cut, or stopped when asked), whether
+  or not its config sits beside it, and a study killed holding its lock no
+  longer reads "Not read". A production begun after a stop in the rounds
+  ends at its first frame; a stop while the rule judges names no run; the
+  GUI's own stop in a round says the round ends; a resume that finished a
+  run's records says so; and a Ctrl+C after its last write is not a stop.
+- Every reader of a study's state takes it from one derivation
+  (`round_ended`, then `study_state`), listed in docs/production.md and
+  walked over each state by a test: a piece killed before its join reads
+  interrupted on the header and health (it read Failed), with its own fix
+  (not "Nothing has been written for a day"); a study whose rule was never
+  applied says so on its health, its rule's card and to the Agent; a
+  production begun after a stop in the rounds takes no step, and a plain
+  run's stop keeps its grace period; the study's lock is opened without
+  blocking (a FIFO there hung the study list); a piece run by a resume that
+  was killed is not said stopped when asked.
+- The Agent's health line and the AI app's record, its run-ended note,
+  `fastmdx share`, the Report page and the long-enough answer read a study's
+  state from the one derivation too: a rule never applied is not "Completed"
+  there, nor shared as finished, and the Report page says a round's ending.
+  A run's page in a study of several reads of its study only its record of
+  its rounds ("Not read: ../../resolved_config.yml" is gone). A resume notes
+  in that record that it carries the study on, so one that died reads cut,
+  never stopped when asked, whatever its files' times; a link at the lock's
+  name is no lock and is not opened. The no-step stop and the fixes of a
+  run of a study of several give the study's `fastmdx resume`; "saved", not
+  "kept", for what is stored.
+- `fastmdx share` of a study of several runs refuses one whose round failed,
+  was stopped or was cut, or whose rule was never applied, with the round's
+  sentence and the study's `fastmdx resume`, before it reads each run. The
+  rule's card on a run's page takes the ceiling from the record of rounds,
+  and reads nothing of its study it is not given. A round that failed in its
+  join is said failed by the fixes card, the run's page and the Agent's
+  record, never cut. A resume's note in the record names its process as the
+  study's lock does, so another process given its number since is not taken
+  for it. The rule's card of a rule never applied says its measure was not
+  judged; the run-ended note gives the round's sentence once; the Report page
+  of a study of one run says its round above its report.
+- A run's page shows its study's rule card, read as the study's page reads
+  it, so what it says a resume does follows the ceiling the study's config
+  now sets. A study killed and then found after the machine restarted reads
+  cut, not completed, and is not shared; one whose run record is another
+  machine's reads running. A run whose join failed is headed "Stopped with an
+  error", its status bar "Joining failed"; a failed round whose resume died
+  reads cut. `fastmdx share` names the phases that did not finish where no
+  round says; the Report page says a round once, and a copied study's saved
+  comparison says the folder it was written in.
+- A study saved in a folder named `runs` has its own rule card again; only a
+  run its study names reads its study's. A study whose process record was
+  written on another machine or container reads as its records say it ended,
+  saying where the record was written, not running on one page and completed
+  on another. A study read where it was written (a relative output, a linked
+  folder) is not said copied. The rule's card gives one ceiling, the one a
+  resume uses, and names a linked-out config as not read. A failed join's fix
+  has its own code, `simulation.round.join_failed`, and is counted at its
+  production's end.
+- A study going on another machine or container (its process record
+  another's, its records written within a day) reads going, saying where,
+  never interrupted with a resume offered from here; once quiet it reads as
+  its records say it ended, its fix the person's to run once it has ended
+  there. A study is going while any of its runs' locks is held, and
+  `fastmdx resume` refuses before writing anything while the study's or any
+  run's lock is held (it rewrote a finished run's report first). Problems
+  are read on a run's page and on a study under `runs/` again; a run whose
+  study's record of runs is missing or broken is still that study's. A
+  failed join's code is SEMANTIC and its fix, to put right what failed it
+  first, is not run from the GUI at once.
+- `fastmdx resume --taken-over` carries on a study whose process was
+  recorded on another machine or container once you know it has ended
+  there; the GUI never runs it. Without it, such a study reads going while
+  its records were written within the last hour (their own timestamps, so a
+  copy reads the same), saying when it can be resumed from here, and then as
+  its records say it ended. Every reader of a study going there agrees (its
+  run pages, the rule's card, the run-ended note, the Agent); a finished
+  run's joined pieces' records are not read as going; a resume refused on
+  this machine, or an extension of a run of a study held elsewhere, writes
+  nothing first. Problems are read on a run page whose join failed or was
+  cut; a one-run study whose resume died as it judged its rule owes the
+  rule; a round cut in its join gives its resume on the Fixes card; one
+  reading of "a run of a study" everywhere.
+- A study's process stamps its own process record every 5 minutes in every
+  phase (a heartbeat), and the hour of quiet for another machine's study is
+  counted from it: a study in a long setup, analysis or join there no longer
+  reads quiet, nor is it resumed from here. An extension of a one-run study
+  running here or going elsewhere is refused before anything is written, a
+  piece set aside is not read as going, the runs of a study going elsewhere
+  read going, an hour's quiet is said as an hour, the time left names its
+  zone and quotes the folder, and `--taken-over` refuses a lock held now,
+  naming it.
+- A process record is written beside itself and put in place whole, the
+  heartbeat's stamps too, so a reader never finds it empty or cut short and
+  a kill or a full disk mid-write leaves it as it was; it is removed at exit
+  under the holds' lock. A run's page of a study going on another machine,
+  read as the GUI holds it, reads going, and the Agent's records answers
+  say a study is still going and offer no extension it would refuse.
+- Analyze again, Write it again and `fastmdx report --rerun` refuse a study
+  running or held on this machine or going on another machine before
+  writing anything, as a resume does. `fastmdx report --rerun` of a study whose
+  round was cut says the round and its resume, not "Batch complete". A
+  process record's temporary is made new beside it, a leftover of a killed
+  stamp is removed by the next write and not fetched back from a remote
+  machine, and the heartbeat outlives a full disk. The Agent's going line
+  says where once.
+- `fastmdx report/analyze --rerun` of a study running, or held by a resume,
+  on this machine, or of one of its runs, is refused before anything is
+  written ("is still running"), for a study of several runs too. Process
+  records are written with the umask's mode, as files written in place
+  are, so the group reads them. A rerun of a study whose resume died says
+  its round as every page does. Analyze again and Write it again of a study
+  whose round is unfinished say it was done where no run of it ended in
+  error, then the round's sentence and what carries it on. A refusal for
+  another machine says the rerun can be asked after the time it names, its
+  command set as code.
+- A rerun over an unfinished round that failed is said failed: the GUI says
+  the error with its run and reason, then the round; the CLI counts such a
+  run an error and says what would fix it. After a clean rerun the GUI's
+  state is completed. A study's own records answer says it is going on
+  another machine, as a run's does, and the refusal for a run of a study
+  going here names the study.
+- A rerun's exit code says what it did, whatever round its study was left
+  in: 0 where each phase it ran ended well, 1 where one failed, 130 where
+  it was stopped (a run it stopped is counted stopped). The round is still
+  said after the tally, read again at the end where a run failed. The GUI
+  reads the rerun as done by its exit code alone, and words a failure from
+  the phases it recorded (on a run's own page, and of a study of one, too)
+  or else from the log, with the command that carries the round on set as
+  code; a rerun stopped by Ctrl+C reads stopped. Write it again's question
+  says the report is saved in previous/.
+- A study whose worker was killed (out of memory, a kill) never ended on
+  Python 3.12 and later: the broken pool sends its other workers SIGTERM
+  alone and waits on them, and a worker takes SIGTERM as a request to stop,
+  so one waiting for work waited for ever. Each is now ended once it holds
+  no run: at once where it carried none, once its run is saved where one
+  was stopping, at most after the stop grace and 10 s. A stop asked
+  meanwhile (to the study's process alone, or a Ctrl-C at the terminal, now
+  taken after a SIGTERM as the stop under way) is waited out the same way;
+  a second one ends the workers with the study, saying so, and none is
+  left behind. On 3.11 and earlier the pool ends its workers itself; there
+  the study only wakes it and ends them at a second stop. The study sees a
+  worker end from threads of its own (the pool's may see it only at the
+  next result, and in a round's extensions nothing else woke it, so a stop
+  did not reach the other runs) and gives the pool no more runs: the ones
+  queued are said not started (3.12 and later waited for ever handing it
+  the next; 3.11 raised `BrokenProcessPool` out of the study). A run's hold
+  writes over a record its ended process left. A worker's stop listener
+  imports nothing, so two quick stops no longer end an idle worker.
+  Another container on the same host is told apart only on Linux, as the
+  docs now say.
+- A stop in a parallel round of the stopping rule's extensions, "stop now"
+  too, let the extensions still waiting begin and run to their end: they
+  are now handed out as workers free, and none begins after a stop. The
+  GUI's Stop counts as a first stop, so one Ctrl-C after it lets a run save
+  at its frame; a first Ctrl-C after any stop says the stop is under way
+  and how to stop now, and a second stop says it is stopping now. A
+  checkpoint, its sidecar and its seal are written as one set: a kill as
+  they were written left the checkpoint at the new step, its sidecar at
+  the old one and an empty seal, which nothing could resume.
+- A study stopped by SIGTERM or the GUI's Stop exited 1, and one stopped by
+  Ctrl-C 130: every stop asked now exits 130, unless a run ended in an error
+  of its own. A second stop (stop now) records the round stopped when asked
+  and writes the batch manifest before the study ends, where its record was
+  left "running" and the GUI read it interrupted; its line names the study
+  to resume, not the run. A broken pool's runs are read from their own
+  records: one saved where it can be carried on is stopped, the killed
+  worker's own ended with it, each with `fastmdx resume`, where both read
+  "error BrokenProcessPool" with nothing to fix it. Runs that never started
+  read "not started" in the GUI, not "waiting", and are priced at their
+  study's plan, not the package's defaults. `fastmdx explore --dashboard`
+  says the study stopped or ended with an error, not "complete". A pack
+  carries a checkpoint's waiting files only with the checkpoint.
+- An integrator refused for having no thermostat was told the permitted
+  ones without brownian, which is permitted with the friction it needs.
+- A stop now is its own exception, carrying the signal that asked it: a
+  second SIGTERM is recorded as SIGTERM, where the run's record said
+  "stopped by Ctrl+C" with `signal: SIGINT`, and a KeyboardInterrupt no
+  listener heard keeps its meaning. A study listens for a stop for the whole
+  of it, its first pieces to its summary: a second stop to a parallel study
+  in production says each run going stopped (its live record too) and the
+  others not started, and prints the summary, where it left its records
+  "running", its runs interrupted and waiting, with no fix; one while its
+  runs are judged records the round stopped when asked; one while its
+  comparison is built exits 130, where the signal ended it (143). The rule's
+  record and the batch manifest are written whole or not at all. "Stopping
+  now" names a study of one in a folder named `runs` by its records,
+  not the folder above. A study whose worker was killed reads "Batch
+  failed" and failed in the GUI, and `fastmdx resume` of it exits 1 as
+  `fastmdx explore` does, not 130; its saved survivor says it saved, and
+  the fix says each run's stop, not "a refusal that has not been given a
+  code yet".
+- A third stop as a parallel study's workers end after a stop now is the
+  stop under way, and says nothing: it was taken as another, and every run,
+  those in production too, was recorded not started. A run begun is read
+  from its own records. The count of stops is the study's: a run's report
+  written again after the rule's last round forgot the first, and the second
+  SIGTERM was dropped, the study ending "Batch complete", exit 0. A Ctrl-C
+  then a SIGTERM are recorded as the two. A killed worker with no stop asked
+  has its rule's record say the worker ended and the rule was not applied,
+  not "Stopped when asked". A first stop after every run has ended, or during
+  the preparation the windows share, says what the study does then. The
+  price of carrying a study on whose rule has rounds to come is a floor, with
+  the ceiling its rule may extend the runs to.
+- A second stop in the report phase of a run's report written again, after
+  the rule's last round, stops the study: its phase took the stop now, and
+  the study said "Stopping now", then ended "Batch complete", exit 0, the
+  report removed and never written. It exits 130, the run said stopped with
+  its report not written, its manifest's report phase said stopped, and
+  `fastmdx resume` named to write it. A stop while a stop now ends the
+  study is that one and says nothing, the study listening until it ends:
+  outside a parallel study's pool a third was another stop now, said twice,
+  that cut the study's summary, and a fourth SIGTERM ended the process
+  (143). Where a run's phase, or a round's extension in the study's own
+  process, took the stop now and the study goes on to finish, the study says
+  so, and a further stop ends it at once, exit 130. A first stop once the
+  rule has decided (not a round that failed), or its last round is judged,
+  says the study finishes. A resume whose worker is killed leaves a cut round
+  said as it ended, and otherwise says the rule was not applied "again";
+  after a round stopped when asked it exits 1, as `fastmdx explore` does, not
+  130, where the killed worker's run is recorded ended with its worker. A cut
+  report's config is put back whole, with no temporary left beside it. A
+  resume priced at nothing with its rule's rounds to come says "Costs only
+  what its stopping rule's rounds run.", not "Costs no simulation". A stop
+  now in a resume is named by both its stops. Workers a stop now ended are
+  not said ended abruptly. `docs/production.md` says the mixed stop now.
+- After `fastmdx explore` (or `xplore`) or `fastmdx resume` has stopped its
+  study, a stop as its summary is said, or once the command's work is done
+  and it ends, is the stop under way and is ignored: one after "Manifest:"
+  ended the process by the signal (143, or Ctrl-C's), and one as the summary
+  was said printed it twice. In the work after that study (a resume reading
+  its runs' records, a resume's join) a further Ctrl-C or SIGTERM ends the
+  command, "stopped when asked", 130, where a SIGTERM ended it by the
+  signal. Between the studies of an `explore` that carries a study on
+  (`simulation.resume_from`) a Ctrl-C says "stopped when asked", 130, as
+  `resume` does, not a traceback. The GUI that `explore
+  --dashboard` leaves running still ends on Ctrl-C. A study of one says it
+  finishes once a stop now was taken, not that it writes a comparison. A run
+  its round stopped is read so in the batch manifest of a study stopped now,
+  once its live record says so, not "ok, nothing to carry on" or cut.
+- A further stop once a study heard one now says "stopped when asked" once:
+  `explore` said nothing, and a resume whose study's summary already said
+  what carries it on said it again. In a resume of a study of one it is
+  named by its signal, not "(Ctrl+C)" for a SIGTERM. A SIGTERM as such a
+  study stops listening no longer ends the process by the signal.
+- A study with `budget_hours` stopped in setup's study (a Ctrl-C, a SIGTERM,
+  the GUI's Stop, or a stop heard as that study ended) no longer goes on to
+  its price and simulation, nor is refused for want of a particle count: it
+  exits 130, "stopped when asked", and from `fastmdx explore` names the
+  command as it was given, with `--force-overwrite` added, as what runs it
+  again, its setup first. From `fastmdx agent --autonomous` or Python it names
+  no command, and says the study is run again from its setup. A Ctrl-C in its
+  pricing, or any stop there once a study heard one, does the same, not a
+  traceback; a first SIGTERM there still ends the process by the signal.
+  `fastmdx resume` runs setup alone for such a study and reads it finished, so
+  its stop lines, its runs' records of the stop, its fixes (without a price)
+  and the GUI's Stop, where a run of setup recorded the stop, say what runs it
+  again instead. `fastmdx agent --autonomous` says a study stopped or failed
+  in its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
+  `--force-overwrite` and `--rerun` now reach both of its stages where only
+  setup is there; over a study holding more they are refused before anything
+  is changed, naming what would go, since setup runs again before the price is
+  known. A run the second stage did not reach, the study stopped in an earlier
+  run, is now carried on by `fastmdx resume`, where it was read finished with
+  its setup alone. Its study stopped when asked in its simulation exits 130,
+  and one with a run that failed exits 1, as without a budget, where both
+  exited 0.
+- A stop's lines (the first stop, the stop under way, stopping now) are
+  said once, by the study's process: each worker of a parallel study said
+  them too. A study of several runs one after another says them on the
+  terminal as well as in the run's log, where they went alone, so a person
+  saw nothing and pressed again. A part-moved checkpoint set is finished
+  before the next write and once a resume has loaded it.
+- A run whose means are determined and carry the image note, the solute
+  within the cutoff of its image in some frames but not in contact in every
+  one, was told "By its records, yes." and "Then replicas." in the Agent's
+  answers, and its Overview led "All 3 means are determined.", with no word
+  of the note. How many of its means may be biased is said once, with what
+  lifts it (`image_note.noted_said`), replicas are advised in a larger box,
+  and "yes" is not said alone before a note.
+- The advice of a larger box names its setting (`setup.solvent_padding_nm`)
+  and how large is enough: the solute kept farther from its image than the
+  run's cutoff, with its value.
+- A run of one mean in contact with its image in every frame is said "Its
+  mean", not "Its means", in the Agent's answers.
+- Compare, for two studies differing in several settings, says a resolved
+  difference beside a noted mean may be that bias "and not the settings
+  that differ", not "the setting".
+- The line said of a study's record written with both `include` and
+  `exclude` is said in the study's own log (`utils.logging.log_in_the_study_s_log`):
+  it was logged as the record was read, before that log was attached.
+- A record's line about its `include` and `exclude` is written in the log
+  of the study it is about, in the folder the study is in now, or in each
+  of its runs' logs for a study of runs, and in no other study's log; on
+  the console alone where the study is not known. It went into whichever
+  study's log was attached then or next, and a copied study's line, held
+  for its old folder, into none. A held line is dropped once another
+  study's log is attached.
+- The Agent's answers count a run's means as the Overview does
+  (`overview_view.means_counted`), the production's thermodynamic means
+  counted apart: they said "All 4 observables assessed had equilibrated,
+  and each mean is determined" of a run whose Overview counted one mean,
+  then asked for more production for its total energy. The yes counts the
+  means noted ("though 1 of them may be biased"), a run of one mean is
+  "Its mean is determined", and they say a note is beside each mean on the
+  Overview, not "as said beside it", where none is beside them.
+- The records text the Agent reads puts a mean's image note after its
+  verdict, as the chip under an answer does.
+- The report's Methods give an extended study's production under 1 ns in
+  ps ("to 300 ps of production in all"), not "0.3 ns".
+- The Agent's looks validation reasons the 1AKE box width's tolerance from
+  the 2.0 nm default padding: 5% of 7.9 nm is 0.39 nm, and a width at the
+  1.0 nm padding before it (6.9 nm) is told apart.
+- The report's Convergence table reads each mean, its error, its frames
+  discarded and its independent samples from the analyses' records as
+  written, and says which it works out from the series where no record holds
+  them. It worked each mean out again and rounded it twice, so SASA's
+  recorded 4.7592 read 4.7591.
+- The Convergence table's thermodynamic rows take their frame count from
+  the thermodynamics' record (`findings.thermodynamics.samples`), and the
+  Report page traces it there, not to the trajectory's frame count in
+  `analysis_manifest.json`. The sentence under the table names the records
+  only where an analysis recorded them: with none, it said the frame counts
+  and means were the analyses' records, then that no record held them.
+- The report's checks table says the fewest independent samples with their
+  noun and the mean temperature as such, so the Report page traces both to
+  their records; a mean temperature no record holds is said to be worked out
+  there.
+- A report mean its record says is not a measurement is given no error
+  ("12.661 ± 0.026 nm², from 9 independent samples").
+- A record whose image note is on its mean alone (`mean.solute_image`) gets
+  its note in the report.
+- Under a mean in contact with its own image in every frame, the report
+  names what does not lift the bias ("A longer run does not lift ...", or
+  "Neither a longer run nor replicas lift ..." where the reason names both);
+  "Neither lifts ..." followed reasons naming one remedy.
+- An extended study stopped after its pieces were joined and before their
+  analyses and report had run is analysed when `fastmdx resume` carries it
+  on (`did: analysed`). It was read as finished, its report of the first
+  piece alone (0.4 ps of 0.6). The join writes `joined/analysis_owed.json`
+  before the joined trajectory, taken away once the analyses and report have
+  run. A study config that does not read is said, and left as it is, not
+  replaced by the last piece's; the copy of the study's config a stopped
+  analysis left is put back once and removed, not written over every later
+  edit.
+- `fastmdx resume` gives `production_done_before_ns` by the same length as
+  `production_done_ns` (a variable-step study's by its clock), with
+  `production_done_before_source`, so their difference is what it ran, and
+  gives `production_done_ns` in every answer that ends well. Before was
+  steps times the timestep: 1.2 ps beside 1.29 ps by the clock after a run
+  of 0.33 ps.
+- The Overview gives a variable-step study carried on in pieces its
+  production by its clock, as the methods and `fastmdx resume` do: it said
+  1.6 ps (steps times the timestep) beside their 1.29 ps.
+- `fastmdx analyze --rerun` of an extended study copied without its files'
+  times (cp, rsync, scp) analyses its joined trajectory, read with its own
+  topology where the study is now. A first piece newer than its join was read
+  as a study simulated again in place, and the first piece alone was analysed
+  (4 of 12 frames), its result over the whole study's with no warning.
+- A run given `setup_from` that writes only its analysis or report again
+  records no setup skipped in its Manifest.
+- A variable-step study whose first piece was stopped in its production is
+  read by its clock. `recorded_stage_lengths` reads a study of that one piece
+  by its checkpoint record's time, so `fastmdx resume` gives
+  `production_done_before_ns` (it was null, "not recorded"); carried on, the
+  Overview decides the clock from what that reading reads (`variable_step`),
+  not the first piece's record, which such a piece never wrote: it said 6 ps
+  beside the methods' and the resume's 4.87 ps.
+- The GUI reads `resume.analysis_owed`: a study stopped after its pieces were
+  joined and before their analyses and report had run is said interrupted,
+  "Its analysis is owed", on the Overview, in All studies and on its
+  timeline, with `fastmdx resume` as what would fix it. It said Completed, 8
+  ps in 2 pieces, beside a report of 6 ps.
+- A study stopped after its join by a version that wrote no
+  `joined/analysis_owed.json` is owed its analyses where its analysis is not
+  of the join: another trajectory, or, read whole, another count of frames
+  than `joined/joined.json`'s. It was read as finished.
+- `fastmdx analyze --rerun` that analyses an extended study's joined
+  trajectory whole takes `joined/analysis_owed.json` away; every later
+  `fastmdx resume` joined and analysed the study again.
+- A study a resume or an extension is carrying on (its lock held by another
+  process, or its run's process alive) is said running, never owed: while a
+  resume joined its pieces and ran their analyses and report, the GUI said
+  it stopped, "Its analysis is owed", and offered `fastmdx resume`, which
+  was refused as still going.
+- An analysis the person chose (`fastmdx analyze --rerun --trajectory`) is
+  not taken for an owed one: a study with no `joined/analysis_owed.json` is
+  owed only where its analysis is of a first piece, or of the join read
+  short, and its config does not name that trajectory as chosen after the
+  join. Such a study was said interrupted, and `fastmdx resume` replaced
+  the person's analysis with nothing left of it; a resume that runs a
+  join's analyses now saves the analysis there in `previous/` first
+  (`saved_in_previous`).
+- The health of a study owing its analysis, and of a piece stopped while
+  carried on, names the study by its folder, not its path on this
+  computer, since `/api/status` is answered beyond loopback. The fix for an
+  owed analysis says what it does ("Run its analyses and report over the
+  joined pieces"), not "carry it on from its last checkpoint", and names
+  its subject once.
+- The GUI decides a variable step from the first piece's record or the
+  study's config before it reads the pieces' clocks; a fixed-step study's
+  were read at every poll.
+- A resume stopped in its own analyses and run again leaves the person's
+  analysis it had saved there: only an analysis that finished (its manifest
+  written) is saved in `previous/analysis`, and never one of the join over
+  one saved before. The second resume put the unfinished folders there in
+  its place. Its answer names each phase saved ("Its analysis from before
+  is saved in previous/analysis."), not "the analyses and report" whatever
+  was saved.
+- A study carried on from another machine of a shared file system is said
+  running: its lock is tried whatever machine its record names. The GUI
+  said it owed its analysis and offered `fastmdx resume`, which was refused
+  as still going.
+- An analysis chosen after the join is told by the times its records hold
+  (the study's analysis `started_at` against the join's new `joined_at`, or
+  the last piece's simulation `finished_at`), not by the files' times, which
+  `cp -r` or `scp -r` without them writes in copy order: a copy read an owed
+  analysis of the first piece as Completed, and a chosen one as owed.
+- `fastmdx resume` of a study whose chosen analysis had its report moved
+  aside writes the report over it (`reported_only`), as the GUI says it
+  completed; it ran the join's analyses over the person's.
+- A resume starting in the instant the GUI tries a study's lock tries it
+  again for some 100 ms, rather than saying a run is still going; the lock's
+  file is read as the study's other records are (`record_access`), so a
+  link out of the study is not read.
+- `fastmdx resume` of an analysis chosen after the join, by an earlier
+  version's analyze (its config giving the first piece's `production_steps`
+  beside the whole `duration_ns`), writes its report from the study's config
+  at its whole length, as the join's analyses run; it ended in a
+  `ConfigError` traceback, with nothing on stdout under `--json`. A setting
+  the config refuses is the answer (`ok: false`, `refusal`).
+- `fastmdx analyze --rerun`, and the GUI's Analyze again, save an analysis in
+  `previous/analysis` only where it finished, as `fastmdx resume` does (one
+  reading, `replaced.analysis_finished`): one stopped part-way is removed and
+  `previous/` left as it is. An analysis stopped in a resume replaced the
+  person's finished one there.
+- A resume stopped from the GUI in its analyses of the join is said owed
+  them, with `fastmdx resume` (Run it) under What would fix it; it read
+  Stopped, with only Analyze again.
+- A resume that runs a study's analyses and report to their end says so in
+  its record: after a stop from the GUI in them, it read "Stopped here in the
+  analysis" when they had run.
+- The report-only answer of `fastmdx resume` says `did: "reported"`, and
+  names the command that chose the analysis, `fastmdx analyze --rerun
+  --trajectory`.
+- The GUI reads a study's lock (`.fastmdxplora-carrying-on`) in its held
+  reads: refused, a study a resume held read as not held, and the Overview of
+  every study a resume had carried on said "Not read" of it.
+- `fastmdx simulate --rerun` and `fastmdx setup --rerun` save the simulation
+  (and setup) they replace in `previous/` whatever the analysis did; where
+  the analysis had not finished and `previous/` held an older one, they
+  removed it. The report of an unfinished analysis is removed with it, never
+  saved in `previous/report` beside an analysis that is not its own.
+- The GUI's Analyze again says what is saved in `previous/` and that an
+  analysis that did not finish is removed instead, in the words `fastmdx mcp`
+  and the Agent are given (`again.saved_said`); it said the unfinished
+  analysis would go there in place of the one saved.
+- A study stopped from the GUI while a resume analysed its joined pieces
+  says so in its health, and that part of their analyses had run; it said a
+  wall time had stopped it before they ran.
+- The docs' new lines on resume are in shorter paragraphs; asked "what does
+  ligand pose do", the docs search found the setting's row no longer.
+- A `continued` answer of `fastmdx resume` gives `production_planned_ns` with
+  the extension it carried on (0.006 beside 0.008 done), and a `runs` answer
+  each run's `production_done_ns`.
+- Run again from a relative `--output`, a study's `resolved_config.yml` names
+  its folder and its own frames by their absolute paths; what a phase run
+  again replaces is said saved in `previous/`. A copied study carried on no
+  longer names the original's frames in its config.
+- `fastmdx resume` carries on an extended study stopped while its joined
+  pieces were analysed. The analysis ran from the last piece's config and
+  wrote it over the study's `resolved_config.yml`, with the first piece's
+  step count from the study's record beside the piece's own length, and the
+  resume was refused: "simulation gives 'production_steps' (2,000 steps)
+  and 'duration_ns' (0.006 ns, 3,000 steps at 2 fs)". The analysis now runs
+  from the study's own config at its whole length, which is in place before
+  it starts and after it ends, each write whole; a copy beside the joined
+  trajectory puts it back where the analysis is stopped. A resolved config
+  no longer writes a recorded step count beside a length it disagrees with.
+- A variable-step piece stopped at a checkpoint between its energy log's
+  rows is read by its clock: each checkpoint's record carries the state's
+  time (`time_ps`), read first. Its production was "not recorded", and its
+  methods said so.
+- A piece's `resolved_config.yml` that does not read as a config (a YAML
+  list, a `timestep_fs` given as "2 fs", not UTF-8) leaves the study's
+  summed production "not recorded", naming the file and why (a
+  variable-step study's, read by its pieces' clocks, is still given);
+  `recorded_stage_lengths`, and the methods and study pages that read it,
+  raised.
+- Clustering under an address-space limit (`ulimit -v`) holds BLAS and
+  OpenMP to one thread, as `dimred` does, and records it
+  (`findings.memory.threads`): an OpenBLAS thread whose buffer could not be
+  mapped retried for ever, and a clustering the memory check allowed hung.
+- The clustering memory check counts the map of the frames' RMSD matrix,
+  plotted once the matrix is freed (`findings.memory.bytes_map`): at 2,000
+  frames under a container's limit of about 100 MB, a clustering the check
+  allowed, and the stride its refusal gave, were killed plotting it.
+- A refusal for memory, clustering's or MDS's, says the need, the room and
+  the three quarters of it planned on as numbers that read apart and in
+  their order, in one unit (MB under 1 GB), the share computed from the room
+  as said; it said 0.4 GB needed and 0.4 GB available, "0.1 GB, of which ...
+  75%, 87.0 MB", and a need of 1.6 GB refused against a share of 1.7 GB.
+  Sizes under 1 GB are said in MB wherever clustering says one.
+- Under an address-space limit (`ulimit -v`), clustering and `dimred` plan
+  on the address space they map past what the process holds once the
+  libraries are mapped, which is before the room is read
+  (`findings.memory.bytes_address_needed`, measured from the check in
+  `fastmdx analyze`'s own process), on all of that room, read once as each
+  analysis starts and said so, a refusal saying how much larger the limit
+  would have to be and the part of the need past the libraries as part of
+  it: a clustering the check allowed, and the stride its refusal gave,
+  failed plotting its figures with `std::bad_alloc`, MDS failed to map its
+  matrix and took PCA and t-SNE with it, and a very tight limit ended the
+  process in OpenBLAS with no record.
+- `dimred` plans PCA, MDS and t-SNE each on its own (t-SNE's neighbours
+  grow with the frames) and refuses only those that do not fit, the others
+  run and saved (`findings.methods_refused`); a constant planned for any
+  methods refused PCA where it fitted and allowed t-SNE at 24,000 frames
+  where its neighbours did not, PCA lost with it.
+- A figure the memory runs out plotting, in `cluster` or `dimred`, is left
+  out and said with what to set (`findings.figures_not_plotted`), and so is
+  the map's data running out as it is saved (`findings.not_saved`), the
+  other figures and files saved; the clustering matrix, or any projection,
+  running out is refused as past the check, the other projections saved.
+- Under an address-space limit too tight for what the libraries map the
+  first time they run, clustering and `dimred` call no BLAS and plot nothing
+  before their check, and are refused with their records, the libraries'
+  share in the need (`findings.memory.bytes_libraries_not_mapped`): under
+  `ulimit -v` 485000 to 520000 OpenBLAS retried its buffer for ever and
+  `fastmdx analyze` hung with no record.
+- A figure not plotted for memory whose canvas is the same at any stride
+  (every figure but the map of at most 1,000 frames) is said with the room
+  to add, not a stride: "Set `stride: 4`" was said for the dendrogram and,
+  followed, it was not plotted again.
+- `dimred` plans 6 MiB, 10 a scatter and 10 the landscape past the libraries
+  (8, 10 and 14 before), as measured with the libraries warmed up only where
+  they fit: PCA was refused after the clustering under `ulimit -v` 590000,
+  where it ran. A refusal under `ulimit -v` says the margin the plan keeps.
+- The note under a projection says each method refused in one short line,
+  its whole refusal in the record (it was each refusal's text, the cgroup's
+  path in it); a projection that ran out is said as having run out, not as
+  "not run" nor as the memory left falling, and MDS's need by what sets it,
+  its figures or its matrix. The Analysis page counts a section whose
+  analysis was refused before it ran as "refused", and names the figures
+  not plotted by their cards' titles.
+- The Analysis page says a figure not plotted for memory in its section,
+  counted beside its figures and with what to set; a refused analysis's
+  card says what to set once, and "was refused before it ran" where it
+  did not start.
+- A clustering refused at any stride, and an analysis refused for fewer
+  than three atoms to superpose on, end the command line as failures with
+  their lines where the study named them; their words read as a run too
+  short for the analysis, and it ended with exit 0.
+- DBSCAN's freed lists of neighbours are given back before the map is
+  plotted (`malloc_trim` where glibc is the allocator).
+- The any-stride clustering refusal's first sentence stands alone; a results
+  table showed only "... at any stride:".
+- Making the clustering matrix symmetric past about 2,900 frames leaves no
+  block resident after it: each pass's block came from glibc's heap and the
+  last one freed stayed.
+- Clustering collects the figures it closed before it plots the map, and its
+  plan for the map (163 MiB at 1,000 cells) is counted from a clean start on
+  Python 3.10, 3.11 and 3.13: on 3.13 the map ran out under `ulimit -v`
+  600000 and a run peaked at 164 MiB against 145 planned.
+- Under `ulimit -v`, clustering plans the address space on what runs were
+  counted to map, a term once, a map cell and a frame (152 and 161 MiB at
+  1,000 and 2,000 frames, 1.16 to 1.37 times what a run after the RMSD
+  needs), not on the resident plan and a constant; its refusal says the
+  margin kept at the frames counted nearest the run's.
+- The hierarchical clustering's dendrogram and `hierarchical_linkage.npy` are
+  the tree its labels were cut from, not a second linkage made from the
+  distances after it (8 n^2 bytes more).
+- The GUI says MDS was refused for memory below each projection that ran
+  beside it, still shown when the card shows the figure, its settings without
+  backticks, and the projection's PNG and SVG say it too, as the record and
+  the report do.
+- An analysis that was refused or failed has a card in its section of the
+  Analysis page saying what to set, from its refusal, which the results
+  table's link goes to; its card was in the grid hidden beside the sections,
+  and said to re-run it.
+- The dendrogram's heights carry their unit (nm) on its axis and in the
+  GUI's CSV of it.
 - Docs: "Across environments" in `docs/validation.md` said two preparations
   of one Config differ in their atoms; setup is seeded (`setup.random_seed`,
   drawn and recorded where none is given), so it now says to give the seed or

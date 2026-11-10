@@ -132,8 +132,10 @@ def _is_selection_key(key: str) -> bool:
 def selections_in(config: dict[str, Any]) -> list[tuple[str, str]]:
     """Every MDTraj selection a config writes, with the setting it is in:
     the analyses' own, each analysis's selection options in
-    `analysis.options`, the atoms the trajectory keeps, the same in each
-    system entry's blocks.
+    `analysis.options`, the atoms the trajectory saves, the atoms each
+    restraint holds (`simulation.restrain`, short form or blocks), the same
+    in each system entry's blocks, and each value a `sweep` axis gives one
+    of these.
 
     An analysis option is read as a selection by its name (`selection`,
     `..._selection`, `selection_...`), and not where its value is that
@@ -162,11 +164,36 @@ def selections_in(config: dict[str, Any]) -> list[tuple[str, str]]:
         simulation = holder.get("simulation")
         if isinstance(simulation, dict) and isinstance(simulation.get("save_selection"), str):
             found.append((f"{where}simulation.save_selection", simulation["save_selection"]))
+        if isinstance(simulation, dict) and simulation.get("restrain") not in (None, ""):
+            from fastmdxplora.simulation.restraints import restraint_selections
+
+            for within, selection in restraint_selections(simulation["restrain"]):
+                found.append((f"{where}simulation.restrain{within}", selection))
 
     blocks("", config)
     for entry in config.get("systems") or []:
         if isinstance(entry, dict):
             blocks(f"systems[{entry.get('id') or entry.get('system')}].", entry)
+    sweep = config.get("sweep")
+    if isinstance(sweep, dict):
+        # Each value an axis takes, read as the block it sets in a run, and
+        # named by the axis and its place there: `sweep.simulation.restrain[2]`.
+        for axis, values in sweep.items():
+            phase, _, option = str(axis).partition(".")
+            if not option:
+                continue
+            for number, value in enumerate(
+                    values if isinstance(values, (list, tuple)) else [values], start=1):
+                holder: dict[str, Any] = {}
+                inner = holder.setdefault(phase, {})
+                *outer, last = option.split(".")
+                for key in outer:
+                    inner = inner.setdefault(key, {})
+                inner[last] = value
+                start = len(found)
+                blocks("", holder)
+                found[start:] = [(f"sweep.{axis}[{number}]{setting[len(str(axis)):]}", given)
+                                 for setting, given in found[start:]]
     return found
 
 
