@@ -3407,8 +3407,13 @@ class BatchExplorer:
             def _binding_from(where, curve, _t=temperature):
                 from fastmdxplora.simulation.binding import binding_free_energy
 
+                # The tail is judged once, on the real curve, against these
+                # same resamples; a resample judged on its own would be
+                # refused by its own noise, and the interval would be made of
+                # the resamples whose tails happened to be flattest.
                 return binding_free_energy(
-                    where, curve, temperature_K=_t).get("delta_g_kjmol")
+                    where, curve, temperature_K=_t,
+                    judge_the_bulk=False).get("delta_g_kjmol")
 
             wants_binding = _the_coordinate_has_a_volume(plan)
             # The caller's count, else the study's own (its umbrella block's
@@ -3466,7 +3471,7 @@ class BatchExplorer:
                 # than assumed to be zero.
                 from fastmdxplora.simulation.umbrella import (
                     cone_the_windows_ran_under,
-                    wall_bias_where_the_bound_state_is,
+                    wall_bias_by_window,
                 )
 
                 # What the windows ran under, not what the config asked for.
@@ -3474,16 +3479,11 @@ class BatchExplorer:
                 # config at all, and a config edited since the windows
                 # finished would correct by a cone that did not run.
                 cone = cone_the_windows_ran_under(directories)
-                wall = None
-                if cone is not None:
-                    minimum = min(
-                        (point for point in zip(
-                            payload["pmf"]["coordinate"],
-                            payload["pmf"]["free_energy_kjmol"])
-                         if point[1] is not None),
-                        key=lambda point: point[1], default=(0.0, 0.0))[0]
-                    wall = wall_bias_where_the_bound_state_is(
-                        directories, plan, bound_below=float(minimum) * 1.25)
+                # Every window's, so the wall is judged up to the cutoff the
+                # integral picks rather than a range fixed before the curve
+                # is read.
+                wall = (None if cone is None
+                        else wall_bias_by_window(directories, plan))
                 if plan.cone is not None and cone is None:
                     # Asked for a cone and no window recorded one. The
                     # correction is worth several kJ/mol, so a number without
@@ -3502,6 +3502,11 @@ class BatchExplorer:
                         temperature_K=temperature,
                         cone=cone, wall_bias_kjmol=wall,
                         resampled=payload.get("derived"),
+                        errors_kjmol=(payload["pmf"].get("uncertainty") or {})
+                        .get("standard_error"),
+                        resample_curves_kjmol=(
+                            payload["pmf"].get("uncertainty") or {})
+                        .get("resample_curves_kjmol"),
                     )
                     payload["binding"] = self._with_the_reference_checked(
                         payload["binding"], payload["pmf"], plan, directories,
@@ -3612,8 +3617,11 @@ class BatchExplorer:
         if checks.get("refused") and binding.get("delta_g_kjmol") is not None:
             kept = {key: binding.get(key) for key in (
                 "bulk_residual_kjmol", "bulk_from_nm", "minimum_at_nm",
+                "bulk_judged", "bulk_judged_by", "bulk_tilt_kjmol",
+                "bulk_tilt_allowed_kjmol", "bulk_resamples_used",
                 "bound_cutoff_nm", "cone", "cone_correction_kjmol",
-                "cone_wall_bias_kjmol", "standard_volume_nm3")}
+                "cone_wall_bias_kjmol", "cone_wall_checked_up_to_nm",
+                "cone_wall_not_read_in", "standard_volume_nm3")}
             return {"delta_g_kjmol": None, **kept, "reference": checks,
                     "refused": checks["refused"]}
         return {**binding, "reference": checks}
