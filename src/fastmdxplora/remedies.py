@@ -424,11 +424,13 @@ def remedies_of(study: str | Path) -> list[Remedy]:
         cwd = str(again.get("cwd") or "") if typed else ""
         # Run where a page watches it: a dashboard of its own (`--dashboard`)
         # waited, once the study ended, for a Ctrl-C the GUI's Run cannot give.
-        argv = _without_a_dashboard(typed)
+        # Checked as it is run: read as typed, a `~` its dashboard expanded
+        # was taken for the study's folder, and the Run went into `./~`.
+        argv = _as_run_again(typed, cwd)
         again_said = dict(fix="Run the study again, its setup first: it stopped before "
                               "its simulation began, so only its setup is recorded.",
                           command="fastmdx " + shlex.join(argv) if argv else "",
-                          argv=argv, cwd=cwd, refused=_why_not_run_into(root, typed, cwd),
+                          argv=argv, cwd=cwd, refused=_why_not_run_into(root, argv, cwd),
                           price=None)
         found = [replace(remedy, **again_said)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
@@ -500,6 +502,35 @@ def _without_a_dashboard(argv: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(left)
 
 
+def _as_run_again(typed: tuple[str, ...], cwd: str) -> tuple[str, ...]:
+    """The line typed, as its fix runs it: its dashboard flags left out.
+    Where it had a dashboard, explore put the study in its `--output` (or
+    its config's `output`) with `~` expanded and made whole
+    (`cli.main._resolve_dashboard_output_dir`); with none, explore expands
+    nothing, so that folder is named in full."""
+    argv = _without_a_dashboard(typed)
+    if not any(_dashboard_flag(word) in ("--dashboard", "--live-dashboard") for word in typed):
+        return argv
+    named = _output_named(argv) or _output_of_its_config(argv, cwd)
+    if named is None:
+        return argv
+    folder = Path(named).expanduser()
+    if not folder.is_absolute():
+        if not cwd:
+            return argv
+        folder = Path(cwd) / folder
+    left: list[str] = []
+    words = iter(argv)
+    for word in words:
+        flag, equals, _value = word.partition("=")
+        if len(flag) >= 4 and "--output".startswith(flag):
+            if not equals:
+                next(words, None)
+            continue
+        left.append(word)
+    return (*left, "--output", str(folder.resolve()))
+
+
 def _config_named(argv: tuple[str, ...]) -> str | None:
     """The config file a command line names (`-c`, `-config`, `--config`,
     with `=` too), or None."""
@@ -558,12 +589,9 @@ def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
         return ("It names no folder for the study, so it would run one elsewhere, and it "
                 "is not run from here. Run it again with `--output` naming the study where "
                 "it is now.")
-    # As explore reads it: with a dashboard, `~` is expanded
-    # (`cli.main._resolve_dashboard_output_dir`); without one, not after
-    # `--output=`.
-    with_a_dashboard = any(_dashboard_flag(word) in ("--dashboard", "--live-dashboard")
-                           for word in argv)
-    output = Path(named).expanduser() if with_a_dashboard else Path(named)
+    # As the budget path reads it, with no dashboard in the line run
+    # (`_as_run_again`): `~` not expanded after `--output=`.
+    output = Path(named)
     if not output.is_absolute():
         if not cwd:
             return ""

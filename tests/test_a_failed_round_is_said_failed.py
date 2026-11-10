@@ -4648,9 +4648,9 @@ def test_a_dashboard_budget_s_fix_runs_with_no_dashboard_of_its_own(tmp_path, mo
     # At the terminal, the line as given.
     assert "--dashboard --dashboard-port 8999" in capsys.readouterr().err
     fix = next(r for r in remedies_of(tmp_path / "study") if r.argv[:1] == ("explore",))
-    assert fix.argv == ("explore", "-c", config.name, "--output", "study",
-                        "--force-overwrite"), fix
-    assert "dashboard" not in fix.command and not fix.refused, fix
+    assert fix.argv == ("explore", "-c", config.name, "--force-overwrite",
+                        "--output", str((tmp_path / "study").resolve())), fix
+    assert not any(word.startswith("--da") for word in fix.argv) and not fix.refused, fix
     assert _without_a_dashboard(("explore", "--live-dashboard", "--dashboard-p", "1",
                                  "--dashboard-stop-on-complete", "-c", "x.yml")) == (
         "explore", "-c", "x.yml")
@@ -4680,21 +4680,62 @@ def test_a_refused_fix_posted_where_a_link_leads_out_names_no_command(tmp_path, 
 @pytest.mark.parametrize("dashboard", [False, True])
 def test_an_output_with_a_tilde_is_read_as_explore_reads_it_in_each_mode(
         dashboard, tmp_path, monkeypatch):
-    """With `--dashboard`, explore expands `~` in `--output=~/x`
-    (`_resolve_dashboard_output_dir`); without, it does not. The fix read it
-    one way for both, and refused a study that never moved."""
-    from fastmdxplora.remedies import _why_not_run_into
+    """With `--dashboard`, explore puts the study in `--output=~/x` with `~`
+    expanded (`_resolve_dashboard_output_dir`); without, it does not. The
+    fix is run with no dashboard, so the line it runs and the check read
+    one folder, the study's, in either mode."""
+    from fastmdxplora.remedies import _as_run_again, _output_named, _why_not_run_into
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     typed = tmp_path / "w"
     for study in (typed / "~" / "x", tmp_path / "home" / "x"):
         study.mkdir(parents=True)
-    argv = ("explore", "-c", "s.yml", "--output=~/x", "--force-overwrite",
+    line = ("explore", "-c", "s.yml", "--output=~/x", "--force-overwrite",
             *(("--dashboard",) if dashboard else ()))
     there = tmp_path / "home" / "x" if dashboard else typed / "~" / "x"
     other = typed / "~" / "x" if dashboard else tmp_path / "home" / "x"
-    assert _why_not_run_into(there, argv, str(typed)) == ""
-    assert "moved or renamed" in _why_not_run_into(other, argv, str(typed))
+    run = _as_run_again(line, str(typed))
+    assert "--dashboard" not in run
+    # Where the line run puts the study, read as explore with no dashboard
+    # reads it.
+    assert (typed / _output_named(run)).resolve() == there.resolve(), run
+    assert _why_not_run_into(there, run, str(typed)) == ""
+    assert "moved or renamed" in _why_not_run_into(other, run, str(typed))
+
+
+@pytest.mark.parametrize("output", ["--output=~/st", "~/st"])
+def test_a_dashboard_budget_s_fix_never_runs_into_a_folder_named_tilde(
+        output, tmp_path, monkeypatch):
+    """`--dashboard --output=~/st` (or a quoted `~/st`) stopped in setup: the
+    study is at `$HOME/st`, its dashboard having expanded `~`, but its fix,
+    run with no dashboard, was `--output=~/st`, runnable, and made a whole
+    new study at `<cwd>/~/st`."""
+    from fastmdxplora.remedies import _output_named, remedies_of
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    typed = tmp_path / "w"
+    typed.mkdir()
+    study = tmp_path / "home" / "st"
+    study.mkdir(parents=True)
+    words = [output] if output.startswith("--") else ["--output", output]
+    argv = ["explore", "-c", "s.yml", "--dashboard", "--dashboard-port", "8999", *words,
+            "--force-overwrite"]
+    (study / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    (study / "manifest.json").write_text(json.dumps({
+        "phases": [{"name": "setup", "status": "ok"}],
+        "run_again": "`fastmdx ...` runs the study again, its setup first",
+        "run_again_argv": argv, "run_again_cwd": str(typed)}))
+    fix = next(r for r in remedies_of(study) if r.argv[:1] == ("explore",))
+    folder = (typed / _output_named(fix.argv)).resolve()
+    assert folder == study.resolve() and not fix.refused, fix
+    assert not any(word.startswith("--da") or "~" in word for word in fix.argv), fix
+    # Moved since: refused, never runnable into `<cwd>/~/st`.
+    moved = tmp_path / "home" / "old"
+    moved.mkdir()
+    study.rename(moved / "st")
+    fix = next(r for r in remedies_of(moved / "st") if r.argv[:1] == ("explore",))
+    assert "moved or renamed" in fix.refused, fix
+    assert not (typed / "~").exists()
 
 
 def test_a_refused_fix_s_code_marks_are_set_as_code_on_its_card():
