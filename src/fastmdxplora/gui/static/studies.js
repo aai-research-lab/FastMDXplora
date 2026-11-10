@@ -16,7 +16,8 @@
   var chosen = [];
   var lookedIn = "";
   var loading = null;
-  var loadingWhere;
+  // The folder asked for last: the one listed, whatever was asked between.
+  var wanted;
   // Tags: the one the cards are narrowed to, the card being tagged, and
   // the tags the studies here carry (offered as one is typed).
   var tagged = null;
@@ -2298,20 +2299,18 @@
   }
 
   function load(where) {
-    if (loading && loadingWhere === where) return loading;
     // Another folder asked for while one is read: it was answered with that
-    // one's list. It is read once that one is.
-    if (loading) {
-      var again = function () { return load(where); };
-      return loading.then(again, again);
-    }
-    loadingWhere = where;
+    // one's list, and asking A, then B, then A again ended on B. The last
+    // asked for is read once the one in hand is.
+    wanted = where;
+    if (loading) return loading;
     var query = where ? "?" + new URLSearchParams({ path: where }) : "";
     var began = edited;
     loading = fetch("/api/studies" + query)
       .then(function (r) { return r.json(); })
       .then(function (data) {
         loading = null;
+        if (wanted !== where) return load(wanted);
         // Read before tags were saved here: read again rather than draw
         // the tags as they were over those just saved.
         if (began !== edited) return load(where);
@@ -2346,6 +2345,7 @@
       })
       .catch(function () {
         loading = null;
+        if (wanted !== where) return load(wanted);
         notListed(where, "The server did not answer.");
       });
     if (!answered && !studies.length && window.FastMDXPageState) {

@@ -235,3 +235,39 @@ def test_a_folder_asked_for_while_another_is_read_is_the_one_listed(tmp_path) ->
         session.server.shutdown()
     assert errors == []
     assert names == ["far"]
+
+
+def test_the_last_folder_asked_for_is_the_one_listed(tmp_path) -> None:
+    """Asking for the workspace (being read), then another folder, then the
+    workspace again ended on the other folder's list."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    _study(tmp_path / "here" / "near", system="1UAO")
+    _study(tmp_path / "there" / "far", system="1AKE")
+    session = start_dashboard_session(output=str(tmp_path / "here" / "near"),
+                                      host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.wait_for_selector("#studies-table tbody tr.studies-row")
+            names = page.evaluate(f"""async () => {{
+                window.FastMDXStudies.load();
+                const other = window.FastMDXStudies.load({str(tmp_path / "there")!r});
+                await window.FastMDXStudies.load();
+                await other;
+                await new Promise((done) => setTimeout(done, 500));
+                return ({NAMES})();
+            }}""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert names == ["near"]
