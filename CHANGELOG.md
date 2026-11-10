@@ -598,6 +598,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   is marked as doing nothing (`aria-disabled`). The Analysis
   page's empty quick-actions area and the payload that filled it are gone.
   (Prince Otegbulu, #70, #76 to #80)
+- An Analysis card's Data link, and a saved dashboard.html's links, open
+  a file whose name holds `%`, `#` or spaces. A chart exported as SVG or
+  PNG has the axes, grid and words the page shows, in the page's colours,
+  where it opened bare and dark text on a dark page. An exported Compare
+  chart's label says it overlays two studies, not two runs. The dashboard's
+  unused artifact links code is gone.
 
 - The docs search reads a setting named in code in a table row's first cell
   as a name, so "what does ligand pose do" finds the `ligand_pose` row
