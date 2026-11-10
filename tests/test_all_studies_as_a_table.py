@@ -202,3 +202,36 @@ def test_a_mean_not_determined_is_not_cut_under_open_and_tag(tmp_path) -> None:
     assert cell["fits"] and cell["apart"] and cell["shown"] == "1"
     # The whole row fits: nothing hidden to the right.
     assert more == ""
+
+
+def test_a_folder_asked_for_while_another_is_read_is_the_one_listed(tmp_path) -> None:
+    """All studies opened on its page reads the workspace; another folder
+    asked for meanwhile was answered with the workspace's list."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    _study(tmp_path / "here" / "near", system="1UAO")
+    _study(tmp_path / "there" / "far", system="1AKE")
+    session = start_dashboard_session(output=str(tmp_path / "here" / "near"),
+                                      host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(60000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#studies", wait_until="domcontentloaded")
+            page.wait_for_selector("#studies-table tbody tr.studies-row")
+            names = page.evaluate(f"""async () => {{
+                window.FastMDXStudies.load();
+                await window.FastMDXStudies.load({str(tmp_path / "there")!r});
+                return ({NAMES})();
+            }}""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert names == ["far"]
