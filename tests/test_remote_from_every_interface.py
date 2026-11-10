@@ -3408,6 +3408,7 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
     import signal
     import subprocess
 
+    from fastmdxplora.gpu_here import _going
     from fastmdxplora.remote import gpu_room
     from fastmdxplora.remote.gpu_room import Choice, Gpu
     from fastmdxplora.remote.send import _gpu_lines
@@ -3419,15 +3420,88 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
                                start_new_session=True)
     started.wait(timeout=10)
     deadline = time.monotonic() + 5
-    while True:
-        try:
-            os.killpg(started.pid, 0)
-        except ProcessLookupError:
-            break
+    # Read as the GPU sampler reads its run's group: on macOS the zero
+    # signal to a group of zombies says EPERM, not ESRCH.
+    while _going(started.pid):
         if time.monotonic() > deadline:
-            os.killpg(started.pid, signal.SIGKILL)
+            try:
+                os.killpg(started.pid, signal.SIGKILL)
+            except OSError:
+                pass
             pytest.fail("the sampler outlived its job")
         time.sleep(0.05)
+
+
+def _group_refusing(monkeypatch, group: int, listed: str) -> None:
+    """The zero signal to ``group`` says EPERM, and ``ps -A`` lists
+    ``listed`` (its pgid and state columns)."""
+    from fastmdxplora import gpu_here
+
+    def refused(pgid, number):
+        assert (pgid, number) == (group, 0)
+        raise PermissionError(1, "Operation not permitted")
+
+    def answer(script):
+        assert script.startswith("ps -A -o pgid= -o stat="), script
+        return listed
+
+    monkeypatch.setattr(gpu_here.os, "killpg", refused)
+    monkeypatch.setattr(gpu_here, "_answer", answer)
+
+
+def test_a_group_of_zombies_refusing_the_zero_signal_is_gone(monkeypatch):
+    """macOS says EPERM to ``killpg(group, 0)`` for a group whose members
+    are all zombies (CI run 42759782805), where Linux says ESRCH. Read as
+    going, the sampler of a run that ended read its GPU for ever. Linux
+    cannot make that EPERM for a group of this user's, so it is simulated."""
+    from fastmdxplora.gpu_here import _going
+
+    _group_refusing(monkeypatch, 4242, "    1 Ss\n 4242 Z\n 4242 Z+\n 4300 S\n")
+    assert _going(4242) is False
+
+
+def test_a_group_with_a_live_member_refusing_the_zero_signal_is_going(monkeypatch):
+    """EPERM with a member that is not a zombie (another user's process,
+    as through sudo) is a group still going."""
+    from fastmdxplora.gpu_here import _going
+
+    _group_refusing(monkeypatch, 4242, "    1 Ss\n 4242 Z\n 4242 S+\n")
+    assert _going(4242) is True
+
+
+def test_a_group_refusing_the_zero_signal_and_unlisted_is_gone(monkeypatch):
+    """No member of the group in ``ps``, or ``ps`` not read: a process of
+    this user's would have answered, so it is gone."""
+    from fastmdxplora.gpu_here import _going
+
+    _group_refusing(monkeypatch, 4242, "    1 Ss\n 4300 S\n")
+    assert _going(4242) is False
+    _group_refusing(monkeypatch, 4242, "")
+    assert _going(4242) is False
+
+
+def test_ps_names_the_states_of_a_real_group():
+    """What ``ps -A`` says of a group is read on this machine: a live
+    member, then the same group with its leader ended and not reaped."""
+    import subprocess
+
+    from fastmdxplora.gpu_here import _states_in
+
+    started = subprocess.Popen(["sh", "-c", "read line"], stdin=subprocess.PIPE,
+                               start_new_session=True)
+    try:
+        states = _states_in(started.pid)
+        assert states and not states[0].startswith("Z"), states
+        started.stdin.close()
+        deadline = time.monotonic() + 10
+        while not (_states_in(started.pid) or ["?"])[0].startswith("Z"):
+            assert time.monotonic() < deadline, _states_in(started.pid)
+            time.sleep(0.05)
+    finally:
+        if started.stdin and not started.stdin.closed:
+            started.stdin.close()
+        started.wait(timeout=10)
+    assert _states_in(started.pid) == []
 
 
 # ---------------------------------------------------------------------------

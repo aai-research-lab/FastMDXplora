@@ -156,15 +156,33 @@ def start_sampler(group: int, folder: Path, choice: Choice, since: float) -> Non
         logger.warning("What %s holds on its GPU is not read: %s", folder, exc)
 
 
+def _states_in(group: int) -> list[str] | None:
+    """The state ``ps`` gives each process of the group (none where it has
+    none); ``None`` where ``ps`` lists no process at all, so was not read."""
+    rows = [line.split() for line in
+            _answer("ps -A -o pgid= -o stat= 2>/dev/null\n").splitlines()]
+    rows = [row for row in rows if len(row) >= 2]
+    if not rows:
+        return None
+    return [row[1] for row in rows if row[0] == str(int(group))]
+
+
 def _going(group: int) -> bool:
     """Whether the process group is still there, and its leader not a
-    process ended and not yet reaped."""
+    process ended and not yet reaped.
+
+    EPERM to the zero signal is not the group going: macOS says it for a
+    group whose members are all zombies, where Linux says ESRCH, and both
+    say it for a group of another user's processes. ``ps`` then says which:
+    a group of zombies, or of none, is gone. Where ``ps`` cannot be read it
+    is gone too, since a process of this user's would have answered."""
     try:
         os.killpg(group, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        states = _states_in(group)
+        return states is not None and any(not s.startswith("Z") for s in states)
     said = _answer(f"ps -o stat= -p {int(group)} 2>/dev/null\n").strip()
     return not said.startswith("Z")
 
