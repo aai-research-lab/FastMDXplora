@@ -181,13 +181,6 @@ class DashboardPanel:
 
 
 @dataclass(frozen=True)
-class DashboardLink:
-    label: str
-    href: str
-    detail: str = ""
-
-
-@dataclass(frozen=True)
 class DashboardAsset:
     rel_path: str
     summary: str
@@ -1424,45 +1417,6 @@ def _panel_sort_key(panel: DashboardPanel) -> tuple[int, str]:
 
 def _normalize_label(value: str) -> str:
     return "".join(char.lower() for char in value if char.isalnum())
-
-
-def _artifact_links(
-    project_root: Path,
-    output_dir: Path,
-    *,
-    sections: list[DashboardSection],
-    include_bundle_link: bool,
-) -> list[DashboardLink]:
-    candidates: list[tuple[str, str, str]] = [
-        ("Dashboard HTML", "report/dashboard.html", "this file"),
-        ("Markdown report", "report/report.md", "written report"),
-        ("Slide deck", "report/slides.pptx", "presentation"),
-        ("Project bundle", "report/project_bundle.zip", "shareable archive"),
-        ("Run manifest", "manifest.json", "project provenance"),
-        ("Analysis manifest", "analysis/analysis_manifest.json", "analysis provenance"),
-        ("Analysis summary", "report/analysis_summary.png", "combined figure"),
-        ("Analysis summary manifest", "report/analysis_summary_manifest.json", "figure provenance"),
-        ("Region highlight manifest", "report/region_highlight_manifest.json", "region provenance"),
-        ("Region highlight figure", "report/region_highlight_summary.png", "annotated RMSF"),
-    ]
-    for section in sections:
-        for panel in section.panels:
-            candidates.append((panel.title, panel.original_source, section.title))
-
-    links: list[DashboardLink] = []
-    seen: set[str] = set()
-    for label, rel, detail in candidates:
-        path = project_root / rel
-        if rel in seen:
-            continue
-        future_current_run_artifact = rel == "report/dashboard.html" or (
-            include_bundle_link and rel == "report/project_bundle.zip"
-        )
-        if not _records.is_file(path) and not future_current_run_artifact:
-            continue
-        seen.add(rel)
-        links.append(DashboardLink(label, _href(path, output_dir), detail))
-    return links
 
 
 def _href(path: Path, output_dir: Path) -> str:
