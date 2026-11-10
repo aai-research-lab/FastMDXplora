@@ -67,9 +67,18 @@ def test_a_record_saved_with_the_name_reads(biased, capsys):
     assert (biased / "analysis" / "reweighted").is_dir()
 
 
-def test_a_config_naming_only_the_pass_reads_as_the_default_plan():
-    from fastmdxplora.config.loader import without_the_reweighting_pass
+@pytest.mark.parametrize("key", ["include", "exclude"])
+def test_a_config_that_names_the_pass_is_refused_by_name(key):
+    """Dropped from a study's record alone: `include: [reweighted]` in a
+    Config read as the default plan, every analysis, with no word."""
+    from fastmdxplora.config import ConfigError
+    from fastmdxplora.config.loader import validate_config
 
-    analysis = {"include": ["reweighted"], "options": {}}
-    without_the_reweighting_pass(analysis)
-    assert "include" not in analysis
+    with pytest.raises(ConfigError) as raised:
+        validate_config({"analysis": {key: ["reweighted"]}})
+    said = str(raised.value)
+    assert said.startswith("No analysis is called 'reweighted'")
+    assert "it runs wherever a bias applies" in said
+    recorded = {"analysis": {key: ["rmsd", "reweighted"]}}
+    validate_config(recorded, as_record=True)
+    assert recorded["analysis"][key] == ["rmsd"]
