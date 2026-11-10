@@ -159,7 +159,7 @@ class TestTheFullMatrixOnlyWhenAsked:
 class TestTheMemoryCheck:
     #: The map of 1,000 frames, planned at 169.2 MiB, over the least
     #: planned at any (``RESIDENT_LEAST``), which half as many are planned
-    #: on: refused in two thirds of the room it is planned in, with a stride.
+    #: on: refused in nine tenths of the room it is planned in, with a stride.
     N = 1000
 
     def _refused(self, tmp_path, monkeypatch, available: int):
@@ -170,7 +170,7 @@ class TestTheMemoryCheck:
         from fastmdxplora.refusals import CODES
 
         methods = ["kmeans", "hierarchical"]
-        available = memory_needed(self.N, methods, "rmsd", "average") * 2 // 3
+        available = memory_needed(self.N, methods, "rmsd", "average") * 9 // 10
         result = self._refused(tmp_path, monkeypatch, available)
 
         assert result.status == "error"
@@ -203,7 +203,7 @@ class TestTheMemoryCheck:
         reading three brackets deep, the stride behind the chip; and the
         refusal was not in the log."""
         available = memory_needed(self.N, ["kmeans", "hierarchical"], "rmsd",
-                                  "average") * 2 // 3
+                                  "average") * 9 // 10
         with caplog.at_level(logging.ERROR, logger="fastmdx.analysis.cluster"):
             result = self._refused(tmp_path, monkeypatch, available)
         said = result.message.split(": ", 1)[1]
@@ -756,7 +756,7 @@ class TestTheFiguresAreCounted:
             found["peak"] / 2**20, found["needed"] / 2**20)
 
     def test_the_stride_a_refusal_gives_fits_the_room(self, tmp_path):
-        room = 110 * 10**6
+        room = 160 * 10**6
         found = _peak_of_a_run(tmp_path, 2000, room)
         assert found["stride"] > 1
         assert found["peak"] <= room, (found["stride"], found["peak"] / 2**20)
@@ -790,6 +790,13 @@ class TestAFewFramesArePlannedOnWhatAnyClusteringTakes:
     @pytest.mark.parametrize("n", [2, 118, 223, 334, 500])
     def test_the_plan_is_not_under_the_most_a_few_frames_took(self, n, methods):
         assert memory_needed(n, methods, "rmsd", "average") >= FEW_FRAMES_PEAK
+
+    def test_it_holds_what_a_runner_was_measured_to_take_more(self):
+        """CI's Python 3.10 leg measured a whole DBSCAN run of 2,000 frames
+        at 169.1 MiB, 31 over the most this machine counted of it (138.1).
+        Planned at 76 MiB, 500 frames left 2.2 MiB over the 72.0 to 73.8
+        counted here as the command-line test runs them."""
+        assert clustering.RESIDENT_LEAST >= FEW_FRAMES_PEAK + 31 * 2**20
 
     @pytest.mark.parametrize("room_mib", [14, 30, 45])
     def test_under_it_the_refusal_names_no_stride(self, monkeypatch, room_mib):
@@ -1227,13 +1234,14 @@ print(json.dumps({"status": result.status, "message": result.message,
         """2,000 frames in a container leaving 116 MB: "0.2 GB ... the
         container allows 0.1 GB, of which clustering plans on 75%, 87.0
         MB", 152 MB said as 0.2 GB and the room said twice by two
-        derivations."""
+        derivations. 160 MB now, over the room the least plan
+        (``RESIDENT_LEAST``) takes, so a stride is named."""
         import re
 
         from fastmdxplora.refusals import StudyError
 
         monkeypatch.setattr(clustering, "memory_available", lambda: (
-            116 * 10**6, "the cgroup v2 limit, mocked"))
+            160 * 10**6, "the cgroup v2 limit, mocked"))
         monkeypatch.setattr(clustering, "_rlimit_room", lambda: (None, ""))
         with pytest.raises(StudyError) as raised:
             Cluster().compute(_chain(2000))
@@ -1525,12 +1533,14 @@ class TestTheCommandLinesOwnProcess:
         assert row["status"] == "ok", row["message"]
         assert not findings.get("figures_not_plotted"), findings
 
-    @pytest.mark.parametrize("stride", [17, 6])
+    @pytest.mark.parametrize("stride", [17, 6, 4])
     def test_a_few_frames_peak_within_their_plan(self, studies, stride):
-        """Every 17th and every 6th of 2,000 frames, 118 and 334, clustered
-        alone: their resident peak from the check, 38.4 to 65.6 and 50.2 to
-        58.5 MiB counted, against plans of 10.2 and 26.0 MiB without
-        ``RESIDENT_LEAST``. A container sized by those plans killed them."""
+        """Every 17th, 6th and 4th of 2,000 frames, 118, 334 and 500,
+        clustered alone: their resident peak from the check, 50.6 to 54.2,
+        54.1 to 64.6 and 72.0 to 73.8 MiB counted here, against plans of
+        10.2, 26.0 and 48.3 MiB without ``RESIDENT_LEAST``. A container sized
+        by those plans killed them. At 500 frames this says the margin a
+        runner leaves under the least planned."""
         import subprocess
         from pathlib import Path
 

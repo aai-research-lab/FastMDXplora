@@ -194,9 +194,14 @@ FIGURE_BYTES = 8 * 2**20
 #: to 64.9, DBSCAN 30.1 to 55.9, average linkage alone 40.3 to 67.9. Without
 #: it the plan of a few hundred frames was the map's alone, 10 to 48 MiB:
 #: under a container leaving 14 to 45 MiB, the refusal named a stride of 17
-#: to 6, and each was killed. Planned on, a room under about 106 MB is
-#: refused at any stride.
-RESIDENT_LEAST = 76 * 2**20
+#: to 6, and each was killed. Counted again as the command-line test runs
+#: it (two threads, one malloc arena), 500 frames peaked at 72.0 to 73.8 MiB
+#: on 3.10, 3.11 and 3.13, 2.2 MiB under the 76 first planned: too little
+#: for a runner that takes more, and CI's Python 3.10 leg measured a whole
+#: DBSCAN run of 2,000 frames at 169.1 MiB, 31 over the most this machine
+#: counted of it (138.1). Planned on the most counted here, 74.1, and those
+#: 31 MiB: a room under about 148 MB is refused at any stride.
+RESIDENT_LEAST = 106 * 2**20
 
 
 def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:

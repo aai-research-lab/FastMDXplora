@@ -194,9 +194,9 @@ class TestTheMemoryCheckAgreesWithTheCap:
     def test_a_refusal_names_no_stride_under_the_cap_s(self, monkeypatch):
         """The stride the refusal searches from is the cap's: one under it
         would cluster more frames than were refused."""
-        n, most = 3000, 1500           # the cap's stride is 2, 1,500 frames
+        n, most = 6000, 3000           # the cap's stride is 2, 3,000 frames
         methods = ["kmeans", "hierarchical"]
-        need = clustering.memory_needed(1500, methods, "rmsd", "average")
+        need = clustering.memory_needed(3000, methods, "rmsd", "average")
         room = int(need * 0.9 / clustering.MEMORY_SHARE)
         monkeypatch.setattr(clustering, "memory_available", lambda: (room, "mocked"))
         with pytest.raises(StudyError) as raised:
@@ -210,4 +210,4 @@ class TestTheMemoryCheckAgreesWithTheCap:
         assert clustering.memory_needed(fits, methods, "rmsd", "average") <= (
             clustering.MEMORY_SHARE * room)
         assert f"Set `stride: {stride}`" in said
-        assert "clustering 1,500 frames (every 2nd of 3,000) does not" in said
+        assert "clustering 3,000 frames (every 2nd of 6,000) does not" in said
