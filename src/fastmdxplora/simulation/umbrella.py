@@ -2320,6 +2320,25 @@ def describe_pmf(coordinate: Any, energy: Any,
     return said
 
 
+def resamples_on_the_curve(rows: Any, free_energy: Any, mean_force: Any) -> Any:
+    """The bootstrap's resampled curves of A(r) moved onto W(r), each by the
+    same W - A as the curve, bin by bin (2kT ln r and W's zero), so a
+    resample departs from W as it departs from A. ``rows`` as they are
+    where there is no W."""
+    if rows is None or mean_force is None:
+        return rows
+    a = np.asarray([np.nan if v is None else float(v) for v in free_energy], dtype=float)
+    w = np.asarray([np.nan if v is None else float(v) for v in mean_force], dtype=float)
+    try:
+        moved = np.asarray([[np.nan if v is None else float(v) for v in row]
+                            for row in rows], dtype=float)
+    except (TypeError, ValueError):
+        return None
+    if moved.ndim != 2 or moved.shape[1] != a.size:
+        return None
+    return moved + (w - a)[None, :]
+
+
 def the_barrier_in_a_line(record: Any) -> str | None:
     """The barrier a `pmf.json` gives, or that it was refused and why, in
     one line, for the console and the comparison report; None where the
@@ -2341,6 +2360,11 @@ def the_barrier_in_a_line(record: Any) -> str | None:
                   and not isinstance(error, bool) else "")
         said = (f"{barrier:.1f}{spread} kJ/mol at {summary.get('barrier_at'):.3g}"
                 f"{place}, on {curve}")
+        if not spread:
+            said += (f" (no error computed; judged by the "
+                     f"{BARRIER_PROMINENCE_KJMOL} kJ/mol margin alone)")
+        elif summary.get("barrier_zero"):
+            said += ", about 0.8 of its error high as the curve's zero is"
         if summary.get("barrier_note"):
             said += "; a higher peak was refused as within its error"
         return said + "."
@@ -2925,20 +2949,24 @@ def compute_pmf(
     # Barriers and minima are read off W(r) along a distance between centres
     # and off the free energy elsewhere. Off A(r) a radial curve's highest
     # point is the wall at the first window and its depths move with the
-    # range the windows spanned, by 2kT ln(r2 / r1); W(r) differs from A(r)
-    # by a known function of r, so the errors of a rise on one are those on
-    # the other and the resamples of A judge both.
+    # range the windows spanned, by 2kT ln(r2 / r1). The rises on W are
+    # judged against W's resamples, A's rows moved onto W as the curve was:
+    # judged against A's rows, every departure carried 2kT ln(r_i / r_j),
+    # the family's multiplier came out at 11 to 48 in place of about 4, and
+    # a real 5 kJ/mol escape barrier was refused as noise.
     summary = describe_pmf(
         centres, free_energy if mean_force is None else mean_force,
         covered, periodic=periodic,
         errors=None if uncertainty is None else uncertainty.get("standard_error"),
-        resamples=(None if uncertainty is None
-                   else uncertainty.get("resample_curves_kjmol")),
+        resamples=(None if uncertainty is None else resamples_on_the_curve(
+            uncertainty.get("resample_curves_kjmol"), free_energy, mean_force)),
         closed=periodic and turn_is_tiled(covered[0], covered[1], len(ordered),
                                           [w.centre for w in ordered]),
         unit="nm" if shell else variable_unit(getattr(plan, "collective_variable", None)))
     summary["read_off"] = ("potential_of_mean_force_kjmol" if mean_force is not None
                            else "free_energy_kjmol")
+    # Which curve the resamples judging the rises were moved onto.
+    summary["resamples_on"] = summary["read_off"]
     if uncertainty is not None and summary.get("barrier_kjmol") is not None:
         summary["barrier_zero"] = THE_CURVE_SITS_HIGH
 

@@ -3428,7 +3428,12 @@ class BatchExplorer:
             # without widening it, and computing them per resample would mean
             # resolving the cone thirty thousand times for no change in the
             # spread.
-            def _binding_from(where, curve, _t=temperature):
+            # Where the windows' centres are, so W's minimum is searched
+            # there and not in a sparse end bin beyond them.
+            span = (min(w.centre for w in plan.windows),
+                    max(w.centre for w in plan.windows))
+
+            def _binding_from(where, curve, _t=temperature, _span=span):
                 from fastmdxplora.simulation.binding import binding_free_energy
 
                 # The tail is judged once, on the real curve, against these
@@ -3436,7 +3441,7 @@ class BatchExplorer:
                 # refused by its own noise, and the interval would be made of
                 # the resamples whose tails happened to be flattest.
                 return binding_free_energy(
-                    where, curve, temperature_K=_t,
+                    where, curve, temperature_K=_t, covered_nm=_span,
                     judge_the_bulk=False).get("delta_g_kjmol")
 
             wants_binding = _the_coordinate_has_a_volume(plan)
@@ -3523,7 +3528,7 @@ class BatchExplorer:
                     payload["binding"] = binding_free_energy(
                         payload["pmf"]["coordinate"],
                         payload["pmf"]["free_energy_kjmol"],
-                        temperature_K=temperature,
+                        temperature_K=temperature, covered_nm=payload.get("covered"),
                         cone=cone, wall_bias_kjmol=wall,
                         resampled=payload.get("derived"),
                         errors_kjmol=(payload["pmf"].get("uncertainty") or {})
@@ -3634,10 +3639,14 @@ class BatchExplorer:
         # saves; A's own minimum sits further out and can be in bulk.
         from fastmdxplora.simulation.umbrella import KB_KJ
 
-        points = [(y + 2.0 * KB_KJ * temperature * math.log(x), x)
-                  for x, y in zip(pmf.get("coordinate") or [],
-                                  pmf.get("free_energy_kjmol") or [])
-                  if y is not None and x is not None and x > 0]
+        # Between the windows' centres, as the binding searches it.
+        low = min((float(w.centre) for w in plan.windows), default=-math.inf)
+        high = max((float(w.centre) for w in plan.windows), default=math.inf)
+        every = [(y + 2.0 * KB_KJ * temperature * math.log(x), x)
+                 for x, y in zip(pmf.get("coordinate") or [],
+                                 pmf.get("free_energy_kjmol") or [])
+                 if y is not None and x is not None and x > 0]
+        points = [p for p in every if low <= p[1] <= high] or every
         bound_at = (binding.get("minimum_at_nm")
                     or (min(points)[1] if points else None))
         bulk_from = binding.get("bulk_from_nm")

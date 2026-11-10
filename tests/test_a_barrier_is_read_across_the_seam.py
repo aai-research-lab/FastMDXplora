@@ -376,5 +376,7 @@ class TestAFlatTurnQuotesNoBarrierByItsNoise:
     def test_a_real_one_on_the_seam_stands(self) -> None:
         got = self._study(_hump(np.pi), 2400, 1)
         assert got["barrier_kjmol"] == pytest.approx(19.52, abs=0.6)
+        # The family's multiplier on a turn: about 3.5 to 4.
+        assert 3.0 < got["barrier_multiplier"] < 5.0
         assert "rad" in the_barrier_in_a_line(
             {"plan": {"collective_variable": "torsion"}, "summary": got})

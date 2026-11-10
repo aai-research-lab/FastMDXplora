@@ -104,15 +104,17 @@ class PMF(Analysis):
         # region nothing visited.
         # A summary written before a barrier was a peak (no `highest_kjmol`
         # in it), or before a peak within its error was said
-        # (`barrier_multiplier`, the peaks judged as a family), is read
-        # again by today's rule, so one curve
-        # has one barrier.
+        # (`barrier_multiplier`, the peaks judged as a family), or before a
+        # radial curve's rises were judged against W's resamples
+        # (`resamples_on`), is read again by today's rule, so one curve has
+        # one barrier.
         summary = record.get("summary")
         if (not summary or recomputed or "highest_kjmol" not in summary
-                or "barrier_multiplier" not in summary):
+                or "barrier_multiplier" not in summary
+                or "resamples_on" not in summary):
             from fastmdxplora.simulation.umbrella import (
                 PERIODIC_VARIABLES, SHELL_COORDINATES, describe_pmf,
-                turn_is_tiled, variable_unit)
+                resamples_on_the_curve, turn_is_tiled, variable_unit)
 
             covered = record.get("covered")
             plan = record.get("plan") or {}
@@ -125,7 +127,8 @@ class PMF(Analysis):
                 tuple(covered) if covered else None,
                 periodic=periodic,
                 errors=spread.get("standard_error"),
-                resamples=spread.get("resample_curves_kjmol"),
+                resamples=resamples_on_the_curve(
+                    spread.get("resample_curves_kjmol"), list(energy), mean_force),
                 closed=bool(periodic and covered and isinstance(count, int)
                             and turn_is_tiled(covered[0], covered[1], count)),
                 unit=("nm" if plan.get("collective_variable") in SHELL_COORDINATES
@@ -133,6 +136,7 @@ class PMF(Analysis):
             summary["read_off"] = ("potential_of_mean_force_kjmol"
                                    if mean_force is not None
                                    else "free_energy_kjmol")
+            summary["resamples_on"] = summary["read_off"]
         self._summary = summary
         self._variable = (record.get("plan") or {}).get("collective_variable")
         temperature = record.get("temperature_K")
@@ -251,8 +255,9 @@ class PMF(Analysis):
                   f", kT = {KB_KJ * temperature:.4f} kJ/mol at {temperature:g} K")
             lines = [
                 "# coordinate free_energy_kjmol potential_of_mean_force_kjmol",
-                "# coordinate is r in nm; both curves in kJ/mol, each zero at"
-                " its lowest bin.",
+                "# coordinate is r in nm; both curves in kJ/mol; A(r) is zero"
+                " at its lowest bin, W(r) at its lowest bin between the"
+                " outermost windows' centres (below zero beyond them).",
                 "# free_energy_kjmol is A(r) = -kT ln P(r), the distance's"
                 " distribution, shell included; the binding free energy reads"
                 " it.",
@@ -277,8 +282,13 @@ def _potential_of_mean_force(record: dict[str, Any], coordinate: np.ndarray,
     curve = record.get("pmf") or {}
     stored = curve.get("potential_of_mean_force_kjmol")
     if stored is not None:
-        return np.asarray([np.nan if v is None else float(v) for v in stored],
-                          dtype=float), False
+        # Zeroed again between the outermost windows' centres: a study saved
+        # before that was the rule has its W zeroed at the end bin, and its
+        # figure would sit apart from a new one's. Nothing changes for a
+        # record saved by today's rule.
+        return _zeroed_between(np.asarray(
+            [np.nan if v is None else float(v) for v in stored], dtype=float),
+            coordinate, record.get("covered")), False
     variable = (record.get("plan") or {}).get("collective_variable")
     temperature = record.get("temperature_K")
     if (variable not in SHELL_COORDINATES or not isinstance(temperature, (int, float))
@@ -286,14 +296,21 @@ def _potential_of_mean_force(record: dict[str, Any], coordinate: np.ndarray,
             or not np.any(np.isfinite(energy))):
         return None, False
     mean_force = energy + 2.0 * KB_KJ * float(temperature) * np.log(coordinate)
-    # Zero at its lowest bin between the outermost windows' centres, as
-    # `compute_pmf` saves it.
-    covered = record.get("covered")
-    if covered:
+    return _zeroed_between(mean_force, coordinate, record.get("covered")), True
+
+
+def _zeroed_between(mean_force: np.ndarray, coordinate: np.ndarray,
+                    covered: Any) -> np.ndarray:
+    """W zero at its lowest bin between the outermost windows' centres, as
+    `compute_pmf` saves it; at its lowest bin anywhere where no range is
+    known or nothing between holds a value."""
+    if not np.any(np.isfinite(mean_force)):
+        return mean_force
+    if covered and mean_force.shape == coordinate.shape:
         between = (coordinate >= float(covered[0])) & (coordinate <= float(covered[1]))
         if np.any(np.isfinite(mean_force[between])):
-            return mean_force - np.nanmin(mean_force[between]), True
-    return mean_force - np.nanmin(mean_force), True
+            return mean_force - np.nanmin(mean_force[between])
+    return mean_force - np.nanmin(mean_force)
 
 
 register_analysis(PMF.name, PMF)

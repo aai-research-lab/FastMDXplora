@@ -430,3 +430,239 @@ class TestTheConsoleGivesTheBarrier:
             "Barrier:        none given. The highest peak, 6.0 kJ/mol at 1 nm, "
             f"stands less than {summary['within_error'][0]['multiplier']:.2f} times "
             "its error (3.5 kJ/mol) above the lowest point beside it."]
+
+
+def _radial_study(wfun, centres, force, samples, seed, resamples=40):
+    """Windows along r sampled from exp(-(A + spring)/kT), A = W - 2kT ln r,
+    continuous values, recombined with a bootstrap."""
+    plan = UmbrellaPlan(
+        windows=tuple(Window(index=i, centre=float(c), force_constant=force)
+                      for i, c in enumerate(centres)),
+        collective_variable="ligand_distance", equilibration_fraction=0.2,
+        minimum_overlap=0.0, minimum_samples=50, cone=None,
+        bootstrap_resamples=resamples)
+    kt = KB_KJMOL * 300.0
+    grid = np.linspace(0.15, 2.2, 200001)
+    step = grid[1] - grid[0]
+    a = wfun(grid) - 2.0 * kt * np.log(grid)
+    rng = np.random.default_rng(seed)
+    picked = {}
+    for window in plan.windows:
+        weight = np.exp(-(a + 0.5 * force * (grid - window.centre) ** 2) / kt)
+        picked[window.index] = (rng.choice(grid, size=samples, p=weight / weight.sum())
+                                + rng.uniform(0.0, step, size=samples))
+    logging.disable(logging.WARNING)
+    try:
+        return compute_pmf(picked, plan, temperature_K=300.0,
+                           bootstrap_resamples=resamples, bootstrap_seed=seed)
+    finally:
+        logging.disable(logging.NOTSET)
+
+
+def _well_and_hump(depth, hump):
+    return lambda r: (-depth * np.exp(-((r - 0.6) / 0.1) ** 2)
+                      + hump * np.exp(-((r - 1.0) / 0.08) ** 2))
+
+
+class TestARadialBarrierIsJudgedOnW:
+    """A well at 0.6 nm and an escape hump 5 kJ/mol above bulk at 1.0 nm.
+    Judged against A's resamples, every departure carried 2kT ln(r_i / r_j),
+    the multiplier came out at 21 to 26 and the barrier was refused as
+    noise; judged against W's, about 3.8."""
+
+    @pytest.mark.parametrize("depth, exact", [(15.0, 20.0), (10.0, 15.0)])
+    def test_it_is_given(self, depth, exact) -> None:
+        payload = _radial_study(_well_and_hump(depth, 5.0), np.linspace(0.4, 2.0, 33),
+                                2000.0, 2400, seed=1)
+        summary = payload["summary"]
+        assert summary["barrier_kjmol"] == pytest.approx(exact, abs=0.6)
+        assert summary["barrier_at"] == pytest.approx(1.0, abs=0.03)
+        assert 3.0 < summary["barrier_multiplier"] < 5.0
+        assert summary["resamples_on"] == "potential_of_mean_force_kjmol"
+
+    def test_an_older_record_is_judged_again_on_w(self, tmp_path) -> None:
+        from fastmdxplora.analysis.pmf import PMF
+
+        payload = _radial_study(_well_and_hump(15.0, 5.0), np.linspace(0.4, 2.0, 33),
+                                2000.0, 2400, seed=1)
+        # As the round before saved it: judged against A's resamples.
+        payload["summary"].pop("resamples_on")
+        payload["summary"]["barrier_kjmol"] = None
+        payload["plan"] = {"collective_variable": "ligand_distance"}
+        (tmp_path / "pmf.json").write_text(json.dumps(payload), encoding="utf-8")
+        result = PMF(output_dir=tmp_path / "analysis").compute(None)
+        assert result["summary"]["barrier_kjmol"] == pytest.approx(20.0, abs=0.6)
+        assert 3.0 < result["summary"]["barrier_multiplier"] < 5.0
+
+
+def _a_well_with_a_low_end_bin():
+    """A 4 kJ/mol well at 1.0 nm; the windows from 0.4 nm; below them the
+    curve open and free, its end bin at 0.2 nm 5 kJ/mol low, as the bin
+    holding the extreme sample reads."""
+    kt = KB_KJMOL * 300.0
+    r = np.linspace(0.2, 2.0, 55)
+    w = -4.0 * np.exp(-((r - 1.0) / 0.1) ** 2)
+    w[0] -= 5.0
+    a = w - 2.0 * kt * np.log(r)
+    return r, a - a.min(), w
+
+
+class TestTheBoundStateIsSearchedWhereTheWindowsWere:
+    def test_the_end_bin_does_not_take_the_well(self) -> None:
+        from fastmdxplora.simulation.binding import (
+            STANDARD_VOLUME_NM3, binding_free_energy)
+
+        r, a, w = _a_well_with_a_low_end_bin()
+        got = binding_free_energy(r, list(a), temperature_K=300.0,
+                                  covered_nm=(0.4, 2.0), judge_the_bulk=False)
+        # Searched over the whole grid the minimum was the end bin and the
+        # study was refused as holding no bound state.
+        assert got["refused"] is None, got["refused"]
+        assert got["minimum_at_nm"] == pytest.approx(1.0, abs=0.02)
+        kt = KB_KJMOL * 300.0
+        inside = r <= got["bound_cutoff_nm"]
+        bulk = np.mean(w[-14:])
+        exact = -kt * np.log(4.0 * np.pi * np.trapezoid(
+            r[inside] ** 2 * np.exp(-(w[inside] - bulk) / kt), r[inside])
+            / STANDARD_VOLUME_NM3)
+        assert got["delta_g_kjmol"] == pytest.approx(exact, abs=1e-6)
+
+    def test_the_reference_checks_are_given_the_well_too(self, tmp_path,
+                                                         monkeypatch) -> None:
+        from types import SimpleNamespace
+
+        from fastmdxplora.batch import explorer as explorer_module
+        from fastmdxplora.simulation import reference_state
+
+        seen = {}
+        monkeypatch.setattr(reference_state, "check_the_reference",
+                            lambda *a, **k: seen.update(k) or {})
+        batch = explorer_module.BatchExplorer.__new__(explorer_module.BatchExplorer)
+        batch.run_specs = [SimpleNamespace(options={"simulation": {"umbrella": {
+            "index": 0, "ligand_name": "BEN", "site_selection": "resid 1"}}})]
+        r, a, _ = _a_well_with_a_low_end_bin()
+        batch._with_the_reference_checked(
+            {"bulk_from_nm": 1.6}, {"coordinate": list(r), "free_energy_kjmol": list(a)},
+            _plan([0.4, 2.0]), {0: tmp_path}, temperature=300.0, cone=None)
+        assert seen["bound_at_nm"] == pytest.approx(1.0, abs=0.02)
+
+
+class TestAHoleIsJudgedAgainstTheBoundState:
+    def test_against_w_s_minimum_not_a_s_in_bulk(self) -> None:
+        # A 6 kJ/mol well at 0.45 nm, its wall bin 14.2 kJ/mol (5.7 kT) above
+        # the well's bottom and an empty bin inside it. Against A's lowest
+        # point, out in bulk, the wall stood 6.5 kT high and the empty bin
+        # was taken as holding nobody; against the bound state it is 5.7.
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        kt = KB_KJMOL * 300.0
+        r = np.linspace(0.4, 2.0, 50)
+        w = -6.0 * np.exp(-((r - 0.45) / 0.06) ** 2)
+        w[1] = w[2] + 14.2
+        a = w - 2.0 * kt * np.log(r)
+        energy = list(a - a.min())
+        energy[0] = None
+        got = binding_free_energy(r, energy, temperature_K=300.0, covered_nm=(0.4, 2.0))
+        assert got["delta_g_kjmol"] is None
+        assert "hold no samples" in got["refused"]
+
+
+class TestTheDataFileSaysWhereWIsZero:
+    def test_header(self, tmp_path) -> None:
+        from fastmdxplora.analysis.pmf import PMF
+
+        r = np.linspace(0.25, 2.0, 50)
+        a = -2.0 * KT * np.log(r)
+        (tmp_path / "pmf.json").write_text(json.dumps({
+            "pmf": {"coordinate": list(r), "free_energy_kjmol": list(a - a.min())},
+            "plan": {"collective_variable": "ligand_distance"},
+            "temperature_K": TEMPERATURE, "covered": [0.4, 2.0],
+            "refused": None, "unsampled_bins": 0, "n_windows": 25,
+        }), encoding="utf-8")
+        analysis = PMF(output_dir=tmp_path / "analysis")
+        header = analysis.save_data(analysis.compute(None),
+                                    tmp_path / "pmf.dat").read_text().splitlines()[1]
+        assert "W(r) at its lowest bin between the outermost windows' centres" in header
+
+    def test_an_older_record_s_w_is_zeroed_there_too(self, tmp_path) -> None:
+        from fastmdxplora.analysis.pmf import PMF
+
+        # Saved before the rule: W zeroed at the end bin, which read 2.7 low.
+        r = np.linspace(0.25, 2.0, 50)
+        w = np.zeros(50)
+        w[0] = -2.7
+        w -= w.min()
+        a = w - 2.0 * KT * np.log(r)
+        (tmp_path / "pmf.json").write_text(json.dumps({
+            "pmf": {"coordinate": list(r), "free_energy_kjmol": list(a - a.min()),
+                    "potential_of_mean_force_kjmol": list(w)},
+            "plan": {"collective_variable": "ligand_distance"},
+            "temperature_K": TEMPERATURE, "covered": [0.4, 2.0],
+            "refused": None, "unsampled_bins": 0, "n_windows": 25,
+        }), encoding="utf-8")
+        got = PMF(output_dir=tmp_path / "analysis").compute(None)
+        mean_force = got["potential_of_mean_force_kjmol"]
+        assert np.min(mean_force[r >= 0.4]) == pytest.approx(0.0, abs=1e-12)
+        assert mean_force[0] == pytest.approx(-2.7)
+
+
+class TestTheBarrierLineSaysWhatItRestsOn:
+    def _line(self, **summary):
+        from fastmdxplora.simulation.umbrella import the_barrier_in_a_line
+
+        return the_barrier_in_a_line({
+            "plan": {"collective_variable": "torsion"},
+            "summary": {"barrier_kjmol": 6.3, "barrier_at": 0.0524, **summary}})
+
+    def test_with_no_error_the_margin_alone(self) -> None:
+        assert self._line(barrier_error_kjmol=None) == (
+            "6.3 kJ/mol at 0.0524 rad, on the free energy (no error computed; "
+            "judged by the 2.5 kJ/mol margin alone).")
+
+    def test_with_one_it_sits_high_by_its_zero(self) -> None:
+        from fastmdxplora.simulation.umbrella import THE_CURVE_SITS_HIGH
+
+        assert self._line(barrier_error_kjmol=1.0, barrier_zero=THE_CURVE_SITS_HIGH) == (
+            "6.3 +/- 1.0 kJ/mol at 0.0524 rad, on the free energy, about 0.8 of "
+            "its error high as the curve's zero is.")
+
+
+class TestNoWellIsNoBoundState:
+    """Searched between the windows' centres, a free particle's flat W had
+    its minimum wherever the noise put it and was integrated from there:
+    -7.4 to +0.8 kJ/mol on four seeds. A bound range is where W stands more
+    than kT below bulk; a curve with nowhere that deep has none."""
+
+    def _curve(self, depth_kt):
+        kt = KB_KJMOL * 300.0
+        r = np.linspace(0.4, 2.0, 50)
+        w = -depth_kt * kt * np.exp(-((r - 0.8) / 0.08) ** 2)
+        a = w - 2.0 * kt * np.log(r)
+        return r, list(a - a.min())
+
+    def test_shallower_than_kt_is_refused(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        r, a = self._curve(0.9)
+        got = binding_free_energy(r, a, temperature_K=300.0, covered_nm=(0.4, 2.0))
+        assert got["delta_g_kjmol"] is None
+        assert "less than kT" in got["refused"] and "no bound state" in got["refused"]
+        assert got["well_depth_kjmol"] == pytest.approx(0.9 * KB_KJMOL * 300.0, abs=0.05)
+
+    def test_deeper_than_kt_is_given(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        r, a = self._curve(1.2)
+        got = binding_free_energy(r, a, temperature_K=300.0, covered_nm=(0.4, 2.0))
+        assert got["refused"] is None and got["delta_g_kjmol"] is not None
+
+    def test_a_free_particle_recombined_is_refused(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        payload = _radial_study(lambda r: 0.0 * r, np.linspace(0.4, 2.0, 25),
+                                1000.0, 1600, seed=1, resamples=0)
+        got = binding_free_energy(payload["pmf"]["coordinate"],
+                                  payload["pmf"]["free_energy_kjmol"],
+                                  temperature_K=300.0, covered_nm=(0.4, 2.0))
+        assert got["delta_g_kjmol"] is None
+        assert "no bound state" in got["refused"]
