@@ -1396,6 +1396,11 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
         notes.append(reason)
     if findings.get("made_whole"):
         notes.append(str(findings["made_whole"]))
+    # A clustering's populations counted at a stride (`max_frames`, or a
+    # stride of its own): a fraction is of the frames clustered.
+    counted = findings.get("populations")
+    if isinstance(counted, dict) and counted.get("said"):
+        notes.append(str(counted["said"]))
     # How close the solute came to its own images: the image check's own
     # paragraph, said once, in its section; on each other analysis whose
     # frames it met its image in, a line pointing there.
