@@ -234,3 +234,56 @@ def test_joined_segments_do_not_round_up_a_withheld_count(monkeypatch, samples, 
     monkeypatch.setattr(statistics, "summarise", lambda *a, **k: (mean, None))
     _, reason = statistics.summarise_segments(np.tile([0.0, 1.0], 40), [40])
     assert expected in reason
+
+
+# -- float noise in the floor ---------------------------------------------------
+#: A count, what the tables give and what the pages say. 0.4 and 2.4 stored
+#: with float noise below them read 0.3 and 2.3; a count just under a whole
+#: number still never reads as that number.
+NOISE = [
+    (0.39999999999999986, 0.4, "fewer than one independent sample"),
+    (2.3999999999999995, 2.4, "2.4 independent samples"),
+    (1.4999999999999998, 1.5, "1.5 independent samples"),
+    (9.999999999999999, 9.9, "9.9 independent samples"),
+    (24.999999999999996, 24.9, "24.9 independent samples"),
+    (2.9999999999999996, 2.9, "2.9 independent samples"),
+    (9.96, 9.9, "9.9 independent samples"),
+    (21.0, 21.0, "21 independent samples"),
+]
+
+
+@pytest.mark.parametrize("count, floored, said", NOISE)
+def test_float_noise_does_not_floor_a_tenth_away(count, floored, said):
+    assert statistics.independent_samples_floored(count) == floored
+    assert independent_samples_said(count) == said
+
+
+def test_the_pages_floor_float_noise_as_the_records_do():
+    """`samplesSaid` in overview.js, by the same rule."""
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node")
+    script = (Path(__file__).parents[1] / "src" / "fastmdxplora" / "gui" / "static"
+              / "overview.js").read_text(encoding="utf-8")
+    start = script.index("  function samplesSaid(")
+    function = script[start:script.index("\n  }\n", start) + 4]
+    counts = [count for count, _, _ in NOISE]
+    probe = (f"{function}\nconsole.log(JSON.stringify({json.dumps(counts)}"
+             ".map(function (n) { return samplesSaid(n); })));")
+    said = subprocess.run([node, "-e", probe], capture_output=True, text=True, check=True)
+    assert json.loads(said.stdout) == [words for _, _, words in NOISE]
+
+
+def test_the_agent_s_summary_floors_float_noise(tmp_path):
+    from tests.test_a_mean_is_recorded_with_its_unit import _study
+    from fastmdxplora.gui.agent_panel import _results_summary
+
+    text = _results_summary(_study(tmp_path, {"rg": {
+        "mean": 0.328, "standard_error": float("nan"), "effective_samples": 2.3999999999999995,
+        "not_a_measurement": "too few independent samples", "unit": "nm"}}))
+    assert "rg: mean 0.3280 nm, 2.4 effective samples" in text

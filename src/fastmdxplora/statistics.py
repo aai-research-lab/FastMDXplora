@@ -122,10 +122,15 @@ def independent_samples_said(count: float, *, about: bool = False) -> str:
 def independent_samples_floored(count: float) -> float:
     """A count of independent samples rounded down to one decimal, as
     :func:`independent_samples_said` says it, for a table's column. Never
-    above the count, so never up to a threshold it is below."""
-    tenths = math.floor(float(count) * 10)
-    if tenths / 10 > count:
-        tenths -= 1
+    above the count by more than float noise, so 0.39999999999999986 is
+    0.4, and never up to a whole number above it, so never up to a threshold
+    it is below: 24.999999999999996 is 24.9."""
+    count = float(count)
+    tenths = math.floor(count * 10 + 1e-6)
+    if math.floor(tenths / 10) > count:
+        tenths = math.floor(count * 10)
+        if tenths / 10 > count:
+            tenths -= 1
     return tenths / 10
 
 

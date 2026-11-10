@@ -26,8 +26,13 @@
     n = Number(n);
     if (!Number.isFinite(n)) return "";
     if (n < 1) return "fewer than one independent sample";
-    var tenths = Math.floor(n * 10);
-    if (tenths / 10 > n) tenths -= 1;
+    // Float noise aside (0.39999999999999986 is 0.4), but never up to a
+    // whole number above the count (24.999999999999996 is 24.9).
+    var tenths = Math.floor(n * 10 + 1e-6);
+    if (Math.floor(tenths / 10) > n) {
+      tenths = Math.floor(n * 10);
+      if (tenths / 10 > n) tenths -= 1;
+    }
     var count = (tenths / 10).toFixed(1).replace(/\.0$/, "");
     return (about ? "about " : "") + count + " independent sample" +
       (Number(count) === 1 ? "" : "s");
