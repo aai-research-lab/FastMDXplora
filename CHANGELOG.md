@@ -2227,6 +2227,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- The Agent knows where you are on three more pages, as where to look and
+  never as what is so (`current_view`). On the Analysis page, the section
+  being read and the analysis it is of, whose record is read first. In the
+  Config Builder, the step in view, the setting last worked on, the
+  study-wide settings changed from their defaults (the first twenty and how
+  many in all, as typed) and whether the form holds changes not in a Config
+  downloaded, launched or opened in this window; the setting is read from
+  the config schema (its default, choices, bounds and help), and the file
+  open in the reader is read as on any page. In the Viewer, **Ask about...**
+  on the canvas opens the Agent beside it with the residues chosen named in
+  its box, and each is found in the topology the study's analyses read as
+  the Viewer's panel finds a residue clicked (the selection that picks it
+  alone, and its atoms), or said why not; a selection typed is checked
+  there too. The
+  three digests of what is sent are set again; every recorded verdict
+  replays as recorded.
 - `python -m fastmdxplora.validation.replica_calibration` gives, beside the
   ratio (the SD of the replica means over the mean stated error, near one
   for honest errors; the preprint's ratio is the reciprocal of this one),
