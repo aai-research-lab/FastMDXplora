@@ -88,7 +88,12 @@ _WINDOWS = sys.platform.startswith("win")
 
 
 def _process_alive(pid: int) -> bool:
-    """Alive, and on POSIX not a zombie. Never touches the process."""
+    """Alive, and on POSIX not a zombie. Never touches the process.
+
+    EPERM to the zero signal is not alive on its own: macOS says it for a
+    zombie, and both macOS and Linux for another user's process. ``ps``
+    says which, and where it cannot be read the process is taken for gone,
+    as :func:`fastmdxplora.gpu_here._going` takes a group."""
     if _WINDOWS:
         import ctypes
         from ctypes import wintypes
@@ -107,17 +112,18 @@ def _process_alive(pid: int) -> bool:
         finally:
             kernel32.CloseHandle(handle)
 
+    refused = False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        refused = True
     try:
         state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
                                capture_output=True, text=True, timeout=2).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        return True
+        return not refused
     if not state:
         return False
     return not state.startswith("Z")
