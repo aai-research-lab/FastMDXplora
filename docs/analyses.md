@@ -208,8 +208,10 @@ most 5,000 (every 3rd of 12,000 frames, 4,000 of them). The matrix grows with
 the square of the frames clustered, so this bounds it, and the memory check
 is of the frames clustered. The stride is in `options.json` (`findings.frames`)
 and, with each cluster's frames and fraction, under `findings.populations`;
-each fraction is of the frames clustered, and the report says the
-populations were counted on every k-th frame. `stride: k` under
+each fraction is of the frames clustered. The report, the log, the GUI's
+Conformations section and its charts, and the clustering's figures (PNG and
+SVG) say the populations were counted on every k-th frame, and what clusters
+every frame. `stride: k` under
 `options: {cluster: ...}` clusters every k-th frame, or every k-th of more
 where that would leave more than `max_frames` (said so); `max_frames: null`
 leaves the frames to `stride`, every frame at its default, the memory check
@@ -264,10 +266,11 @@ from the room as said, and last where the memory was read, and said in the
 log and on the Analysis page, in the analysis's own section;
 `stride: k` under `options: {cluster: ...}` clusters every k-th frame (the
 stride named is never under the one `max_frames` chose), and the other
-analyses still read every frame. With less than about 106 MB of memory left
+analyses still read every frame. With less than about 148 MB of memory left
 to it, clustering is refused at any stride: a clustering of a few hundred
-frames was measured to peak at up to 74.1 MiB, and is planned on 79.7 MB
-(76 MiB) at the least. On `features: coordinates`,
+frames was measured to peak at up to 74.1 MiB here, and CI's runner took 31
+MiB more than this machine of a whole clustering, so it is planned on 111.1
+MB (106 MiB) at the least. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
 matrix and is checked the same way (16 n^2 bytes, the matrix and its centred
 square), checked before any of its methods runs and refused past it with the
