@@ -599,6 +599,45 @@ Three things worth reading beside the answer, all in `next_study`:
 Three hundred picoseconds is enough: a displacement converges like a mean, and
 1,500 samples fix the gradient to about 6 kJ/mol/nm.
 
+### What the curve says: W(r), A(r) and the barrier
+
+Along a distance between two centres (`ligand_distance`, `distance`) the
+recombination gives the free energy of the distance's distribution,
+`A(r) = -kT ln P(r)`, which still holds the room in a shell, `4πr²`: with
+nothing interacting it falls as `-2kT ln r`. The curve plotted, and named
+on the figure's axis, is the potential of mean force,
+`W(r) = A(r) + 2kT ln r`, flat once the two no longer interact, with `kT`
+at the study's own `simulation.temperature_K`. `pmf.json` saves both, in
+kJ/mol against r in nm, each zero at its lowest bin:
+`pmf.free_energy_kjmol` is A(r) and `pmf.potential_of_mean_force_kjmol` is
+W(r), and `pmf.curves` says which is which. The binding free energy, its
+bulk check and the next study's design read A(r), since the integral is
+over the distribution and a window comes to rest against the gradient of
+A(r). The barrier and the minima in `summary` are read off W(r), as
+`summary.read_off` says: read off A(r) a radial curve's highest point is
+the wall at the first window, and a depth moves with the range the windows
+spanned, by `2kT ln(r2 / r1)`. The `.dat` file beside the figure has both
+columns. Along any other coordinate there is one curve and it is read as
+it is.
+
+**A barrier is a peak** that stands above the lowest point on each side by
+at least 2.5 kJ/mol and by twice the error of that rise. The error is the
+rise's own spread over the bootstrap's resampled curves where 20 or more
+hold both bins, since a difference carries none of the zero's noise that
+each bin's error holds; else the two bins' standard errors together; with
+no bootstrap, the 2.5 kJ/mol alone. `summary.barrier_judged_by` says which,
+and `summary.barrier_error_kjmol` is the error of the barrier given. A peak
+clearing 2.5 kJ/mol and not its error is refused rather than flagged, since
+a number in `barrier_kjmol` is the one quoted: it is listed in
+`summary.within_error` with its rise, that rise's error and what it
+needed, and where no barrier is left `summary.barrier_refused` says why.
+
+**On a full turn the seam is one place.** Windows tiling a torsion's turn
+are recombined on a grid from -π to π, so the seam is the edge between the
+first and last bins, every bin is as wide, and a barrier at ±π is read
+across it, the two end bins being neighbours. A curve given with bins at
+both -π and +π reads them as one bin, their mean.
+
 ### The sphere a distance coordinate leaves open
 
 A window on a distance holds the ligand at a radius and leaves it free to be
