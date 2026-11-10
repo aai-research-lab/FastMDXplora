@@ -784,6 +784,7 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
             options=["include", "exclude"], context="analysis",
         )
     if isinstance(analysis, dict):
+        without_the_reweighting_pass(analysis)
         _check_analysis_names(analysis)
         _check_analysis_options(analysis, context="analysis")
 
@@ -1401,6 +1402,26 @@ def _check_decisions(decisions: Any) -> None:
                 code="config.option.wrong_type", option="alternatives",
                 context=f"decisions.{name}", expected_type="list",
                 found_type=type(alternatives).__name__)
+
+
+#: The name the reweighting of a biased run is recorded under among the
+#: analyses' results. It is a pass over the analyses, run wherever a bias
+#: applies, and not an analysis that can be named.
+REWEIGHTING_PASS = "reweighted"
+
+
+def without_the_reweighting_pass(analysis: dict[str, Any]) -> None:
+    """``analysis.include`` and ``exclude`` without the reweighting pass's
+    name, which a study's record listed among its analyses once a biased
+    run was analysed (``resolved_config.yml``): `fastmdx report` and
+    `analyze --rerun` then refused the study's own record. It runs where a
+    bias applies, whatever the list says, so the name is read as nothing."""
+    for key in ("include", "exclude"):
+        names = analysis.get(key)
+        if isinstance(names, list) and REWEIGHTING_PASS in names:
+            analysis[key] = [name for name in names if name != REWEIGHTING_PASS]
+            if not analysis[key]:
+                del analysis[key]
 
 
 def _check_analysis_names(analysis: dict[str, Any]) -> None:
