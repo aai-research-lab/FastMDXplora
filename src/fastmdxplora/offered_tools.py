@@ -506,9 +506,11 @@ OFFERED: tuple[Offered, ...] = (
         look_words=("Read the docs on {}", "Reading the docs on {}", "query")),
     Offered(
         "current_view", "What the page shows",
-        "what the page shows (the study, frame, view and residues chosen), as "
-        "where to look and not as what is so, then the facts from the study's "
-        "records or the structure, read by the tools that read them.",
+        "what the page shows (the study, frame, view and residues chosen; the "
+        "section of the Report or the Analysis page; the Config Builder's step, the "
+        "setting last worked on and the settings changed), as where to look and not "
+        "as what is so, then the facts from the study's records, its topology, the "
+        "structure or the config schema, read by the code that reads them.",
         {}, f"{_A}:current_view_tool", offered=(AGENT,),
         apart="it reads the page the person is on, in the GUI; an AI app has no page",
         look_words=("Checked what the page shows", "Checking what the page shows", "")),

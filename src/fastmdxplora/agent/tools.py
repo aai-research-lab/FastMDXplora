@@ -78,9 +78,14 @@ MOST_SAID = 4000
 MOST_VIEW_HINTS = 12
 MOST_VIEW_HINT_TEXT = 512
 _VIEW_HINT_KEYS = frozenset({
-    "analysis", "colour", "expression", "field", "file", "frame", "page",
-    "representation", "section", "selection", "study", "superposed", "system",
+    "analysis", "changed", "colour", "expression", "field", "file", "frame", "page",
+    "representation", "section", "selection", "study", "superposed", "system", "unsaved",
+    "changed_count",
 })
+#: The most settings the Config Builder names as changed in one message.
+MOST_CHANGED_HINTS = 20
+#: The hints of one kind only: a list of settings, a yes, a dotted name.
+_VIEW_HINT_KINDS = {"changed": list, "unsaved": bool, "field": str, "changed_count": int}
 
 #: A structure a tool may read: a PDB identifier or a structure file. Only
 #: these, so a tool asked for a path reads coordinates and nothing else.
@@ -422,6 +427,8 @@ def _bounded_view_hints(value: Any) -> dict[str, Any]:
     for key, item in value.items():
         if key not in _VIEW_HINT_KEYS:
             continue
+        if key in _VIEW_HINT_KINDS and not isinstance(item, _VIEW_HINT_KINDS[key]):
+            raise _Refused(f"The current-view hint {key!r} is not of its kind.")
         if isinstance(item, bool):
             kept[key] = item
         elif isinstance(item, int) and not isinstance(item, bool):
@@ -432,6 +439,9 @@ def _bounded_view_hints(value: Any) -> dict[str, Any]:
             kept[key] = item
         elif isinstance(item, list) and key == "selection" and len(item) <= 20:
             kept[key] = [_residue_hint(row) for row in item]
+        elif (isinstance(item, list) and key == "changed" and len(item) <= MOST_CHANGED_HINTS
+              and all(isinstance(row, str) and len(row) <= 200 for row in item)):
+            kept[key] = list(item)
         else:
             raise _Refused("Current-view hints must contain bounded text or numbers.")
     return kept
@@ -483,7 +493,11 @@ def _current_view_look(box: Toolbox, asked: dict[str, Any], request_hints: Any,
         expression = selection
     system = hints.get("system")
     page = hints.get("page")
-    if expression and system:
+    if page == "run":
+        parts.extend(_builder_look(hints))
+        if named_study and hints.get("file"):
+            parts.append(_file_open_look(box, named_study, hints["file"], active_root))
+    elif expression and system:
         parts.append("Factual evidence from check_selection:\n" + _read_with(
             box, "check_selection", {"system": system, "expression": expression}))
     elif system:
@@ -496,17 +510,12 @@ def _current_view_look(box: Toolbox, asked: dict[str, Any], request_hints: Any,
             parts.append(f"The person is reading {where} at its section {section!r}; "
                          "answer about that section unless they say otherwise.")
         if hints.get("file"):
-            # The file open in the side panel's reader: read as
-            # read_study_file reads it, inside the study and nowhere else;
-            # the study's record as well, as the message may be about it.
-            # The study is the server's open one, checked above.
-            from dataclasses import replace
-
-            reader = replace(box, open_study=named_study) if active_root is not None else box
-            parts.append(f"The person has {hints['file']} open in the file reader. Factual "
-                         "evidence from read_study_file:\n" + _read_with(
-                             reader, "read_study_file",
-                             {"study": named_study, "file": hints["file"]}))
+            # The study's record as well, as the message may be about it.
+            parts.append(_file_open_look(box, named_study, hints["file"], active_root))
+        if expression:
+            parts.append(_expression_checked(named_study, expression))
+        elif isinstance(selection, list) and selection:
+            parts.append(_residues_chosen(named_study, selection))
         # The analysis the page is on, read first: an `analysis` hint where
         # a page sends one, the Report's section, or the analysis whose file
         # is open. A look is cut at its length, and the record of a short
@@ -526,6 +535,172 @@ def _current_view_look(box: Toolbox, asked: dict[str, Any], request_hints: Any,
     else:
         parts.append("No study or structure hint was supplied for an existing evidence tool.")
     return "\n".join(parts)
+
+
+def _file_open_look(box: Toolbox, study: Any, file: str, active_root: Any) -> str:
+    """The file open in the side panel's reader, read as read_study_file
+    reads it, inside the study and nowhere else. The study is the server's
+    open one, checked by the caller."""
+    from dataclasses import replace
+
+    reader = replace(box, open_study=study) if active_root is not None else box
+    return (f"The person has {file} open in the file reader. Factual evidence from "
+            "read_study_file:\n" + _read_with(reader, "read_study_file",
+                                              {"study": study, "file": file}))
+
+
+def _held_to_the_study(study: Any, read: Any, what: str) -> str:
+    """``read(study)`` with its record reads held to the study, as the
+    Viewer's own panel reads (`gui/server._confined`): a topology a manifest
+    names outside the study is refused, not read. Where the study's records
+    cannot be opened at all, ``what`` is said not checked, and why."""
+    from fastmdxplora.gui.server import _confined
+
+    said = _confined(Path(str(study)), read)
+    if isinstance(said, str):
+        return said
+    reason = (said.get("reason") or said.get("error")) if isinstance(said, dict) else None
+    reason = str(reason or "The study's records could not be read").rstrip(".")
+    return f"{what} not checked: {reason[:1].lower()}{reason[1:]}."
+
+
+def _expression_checked(study: Any, expression: str) -> str:
+    """A selection typed or named in the Viewer, checked in the topology the
+    study's analyses read, as check_selection checks one in a structure."""
+    return _held_to_the_study(study, lambda inside: _expression_in(inside, expression),
+                              "The selection chosen in the Viewer was")
+
+
+def _expression_in(study: Path, expression: str) -> str:
+    from fastmdxplora.gui.selection import analysed_topology
+
+    read = analysed_topology(study)
+    if "reason" in read:
+        return f"The selection chosen in the Viewer was not checked: {read['reason']}."
+    topology, name = read["topology"], read["where"].name
+    try:
+        indices = topology.select(expression)
+    except Exception as exc:  # noqa: BLE001 - MDTraj's parser raises several types
+        return f"{expression!r} is not a valid selection in {name}: {exc}"
+    residues = len({topology.atom(int(i)).residue.index for i in indices})
+    return (f"Factual evidence from {name}, the topology the analyses read: the selection "
+            f"chosen in the Viewer, {expression!r}, matches {len(indices):,} of "
+            f"{topology.n_atoms:,} atoms in {residues} residue{'' if residues == 1 else 's'}.")
+
+
+def _residues_chosen(study: Any, chosen: list[dict[str, Any]]) -> str:
+    """The residues chosen in the Viewer, each found in the topology the
+    study's analyses read as the Viewer's own panel finds a clicked one
+    (`gui/selection.selection_for`), held to the study as it is: the
+    selection that picks it alone, and its atoms, or why it was not found."""
+    return _held_to_the_study(study, lambda inside: _residues_in(inside, chosen),
+                              "The residues chosen in the Viewer were")
+
+
+def _residues_in(study: Path, chosen: list[dict[str, Any]]) -> str:
+    from fastmdxplora.gui.selection import analysed_topology, selection_for
+
+    read = analysed_topology(study)
+    if "reason" in read:
+        return f"The residues chosen in the Viewer were not checked: {read['reason']}."
+    where = read["where"]
+    said = []
+    for row in chosen:
+        name = f"{row.get('resn', '?')} {row.get('resi', '?')}{row.get('icode', '')}"
+        if row.get("chain"):
+            name += f" (chain {row['chain']})"
+        found = selection_for(study, chain=str(row.get("chain") or ""),
+                              resseq=row.get("resi"), resname=str(row.get("resn") or ""),
+                              atom=str(row.get("atom") or ""),
+                              read=(where, read["topology"]))
+        if not found.get("ok"):
+            reason = str(found.get("reason"))
+            # Not in it, and not water, whose reason says why already.
+            if " is not in " in reason and "water" not in reason:
+                reason += "; the Viewer may show atoms the analyses do not read"
+            said.append(f"{name}: not found ({reason})")
+            continue
+        residue = found["residue"]
+        atoms = residue["atoms"]
+        line = (f"{name}: selected alone as `{residue['selection']}`, "
+                f"{atoms} atom{'' if atoms == 1 else 's'}")
+        if row.get("atom"):
+            line += (f"; atom {row['atom']} as `{found['atom']['selection']}`"
+                     if found.get("atom") else f"; no atom {row['atom']}")
+        said.append(line)
+    return (f"Factual evidence from {where.name}, the topology the analyses read, for the "
+            "residues chosen in the Viewer:\n" + "\n".join(said))
+
+
+def _setting_named(dotted: str) -> tuple[str, Any] | None:
+    """The schema's setting a Config Builder field names (`simulation.timestep_fs`,
+    `execution.workers`, or a top-level name), with its block; None where the
+    name is none of the schema's."""
+    from fastmdxplora.config.schema import all_schemas
+
+    schemas = all_schemas()
+    block, _, name = dotted.rpartition(".")
+    schema = schemas.get(block or "(top-level)")
+    field = schema.get(name) if schema is not None else None
+    return (block or "(top-level)", field) if field is not None else None
+
+
+#: The Config Builder's rows that are no one setting, and what each writes
+#: (`gui/static/run-builder.js`).
+_FORM_ROWS = {
+    "simulation.length": ("how long it runs, written as simulation.duration_ns or as a "
+                          "stop once the means are determined"),
+    "simulation.replicas": ("replicas, written as a sweep of simulation.random_seed, or of "
+                            "setup.model for the models of an NMR ensemble"),
+    "written-by": "who wrote the Config, recorded and not chosen",
+    "full": "whether the Config is written with every setting or only those changed",
+}
+
+
+def _builder_look(hints: dict[str, Any]) -> list[str]:
+    """What the Config Builder hints point at: the step and the setting, said
+    as where the person is, and that setting as the schema declares it."""
+    parts: list[str] = []
+    where = "The person is in the Config Builder"
+    if hints.get("section"):
+        where += f" at its step {hints['section']!r}"
+    field = hints.get("field")
+    if field:
+        where += f", last working on the setting {field!r}"
+    elif hints.get("analysis"):
+        where += f", last working on the analysis {hints['analysis']!r}"
+    parts.append(where + "; answer about that unless they say otherwise.")
+    changed = hints.get("changed") or []
+    if changed:
+        count = hints.get("changed_count")
+        some = (f"the first {len(changed)} of the {count} study-wide settings"
+                if isinstance(count, int) and count > len(changed) else
+                "these study-wide settings")
+        parts.append(f"The form shows {some} changed from their defaults, as typed and not "
+                     "checked by the validator: " + "; ".join(changed) + ".")
+    if hints.get("unsaved"):
+        parts.append("The form holds changes not in a Config downloaded, launched or opened "
+                     "in this window.")
+    found = _setting_named(str(field)) if field else None
+    if found:
+        block, setting = found
+        said = [f"{block}.{setting.name}" if block != "(top-level)" else setting.name,
+                f"default {setting.default!r}"]
+        if setting.choices:
+            said.append("choices " + ", ".join(setting.choices))
+        if setting.minimum is not None:
+            said.append(("above " if setting.exclusive_minimum else "at least ")
+                        + str(setting.minimum))
+        if setting.maximum is not None:
+            said.append(f"at most {setting.maximum}")
+        parts.append("Factual evidence from the config schema: " + ", ".join(said) + ". "
+                     + " ".join(setting.help.split()))
+    elif field in _FORM_ROWS:
+        parts.append(f"{field!r} is a row of the form, not one setting of the config schema: "
+                     f"{_FORM_ROWS[field]}.")
+    elif field:
+        parts.append(f"{field!r} is not a setting of the config schema.")
+    return parts
 
 
 def current_view_tool(hints: Any = None, *, active_root: Any = None,

@@ -335,3 +335,15 @@ box's wall, decided 10-18): a setting's default, in the schema's
 structure. The digests were set again, and every verdict of the three
 recordings still replays as recorded, so the runs stand; what the Agent
 would now propose of a box is for a run asked again, not claimed here.
+
+### What is sent, changed again (`agent-context-2`, 2026-11-09)
+
+The look at what the page shows (`current_view`) says it reads more pages:
+the section of the Analysis page and the analysis it is of, the Config
+Builder's step, the setting last worked on and the settings changed (that
+setting read from the config schema), and the residues chosen in the
+Viewer, each found in the topology the study's analyses read. Its
+description is part of what is sent, so the suite's three digests were set
+again; every verdict of the three recordings replays as recorded, and the
+runs stand. Whether the Agent answers better from these pages is for a run
+asked again, not claimed here.

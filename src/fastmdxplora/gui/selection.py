@@ -17,7 +17,7 @@ from typing import Any
 
 from fastmdxplora import record_access as _records
 
-__all__ = ["selection_for", "states_for", "topology_the_analyses_read"]
+__all__ = ["analysed_topology", "selection_for", "states_for", "topology_the_analyses_read"]
 
 _NAME = re.compile(r"^[A-Za-z0-9'*+-]{1,8}$")
 
@@ -59,6 +59,20 @@ def analysed_structure(root: Path) -> Path | str:
             else "No topology to check a selection against.")
 
 
+def analysed_topology(root: Path | str) -> dict[str, Any]:
+    """The topology the analyses read, read: ``where`` and ``topology``, or
+    the ``reason`` there is none to read."""
+    where = analysed_structure(Path(root))
+    if not isinstance(where, Path):
+        return {"reason": where.lower().rstrip(".")}
+    try:
+        from fastmdxplora.utils.native_output import topology_quietly
+
+        return {"where": where, "topology": topology_quietly(where)}
+    except Exception as exc:  # noqa: BLE001 - the caller says why
+        return {"reason": f"could not read {where.name}: {exc}"}
+
+
 def _frames_atom(base: Path, topology: Any, where: Path, index: Any) -> Any:
     """The atom of the analyses' topology that atom ``index`` of the frames
     the viewer plays is, where the frames were written from that topology
@@ -88,7 +102,8 @@ def _frames_atom(base: Path, topology: Any, where: Path, index: Any) -> Any:
 
 
 def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
-                  atom: str, frames_atom: Any = None) -> dict[str, Any]:
+                  atom: str, frames_atom: Any = None,
+                  read: tuple[Path, Any] | None = None) -> dict[str, Any]:
     """The selections for a residue and one of its atoms, each checked.
 
     ``chain`` is the chain's letter as the viewer shows it, ``resseq`` the
@@ -103,6 +118,9 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
     two residues of one chain share (an insertion code), no longer stands
     in the way. The residue is then selected by ``resid`` where its number
     and name alone would select another as well.
+
+    ``read`` is the topology the analyses read and where it is, read once
+    by :func:`analysed_topology` for several residues asked of it in turn.
     """
     try:
         number = int(str(resseq).strip())
@@ -112,15 +130,12 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
     atom = str(atom or "").strip()
     if not _NAME.match(resname) or (atom and not _NAME.match(atom)):
         return {"ok": False, "reason": "not a residue or atom name"}
-    where = analysed_structure(Path(root))
-    if not isinstance(where, Path):
-        return {"ok": False, "reason": where.lower().rstrip(".")}
-    try:
-        from fastmdxplora.utils.native_output import topology_quietly
-
-        topology = topology_quietly(where)
-    except Exception as exc:  # noqa: BLE001 - the panel says why
-        return {"ok": False, "reason": f"could not read {where.name}: {exc}"}
+    if read is None:
+        read = analysed_topology(root)
+        if "reason" in read:
+            return {"ok": False, "reason": read["reason"]}
+        read = (read["where"], read["topology"])
+    where, topology = read
 
     known = _frames_atom(Path(root), topology, where, frames_atom) \
         if frames_atom not in (None, "") else None

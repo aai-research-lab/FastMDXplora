@@ -3618,10 +3618,13 @@
       text(el("run-config-verdict"), loaded.error);
       return;
     }
-    applyLoadedState(loaded.state, {
+    await applyLoadedState(loaded.state, {
       from: path,
       note: `Opened ${path}. Changes here are saved as a new file; that one is left as it is.`,
     });
+    // The form as opened is that file: nothing in it is unsaved.
+    draftKept = draftNow();
+    sayDraftState();
   }
 
   /* Fill the form in from a config the server has already mapped to form
@@ -3635,6 +3638,7 @@
     }
     const { from: origin, note } = options;
     openedAConfig = true;
+    lastField = null;
     // The form as it was, so the config loaded (the Agent's, a file
     // opened) is one step of its own for Cmd+Z, not the next edit's.
     beforeActing();
@@ -3940,6 +3944,7 @@
   }
 
   function resetEverything() {
+    lastField = null;
     state.phases = state.start ? new Set(STARTING_POINTS[state.start].phases) : new Set();
     state.values = {};
     stoppingDraft = null;
@@ -4278,6 +4283,84 @@
   } else {
     attach();
   }
+
+  /* For the Agent: the step of the Config Builder in view, the setting last
+   * worked on (focus leaves it for the Agent's box), the settings changed
+   * from their defaults as the form holds them, and whether the form holds
+   * changes no Config was downloaded or launched with. Where to look, never
+   * what is so (`current_view`, `agent/tools.py`). */
+  /* The field last focused, by its phase and name: sent only while the form
+   * still shows it, and forgotten as a Config is opened or the form reset. */
+  let lastField = null;
+  /* The field left as its edit is saved (Tab, a click away) is the one
+   * worked on, not the one the focus lands on in the same moment; a field
+   * clicked on purpose later is named. */
+  let editedAt = -Infinity;
+  function fieldOfEvent(event) {
+    const wrap = event.target && event.target.closest
+      ? event.target.closest('.page[data-page="run"] .builder-field[data-setting]') : null;
+    return wrap ? { phase: wrap.dataset.phase || "", setting: wrap.dataset.setting } : null;
+  }
+  document.addEventListener("focusin", (event) => {
+    const field = fieldOfEvent(event);
+    if (!field) return;
+    if (performance.now() - editedAt < 100) return;
+    lastField = field;
+  });
+  ["input", "change"].forEach((kind) => document.addEventListener(kind, (event) => {
+    const field = fieldOfEvent(event);
+    if (!field) return;
+    lastField = field;
+    if (kind === "change") editedAt = performance.now();
+  }));
+  function fieldShown() {
+    if (!lastField) return null;
+    const shown = Array.from(document.querySelectorAll(
+      `.page[data-page="run"] .builder-field[data-setting="${CSS.escape(lastField.setting)}"]`))
+      .find((wrap) => (wrap.dataset.phase || "") === lastField.phase);
+    return shown && shown.offsetParent !== null ? lastField : null;
+  }
+  window.FastMDXPageHints = window.FastMDXPageHints || {};
+  window.FastMDXPageHints.run = function () {
+    const page = document.querySelector('.page[data-page="run"]');
+    if (!page || page.hidden) return null;
+    const hints = {};
+    const step = document.querySelector("#run-steps .builder-step-link.is-current span");
+    const words = step ? step.textContent.replace(/\s+/g, " ").trim() : "";
+    if (words) hints.section = words.slice(0, 200);
+    const field = fieldShown();
+    // An analysis's row is named as the analysis; a row of the form's own
+    // (how long it runs, its replicas) by its name, which the server says
+    // is no one setting.
+    if (field && field.setting.indexOf("analysis:") === 0) {
+      hints.analysis = field.setting.slice("analysis:".length, 200);
+    } else if (field) hints.field = dotted(field.phase, field.setting).slice(0, 200);
+    const changed = [];
+    let count = 0;
+    Object.keys(state.values).forEach((phase) => {
+      Object.keys(state.values[phase] || {}).forEach((name) => {
+        if (!isChanged(phase, name)) return;
+        count += 1;
+        if (changed.length >= 20) return;
+        const value = state.values[phase][name];
+        const said = typeof value === "string" ? value : JSON.stringify(value);
+        changed.push((dotted(phase, name) + " = " + said).slice(0, 200));
+      });
+    });
+    if (changed.length) {
+      hints.changed = changed;
+      hints.changed_count = count;
+    }
+    // Unsaved only where the form holds something chosen: a start picked
+    // alone is nothing to lose.
+    const typed = ["run-output", "run-trajectory", "run-topology"]
+      .some((id) => el(id) && el(id).value.trim());
+    const chosen = count || state.analyses.size || state.sweep.length || typed
+      || Object.keys(state.decisions).length || state.systems.some((row) => row.system);
+    const now = draftNow();
+    if (chosen && now !== null && draftKept !== now) hints.unsaved = true;
+    return Object.keys(hints).length ? hints : null;
+  };
 
   window.FastMDXRun = {
     // Whether the form takes steps yet (its draft read first).

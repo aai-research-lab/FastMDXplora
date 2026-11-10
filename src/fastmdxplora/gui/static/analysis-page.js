@@ -884,6 +884,45 @@
     overviewKey = ""; overview = null; convergence = {};
   });
 
+  /* For the Agent: the section of the Analysis page being read, the last
+   * one scrolled to the top of the window, else the first in the window,
+   * else the one the address names; its heading, and the analysis its
+   * first figure is from. Where to look, never what is so (`current_view`,
+   * `agent/tools.py`). */
+  function sectionInView() {
+    var page = document.querySelector('.page[data-page="analysis"]');
+    if (!page || page.hidden) return null;
+    var reading = null, first = null;
+    page.querySelectorAll(".analysis-section").forEach(function (section) {
+      if (section.hidden) return;
+      var top = section.getBoundingClientRect().top;
+      if (top <= 160) reading = section;
+      else if (!first && top < window.innerHeight) first = section;
+    });
+    if (reading || first) return reading || first;
+    var dash = (window.FastMDXDashboard && window.FastMDXDashboard.state) || {};
+    var named = dash.activePlace ? byId("analysis-section-" + dash.activePlace) : null;
+    return named && !named.hidden ? named : null;
+  }
+  window.FastMDXPageHints = window.FastMDXPageHints || {};
+  window.FastMDXPageHints.analysis = function () {
+    var section = sectionInView();
+    if (!section) return null;
+    var hints = {};
+    var title = section.querySelector(".analysis-section-title");
+    var words = title ? title.textContent.replace(/\s+/g, " ").trim() : "";
+    if (words) hints.section = words.slice(0, 200);
+    // The analysis it is of where its figures are all of one; a section of
+    // several (Other, From the report) names none.
+    var names = {};
+    section.querySelectorAll("[data-analysis]").forEach(function (card) {
+      names[card.getAttribute("data-analysis")] = true;
+    });
+    var only = Object.keys(names);
+    if (only.length === 1 && only[0]) hints.analysis = only[0].slice(0, 200);
+    return Object.keys(hints).length ? hints : null;
+  };
+
   window.FastMDXAnalysisPage = {
     sectionsRendered: sectionsRendered,
     applyFilter: applyFilter,

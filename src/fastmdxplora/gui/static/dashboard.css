@@ -1032,6 +1032,32 @@ button {
                            max-height: calc(100% - 152px); }
 }
 
+/* Ask about...: on the canvas's free corner, dark in every scheme, as the
+   overlay is. */
+.chip-btn.viewer-ask {
+    --text-primary: #f5f5f7;
+    --text-secondary: #c4c4ca;
+    /* Its hover and focus read on it, as the scene notice's do. */
+    --accent-white: #f5f5f7;
+    --accent: var(--accent-d);
+    --accent-text: var(--accent-d);
+    --accent-soft: var(--accent-soft-d);
+    --border-primary: color-mix(in srgb, #f5f5f7 16%, transparent);
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 3;
+    background: rgba(5, 5, 5, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+.chip-btn.viewer-ask:hover { background: rgba(30, 30, 32, 0.9); }
+.viewer-ask[hidden] { display: none; }
+@media (max-width: 560px) {
+    /* Below the overlay, which takes the canvas's width there. */
+    .chip-btn.viewer-ask { top: auto; bottom: 14px; left: auto; right: 14px; }
+}
+
 /* The colour bar of a per-residue result, on the canvas: dark in every
    scheme, as the overlay is. */
 .viewer-legend {

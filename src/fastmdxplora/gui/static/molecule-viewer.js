@@ -228,6 +228,9 @@
     STATE.spinning = false;
     STATE.picks = [];
     STATE.selection = null;
+    // Nothing chosen to ask about in the study switched to.
+    const ask = document.getElementById("viewer-ask");
+    if (ask) ask.hidden = true;
     STATE.focusResidue = null;
     STATE.focusIndices = null;
     STATE.residueValues = null;
@@ -1383,6 +1386,48 @@
     }
     return Object.fromEntries(Object.entries(hints).filter(([, value]) => value != null));
   }
+
+  /* Ask about...: the residues chosen named in the Agent's box, the Agent
+   * beside the Viewer. The message carries the selection as the Viewer's
+   * hints, and the server reads each residue in the topology the analyses
+   * read (`current_view`). The person's own words stay after the name. */
+  function chosenSaid() {
+    const selection = STATE.selection;
+    if (!selection) return "";
+    if (selection.expression) return `the selection ${selection.expression}`;
+    const residues = Array.isArray(selection.residues) ? selection.residues : [];
+    if (!residues.length) return "";
+    // The Viewer's hints name twenty residues at most.
+    if (residues.length > 20) return `the first 20 of the ${residues.length} residues chosen`;
+    if (residues.length > 5) return `the ${residues.length} residues chosen`;
+    return residues.map((residue) => `${residue.resn} ${residue.resi}${residue.icode || ""}`
+      + (residue.chain ? ` (chain ${residue.chain})` : "")).join(", ");
+  }
+  function offerToAsk() {
+    const ask = document.getElementById("viewer-ask");
+    if (ask) ask.hidden = !chosenSaid();
+  }
+  let askedAs = "";
+  function askAboutTheChosen() {
+    const said = chosenSaid();
+    const beside = window.FastMDXAgentBeside;
+    const box = document.getElementById("agent-request");
+    if (!said || !box) return;
+    if (beside && !beside.isOpen()) beside.open();
+    // Asked again, the name said once: the one put there before goes.
+    let typed = box.value.trim();
+    if (askedAs && typed.indexOf(askedAs.trim()) === 0) typed = typed.slice(askedAs.trim().length).trim();
+    askedAs = `About ${said}: `;
+    box.value = askedAs + typed;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  }
+  window.addEventListener("dashboard:selection-changed", offerToAsk);
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("viewer-ask")?.addEventListener("click", askAboutTheChosen);
+    offerToAsk();
+  });
 
   async function showView(view) {
     if (!view || !view.camera) return false;

@@ -1074,8 +1074,10 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: `setup-temp` (`setup.temperature_K` has no default of its own, as unset
 #: it is the run's `simulation.temperature_K`); no verdict changed. Set again
 #: by `setup-honest` (`verlet` and `variable_verlet` not among the integrator's
-#: choices); no verdict changed.
-ASKED_NOW = "34b11158700faaac629d863445de8aedd83c084969a06ea5ed2830f97c451e7d"
+#: choices); no verdict changed. Set again by `agent-context-2` (what
+#: `current_view` says it reads: the Analysis page, the Config Builder, the
+#: residues chosen in their topology); no verdict changed.
+ASKED_NOW = "dfdc6b7e39331cef34a207e653bb63cb468be737f549d76e12d4e10dd0f91893"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1436,8 +1438,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "8628909bc5d38721f02b6474f1d2d7a9893a0c4e6f8d5f5a4123d7a55e7a5182",
-    False: "f329e1988077a59698b90cdef9b68f83a612966d0ba78b02af20999655f15005"}
+    True: "efbd37edb91a7cf5c7a3681bbdcf71e8cab26c73ec00cc8ab377e9e53828db87",
+    False: "b98c8e886ab53488c4e391b1e104b599a047ac89b4ad626a02d0a21562fff266"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:
