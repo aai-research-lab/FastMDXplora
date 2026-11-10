@@ -318,7 +318,7 @@ def recorded_analyses(study: str | Path) -> list[str]:
     except (OSError, ValueError, AttributeError):
         made = None
     if isinstance(made, dict) and made:
-        return list(made)
+        return _analyses_only(made)
     from fastmdxplora.config import ConfigError
     from fastmdxplora.config.recorded import RECORDED, phase_settings
 
@@ -326,7 +326,18 @@ def recorded_analyses(study: str | Path) -> list[str]:
         asked = phase_settings(root / RECORDED, "analysis", study=root).get("include")
     except (ConfigError, OSError):
         return []
-    return [str(name) for name in asked] if isinstance(asked, list) else []
+    return _analyses_only(asked) if isinstance(asked, list) else []
+
+
+def _analyses_only(names: Any) -> list[str]:
+    """The names, of those a study recorded, that are analyses this release
+    has: a biased study's results list the reweighting pass (`reweighted`)
+    beside them, and offered ticked, Analyze again refused it."""
+    import fastmdxplora.analysis  # noqa: F401  (fills the registry)
+    from fastmdxplora.analysis.orchestrator import available_analyses
+
+    known = set(available_analyses())
+    return [str(name) for name in names if str(name) in known]
 
 
 def offered(study: str | Path) -> dict[str, Any]:
