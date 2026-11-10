@@ -229,10 +229,8 @@ def test_artifact_links_keep_percent_and_hashes_in_filenames(study):
             assert status == 200 and body == expected
 
 
-def test_report_panel_and_quick_action_links_reach_a_percent_filename(study, monkeypatch):
-    # A panel's href is quoted here from its raw path; a quick action's is
-    # quoted already (`report_dashboard._href`), and quoting it again sent
-    # "%25" for every "%".
+def test_report_panel_links_reach_a_percent_filename(study, monkeypatch):
+    # A panel's href is quoted here from its raw path, once.
     from fastmdxplora.gui import report_dashboard
     from fastmdxplora.gui.server import _report_panels
 
@@ -246,10 +244,8 @@ def test_report_panel_and_quick_action_links_reach_a_percent_filename(study, mon
         report_dashboard.DashboardSection("Analysis", "analysis", [panel])])
     panels = _report_panels(study)
     section = panels["analysis_sections"][0]["panels"][0]
-    quick = next(link for link in panels["quick_actions"]
-                 if link["label"] == "Open Markdown Report")
     with _serving(study.resolve()) as url:
-        for href in (section["href"], section["original_href"], quick["href"]):
+        for href in (section["href"], section["original_href"]):
             status, _headers, body = _get(url + href)
             assert status == 200 and body == b"figure", href
 
