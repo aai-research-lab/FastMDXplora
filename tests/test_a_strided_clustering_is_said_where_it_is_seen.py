@@ -132,3 +132,10 @@ def test_the_timeline_s_medoid_is_of_the_frames_clustered(strided):
     marks = _medoids(strided)
     assert marks and all(mark["label"].endswith("of the frames clustered") for mark in marks)
 
+
+def test_the_frames_are_counted_alike_in_one_sentence():
+    analysis = Cluster(methods=["kmeans"], features="coordinates")
+    analysis.compute(_chain(12000))
+    said = analysis.findings["frames"]["said"]
+    assert said.startswith("All 12,000 frames were analysed")
+    assert "4,000 frames" in said

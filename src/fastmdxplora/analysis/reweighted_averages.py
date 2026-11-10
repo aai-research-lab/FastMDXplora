@@ -763,9 +763,9 @@ def labelled_frames(result: Any, n_frames: int, n_labels: int
     if n_labels != expected:
         where = ("its record of the frames it read" if read
                  else "no record of the frames it read")
+        every = f"every {_ordinal(stride)} frame" if stride > 1 else "every frame"
         return None, (f"{n_labels:,} labels, where {where} gives {expected:,} of the "
-                      f"{n_frames:,} frames analysed (first frame {first}, every "
-                      f"{stride})")
+                      f"{n_frames:,} frames analysed ({every} from frame {first:,})")
     return first + stride * np.arange(n_labels), ""
 
 
@@ -994,7 +994,8 @@ def reweight_results(
                     weight_concentration_effective_frames=own.effective_sample_size,
                     said=(f"Weighted by each labelled frame's own weight: "
                           f"{frames.size:,} of the {n_frames:,} frames, every "
-                          f"{_ordinal(stride)} frame from frame {int(frames[0])}, "
+                          + (f"{_ordinal(stride)} frame" if stride > 1 else "frame")
+                          + f" from frame {int(frames[0]):,}, "
                           f"{own.effective_sample_size:.0f} weight-concentration "
                           "effective frames among them."))
             occupancies.append(entry)

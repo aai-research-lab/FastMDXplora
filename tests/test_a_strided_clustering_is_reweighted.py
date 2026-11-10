@@ -231,3 +231,29 @@ def test_the_viewer_s_states_are_of_the_frames_labelled(strided_study):
     assert early["frames"] == late["frames"] == 5
     assert said["of_played"] == [early["state"]] * 14 + [late["state"]] * 16
     assert "among the 10 frames it clustered (every 3rd of the 30 analysed)" in said["said"]
+
+
+def test_a_start_alone_is_said_as_every_frame_from_it(tmp_path):
+    """"every 1st frame from frame 1507" read for a clustering begun later."""
+    analysis = _write_run(tmp_path)
+    n = 400
+    times = np.linspace(1.0, 200.0, n)
+    traj = _chain(n, seed=3)
+    traj.time = times
+    result = Cluster(output_dir=analysis, methods=["kmeans"], features="coordinates",
+                     n_clusters=3, start=0.1).run(traj)
+    record = reweight_results({"cluster": result}, {"cluster": Cluster}, n_frames=n,
+                              frame_times_ps=times, output_dir=analysis)
+    first = record["populations"][0]["first_frame"]
+    assert f"every frame from frame {first:,}," in record["populations"][0]["said"]
+    assert "1st" not in record["populations"][0]["said"]
+
+
+def test_a_refusal_says_the_stride_as_an_ordinal(tmp_path):
+    path = tmp_path / "options.json"
+    path.write_text(json.dumps({"findings": {"frames": {"first_frame": 0, "stride": 3}}}))
+    result = _Result({"kmeans": np.zeros(5, int)})
+    result.options_path = path
+    _, why = reweighting.labelled_frames(result, 12000, 5)
+    assert why == ("5 labels, where its record of the frames it read gives 4,000 of the "
+                   "12,000 frames analysed (every 3rd frame from frame 0)")
