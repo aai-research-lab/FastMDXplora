@@ -608,29 +608,54 @@ nothing interacting it falls as `-2kT ln r`. The curve plotted, and named
 on the figure's axis, is the potential of mean force,
 `W(r) = A(r) + 2kT ln r`, flat once the two no longer interact, with `kT`
 at the study's own `simulation.temperature_K`. `pmf.json` saves both, in
-kJ/mol against r in nm, each zero at its lowest bin:
-`pmf.free_energy_kjmol` is A(r) and `pmf.potential_of_mean_force_kjmol` is
-W(r), and `pmf.curves` says which is which. The binding free energy, its
-bulk check and the next study's design read A(r), since the integral is
-over the distribution and a window comes to rest against the gradient of
-A(r). The barrier and the minima in `summary` are read off W(r), as
-`summary.read_off` says: read off A(r) a radial curve's highest point is
-the wall at the first window, and a depth moves with the range the windows
-spanned, by `2kT ln(r2 / r1)`. The `.dat` file beside the figure has both
-columns. Along any other coordinate there is one curve and it is read as
-it is.
+kJ/mol against r in nm: `pmf.free_energy_kjmol` is A(r), zero at its
+lowest bin, and `pmf.potential_of_mean_force_kjmol` is W(r), zero at its
+lowest bin between the outermost windows' centres; `pmf.curves` says which
+is which. Beyond those centres a bin is read from one window's tail, and
+the bin at the end of the grid holds the extreme sample and reads low, so
+that stretch is plotted faint and dashed and W is not zeroed there: zeroed
+at the end bin, a free particle's W sat 2.7 kJ/mol above a dip that read as
+a contact well. The binding free energy, its bulk check and the next
+study's design read A(r), since the integral is over the distribution and a
+window comes to rest against the gradient of A(r). The bound state starts
+at W(r)'s minimum, the well: A's minimum sits `2kT ln(r_outer / r_well)`
+further out and can be in bulk, and read there a 6 kJ/mol well at 0.45 nm
+was integrated out to 1.6 nm and given a binding free energy more negative
+than a 12 kJ/mol well's. The barrier and the minima in `summary` are read
+off W(r), as `summary.read_off` says: read off A(r) a radial curve's
+highest point is the wall at the first window, and a depth moves with the
+range the windows spanned, by `2kT ln(r2 / r1)`. The `.dat` file beside
+the figure has both columns. Along any other coordinate there is one curve
+and it is read as it is, its `.dat` header giving the coordinate's unit.
 
 **A barrier is a peak** that stands above the lowest point on each side by
-at least 2.5 kJ/mol and by twice the error of that rise. The error is the
-rise's own spread over the bootstrap's resampled curves where 20 or more
-hold both bins, since a difference carries none of the zero's noise that
-each bin's error holds; else the two bins' standard errors together; with
-no bootstrap, the 2.5 kJ/mol alone. `summary.barrier_judged_by` says which,
-and `summary.barrier_error_kjmol` is the error of the barrier given. A peak
-clearing 2.5 kJ/mol and not its error is refused rather than flagged, since
-a number in `barrier_kjmol` is the one quoted: it is listed in
+at least 2.5 kJ/mol and by its rise's error times a multiplier, and the
+peaks are judged as a family. The barrier quoted is the highest peak, so
+its noise is that of the largest rise the noise makes anywhere on the
+curve: judged one peak at a time against twice its own error, a flat turn
+at 90 frames a window quoted a barrier on 20 seeds in 20, and at 300 frames
+on 7 in 20. The multiplier is the 95th percentile, over the bootstrap's
+resampled curves, of the largest departure of any rise from the curve's
+own over that rise's error, so a curve with no barrier quotes one about 5%
+of the time (`BARRIER_FALSE_RATE`): on those turns 10 in 100 at 90 frames,
+where 72 samples a window leave the bootstrap's errors a little small, and
+2 in 60 at 300. A rise's error is its own spread over the resamples where
+20 or more hold both bins, since a difference carries none of the zero's
+noise that each bin's error holds; else the two bins' standard errors
+together, with Sidak's multiplier over every pair of bins; with no
+bootstrap, the 2.5 kJ/mol alone, and a flat curve's noise can then pass
+it. `summary.barrier_judged_by` says how the barrier given (or the highest
+peak refused) was judged, `summary.barrier_multiplier` the multiplier and
+`summary.barrier_error_kjmol` the barrier's error. A peak clearing
+2.5 kJ/mol and not its error is refused rather than flagged, since a number
+in `barrier_kjmol` is the one quoted: it is listed in
 `summary.within_error` with its rise, that rise's error and what it
-needed, and where no barrier is left `summary.barrier_refused` says why.
+needed; where no barrier is left `summary.barrier_refused` says why; where
+the refused peak is the curve's highest point, `highest_kjmol` is null and
+`highest_withheld` says why; and where a lower peak stands,
+`summary.barrier_note` says a higher one was refused. The console and the
+comparison report give the barrier in one line, or that it was refused and
+why, as in `Barrier: 19.9 +/- 0.3 kJ/mol at 3.09 rad, on the free energy.`
 
 **On a full turn the seam is one place.** Windows tiling a torsion's turn
 are recombined on a grid from -π to π, so the seam is the edge between the
