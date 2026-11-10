@@ -63,7 +63,10 @@ def test_two_studies_have_local_zoom_and_export_tools(tmp_path, analysis, base):
             with page.expect_download() as got:
                 page.click(chart + ' .plot-tool:text("SVG")')
             exports = {"full_svg": got.value.suggested_filename}
-            assert ET.parse(got.value.path()).getroot().tag == "{http://www.w3.org/2000/svg}svg"
+            full = ET.parse(got.value.path()).getroot()
+            assert full.tag == "{http://www.w3.org/2000/svg}svg"
+            # Compare overlays two studies, not two runs of one.
+            assert " of 2 studies overlaid, against " in full.get("aria-label")
 
             plot = page.locator(chart + " svg")
             plot.scroll_into_view_if_needed()

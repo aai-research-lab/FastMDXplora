@@ -223,7 +223,8 @@
 
   /* ``over``, where given, is every time on the card the chart is on: the
    * unit is chosen once for all of them (Compare), so one card never says
-   * one series in ps and the next in ns. */
+   * one series in ps and the next in ns. ``measure.of`` says what the
+   * lines are ("studies" on Compare), runs where not given. */
   function draw(chart, legend, drawn, measure, missing, over) {
     chart.innerHTML = "";
     legend.innerHTML = "";
@@ -271,8 +272,9 @@
     svg.setAttribute("class", "runs-overlay-svg");
     svg.setAttribute("role", "img");
     var unit = measure && measure.unit ? " (" + measure.unit + ")" : "";
-    svg.setAttribute("aria-label", (measure ? measure.label : "") + " of " + drawn.length +
-                     " runs overlaid, against " + clock.label.toLowerCase());
+    svg.setAttribute("aria-label", (measure ? measure.label : "") + " of " + drawn.length + " " +
+                     ((measure && measure.of) || "runs") + " overlaid, against " +
+                     clock.label.toLowerCase());
     var line = function (x1_, y1_, x2_, y2_, cls) {
       var l = document.createElementNS(SVG, "line");
       l.setAttribute("x1", x1_); l.setAttribute("y1", y1_);
