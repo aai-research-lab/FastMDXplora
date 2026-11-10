@@ -980,21 +980,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   (`cwd`), and its lines, the GUI's card and the terminal text where the GUI
   does not run it say it ("Run, in <folder>: ...", `cd <folder> && ...`).
   Where that folder is gone, or the study was moved or renamed since it
-  stopped so that the command's `--output` (read as explore reads it: `~`
-  after `--output=` expanded with `--dashboard`, not without; a command
-  saved by an earlier build with no `--output` is read by its config's
-  `output`, and refused where that names none either) is not the study
-  open, the fix is not runnable and nothing is run into the old path. It
+  stopped so that the command's `--output` (read as the command run reads
+  it: `~` after `--output=` not expanded; a command saved by an earlier
+  build with no `--output` is read by its config's `output`, and refused
+  where that names none either) is not the study open, the fix is not runnable and nothing is run into the old path. It
   says why first (`refused`, its code marks set as code on the card), and
   what to do instead, and gives the command only as it was typed ("It was
   typed, in <folder>, as: ..."), never as the thing to run; `POST /api/fix`
   of it answers with the refusal alone, a link out of the study or not.
   The fix's command leaves out explore's dashboard flags (`--dashboard`,
-  `--dashboard-port` and the rest), since the page that runs it watches it:
-  run by the GUI with them, the study finished and then waited for a Ctrl-C
-  it could not get, read running. The stop line and the final line say the
-  command as it was typed. `explore --dashboard` of such a study starts its
-  GUI, where it started none. `fastmdx agent --autonomous` says a study stopped or failed
+  `--dashboard-port` and the rest, and their prefixes), since the page that
+  runs it watches it. Where the line had `--dashboard`, its study is in the
+  folder explore made of `--output` with `~` expanded, so the fix names
+  that folder in full. The stop line and the final line say the command as
+  it was typed. A study with a budget still starts no GUI for `--dashboard`.
+  `fastmdx agent --autonomous` says a study stopped or failed
   in its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
   `--force-overwrite` and `--rerun` now reach both of its stages where only
   setup is there; over a study holding more they are refused before anything
