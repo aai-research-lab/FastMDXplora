@@ -84,7 +84,11 @@ def test_two_studies_have_local_zoom_and_export_tools(tmp_path, analysis, base):
             exports["svg"] = got.value.suggested_filename
             svg = ET.parse(got.value.path()).getroot()
             assert svg.tag == "{http://www.w3.org/2000/svg}svg"
-            assert len(svg.findall(".//{http://www.w3.org/2000/svg}polyline")) == 2
+            lines = [
+                element for element in svg.iter("{http://www.w3.org/2000/svg}path")
+                if "runs-overlay-line" in element.get("class", "").split()
+            ]
+            assert len(lines) == 2 and all(line.get("d", "").startswith("M") for line in lines)
             with page.expect_download() as got:
                 page.click(chart + ' .plot-tool:text("PNG")')
             exports["png"] = got.value.suggested_filename
