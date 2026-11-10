@@ -4738,6 +4738,19 @@ def test_a_dashboard_budget_s_fix_never_runs_into_a_folder_named_tilde(
     assert not (typed / "~").exists()
 
 
+def test_live_dashboard_s_short_prefixes_are_left_out_of_a_fix():
+    """argparse takes `--l`, `--li` and `--liv` as `--live-dashboard` (no
+    other flag of explore begins `--l`), and the fix left them in, so it served
+    a GUI of its own and waited."""
+    from fastmdxplora.remedies import _without_a_dashboard
+
+    for prefix in ("--l", "--li", "--liv", "--live"):
+        assert _without_a_dashboard(("explore", prefix, "-c", "x.yml")) == (
+            "explore", "-c", "x.yml"), prefix
+    assert _without_a_dashboard(("explore", "--dash", "-c", "x.yml")) == (
+        "explore", "--dash", "-c", "x.yml")
+
+
 def test_a_refused_fix_s_code_marks_are_set_as_code_on_its_card():
     """The card set a refusal as plain text: its `--output` read with its
     backticks, where the Fix line above sets them as code."""

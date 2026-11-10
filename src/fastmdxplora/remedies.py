@@ -483,7 +483,7 @@ def _dashboard_flag(word: str) -> str | None:
     flag = word.partition("=")[0]
     if flag in _DASHBOARD_FLAGS:
         return flag
-    if not flag.startswith(("--dash", "--live")):
+    if not flag.startswith(("--da", "--l")):
         return None
     named = [name for name in _DASHBOARD_FLAGS if name.startswith(flag)]
     return named[0] if len(named) == 1 else None
