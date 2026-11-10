@@ -651,7 +651,13 @@ width of the reweighted distribution, not an error.
 radius of gyration, hydrogen bonds, SASA, the fraction of native contacts,
 ligand RMSD, the coordination number, the end-to-end distance, the distance
 between two selections, the area per lipid and the bilayer thickness — along
-with cluster populations, which are weighted counts.
+with cluster populations, which are weighted counts. Where clustering took
+every k-th frame (past `max_frames`, or a `stride` or `start` of its own),
+each frame clustered carries its own weight, read from the frames its record
+says it clustered, and the table says how many frames that was. Labels whose
+frames, or whose frames' weights, cannot be read are not counted unweighted:
+they are refused by name (`populations_refused`), in the record and in the
+report.
 
 **What is not.** Reweighting does not fix which clusters exist: the clustering
 ran on the biased frames, so the states themselves are shaped by where the bias
