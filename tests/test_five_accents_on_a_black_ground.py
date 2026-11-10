@@ -206,8 +206,9 @@ def test_a_chosen_tint_is_the_soft_accent_and_an_accepted_config_is_done() -> No
         assert "background: var(--accent-soft)" in said and "var(--accent-text)" in said
     # The segmented choices sit on a card's ground, where the tint shows.
     assert "background: var(--panel-glass)" in rule('.page[data-page="run"] .builder-seg {')
-    # The canvas's dark blocks take the dark tint with the dark accent.
-    assert sheet.count("--accent-soft: var(--accent-soft-d);") == 2
+    # The canvas's dark blocks (the overlay, the scene notice and the Ask
+    # about button) take the dark tint with the dark accent.
+    assert sheet.count("--accent-soft: var(--accent-soft-d);") == 3
     # Every control in the accent, not the browser's blue; the Files page's
     # chosen chip and its search in the accent too.
     assert ":where(input, select, progress) { accent-color: var(--accent); }" in sheet
