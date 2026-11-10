@@ -182,6 +182,22 @@ ROWS_BYTES = 64 * 2**20
 FIGURE_BYTES_PER_CELL = 161
 FIGURE_BYTES = 8 * 2**20
 
+#: The least resident memory a clustering is planned on, at any number of
+#: frames, in bytes: what the libraries take the first time they run in the
+#: process (k-means' threads, SciPy's linkage, Matplotlib's canvases at 300
+#: dpi), and the timeline, counts and dendrogram figures, which are the
+#: same at any number of frames. Measured in ``fastmdx analyze``'s own
+#: process, clustering alone, as the peak resident memory from the check
+#: (glibc's defaults), every 17th to every 4th of 2,000 frames (118 to 500
+#: frames): with k-means and average linkage 38.4 to 74.1 MiB on Python 3.10,
+#: 3.11 and 3.13 (the most, 74.1, at 500 frames on 3.13), k-means alone 31.9
+#: to 64.9, DBSCAN 30.1 to 55.9, average linkage alone 40.3 to 67.9. Without
+#: it the plan of a few hundred frames was the map's alone, 10 to 48 MiB:
+#: under a container leaving 14 to 45 MiB, the refusal named a stride of 17
+#: to 6, and each was killed. Planned on, a room under about 106 MB is
+#: refused at any stride.
+RESIDENT_LEAST = 76 * 2**20
+
 
 def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:
     """Whether a clustering makes the frames' n by n distance matrix.
@@ -197,11 +213,12 @@ def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:
 
 
 def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
-    """The peak bytes, of order n squared, that clustering ``n`` frames makes:
-    the larger of what the clustering makes of their matrix
-    (:func:`matrix_needed`) and what plotting its map makes once the matrix
-    is freed (:func:`map_needed`)."""
-    return max(matrix_needed(n, methods, features, linkage), map_needed(n))
+    """The peak bytes that clustering ``n`` frames makes: the larger of what
+    the clustering makes of their matrix (:func:`matrix_needed`) and what
+    plotting its map makes once the matrix is freed (:func:`map_needed`),
+    and :data:`RESIDENT_LEAST` at the least."""
+    return max(matrix_needed(n, methods, features, linkage), map_needed(n),
+               RESIDENT_LEAST)
 
 
 def matrix_needed(n: int, methods: Sequence[str], features: str, linkage: str) -> int:

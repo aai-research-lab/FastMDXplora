@@ -157,7 +157,10 @@ class TestTheFullMatrixOnlyWhenAsked:
 
 
 class TestTheMemoryCheck:
-    N = 600
+    #: The map of 1,000 frames, planned at 169.2 MiB, over the least
+    #: planned at any (``RESIDENT_LEAST``), which half as many are planned
+    #: on: refused in two thirds of the room it is planned in, with a stride.
+    N = 1000
 
     def _refused(self, tmp_path, monkeypatch, available: int):
         monkeypatch.setattr(clustering, "memory_available", lambda: (available, "mocked"))
@@ -167,7 +170,7 @@ class TestTheMemoryCheck:
         from fastmdxplora.refusals import CODES
 
         methods = ["kmeans", "hierarchical"]
-        available = memory_needed(self.N, methods, "rmsd", "average") // 5
+        available = memory_needed(self.N, methods, "rmsd", "average") * 2 // 3
         result = self._refused(tmp_path, monkeypatch, available)
 
         assert result.status == "error"
@@ -199,7 +202,8 @@ class TestTheMemoryCheck:
         """The row gives a refusal's first sentence: it gave the bytes and a
         reading three brackets deep, the stride behind the chip; and the
         refusal was not in the log."""
-        available = memory_needed(self.N, ["kmeans", "hierarchical"], "rmsd", "average") // 5
+        available = memory_needed(self.N, ["kmeans", "hierarchical"], "rmsd",
+                                  "average") * 2 // 3
         with caplog.at_level(logging.ERROR, logger="fastmdx.analysis.cluster"):
             result = self._refused(tmp_path, monkeypatch, available)
         said = result.message.split(": ", 1)[1]
@@ -769,6 +773,41 @@ class TestTheFiguresAreCounted:
         assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 169.1 * 2**20
 
 
+#: The most a clustering of a few hundred frames peaked at, resident from
+#: the check in ``fastmdx analyze``'s own process, clustering alone: 500
+#: frames, k-means and average linkage, Python 3.13 (``RESIDENT_LEAST``).
+FEW_FRAMES_PEAK = 74.1 * 2**20
+
+
+class TestAFewFramesArePlannedOnWhatAnyClusteringTakes:
+    """The resident plan of a few hundred frames was the map's alone, 10 to
+    48 MiB, where a run of them peaked at 30 to 74: under a container
+    leaving 14 to 45 MiB at the check, 2,000 frames were refused with a
+    stride of 17 to 6, and each was killed following it."""
+
+    @pytest.mark.parametrize("methods", [["kmeans", "hierarchical"], ["kmeans"],
+                                         ["dbscan"], ["hierarchical"]])
+    @pytest.mark.parametrize("n", [2, 118, 223, 334, 500])
+    def test_the_plan_is_not_under_the_most_a_few_frames_took(self, n, methods):
+        assert memory_needed(n, methods, "rmsd", "average") >= FEW_FRAMES_PEAK
+
+    @pytest.mark.parametrize("room_mib", [14, 30, 45])
+    def test_under_it_the_refusal_names_no_stride(self, monkeypatch, room_mib):
+        from fastmdxplora.refusals import StudyError, refusal_of
+
+        room = room_mib * 2**20
+        monkeypatch.setattr(clustering, "memory_available",
+                            lambda: (room, "the cgroup v2 limit, mocked"))
+        with pytest.raises(StudyError) as raised:
+            Cluster().compute(_chain(2000))
+        refusal = refusal_of(raised.value)
+        assert refusal.code == "analysis.memory.matrix_too_large"
+        assert refusal.details.get("stride") is None, str(raised.value)
+        assert str(raised.value).startswith("Clustering does not fit in the memory at any "
+                                            "stride."), str(raised.value)
+        assert refusal.details["bytes_needed"] == clustering.RESIDENT_LEAST
+
+
 _ADDRESS_SCRIPT = _CHAIN_SCRIPT + r"""
 import faulthandler, resource
 n = int(sys.argv[2])
@@ -1305,6 +1344,47 @@ def _cli(study, room: int, analyses, options: dict | None = None, skip: int = 0)
         capture_output=True, text=True, timeout=900, cwd=study, env=_cli_env())
 
 
+#: ``fastmdx analyze`` in its own process, clustering's resident peak
+#: counted from its memory check to its end.
+_PEAK_FROM_THE_CHECK_SCRIPT = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from fastmdxplora.analysis import cluster
+study, options = sys.argv[2], sys.argv[3]
+
+def status(name):
+    for line in open("/proc/self/status"):
+        if line.startswith(name + ":"):
+            return int(line.split()[1]) * 1024
+    raise SystemExit("no " + name)
+
+real, at = cluster.memory_available, {}
+
+def at_the_check():
+    if not at:
+        with open("/proc/self/clear_refs", "w") as refs:
+            refs.write("5")
+        at["rss"] = status("VmRSS")
+    return real()
+
+cluster.memory_available = at_the_check
+run = cluster.Cluster.run
+
+def counted(self, traj):
+    result = run(self, traj)
+    print("PEAK", json.dumps({"peak": status("VmHWM") - at["rss"], "status": result.status,
+                              "message": result.message,
+                              "needed": self.findings["memory"]["bytes_needed"],
+                              "frames": self.findings["memory"]["frames"]}), flush=True)
+    return result
+
+cluster.Cluster.run = counted
+from fastmdxplora.cli.main import main
+main(["analyze", "--output", study, "--rerun", "--no-explain", "--options", options,
+      "--analyses", "cluster"])
+"""
+
+
 def _record(study, name: str) -> tuple[dict, dict]:
     """An analysis's row in the manifest, and its findings."""
     from pathlib import Path
@@ -1444,6 +1524,31 @@ class TestTheCommandLinesOwnProcess:
         row, findings = _record(study, "cluster")
         assert row["status"] == "ok", row["message"]
         assert not findings.get("figures_not_plotted"), findings
+
+    @pytest.mark.parametrize("stride", [17, 6])
+    def test_a_few_frames_peak_within_their_plan(self, studies, stride):
+        """Every 17th and every 6th of 2,000 frames, 118 and 334, clustered
+        alone: their resident peak from the check, 38.4 to 65.6 and 50.2 to
+        58.5 MiB counted, against plans of 10.2 and 26.0 MiB without
+        ``RESIDENT_LEAST``. A container sized by those plans killed them."""
+        import subprocess
+        from pathlib import Path
+
+        if not Path("/proc/self/clear_refs").exists():
+            pytest.skip("the peak resident memory is read from Linux's /proc")
+        study = studies[2000]
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        done = subprocess.run(
+            [sys.executable, "-c", _PEAK_FROM_THE_CHECK_SCRIPT, src, str(study),
+             json.dumps({"cluster": {"stride": stride}})],
+            capture_output=True, text=True, timeout=900, cwd=study, env=_cli_env())
+        line = [row for row in done.stdout.splitlines() if row.startswith("PEAK ")]
+        assert line, done.stdout[-3000:] + done.stderr[-2000:]
+        found = json.loads(line[-1][5:])
+        assert found["status"] == "ok", found["message"]
+        assert found["frames"] == -(-2000 // stride)
+        assert found["peak"] <= found["needed"], (found["peak"] / 2**20,
+                                                  found["needed"] / 2**20)
 
     def test_an_mds_the_check_allows_runs_to_its_end(self, studies):
         """2,000 frames, PCA, MDS and t-SNE with 90 MiB of room at the
