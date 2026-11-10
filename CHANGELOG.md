@@ -159,8 +159,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   analyze`, 3,000, 6,000 and 12,000 frames of the tests' alanine chain
   clustered 3,000, 3,000 and 4,000 frames, peaking at 212.9 to 217.2 MiB
   against 214.6 planned and 376.0 to 381.2 against 381.5 (Python 3.10,
-  3.11 and 3.13). Reweighted cluster populations are left out where the
-  frames clustered are strided, as they were at a stride before.
+  3.11 and 3.13). A biased run's reweighted populations weight each frame
+  clustered by its own weight, at the cap's stride or one of its own.
 - A joined run of three or four segments can now be called drifting
   (`analysis.sampling.drifting`, `drift_test:
   slope_against_errors_and_scatter`): with each segment mean placed at the
@@ -700,6 +700,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   test, and the tests not yet run there are not counted.
   The browser test of a rerun over an unfinished round has a file of its
   own, so the other tests of a failed round run on every core.
+- A biased run's cluster populations are reweighted at any stride or
+  start. Labels not one per frame were left out of the reweighting with no
+  word, so a clustering of every k-th frame had no reweighted populations.
+  Each frame clustered is now weighted by its own weight, from the frames
+  the clustering's record says it read; labels whose frames or weights
+  cannot be read are refused by name (`populations_refused`, said in the
+  report), never counted unweighted.
+- The Viewer's States place each label on the frame it is of. The labels
+  of every k-th frame, or of a clustering begun later, were read as the
+  first frames analysed: every 3rd of 30 frames put frames 9 to 29 in the
+  state of frame 27. The States sentence says the stride.
 - Clustering plans on at least 76 MiB of resident memory at any number of
   frames. A few hundred frames were planned on their map alone, 10 to 48
   MiB, where in `fastmdx analyze` they peaked at up to 74.1 MiB from the
