@@ -413,3 +413,25 @@ def test_a_count_that_is_not_a_number_is_returned_as_it_is(count):
     """NaN raised "cannot convert float NaN to integer", inf an OverflowError."""
     floored = statistics.independent_samples_floored(count)
     assert floored == count or (np.isnan(floored) and np.isnan(count))
+
+
+# -- a count that opens a sentence ----------------------------------------------
+def test_a_reason_that_opens_with_too_few_samples_is_capitalised():
+    """Under one, a withholding reason began "fewer than one independent
+    sample in 80 frames"."""
+    _, reason = statistics._summary(
+        np.tile([0.0, 1.0], 40), 0, 1.0, (200.0, 79), lambda: (200.0, 79), 10)
+    assert reason.startswith("Fewer than one independent sample in 80 frames (one every 200). Below 10")
+    short = str(statistics.Shortfall(10, 0.4, 200.0, 1920, resolved=True))
+    assert short.startswith("Fewer than one independent sample of the 10 needed.")
+    assert str(statistics.Shortfall(0.5, 0.6, 2.0, 0, resolved=True)).startswith(
+        "Fewer than one independent sample, which meets")
+
+
+def test_joined_segments_too_few_opens_capitalised(monkeypatch):
+    mean = statistics.Equilibrated(
+        discard=0, inefficiency=200.0, effective_samples=0.2, mean=0.5,
+        standard_error=0.1, standard_deviation=0.5)
+    monkeypatch.setattr(statistics, "summarise", lambda *a, **k: (mean, None))
+    _, reason = statistics.summarise_segments(np.tile([0.0, 1.0], 40), [40])
+    assert str(reason).startswith("Fewer than one independent sample across 2 segment(s)"), reason

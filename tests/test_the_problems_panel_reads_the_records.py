@@ -416,7 +416,7 @@ def test_an_undetermined_mean_shows_the_sampling_its_record_asks_for(tmp_path):
            "fewer than one independent sample is an upper bound. At least 1640 further frames, about "
            "65.6 ps more (as long again, or to 25 samples at one every 67 frames if "
            "that is longer), then estimate again."),
-    (False, "fewer than one independent sample of the 25 needed. At one every 67 frames, that is "
+    (False, "Fewer than one independent sample of the 25 needed. At one every 67 frames, that is "
             "1640 further frames, about 65.6 ps more."),
 ])
 def test_a_shortfall_is_said_in_its_records_own_words(tmp_path, lower_bound, said):

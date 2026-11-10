@@ -122,6 +122,11 @@ def independent_samples_said(count: float, *, about: bool = False,
             + ("sample" if rounded == 1 else "samples"))
 
 
+def _opening(said: str) -> str:
+    """A count said at the start of a sentence: "Fewer than one ..."."""
+    return said[:1].upper() + said[1:]
+
+
 def independent_samples_floored(count: float) -> float:
     """A count of independent samples rounded down to one decimal, as
     :func:`independent_samples_said` says it, for a table's column. Never
@@ -772,7 +777,7 @@ def _summary(
 
     if effective < minimum_effective_samples:
         return equilibrated, Withholding(
-            f"{independent_samples_said(effective)} in {kept.size} frames "
+            f"{_opening(independent_samples_said(effective))} in {kept.size} frames "
             f"(one every {equilibrated.inefficiency:.0f}). Below "
             f"{minimum_effective_samples:g} a mean "
             "and its error describe how this particular run happened to go "
@@ -853,7 +858,7 @@ class Shortfall:
 
     def __str__(self) -> str:
         if self.met:
-            return (f"{independent_samples_said(self.have)}, which meets the "
+            return (f"{_opening(independent_samples_said(self.have))}, which meets the "
                     f"{self.target:g} asked for.")
         duration = ("" if self.more_ns is None
                     else f", about {_length(self.more_ns)} more")
@@ -867,7 +872,7 @@ class Shortfall:
                 "estimate again."
             )
         return (
-            f"{independent_samples_said(self.have)} of the {self.target:g} "
+            f"{_opening(independent_samples_said(self.have))} of the {self.target:g} "
             f"needed. At one every {self.inefficiency:.0f} frames, that is "
             f"{self.more_frames} further frames{duration}."
         )
@@ -1425,8 +1430,7 @@ def too_few_by_these_rules(record: Any, *, counted: bool = True) -> str | None:
     if not counted:
         return (f"Fewer than the {MINIMUM_EFFECTIVE_SAMPLES:g} independent samples this "
                 f"version determines a mean on. {earlier}")
-    count = independent_samples_said(samples)
-    return (f"{count[:1].upper()}{count[1:]}, fewer than the "
+    return (f"{_opening(independent_samples_said(samples))}, fewer than the "
             f"{MINIMUM_EFFECTIVE_SAMPLES:g} this version determines a mean on. {earlier}")
 
 
@@ -1776,7 +1780,7 @@ def summarise_segments(
 
     if total < minimum_effective_samples:
         return None, Withholding(
-            f"{independent_samples_said(total)} across {len(pieces)} "
+            f"{_opening(independent_samples_said(total))} across {len(pieces)} "
             f"segment(s), against the {minimum_effective_samples:g} a mean "
             "needs. The segments are disjoint in time so their independent "
             "samples add, and they still do not reach it. The remedy is "

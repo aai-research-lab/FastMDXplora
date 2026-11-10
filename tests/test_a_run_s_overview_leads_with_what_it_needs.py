@@ -116,7 +116,8 @@ def test_a_reason_is_said_in_a_line():
                       "its error describe how this run went.") == \
         "Fewer than 10 independent samples: the run has to be longer."
     # Under one, as the reason says it, and a count with a thousands separator.
-    for said in ("fewer than one independent sample in 9 frames (one every 12). Below 10",
+    for said in ("Fewer than one independent sample in 9 frames (one every 12). Below 10",
+                 "fewer than one independent sample in 9 frames (one every 12). Below 10",
                  "1,234.5 independent samples in 98765 frames (one every 80). Below 2000"):
         assert _in_a_line(said + " a mean and its error describe how this run went.") == \
             f"Fewer than {said.split('Below ')[1]} independent samples: the run has to be longer."
