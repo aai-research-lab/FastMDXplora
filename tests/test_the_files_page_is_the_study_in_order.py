@@ -240,6 +240,19 @@ def test_an_analysis_data_link_reaches_a_percent_and_hash_filename(study):
         assert status == 200 and body == b"rows"
 
 
+def test_a_standalone_dashboard_link_reaches_a_percent_and_hash_filename(study):
+    # The saved dashboard.html links its files relative to report/.
+    from urllib.parse import unquote, urlsplit
+
+    from fastmdxplora.gui.report_dashboard import _href
+
+    _write(study, "analysis/rg/rg%41 b#c.png", "figure")
+    href = urlsplit(_href(study / "analysis/rg/rg%41 b#c.png", study / "report"))
+    assert href.fragment == ""
+    target = (study / "report" / unquote(href.path)).resolve()
+    assert target.read_text() == "figure"
+
+
 def test_report_panel_links_reach_a_percent_filename(study, monkeypatch):
     # A panel's href is quoted here from its raw path, once.
     from fastmdxplora.gui import report_dashboard
