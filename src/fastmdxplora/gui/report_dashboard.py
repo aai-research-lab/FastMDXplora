@@ -1467,7 +1467,7 @@ def _artifact_links(
 
 def _href(path: Path, output_dir: Path) -> str:
     rel = os.path.relpath(path, output_dir).replace(os.sep, "/")
-    return quote(rel, safe="/._-#")
+    return quote(rel, safe="/._-")
 
 
 def _format_number(value: object) -> str:
