@@ -2125,17 +2125,7 @@ def _cmd_explore(args: argparse.Namespace) -> int:
         removed = _removed_before_its_price(args, output)
         if removed is not None:
             return removed
-        # Watched as a study with no budget is (`--dashboard`): it started no GUI.
-        session = (_start_dashboard_for_command(args, dashboard_output_dir)
-                   if _dashboard_requested(args) else None)
-        try:
-            rc = _explore_with_a_budget(args, config, float(budget), output)
-        except BaseException:
-            if session is not None:
-                session.stop()
-            raise
-        _finish_dashboard_for_command(session, args, rc)
-        return rc
+        return _explore_with_a_budget(args, config, float(budget), output)
 
     held = _refused_as_held(args, config)
     if held is not None:

@@ -4448,9 +4448,11 @@ def test_a_first_sigterm_in_a_budget_s_pricing_is_a_stop(tmp_path, monkeypatch, 
                                        "--output", str(tmp_path / "study")), found
 
 
-def test_a_budget_study_with_a_dashboard_starts_its_gui(tmp_path, monkeypatch):
-    """`fastmdx explore --dashboard` of a study with a budget ran it in
-    stages and started no GUI."""
+def test_a_budget_study_s_dashboard_flags_start_no_gui(tmp_path, monkeypatch):
+    """`fastmdx explore --dashboard` of a study with a budget ignores the
+    dashboard, as it always did: started for it, its live records in a study
+    of one's `simulation/` made the run-again's `--force-overwrite` refuse,
+    and the study could not be run again."""
     import importlib
 
     from fastmdxplora import cost
@@ -4466,7 +4468,7 @@ def test_a_budget_study_with_a_dashboard_starts_its_gui(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "_finish_dashboard_for_command",
                         lambda session, _args, rc=0: seen.append(("finished", session, rc)))
     assert cli.main(["explore", "-c", str(config), "--dashboard"]) == 0
-    assert seen == [("started", tmp_path / "study"), ("finished", "s", 0)], seen
+    assert seen == [], seen
     assert [phases for phases, _ in stages][-1] == ["simulation", "analysis", "report"]
 
 
