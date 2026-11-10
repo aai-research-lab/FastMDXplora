@@ -153,8 +153,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   fraction, under `findings.populations`; each fraction is of the frames
   clustered. The report, the log, the GUI's Conformations section and its
   charts, and the clustering's figures (PNG and SVG) say the populations
-  were counted on every k-th frame and that `max_frames: null` clusters
-  every frame; the report's `stride` line says the stride used. A
+  were counted on every k-th frame (the map: that it is of every k-th
+  frame) and that `max_frames: null` clusters every frame, the row with
+  its image note beside it; the report's `stride` line says the stride
+  used. A
   `stride` under the one the cap needs is raised to it, and said;
   `max_frames: null` leaves the frames to `stride`, every frame at its
   default. The memory check is of the frames clustered, and a
@@ -724,8 +726,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A metadynamics study reads its own record after it is analysed. Its
   `resolved_config.yml` listed the reweighting pass (`reweighted`) under
   `analysis.include`, and `fastmdx report` and `fastmdx analyze --rerun`
-  refused the study (exit 2, "No analysis is called 'reweighted'"). The
-  record lists the analyses alone, and a record saved with the name reads.
+  refused the study (exit 2, "No analysis is called 'reweighted'"), as
+  did `resume`. The record lists the analyses alone, and a record saved
+  with the name reads; the GUI's Analyze again, and the Agent's offer of
+  it, offer the analyses alone. A Config that names `reweighted` in
+  `analysis.include` or `exclude` is refused by name, as before: the
+  reweighting runs wherever a bias applies.
 - The timeline's medoid marks give a cluster's share "of the frames
   clustered". Clustering's sentences say "every frame from frame N" for a
   start alone, the stride as an ordinal, and thousands alike ("All 12,000
