@@ -67,7 +67,7 @@ def overview_of(root: str | Path, *, include_time: bool = True,
     each ``key``, ``label`` and ``value``, ``error``, ``unit``, ``said``
     (the mean to the place its error allows, with its unit),
     ``determined``, ``why`` (where it is not), ``samples`` (independent
-    samples, a whole number as every page says them), ``from_frame``, ``of_frames``, ``from_ns`` and
+    samples, rounded down to one decimal as every page says them), ``from_frame``, ``of_frames``, ``from_ns`` and
     ``reweighted`` and ``judged_earlier`` (determined by an earlier
     version's rules), ``withheld_since`` (called determined by an earlier
     version's rules, withheld by this version's), ``noted`` and ``noted_why`` (its image note beside
