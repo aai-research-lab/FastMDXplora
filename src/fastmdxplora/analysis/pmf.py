@@ -103,9 +103,12 @@ class PMF(Analysis):
         # part of it, so a minimum taken across the whole grid references a
         # region nothing visited.
         # A summary written before a barrier was a peak (no `highest_kjmol`
-        # in it) is read again by today's rule, so one curve has one barrier.
+        # in it), or before a peak within its error was said
+        # (`barrier_judged_by`), is read again by today's rule, so one curve
+        # has one barrier.
         summary = record.get("summary")
-        if not summary or recomputed or "highest_kjmol" not in summary:
+        if (not summary or recomputed or "highest_kjmol" not in summary
+                or "barrier_judged_by" not in summary):
             from fastmdxplora.simulation.umbrella import (
                 PERIODIC_VARIABLES, describe_pmf, turn_is_tiled)
 
@@ -114,14 +117,23 @@ class PMF(Analysis):
             periodic = plan.get("collective_variable") in PERIODIC_VARIABLES
             # The windows that had samples, as the recombination counted.
             count = record.get("n_windows") or plan.get("n_windows")
+            spread = curve.get("uncertainty") or {}
             summary = describe_pmf(
                 coordinate, energy if mean_force is None else mean_force,
                 tuple(covered) if covered else None,
                 periodic=periodic,
-                errors=(curve.get("uncertainty") or {}).get("standard_error"),
+                errors=spread.get("standard_error"),
+                resamples=spread.get("resample_curves_kjmol"),
                 closed=bool(periodic and covered and isinstance(count, int)
                             and turn_is_tiled(covered[0], covered[1], count)))
+            summary["read_off"] = ("potential_of_mean_force_kjmol"
+                                   if mean_force is not None
+                                   else "free_energy_kjmol")
         self._summary = summary
+        self._variable = (record.get("plan") or {}).get("collective_variable")
+        temperature = record.get("temperature_K")
+        self._temperature = (float(temperature) if isinstance(temperature, (int, float))
+                             and not isinstance(temperature, bool) else None)
         self._mean_force = mean_force is not None
         return {"coordinate": coordinate, "free_energy_kjmol": energy,
                 "potential_of_mean_force_kjmol": mean_force,
@@ -136,7 +148,10 @@ class PMF(Analysis):
         energy = (result["potential_of_mean_force_kjmol"]
                   if result.get("potential_of_mean_force_kjmol") is not None
                   else result["free_energy_kjmol"])
-        ax.plot(coordinate, energy, linewidth=1.6)
+        ax.plot(coordinate, energy, linewidth=1.6,
+                label=("W(r) = A(r) + 2kT ln r"
+                       if result.get("potential_of_mean_force_kjmol") is not None
+                       else None))
 
         # The minimum the summary gives: the lowest bin inside the range the
         # windows covered. Taken over the whole grid it marked 2.2 nm on a
@@ -173,6 +188,14 @@ class PMF(Analysis):
         return "Free energy (kJ/mol)"
 
     def default_xlabel(self) -> str:
+        from fastmdxplora.simulation.umbrella import SHELL_COORDINATES, variable_unit
+
+        variable = getattr(self, "_variable", None)
+        if variable in SHELL_COORDINATES:
+            return "r, distance between the centres (nm)"
+        unit = variable_unit(variable)
+        if isinstance(variable, str) and variable:
+            return f"{variable.replace('_', ' ').capitalize()}" + (f" ({unit})" if unit else "")
         return "Collective variable"
 
     def save_data(self, result: dict[str, Any], path: Path) -> Path:
@@ -193,12 +216,20 @@ class PMF(Analysis):
             for x, y in zip(result["coordinate"], result["free_energy_kjmol"]):
                 lines.append(f"{x:.6f} {said(y)}")
         else:
+            from fastmdxplora.simulation.umbrella import KB_KJ
+
+            temperature = getattr(self, "_temperature", None)
+            at = ("" if temperature is None else
+                  f", kT = {KB_KJ * temperature:.4f} kJ/mol at {temperature:g} K")
             lines = [
                 "# coordinate free_energy_kjmol potential_of_mean_force_kjmol",
-                "# free_energy_kjmol is that of the distance's distribution,"
-                " -kT ln P(r), shell included;",
-                "# potential_of_mean_force_kjmol is W(r) = that + 2kT ln r,"
-                " flat where nothing interacts.",
+                "# coordinate is r in nm; both curves in kJ/mol, each zero at"
+                " its lowest bin.",
+                "# free_energy_kjmol is A(r) = -kT ln P(r), the distance's"
+                " distribution, shell included; the binding free energy reads"
+                " it.",
+                "# potential_of_mean_force_kjmol is W(r) = A(r) + 2kT ln r"
+                f"{at}, flat where nothing interacts; plotted.",
             ]
             for x, y, w in zip(result["coordinate"], result["free_energy_kjmol"],
                                mean_force):

@@ -926,20 +926,20 @@ def _threads_for_each(n_workers: int) -> int:
     return max(1, cores // max(1, n_workers))
 
 
-#: Coordinates a standard-state binding free energy means anything along.
-#: A distance between two groups has a volume element; a torsion does not.
-COORDINATES_WITH_A_VOLUME = ("ligand_distance", "distance")
-
-
 def _the_coordinate_has_a_volume(plan: Any) -> bool:
     """Whether a standard-state correction has anything to correct.
 
     The correction is about the volume a ligand gives up on binding. Along a
     torsion there is no volume and no concentration, so a number computed
     there would be a category error rather than an inaccuracy.
+
+    The coordinates with a volume are `umbrella.SHELL_COORDINATES`, the same
+    list that decides where `pmf.json` carries W(r) beside A(r), so a study
+    given a binding free energy is one whose curve is plotted as W(r).
     """
-    return getattr(plan, "collective_variable", None) in \
-        COORDINATES_WITH_A_VOLUME
+    from fastmdxplora.simulation.umbrella import SHELL_COORDINATES
+
+    return getattr(plan, "collective_variable", None) in SHELL_COORDINATES
 
 
 def _a_binding_free_energy_belongs_here(payload: dict[str, Any],
