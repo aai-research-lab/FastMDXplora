@@ -1077,6 +1077,21 @@ def _assess_this_run(project_root: Path) -> dict[str, Any] | None:
     )
 
 
+def _samples_cell(count: Any) -> str:
+    """Independent samples in the convergence table, as the dashboard's
+    table gives them: rounded down to one decimal, "< 1" under one. 9.96
+    read "10.0" beside "not determined"."""
+    import math
+
+    from fastmdxplora.statistics import independent_samples_floored
+
+    if not isinstance(count, (int, float)) or not math.isfinite(count):
+        return "not counted"
+    if count < 1:
+        return "< 1"
+    return f"{independent_samples_floored(count):,.1f}".removesuffix(".0")
+
+
 def _convergence_section(project_root: Path) -> str:
     """How much independent information the trajectory holds.
 
@@ -1131,7 +1146,7 @@ def _convergence_section(project_root: Path) -> str:
         lines.append(
             f"| {said_as(record['observable'])} | {record['frames']:,} | "
             f"{record.get('discard', 0):,} | "
-            f"{record['effective_samples']:.1f} | {mean} | "
+            f"{_samples_cell(record['effective_samples'])} | {mean} | "
             + (uncertainty or "not determined")
             + " | "
             + {True: "yes", False: "no", None: "too short to say"}[

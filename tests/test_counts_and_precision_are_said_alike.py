@@ -287,3 +287,24 @@ def test_the_agent_s_summary_floors_float_noise(tmp_path):
         "mean": 0.328, "standard_error": float("nan"), "effective_samples": 2.3999999999999995,
         "not_a_measurement": "too few independent samples", "unit": "nm"}}))
     assert "rg: mean 0.3280 nm, 2.4 effective samples" in text
+
+
+@pytest.mark.parametrize("samples, cell", [
+    (9.96, "9.9"),
+    (24.999999999999996, "24.9"),
+    (21.0, "21"),
+    (0.42, "< 1"),
+    (12345.67, "12,345.6"),
+])
+def test_the_report_s_convergence_table_says_the_count_as_the_dashboard_does(
+        monkeypatch, tmp_path, samples, cell):
+    """9.96 read "10.0" beside "not determined"."""
+    from fastmdxplora.report import document
+
+    assessed = {"observables": {"rmsd": {
+        "observable": "RMSD", "mean": 0.0789, "standard_error": None, "frames": 400,
+        "discard": 40, "effective_samples": samples, "equilibrated": True}}, "findings": []}
+    monkeypatch.setattr(document, "_assess_this_run", lambda root: assessed)
+    [row] = [line for line in document._convergence_section(tmp_path).splitlines()
+             if line.startswith("| RMSD")]
+    assert row.startswith(f"| RMSD | 400 | 40 | {cell} | "), row
