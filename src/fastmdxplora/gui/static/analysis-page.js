@@ -266,14 +266,15 @@
         : key === "running" ? "Being analysed" : (row.message || "");
       if (key === "result" && row.finding) {
         // The image check: its finding as a sentence, its paragraph a
-        // click away.
+        // click away. A clustering of every k-th frame: that, and its image
+        // note under it, as any profile's.
         return '<tr data-analysis="' + escapeHTML(row.analysis) + '" data-status="' + key + '">' +
           '<th scope="row" class="analysis-results-name">' + nameLink(row) + "</th>" +
           '<td colspan="3" class="analysis-results-other analysis-results-finding">' +
           (row.finding_why && row.finding_why !== row.finding
             ? "<details><summary>" + escapeHTML(row.finding) + "</summary><p>" +
               escapeHTML(row.finding_why) + "</p></details>"
-            : escapeHTML(row.finding)) + "</td>" +
+            : escapeHTML(row.finding)) + notedHtml(row) + "</td>" +
           statusCell(key, said, "") + "</tr>";
       }
       // A failure's first sentence in the row; the chip opens to the rest.
