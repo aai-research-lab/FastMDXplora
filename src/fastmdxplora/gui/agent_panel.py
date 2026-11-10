@@ -1586,8 +1586,9 @@ def _results_summary(root: Any, first: str | None = None) -> str:
                 piece += " (s.e.)"
             if isinstance(n_eff, (int, float)) and math.isfinite(n_eff):
                 # Rounded down, as every page counts them: 9.96 is not 10.0
-                # beside "too few".
-                piece += f", {independent_samples_floored(n_eff):.1f} effective samples"
+                # beside "too few"; under one is said so, never 0.
+                piece += (", fewer than one effective sample" if n_eff < 1 else
+                          f", {independent_samples_floored(n_eff):.1f} effective samples")
                 if n_eff < MINIMUM_EFFECTIVE_SAMPLES:
                     piece += " -- too few for the mean to describe the system rather than this run"
             if isinstance(discard, int) and isinstance(n, int):

@@ -182,3 +182,13 @@ class TestTheAgentIsTold:
             "mean": 0.328, "standard_error": float("nan"), "effective_samples": 9.96,
             "not_a_measurement": "too few independent samples", "unit": "nm"}}))
         assert "rg: mean 0.3280 nm, 9.9 effective samples -- too few" in text
+
+    @pytest.mark.parametrize("samples", [0.39999999999999986, 0.04])
+    def test_a_count_under_one_is_said_so(self, tmp_path, samples):
+        """As the pages say it: 0.04 read "0.0 effective samples"."""
+        from fastmdxplora.gui.agent_panel import _results_summary
+
+        text = _results_summary(_study(tmp_path, {"rg": {
+            "mean": 0.328, "standard_error": float("nan"), "effective_samples": samples,
+            "not_a_measurement": "too few independent samples", "unit": "nm"}}))
+        assert "rg: mean 0.3280 nm, fewer than one effective sample -- too few" in text
