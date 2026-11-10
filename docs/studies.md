@@ -621,8 +621,15 @@ window comes to rest against the gradient of A(r). The bound state starts
 at W(r)'s minimum, the well: A's minimum sits `2kT ln(r_outer / r_well)`
 further out and can be in bulk, and read there a 6 kJ/mol well at 0.45 nm
 was integrated out to 1.6 nm and given a binding free energy more negative
-than a 12 kJ/mol well's. The barrier and the minima in `summary` are read
-off W(r), as `summary.read_off` says: read off A(r) a radial curve's
+than a 12 kJ/mol well's. That minimum is searched between the outermost
+windows' centres, as the summary and the figure read W, since a sparse end
+bin below the first window can read lower than the well; and an empty bin
+in the bound range is judged on W against it. Where that minimum is less
+than kT below the bulk reference there is no bound range, since the range
+ends where W comes back within kT of bulk, and the binding free energy is
+refused (`binding.well_depth_kjmol` says how deep it is): a free
+particle's flat W is refused so. The barrier and the minima
+in `summary` are read off W(r), as `summary.read_off` says: read off A(r) a radial curve's
 highest point is the wall at the first window, and a depth moves with the
 range the windows spanned, by `2kT ln(r2 / r1)`. The `.dat` file beside
 the figure has both columns. Along any other coordinate there is one curve
@@ -644,7 +651,12 @@ where 72 samples a window leave the bootstrap's errors a little small, and
 noise that each bin's error holds; else the two bins' standard errors
 together, with Sidak's multiplier over every pair of bins; with no
 bootstrap, the 2.5 kJ/mol alone, and a flat curve's noise can then pass
-it. `summary.barrier_judged_by` says how the barrier given (or the highest
+it. Along a distance the rises are W's and so are the resamples they are
+judged against: A's resamples moved onto W bin by bin as the curve was
+(`summary.resamples_on`). Judged against A's, every departure carried
+`2kT ln(r_i / r_j)`, the multiplier came out at 21 to 26 in place of about
+3.8, and an escape barrier 5 kJ/mol above bulk was refused as noise.
+`summary.barrier_judged_by` says how the barrier given (or the highest
 peak refused) was judged, `summary.barrier_multiplier` the multiplier and
 `summary.barrier_error_kjmol` the barrier's error. A peak clearing
 2.5 kJ/mol and not its error is refused rather than flagged, since a number
@@ -655,7 +667,9 @@ the refused peak is the curve's highest point, `highest_kjmol` is null and
 `highest_withheld` says why; and where a lower peak stands,
 `summary.barrier_note` says a higher one was refused. The console and the
 comparison report give the barrier in one line, or that it was refused and
-why, as in `Barrier: 19.9 +/- 0.3 kJ/mol at 3.09 rad, on the free energy.`
+why, as in `Barrier: 19.9 +/- 0.3 kJ/mol at 3.09 rad, on the free energy,
+about 0.8 of its error high as the curve's zero is.` With no bootstrap the
+line says the 2.5 kJ/mol margin alone judged it.
 
 **On a full turn the seam is one place.** Windows tiling a torsion's turn
 are recombined on a grid from -π to π, so the seam is the edge between the
