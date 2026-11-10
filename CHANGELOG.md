@@ -80,6 +80,36 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   where it opened bare and dark text on a dark page. An exported Compare
   chart's label says it overlays two studies, not two runs. The dashboard's
   unused artifact links code is gone.
+- All studies lists the folder asked for while another folder's list is
+  still being read; it showed the workspace's studies. The last folder
+  asked for is the one listed: asking for one, then another, then the first
+  again ended on the second. (Derrick Kwan, #65)
+- Independent samples are said rounded down to one decimal on every page,
+  table and reason, never up to a threshold they are below: 24.99 read
+  "about 25 independent samples, fewer than the 25 an error bar needs", and
+  9.99 read "10.0 independent samples ... Below 10". The Overview says
+  "fewer than one independent sample", as the other pages do, not "under 1",
+  and the tables say "< 1". (Prince Otegbulu, #68)
+- The report's convergence table, the figure legends and the reweighted
+  averages' table header round their independent samples down too: the
+  report's table gave 9.96 as "10.0" beside "not determined", and a legend
+  read "about 25 independent samples: too few for an error bar" for 24.6.
+  A count saved with float noise below it is not floored a tenth away
+  (0.39999999999999986 showed 0.3), and none is ever shown at a whole
+  number above it. Prose gives a thousands separator, as the report's and
+  the pages' tables do (12,345.6); the reweighted averages' data file
+  gives none. A list of counts on the Overview of a study of runs says
+  "samples" ("1, 1 and 1 independent samples"), and a reason under one
+  sample is read as too few in its tile's line. A production mean with no
+  count no longer ends in a comma. A run's convergence assessment saves
+  its independent samples as worked out, not to two places: 9.996 was
+  saved as 10.0 beside "not sampled enough", and the report's table read
+  "10". A reason that opens with its count begins with a capital: "Fewer
+  than one independent sample in 80 frames".
+- The Agent's summary of a study's means says its effective samples as the
+  pages do: 9.96 read "10.0 effective samples -- too few", 30 read "30.0"
+  and 1.05 "1.0 effective samples". Under one it says "fewer than one
+  effective sample".
 
 ### Added
 
