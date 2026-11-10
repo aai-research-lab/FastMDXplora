@@ -62,6 +62,7 @@ def load_reweighted(project_root: Path) -> dict[str, Any] | None:
     # and no means. A biased run that cannot be reweighted at all has
     # neither, and is the case that most needs saying.
     if (not record.get("quantities") and not record.get("populations")
+            and not record.get("populations_refused")
             and record.get("applies", True)):
         return None
     return record
@@ -308,9 +309,19 @@ def reweighted_section(project_root: Path,
                     f"| {_fraction(state.get('raw_fraction'))} "
                     f"| {_percent(state.get('shift_percent'))} |")
             lines.append("")
+            if entry.get("said"):
+                # Labels of every k-th frame, each weighted by its own frame.
+                lines.append(f"_{entry['said']}_")
+                lines.append("")
         caveat = record.get("populations_caveat")
         if caveat:
             lines.append(f"_{caveat}_")
+            lines.append("")
+    # Labels whose frames' weights could not be read: said by name, with no
+    # fraction given unweighted.
+    for refusal in record.get("populations_refused") or []:
+        if isinstance(refusal, dict) and refusal.get("said"):
+            lines.append(f"- {refusal['said']}")
             lines.append("")
 
     # Said plainly rather than left to be inferred from the table's absence.

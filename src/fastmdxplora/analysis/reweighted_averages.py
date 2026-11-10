@@ -696,8 +696,10 @@ def frame_series(result: Any, spec: tuple[str | None, str],
     return series
 
 
-def frame_labels(result: Any, n_frames: int) -> dict[str, np.ndarray]:
-    """Per-frame categorical labels an analysis reported, keyed by method.
+def frame_labels(result: Any, n_frames: int | None) -> dict[str, np.ndarray]:
+    """Per-frame categorical labels an analysis reported, keyed by method:
+    one for each of ``n_frames``, or of any number where it is None (the
+    frames they are of then read by :func:`labelled_frames`).
 
     Clustering returns a mapping of method name to labels because it runs
     several and they disagree in useful ways; a single array is accepted too
@@ -719,7 +721,7 @@ def frame_labels(result: Any, n_frames: int) -> dict[str, np.ndarray]:
             array = np.asarray(values).ravel()
         except (TypeError, ValueError):
             continue
-        if array.size != n_frames or array.ndim != 1:
+        if array.ndim != 1 or (n_frames is not None and array.size != n_frames):
             continue
         # Labels, not measurements: a float column would make every frame its
         # own category and produce a table with one row per frame.
@@ -727,6 +729,69 @@ def frame_labels(result: Any, n_frames: int) -> dict[str, np.ndarray]:
             continue
         labels[str(method)] = array
     return labels
+
+
+def labelled_frames(result: Any, n_frames: int, n_labels: int
+                    ) -> tuple["np.ndarray | None", str]:
+    """The frames, of the ``n_frames`` analysed, that ``n_labels`` labels are
+    of, and why where they cannot be said: from the analysis's own record
+    of the frames it read (``findings.frames`` in its ``options.json``: its
+    first frame and stride, as clustering at most ``max_frames`` records
+    them), else every frame where there is one label for each.
+
+    Labels of every k-th frame were left out of the reweighting where they
+    were not one per frame, so a biased run of more than 5,000 frames,
+    which clustering strides by default, had no reweighted populations and
+    nothing said so."""
+    first, stride, read = 0, 1, False
+    path = getattr(result, "options_path", None)
+    if path is not None:
+        try:
+            found = json.loads(Path(path).read_text(encoding="utf-8"))
+            frames = (found.get("findings") or {}).get("frames") or {}
+        except (OSError, ValueError, AttributeError):
+            frames = None
+        if isinstance(frames, dict) and frames:
+            given_first, given_stride = frames.get("first_frame", 0), frames.get("stride", 1)
+            if not all(isinstance(v, int) and not isinstance(v, bool)
+                       for v in (given_first, given_stride)) or given_first < 0 \
+                    or given_stride < 1:
+                return None, (f"its record of the frames it read gives first frame "
+                              f"{given_first!r} and stride {given_stride!r}")
+            first, stride, read = given_first, given_stride, True
+    expected = -(-(n_frames - first) // stride) if n_frames > first else 0
+    if n_labels != expected:
+        where = ("its record of the frames it read" if read
+                 else "no record of the frames it read")
+        return None, (f"{n_labels:,} labels, where {where} gives {expected:,} of the "
+                      f"{n_frames:,} frames analysed (first frame {first}, every "
+                      f"{stride})")
+    return first + stride * np.arange(n_labels), ""
+
+
+def _ordinal(k: int) -> str:
+    """2nd, 3rd, 11th."""
+    if 10 <= k % 100 <= 20:
+        return f"{k}th"
+    return f"{k}{({1: 'st', 2: 'nd', 3: 'rd'}).get(k % 10, 'th')}"
+
+
+def weights_of_frames(weights: Weights, frames: np.ndarray) -> "Weights | None":
+    """The weights of ``frames`` alone, normalised to sum to their count,
+    with their own weight-concentration effective frames; None where a
+    frame has no weight that can be read (past the weights, or not finite
+    and positive)."""
+    values = np.asarray(weights.values, dtype=float)
+    frames = np.asarray(frames, dtype=np.int64)
+    if frames.size == 0 or frames.min() < 0 or frames.max() >= values.size:
+        return None
+    chosen = values[frames]
+    total = float(np.sum(chosen))
+    if not np.all(np.isfinite(chosen)) or np.any(chosen < 0) or total <= 0:
+        return None
+    chosen = chosen * (chosen.size / total)
+    effective = float(np.sum(chosen) ** 2 / np.sum(chosen ** 2))
+    return Weights(chosen, effective, weights.converged, weights.note)
 
 
 def populations(labels: np.ndarray, weights: Weights) -> list[dict[str, Any]]:
@@ -890,25 +955,51 @@ def reweight_results(
         quantities.append(item)
 
     occupancies: list[dict[str, Any]] = []
+    # Labels whose frames, or whose frames' weights, cannot be read: said by
+    # name, never given a fraction unweighted.
+    refused: list[dict[str, Any]] = []
     for name, result in results.items():
         if getattr(result, "status", None) != "ok":
             continue
         if not getattr(registry.get(name), "reweightable_populations", False):
             continue
-        for method, labels in frame_labels(result, n_frames).items():
-            rows = populations(labels, weights)
+        for method, labels in frame_labels(result, None).items():
+            frames, why = labelled_frames(result, n_frames, labels.size)
+            own = weights_of_frames(weights, frames) if frames is not None else None
+            if own is None:
+                why = why or ("a frame it labelled has no weight that can be read "
+                              f"among the {len(weights.values):,} weights")
+                refused.append({
+                    "analysis": name, "method": method,
+                    "code": "analysis.data.absent",
+                    "said": (f"{name} ({method}) is not reweighted: {why}. Its "
+                             "populations stand as counts over the biased frames.")})
+                continue
+            rows = populations(labels, own)
             if len(rows) < 2:
                 # One state is not a population: nothing was distinguished,
                 # and a table saying it was visited all of the time before and
                 # after reweighting tells a reader nothing.
                 continue
-            occupancies.append({
+            entry: dict[str, Any] = {
                 "analysis": name,
                 "method": method,
                 "states": rows,
-            })
+            }
+            if frames.size != n_frames:
+                stride = int(frames[1] - frames[0]) if frames.size > 1 else 1
+                entry.update(
+                    first_frame=int(frames[0]), stride=stride,
+                    n_frames_labelled=int(frames.size),
+                    weight_concentration_effective_frames=own.effective_sample_size,
+                    said=(f"Weighted by each labelled frame's own weight: "
+                          f"{frames.size:,} of the {n_frames:,} frames, every "
+                          f"{_ordinal(stride)} frame from frame {int(frames[0])}, "
+                          f"{own.effective_sample_size:.0f} weight-concentration "
+                          "effective frames among them."))
+            occupancies.append(entry)
 
-    if not quantities and not occupancies:
+    if not quantities and not occupancies and not refused:
         logger.debug("Bias found but no analysis reported a per-frame scalar.")
         return None
 
@@ -969,6 +1060,7 @@ def reweight_results(
         "provenance": provenance,
         "quantities": quantities,
         "populations": occupancies,
+        "populations_refused": refused,
         "populations_caveat": (
             "The clustering was performed on the biased frames, so the "
             "states themselves are shaped by where the bias sent the system. "
