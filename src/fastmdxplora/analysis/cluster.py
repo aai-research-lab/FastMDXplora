@@ -186,7 +186,7 @@ FIGURE_BYTES = 8 * 2**20
 #: frames, in bytes: what the libraries take the first time they run in the
 #: process (k-means' threads, SciPy's linkage, Matplotlib's canvases at 300
 #: dpi), and the timeline, counts and dendrogram figures, which are the
-#: same at any number of frames. Measured in ``fastmdx analyze``'s own
+#: same at any number of frames. Counted in ``fastmdx analyze``'s own
 #: process, clustering alone, as the peak resident memory from the check
 #: (glibc's defaults), every 17th to every 4th of 2,000 frames (118 to 500
 #: frames): with k-means and average linkage 38.4 to 74.1 MiB on Python 3.10,
@@ -197,7 +197,7 @@ FIGURE_BYTES = 8 * 2**20
 #: to 6, and each was killed. Counted again as the command-line test runs
 #: it (two threads, one malloc arena), 500 frames peaked at 72.0 to 73.8 MiB
 #: on 3.10, 3.11 and 3.13, 2.2 MiB under the 76 first planned: too little
-#: for a runner that takes more, and CI's Python 3.10 leg measured a whole
+#: for a runner that takes more, and CI's Python 3.10 leg counted a whole
 #: DBSCAN run of 2,000 frames at 169.1 MiB, 31 over the most this machine
 #: counted of it (138.1). Planned on the most counted here, 74.1, and those
 #: 31 MiB: a room under about 148 MB is refused at any stride.

@@ -791,8 +791,8 @@ class TestAFewFramesArePlannedOnWhatAnyClusteringTakes:
     def test_the_plan_is_not_under_the_most_a_few_frames_took(self, n, methods):
         assert memory_needed(n, methods, "rmsd", "average") >= FEW_FRAMES_PEAK
 
-    def test_it_holds_what_a_runner_was_measured_to_take_more(self):
-        """CI's Python 3.10 leg measured a whole DBSCAN run of 2,000 frames
+    def test_it_holds_what_a_runner_was_counted_to_take_more(self):
+        """CI's Python 3.10 leg counted a whole DBSCAN run of 2,000 frames
         at 169.1 MiB, 31 over the most this machine counted of it (138.1).
         Planned at 76 MiB, 500 frames left 2.2 MiB over the 72.0 to 73.8
         counted here as the command-line test runs them."""

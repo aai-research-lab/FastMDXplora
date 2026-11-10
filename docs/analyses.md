@@ -268,7 +268,7 @@ log and on the Analysis page, in the analysis's own section;
 stride named is never under the one `max_frames` chose), and the other
 analyses still read every frame. With less than about 148 MB of memory left
 to it, clustering is refused at any stride: a clustering of a few hundred
-frames was measured to peak at up to 74.1 MiB here, and CI's runner took 31
+frames was counted to peak at up to 74.1 MiB here, and CI's runner took 31
 MiB more than this machine of a whole clustering, so it is planned on 111.1
 MB (106 MiB) at the least. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
