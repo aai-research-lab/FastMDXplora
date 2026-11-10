@@ -175,6 +175,29 @@ def test_a_withheld_runs_count_keeps_its_singular_and_floor(variants, samples, e
     assert f"({expected})" in _serve(variants, look)
 
 
+@pytest.mark.parametrize("counts, expected", [
+    ((1.05, 1.0, 1.09), "(1, 1 and 1 independent samples)"),
+    ((0.4, 1.05, 1.0), "(fewer than one, 1 and 1 independent samples)"),
+    ((0.4, 0.3, 0.2), "(fewer than one, fewer than one and fewer than one independent samples)"),
+])
+def test_a_list_of_withheld_counts_is_plural(replicas, counts, expected):
+    """A list of counts read "(1, 1 and 1 independent sample)"."""
+    for run, samples in zip(sorted((replicas / "runs").iterdir()), counts):
+        options = run / "analysis" / "rmsd" / "options.json"
+        record = json.loads(options.read_text(encoding="utf-8"))
+        record["findings"]["mean"].update(
+            effective_samples=samples, standard_error=None,
+            not_a_measurement="Too short against its correlation time.")
+        options.write_text(json.dumps(record), encoding="utf-8")
+
+    def look(page, url):
+        page.goto(url + "#overview", wait_until="domcontentloaded")
+        page.wait_for_selector("#overview-runs-undetermined-list li")
+        return page.locator("#overview-runs-undetermined-list").text_content()
+
+    assert expected in _serve(replicas, look)
+
+
 def test_a_run_going_is_said_as_it_goes(variants):
     run = sorted((variants / "runs").iterdir())[1]
     (run / "simulation" / "live_status.json").write_text(json.dumps(

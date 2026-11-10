@@ -351,7 +351,9 @@
       var reason = withheld[0].withheld;
       li.appendChild(document.createTextNode("Not determined in " + listed(names)
         + (samples.length === withheld.length ? " (" + listed(samples) + " independent "
-          + (samples.every(function (n) { return n === "fewer than one" || n === "1"; }) ? "sample" : "samples")
+          // One count of one or under is singular; a list of counts is not.
+          + (samples.length === 1 && (samples[0] === "fewer than one" || samples[0] === "1")
+            ? "sample" : "samples")
           + ")" : "")
         + ". " + firstWords(reason) + ". " + remedy(reason)));
       li.title = reason;
