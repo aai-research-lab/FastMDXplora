@@ -62,3 +62,21 @@ def test_every_leg_runs_the_rest_on_every_core_and_fails_on_either_run():
     assert run.count("-n auto --dist loadfile") == 2
     assert run.count("$(printf -- '--ignore=%s ' $browser) || status=1") == 2
     assert run.rstrip().endswith("fi\nexit $status")
+
+
+def test_a_hang_on_every_core_fails_once_with_its_stack():
+    """pytest.ini's thread method ends the process. Under xdist that is the
+    worker, and xdist ran the hung test again on each new worker until it
+    stopped replacing them, with no stack shown. The signal fails the test
+    alone, and no crashed worker is replaced."""
+    run = next(s for s in _steps() if s.get("name") == "Run tests")["run"]
+    parallel = [line for line in run.splitlines() if "-n auto" in line]
+    assert len(parallel) == 2, parallel
+    for line in parallel:
+        assert "--timeout-method=signal" in line and "--max-worker-restart=0" in line, line
+
+
+def test_a_browser_grep_that_finds_nothing_says_so():
+    run = next(s for s in _steps() if s.get("name") == "Run tests")["run"]
+    assert "tests/*.py || true)" in run
+    assert 'if [ -z "$browser" ]; then' in run and "::error::" in run
