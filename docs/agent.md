@@ -675,10 +675,30 @@ look and never as what is so: the page's name and the study open on every
 page; the file open in the side panel's reader; on the Report, the section
 you are reading (the heading last scrolled to the top); in the Viewer, its
 view as before (the frame, the representation, the colouring, the residues
-chosen). "What mean does the file I have open record?" and "What value does
-this section give?" are read through `current_view`, which reads the facts
-from the study's records. The Analysis page, the Config Builder and Ask
-about... on residues chosen in the Viewer are still to come.
+chosen). On the Analysis page, the section you are reading (the last
+scrolled to the top, else the first in the window) and the analysis it is
+of. In the Config Builder, the step in view, the setting you last worked on,
+the study-wide settings you changed from their defaults (the first twenty
+and how many in all, as typed, not checked) and whether the form holds
+changes not in a Config downloaded, launched or opened in this window; the
+setting is then read from the config schema (its default, choices, bounds
+and help), not from the page; an analysis's row names that analysis, and a
+row of the form's own (how long it runs, replicas) is said as what it
+writes. The setting worked on is the one last edited, or a field focused
+after it once that field is used. "What value does this section
+give?", "What does this setting do?" and "What mean does the file I have
+open record?" are read through `current_view`, which reads the facts from
+the study's records, its topology or the schema.
+
+**Ask about...** With residues chosen in the Viewer (in the sequence or the
+structure), **Ask about...** on the molecule's canvas opens the Agent beside
+the Viewer with them named in its box (`About LYS 48 (chain A): `), your
+words already there kept after them. The message carries the residues as the
+Viewer's view, and `current_view` finds each in the topology the study's
+analyses read, as the Viewer's own panel finds a residue clicked: the
+selection that picks it alone and its atoms, or why it was not found. A
+selection typed or named is checked there too: the atoms and residues it
+matches.
 
 **Names with @.** Type `@` and a name, and it is shown as a chip under the
 box as you type: `@study` (the study open), an analysis of it (`@rmsd`,
@@ -743,7 +763,7 @@ four times per reply:
 | `list_machines` | The machines inspected from this computer for [running elsewhere](remote.md), as last recorded, each with its GPUs and whether it is ready, and the jobs sent from here; nothing is asked of the machines |
 | `remote_status` | How a job sent to another machine is doing, and the last lines of its log, asked of the machine at most every 30 s |
 | `read_docs` | What these docs say, from the copy installed with the software (nothing is fetched): the passages that answer a question, each with its page and section; a page's sections and its opening; or one section whole, a long one in parts. With nothing asked, the pages |
-| `current_view` | In the GUI, what the page shows (the page, the study, the file open in the reader, the report's section being read; in the Viewer the frame, the view and the residues chosen) as where to look, then the facts from that study's record, file or structure, read by `read_study`, `read_study_file`, `inspect_structure` or `check_selection`. It reads the page's own view, never one the AI model writes |
+| `current_view` | In the GUI, what the page shows (the page, the study, the file open in the reader, the section of the Report or the Analysis page being read, the Config Builder's step, setting and changes; in the Viewer the frame, the view and the residues chosen) as where to look, then the facts from that study's record, file, topology or structure, read by `read_study`, `read_study_file`, `inspect_structure` or `check_selection`, and a Config Builder setting from the config schema. It reads the page's own view, never one the AI model writes |
 
 Each of these but `current_view` is also a tool of [`fastmdx mcp`](mcp.md)
 (`check_config` is its `check_study`), defined once for both and run by the
