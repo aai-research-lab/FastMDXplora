@@ -366,3 +366,27 @@ def test_the_agent_s_summary_says_a_large_count_as_the_tables_do(tmp_path):
     text = _results_summary(_study(tmp_path, {"rg": {
         "mean": 0.328, "standard_error": 0.001, "effective_samples": 12345.67, "unit": "nm"}}))
     assert ", 12,345.6 effective samples" in text
+
+
+# -- the count as saved, not rounded across a threshold -------------------------
+@pytest.mark.parametrize("samples, sampled_enough, cell", [
+    (9.996, False, "9.9"),
+    (24.996, True, "24.9"),
+    (9.9999996, False, "9.9"),
+])
+def test_an_assessment_saves_its_count_as_worked_out(monkeypatch, tmp_path, samples,
+                                                     sampled_enough, cell):
+    """To two places 9.996 was saved as 10.0 beside sampled_enough False."""
+    from fastmdxplora.report import document
+    from fastmdxplora.report.convergence import Assessment
+
+    record = Assessment(name="RMSD", n_frames=1000, discard=0, mean=1.0, spread=0.1,
+                        correlation_frames=1000 / samples, effective_samples=samples,
+                        drift_in_noise=0.0).as_record()
+    assert record["effective_samples"] == samples
+    assert record["sampled_enough"] is sampled_enough
+    monkeypatch.setattr(document, "_assess_this_run",
+                        lambda root: {"observables": {"rmsd": record}, "findings": []})
+    [row] = [line for line in document._convergence_section(tmp_path).splitlines()
+             if line.startswith("| RMSD")]
+    assert row.startswith(f"| RMSD | 1,000 | 0 | {cell} | "), row

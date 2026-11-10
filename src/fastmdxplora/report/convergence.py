@@ -227,9 +227,9 @@ class Assessment:
             "mean": as_saved("mean", self.mean),
             "spread": _six_figures(self.spread),
             "frames_per_independent_sample": round(self.correlation_frames, 2),
-            "effective_samples": (float(self.effective_samples)
-                                  if "effective_samples" in self.recorded
-                                  else round(self.effective_samples, 2)),
+            # As worked out, never rounded: to two places 9.996 was saved
+            # as 10.0 beside "too few", and every page floors what is saved.
+            "effective_samples": float(self.effective_samples),
             "discard": self.discard,
             "standard_error": None if np.isnan(error) else as_saved("standard_error", error),
             # What the record held, and so what was worked out here.
