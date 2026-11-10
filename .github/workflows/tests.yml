@@ -302,10 +302,10 @@ jobs:
           # 10-18, cancelled at about 78% on every push since, so main read
           # red on all of them. The tests that drive no browser run on every
           # core of the runner (pytest-xdist, a file's tests on one worker);
-          # the files that drive Chromium run after them one at a time, as
-          # before: four browsers on the runner's four cores, traced, timed
-          # out on waits that pass alone (16 of them in the first try, on
-          # #65). A file drives Chromium if it names Playwright, or opens a
+          # the files that drive Chromium run after them, two at a time
+          # (below), not on every core: four browsers on the runner's four
+          # cores, traced, timed out on waits that pass alone (16 of them in
+          # the first try, on #65). A file drives Chromium if it names Playwright, or opens a
           # page or takes a browser from a fixture it imports from another.
           # pytest-cov appends the second run to the first.
           #
@@ -326,11 +326,21 @@ jobs:
           # test runs, one test at a time on each worker. The coverage leg
           # already runs them so.
           #
+          # On the coverage leg the browser files run on two workers, a
+          # file's tests on one, two browsers on the runner's four cores, so
+          # each browser and its test process have a core apiece. One at a
+          # time they took 1 h 56 min (3,746 passed) after 23 min on every
+          # core in run 42759782805: 139 of its 180 minutes before the
+          # installs. Two hundred files share out evenly between two
+          # workers. The plain legs, whose browser tests skip, run those
+          # files one at a time still, in 7 to 8 minutes.
+          #
           # `--timeout-method=signal`, the faulthandler options and
           # `--max-worker-restart=0` are why a hang on every core fails once
           # and is named (see `timeout-minutes`).
           parallel="-n auto --dist loadfile --timeout-method=signal --max-worker-restart=0"
           parallel="$parallel -o faulthandler_timeout=660 -o faulthandler_exit_on_timeout=true"
+          two="-n 2 ${parallel#-n auto }"
           browser=$(grep -lE 'playwright|\.goto\(|new_page\(|^def test_[a-z0-9_]+\([^)]*\bbrowser\b' tests/*.py || true)
           if [ -z "$browser" ]; then
             echo "::error::no file in tests/ matched the browser grep in Run tests (grep says above if a file could not be read); the grep needs updating"
@@ -342,7 +352,7 @@ jobs:
             export COVERAGE_DEBUG_FILE="$RUNNER_TEMP/coverage-debug.txt"
             pytest -rfEs $parallel --cov=fastmdxplora --cov-report= \
               $(printf -- '--ignore=%s ' $browser) || status=1
-            pytest -rfEs --cov=fastmdxplora --cov-append \
+            pytest -rfEs $two --cov=fastmdxplora --cov-append \
               --cov-report=term-missing --cov-report=xml $browser || status=1
             grep -E '^ *core: ' "$COVERAGE_DEBUG_FILE" | sort | uniq -c || true
             if grep -qE '^ *core: (CTracer|PyTracer)' "$COVERAGE_DEBUG_FILE" || \

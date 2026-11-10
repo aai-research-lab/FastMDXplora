@@ -112,3 +112,19 @@ def test_a_browser_grep_that_finds_nothing_says_so():
     at = lines.index('if [ -z "$browser" ]; then')
     assert lines[at + 1].startswith('echo "::error::'), lines[at:at + 4]
     assert lines[at + 2:at + 4] == ["exit 1", "fi"], lines[at:at + 4]
+
+
+def test_the_coverage_leg_runs_its_browser_files_on_two_workers():
+    """One at a time the coverage leg's browser files took 1 h 56 min after
+    23 min on every core (run 42759782805), against its 180 minutes. They
+    run on two workers there, a file on one, with the options a hang needs;
+    four browsers on four cores timed out on waits that pass alone, and the
+    plain legs, whose browser tests skip, run those files one at a time."""
+    run = _run_tests()
+    two = [line.strip() for line in run.splitlines() if line.strip().startswith("two=")]
+    assert two == ['two="-n 2 ${parallel#-n auto }"'], two
+    assert _parallel().split()[:2] == ["parallel=\"-n", "auto"]
+    covered, plain = run.split("else\n", 1)
+    assert "pytest -rfEs $two --cov=fastmdxplora --cov-append" in covered
+    assert "pytest -rfEs $browser || status=1" in [line.strip() for line in plain.splitlines()]
+    assert "$two" not in plain
