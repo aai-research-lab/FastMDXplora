@@ -556,6 +556,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Tests: CI's other legs run the tests that drive no browser on every core
+  and the browser files one at a time after them, as the coverage leg does.
+  On one core two were cancelled at 90 minutes with nothing failed; their
+  limit is now 120.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
