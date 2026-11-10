@@ -9,6 +9,35 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- An umbrella study's binding free energy judges its bulk tail against the
+  bootstrap's resampled curves (saved in `pmf.json` under `uncertainty` as
+  `resample_curves_kjmol`): each point's departure from the tail's mean,
+  and the tail's tilt, against the larger of 0.6 kJ/mol and a multiple of
+  its own spread over the resamples (Sidak's bound for the points, Student's
+  t on one fewer degrees of freedom than the resamples, 2.5% each), so a
+  tail truly in bulk is refused by its noise alone about 5% of the time or
+  less; on the tests' well, a tail still falling by 1 kJ/mol at 3000
+  frames a window is now refused where it was given a number. With fewer than 20 resamples whose
+  tail is whole, 0.6 kJ/mol is the whole allowance and the tilt is not
+  judged, as before. `binding` says which in `bulk_judged` and
+  `bulk_judged_by`, with `bulk_tilt_kjmol` against
+  `bulk_tilt_allowed_kjmol`. A resample's number is worked out without
+  judging its own tail, so the interval is made of every resample that gave
+  a number (`delta_g_resamples`, and the rest in
+  `delta_g_resamples_without_a_number`); judged on its own, on that well at
+  300 frames a window, 39 of 40 resamples were refused and the interval had
+  no width.
+- The cone's wall is judged in every window with frames at or inside the
+  cutoff the integral uses, over those frames alone, wherever the window
+  was centred, where it was judged only in windows centred within 1.25
+  times the minimum. A wall that bit inside the cutoff beyond that range
+  now refuses the number, naming the windows. A window with frames in the
+  bound range and no bias read there (a COLVAR without `cone.bias`, say)
+  is named in `cone_wall_not_read_in` and refuses it, as does no window
+  sampling the bound range. `cone_wall_judged` gives each judged window's
+  mean bias with `frames_inside` and `frames_unread`, and
+  `cone_wall_checked_up_to_nm` the cutoff. A number withheld by the
+  reference checks saves these fields and the bulk tail's.
 - A joined run of three or four segments can now be called drifting
   (`analysis.sampling.drifting`, `drift_test:
   slope_against_errors_and_scatter`): with each segment mean placed at the
