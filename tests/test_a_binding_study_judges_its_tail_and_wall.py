@@ -6,6 +6,12 @@ cone: the tail judged against the bootstrap's resampled curves, each
 resample's number worked out without judging its tail, and the cone's wall
 judged over the frames up to the cutoff the integral uses (1.46 nm, well
 past 1.25 times the 0.8 nm minimum).
+
+Each study is one seeded draw (frames and bootstrap), so every test here is
+deterministic. Some margins are thin on purpose: a 1 kJ/mol tilt is caught
+about seven times in ten, and the flat study's 0.5 kJ/mol is about two of
+its standard deviations. A change that only reorders the random stream can
+fail one of them by chance; redraw before reading it as a defect.
 """
 
 from __future__ import annotations
@@ -30,9 +36,12 @@ def _potential(radius, tilt: float = 0.0):
 
 def _study(tmp_path, *, tilt: float = 0.0, bite: float = 0.0, seed: int = 0,
            count: int = 3000, resamples: int = 40, monkeypatch=None,
-           refuse_the_reference: bool = False) -> dict:
+           refuse_the_reference: bool = False, wall_at: float = 1.35,
+           unread: "int | None" = None, whole: bool = False) -> dict:
     """16 windows from 0.55 to 2.05 nm at 1000 kJ/mol/nm^2, `count` frames
-    each; the wall's bias is `bite` on frames within 0.05 nm of 1.35 nm."""
+    each; the wall's bias is `bite` on frames within 0.05 nm of `wall_at`,
+    and window `unread` writes no `cone.bias` column. `whole` returns all of
+    `pmf.json`, else its `binding`."""
     from fastmdxplora.batch.explorer import BatchExplorer
     from fastmdxplora.simulation.umbrella import Cone
 
@@ -58,12 +67,18 @@ def _study(tmp_path, *, tilt: float = 0.0, bite: float = 0.0, seed: int = 0,
             GRID - block["centre"]) ** 2
         weight = np.exp(-(energy - energy.min()) / KT)
         where = rng.choice(GRID, size=count, p=weight / weight.sum())
-        wall = np.where(np.abs(where - 1.35) < 0.05, bite, 0.0)
-        run.joinpath("COLVAR").write_text(
-            "#! FIELDS time d cone.bias\n" + "\n".join(
-                f"{i * 0.1:.1f} {r:.5f} {b:.4f}"
-                for i, (r, b) in enumerate(zip(where, wall))),
-            encoding="utf-8")
+        wall = np.where(np.abs(where - wall_at) < 0.05, bite, 0.0)
+        if block["index"] == unread:
+            run.joinpath("COLVAR").write_text(
+                "#! FIELDS time d\n" + "\n".join(
+                    f"{i * 0.1:.1f} {r:.5f}" for i, r in enumerate(where)),
+                encoding="utf-8")
+        else:
+            run.joinpath("COLVAR").write_text(
+                "#! FIELDS time d cone.bias\n" + "\n".join(
+                    f"{i * 0.1:.1f} {r:.5f} {b:.4f}"
+                    for i, (r, b) in enumerate(zip(where, wall))),
+                encoding="utf-8")
         run.joinpath("umbrella_window.json").write_text(json.dumps({
             "centre": block["centre"],
             "force_constant": block["force_constant"], "cone": cone}),
@@ -79,8 +94,13 @@ def _study(tmp_path, *, tilt: float = 0.0, bite: float = 0.0, seed: int = 0,
         explorer._maybe_build_pmf(bootstrap_resamples=resamples)
     finally:
         logging.disable(logging.NOTSET)
-    return json.loads((tmp_path / "out" / "pmf.json").read_text(
-        encoding="utf-8"))["binding"]
+    saved = json.loads((tmp_path / "out" / "pmf.json").read_text(
+        encoding="utf-8"), parse_constant=_not_strict_json)
+    return saved if whole else saved["binding"]
+
+
+def _not_strict_json(token: str):
+    raise AssertionError(f"pmf.json holds {token}, which strict JSON refuses")
 
 
 def _exact(cutoff: float) -> float:
@@ -152,3 +172,76 @@ class TestTheStudyJudgesItsReference:
                     "bulk_resamples_used", "cone_wall_checked_up_to_nm"):
             assert binding[key] is not None, key
         assert binding["cone_wall_not_read_in"] == []
+
+
+class TestWhatARefusalSaysAndSaves:
+    def test_the_wall_refusal_says_every_window_runs_again(self, tmp_path):
+        """The windows of one study share one cone, so running the named
+        windows again under a wider one is refused after they have run."""
+        binding = _study(tmp_path, bite=1.0)
+
+        assert binding["delta_g_kjmol"] is None
+        assert "Every window then runs again under the new cone" in (
+            binding["refused"])
+        assert "--force-overwrite" in binding["refused"]
+        assert "`--rerun-window` cannot do it" in binding["refused"]
+
+    def test_a_wall_refusal_saves_how_the_tail_and_wall_were_judged(
+            self, tmp_path):
+        binding = _study(tmp_path, bite=1.0)
+
+        assert binding["bulk_judged_by"] == "the bootstrap's resampled curves"
+        for key in ("bulk_allowed_kjmol", "bulk_worst_at_nm",
+                    "bulk_tilt_kjmol", "bulk_tilt_allowed_kjmol",
+                    "bulk_resamples_used", "minimum_at_nm"):
+            assert binding[key] is not None, key
+        assert 8 in binding["cone_wall_windows"]
+
+    def test_an_unread_window_is_saved_as_null_not_nan(self, tmp_path):
+        """Window 8 (1.35 nm) samples inside the cutoff with no `cone.bias`
+        column: refused, named, and saved as strict JSON."""
+        binding = _study(tmp_path, unread=8)
+
+        assert binding["delta_g_kjmol"] is None
+        assert binding["cone_wall_not_read_in"] == [8]
+        row = next(r for r in binding["cone_wall_judged"] if r["window"] == 8)
+        assert row["bias_kjmol"] is None and row["read"] is False
+        assert binding["bulk_judged_by"] == "the bootstrap's resampled curves"
+
+    def test_an_infinite_wall_is_saved_as_null_and_said(self, tmp_path):
+        binding = _study(tmp_path, bite=float("inf"))
+
+        assert binding["delta_g_kjmol"] is None
+        assert binding["cone_wall_bias_kjmol"] is None
+        assert binding["cone_wall_infinite"] is True
+        assert all(row["infinite"] for row in binding["cone_wall_bit_in"])
+
+    def test_a_refused_binding_leaves_no_number_in_derived(self, tmp_path):
+        saved = _study(tmp_path, tilt=1.0, whole=True)
+
+        assert saved["binding"]["delta_g_kjmol"] is None
+        assert saved["derived"]["value"] is None
+        assert "binding.refused" in saved["derived"]["note"]
+
+    def test_a_reference_refusal_saves_the_windows_and_the_allowance(
+            self, tmp_path, monkeypatch):
+        binding = _study(tmp_path, monkeypatch=monkeypatch,
+                         refuse_the_reference=True)
+
+        assert binding["refused"] == "Not open."
+        assert binding["bulk_allowed_kjmol"] is not None
+        assert binding["bulk_worst_at_nm"] is not None
+        assert binding["cone_wall_windows"]
+        assert binding["cone_wall_judged"]
+        assert binding["cone_wall_bit_in"] == []
+
+    def test_no_bootstrap_says_the_tilt_was_not_judged(self, tmp_path,
+                                                        capsys):
+        binding = _study(tmp_path, resamples=0)
+
+        assert binding["delta_g_kjmol"] is not None
+        assert binding["bulk_judged"].endswith(
+            "since the study ran no bootstrap (`bootstrap_resamples: 0`)")
+        assert ("The tail was judged against 0.6 kJ/mol alone and its tilt "
+                "was not judged: the study ran no bootstrap "
+                "(bootstrap_resamples: 0).") in capsys.readouterr().out

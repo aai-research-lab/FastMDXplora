@@ -285,9 +285,15 @@ class TestThroughTheRecombination:
         assert caught >= 18, caught
 
     def test_a_flat_tail_is_refused_about_one_time_in_twenty(self):
-        """60 studies at 40 resamples each: at a true 5% the count is 3, and
-        6 is the binomial's 95% upper bound."""
-        found = _judged(0.0, range(100, 160), resamples=40)
+        """60 studies at 20 resamples each, the fewest the judged test takes
+        and where too few resamples would refuse most: at a true 5% the
+        exact binomial puts 6 or fewer refusals at 97%. Through the
+        recombination the tail's departures are correlated and both
+        quantiles refuse less than 5% (over 240 such studies, 2.5% on
+        Student's t and 4.6% on the normal), so this checks the claim, not
+        the quantile; `test_a_flat_tail_is_refused_about_one_time_in_twenty_on_few`
+        tells the two apart. 20 resamples rather than 40 halves its time."""
+        found = _judged(0.0, range(100, 160), resamples=20)
         assert all(f["bulk_judged_by"] == "the bootstrap's resampled curves"
                    for f in found)
         assert sum(f["delta_g_kjmol"] is None for f in found) <= 6
@@ -644,9 +650,11 @@ class TestFewResamplesAreAllowedForByStudentsT:
             self, resamples):
         """2000 curves on a flat tail, each with its own resamples: an offset
         common to every bin (2 kJ/mol) and AR(1) bin noise (1 kJ/mol, rho
-        0.6), the same for the curve and for each resample. On the normal's
-        quantile 8.7% at 20 resamples and 7.8% at 30 were refused; the
-        binomial's 95% range about 5% at 2000 is 4.0% to 6.0%."""
+        0.6), the same for the curve and for each resample. Asserted: 2% to
+        6% refused (Student's t gives about 4% on this model, and 6% is
+        above the binomial's 95% range about 5% at 2000, 4.0% to 6.0%). On
+        the normal's quantile this test refused 9.5% at 20 resamples and
+        7.6% at 30."""
         rng = np.random.default_rng(11)
         radius = np.linspace(0.05, 3.0, 60)
         flat = (np.where(radius <= 0.6, -20.0, 0.0)
@@ -667,6 +675,20 @@ class TestFewResamplesAreAllowedForByStudentsT:
             refused += result["delta_g_kjmol"] is None
         assert result["bulk_allowed_kjmol"] > 0.6
         assert 0.02 <= refused / 2000 <= 0.06
+
+    def test_a_hole_in_the_well_saves_how_the_tail_was_judged(self):
+        radius, energy = _square_well()
+        holed = energy.copy()
+        holed[np.argmin(np.abs(radius - 0.3))] = np.nan
+        result = binding_free_energy(
+            radius, holed, temperature_K=TEMPERATURE, bound_cutoff_nm=0.6,
+            resample_curves_kjmol=_resamples(energy, shared=3.0, own=0.1))
+
+        assert result["delta_g_kjmol"] is None
+        assert "hold no samples" in result["refused"]
+        assert result["bulk_judged_by"] == "the bootstrap's resampled curves"
+        assert result["bulk_tilt_allowed_kjmol"] is not None
+        assert result["minimum_at_nm"] is not None
 
     def test_a_refusal_set_by_the_noise_says_to_sample_longer(self):
         radius, energy = _square_well()

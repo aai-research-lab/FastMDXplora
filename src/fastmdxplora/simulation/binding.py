@@ -420,6 +420,38 @@ def _the_wall_up_to(wall_bias_kjmol: Any, cutoff: float) -> dict[str, Any]:
     }
 
 
+def _saved_bias(value: "float | None") -> "float | None":
+    """A wall's bias as `pmf.json` can hold it: None for NaN or infinity,
+    which strict JSON readers refuse; the record says which beside it."""
+    return None if value is None or not np.isfinite(value) else float(value)
+
+
+def _saved_row(row: dict[str, Any]) -> dict[str, Any]:
+    """One judged window as saved, with ``read`` and ``infinite`` said."""
+    bias = row["bias_kjmol"]
+    return {**row, "bias_kjmol": _saved_bias(bias),
+            "read": not np.isnan(bias),
+            "infinite": bool(np.isinf(bias))}
+
+
+def _the_wall_as_saved(wall: dict[str, Any]) -> dict[str, Any]:
+    """`_the_wall_up_to`'s verdict as record fields with no NaN or
+    infinity in them; an infinite wall is ``cone_wall_infinite``."""
+    bias = wall["bias_kjmol"]
+    return {
+        "cone_wall_bias_kjmol": _saved_bias(bias),
+        "cone_wall_infinite": (None if bias is None
+                               else bool(np.isinf(bias))),
+        "cone_wall_checked_up_to_nm": wall["up_to_nm"],
+        "cone_wall_windows": wall["windows"],
+        "cone_wall_bit_in": (None if wall["bit"] is None
+                             else [_saved_row(row) for row in wall["bit"]]),
+        "cone_wall_not_read_in": wall["not_read"],
+        "cone_wall_judged": (None if wall["judged"] is None
+                             else [_saved_row(row) for row in wall["judged"]]),
+    }
+
+
 def _array_of_numbers(values: Any, what: str, ndim: int) -> np.ndarray:
     """`values` as a float array of `ndim` dimensions, None read as NaN,
     or a StudyError saying what it was."""
@@ -456,6 +488,7 @@ def binding_free_energy(
     errors_kjmol: Any = None,
     resample_curves_kjmol: Any = None,
     judge_the_bulk: bool = True,
+    bulk_fixed_because: "str | None" = None,
 ) -> dict[str, Any]:
     """A standard-state binding free energy, or a refusal saying why not.
 
@@ -501,6 +534,10 @@ def binding_free_energy(
     cancels in a departure. Without resamples, or with fewer than
     `BULK_RESAMPLES_NEEDED` whose tail is whole, 0.6 kJ/mol is the whole
     allowance and the tilt is not judged. The record says which was judged.
+
+    ``bulk_fixed_because`` says, in the caller's words, why no resamples
+    were given (a study run with ``bootstrap_resamples: 0``, say), where the
+    tail falls back to the fixed check for want of them.
 
     ``judge_the_bulk=False`` reads the reference off the tail without
     judging its shape: for each of the bootstrap's resamples, whose curve
@@ -586,6 +623,8 @@ def binding_free_energy(
             radius[-n_bulk:], energy[-n_bulk:],
             None if curves is None else curves[:, -n_bulk:], kt,
             why_fixed=(
+                f", since {bulk_fixed_because}"
+                if bulk_fixed_because and curves is None else
                 ", since the bootstrap's per-bin errors were passed without "
                 "its resampled curves, and each per-bin error holds the "
                 "noise of the bin the curve is zeroed at"
@@ -691,6 +730,9 @@ def binding_free_energy(
     if holes.size:
         return {
             "delta_g_kjmol": None,
+            **judged_record,
+            "bulk_from_nm": float(radius[-n_bulk]),
+            "minimum_at_nm": minimum_at,
             "bound_cutoff_nm": chosen,
             "refused": (
                 f"{holes.size} bin(s) inside the bound range (up to "
@@ -705,7 +747,10 @@ def binding_free_energy(
     reference_shell = 4.0 * np.pi
     integral = integrate(chosen)
     if not np.isfinite(integral) or integral <= 0:
-        return {"delta_g_kjmol": None, "refused": (
+        return {"delta_g_kjmol": None, **judged_record,
+                "bulk_from_nm": float(radius[-n_bulk]),
+                "minimum_at_nm": minimum_at, "bound_cutoff_nm": chosen,
+                "refused": (
             f"The bound range up to {chosen:.3g} nm holds no population "
             "above the bulk reference, so there is no bound state to report "
             "a free energy for."
@@ -722,18 +767,21 @@ def binding_free_energy(
         wall = {key: None for key in wall}
     else:
         wall_record = {
-            "cone": cone_record, "bound_cutoff_nm": chosen,
-            "cone_wall_bias_kjmol": wall["bias_kjmol"],
-            "cone_wall_checked_up_to_nm": wall["up_to_nm"],
-            "cone_wall_windows": wall["windows"],
-            "cone_wall_bit_in": wall["bit"],
-            "cone_wall_not_read_in": wall["not_read"],
-            "cone_wall_judged": wall["judged"],
+            "cone": cone_record, "cone_correction_kjmol": correction,
+            **judged_record,
+            "bulk_from_nm": float(radius[-n_bulk]),
+            "minimum_at_nm": minimum_at, "bound_cutoff_nm": chosen,
+            "standard_volume_nm3": STANDARD_VOLUME_NM3,
+            **_the_wall_as_saved(wall),
         }
         widen = (
             "Widen `half_angle_deg` (or `margin`, for a cone worked out from "
             "the pull) until the wall is quiet there, or point "
-            "the axis along the direction the ligand actually leaves by.")
+            "the axis along the direction the ligand actually leaves by. "
+            "Every window then runs again under the new cone, not only "
+            "those named, since the windows of one study share one cone: "
+            "`fastmdx explore -c <config> --force-overwrite` with the new "
+            "setting in the config. `--rerun-window` cannot do it.")
         def _windows(numbers: "list[int]") -> str:
             return ("window" + ("s " if len(numbers) > 1 else " ")
                     + ", ".join(str(n) for n in numbers))
@@ -812,7 +860,10 @@ def binding_free_energy(
             delta_g - correction if cone_record is not None else None),
         "cone": cone_record,
         "cone_correction_kjmol": correction if cone_record is not None else None,
-        "cone_wall_bias_kjmol": wall["bias_kjmol"],
+        **{key: value for key, value in _the_wall_as_saved(wall).items()
+           if key not in ("cone_wall_checked_up_to_nm", "cone_wall_windows",
+                          "cone_wall_bit_in", "cone_wall_not_read_in",
+                          "cone_wall_judged")},
         "cone_wall_checked": (
             None if cone_record is None else wall["bias_kjmol"] is not None),
         # Where the wall was judged: in every window that sampled the range
@@ -820,13 +871,13 @@ def binding_free_energy(
         # (None) when it came as one number.
         "cone_wall_checked_up_to_nm": wall["up_to_nm"],
         "cone_wall_windows": wall["windows"],
-        "cone_wall_bit_in": wall["bit"],
+        "cone_wall_bit_in": _the_wall_as_saved(wall)["cone_wall_bit_in"],
         # Windows that sampled the bound range whose bias was not a number.
         # Never read as quiet: a number is refused while any is listed.
         "cone_wall_not_read_in": wall["not_read"],
         # Each judged window: its mean bias over its frames in the bound
         # range, how many frames that was and how many had no bias read.
-        "cone_wall_judged": wall["judged"],
+        "cone_wall_judged": _the_wall_as_saved(wall)["cone_wall_judged"],
         "binding_constant_nm3": constant_nm3,
         "bound_cutoff_nm": chosen,
         "bound_cutoff_chosen_by": (

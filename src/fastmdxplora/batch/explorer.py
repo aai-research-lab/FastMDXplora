@@ -40,6 +40,7 @@ dispatched to a subprocess via a module-level worker function.
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal as _signal
 import time
@@ -981,9 +982,32 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     elif binding.get("refused"):
         lines.append("Binding:        not reported -- "
                      + str(binding["refused"]).split(". ")[0].rstrip(".") + ".")
+    from fastmdxplora.simulation.binding import BULK_RESIDUAL_KJMOL
+
+    if value is not None and binding.get("bulk_judged_by") == (
+            f"{BULK_RESIDUAL_KJMOL} kJ/mol alone"):
+        lines.append(
+            f"Warning:        The tail was judged against "
+            f"{BULK_RESIDUAL_KJMOL} kJ/mol alone and its tilt was not "
+            "judged" + (": the study ran no bootstrap "
+                        "(bootstrap_resamples: 0)."
+                        if "bootstrap_resamples: 0" in str(
+                            binding.get("bulk_judged") or "") else "."))
     for warning in (binding.get("reference") or {}).get("warnings") or []:
         lines.append(f"Warning:        {warning}")
     return lines
+
+
+def _finite_or_null(value: Any) -> Any:
+    """`value` with every NaN or infinite float replaced by None, through
+    dicts, lists and tuples, so that it can be written as strict JSON."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _finite_or_null(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_or_null(item) for item in value]
+    return value
 
 
 def _a_prepared_system_is_there(setup_dir: Path) -> bool:
@@ -3507,13 +3531,31 @@ class BatchExplorer:
                         resample_curves_kjmol=(
                             payload["pmf"].get("uncertainty") or {})
                         .get("resample_curves_kjmol"),
+                        bulk_fixed_because=(
+                            "the study ran no bootstrap "
+                            "(`bootstrap_resamples: 0`)"
+                            if not how_many["bootstrap_resamples"] else None),
                     )
                     payload["binding"] = self._with_the_reference_checked(
                         payload["binding"], payload["pmf"], plan, directories,
                         temperature=temperature, cone=cone)
+                if (payload["binding"].get("refused")
+                        and isinstance(payload.get("derived"), dict)):
+                    # The resamples' statistic is the uncorrected number and
+                    # rides along unjudged, so a study whose binding free
+                    # energy was refused would otherwise still show one here.
+                    payload["derived"] = {
+                        "value": None,
+                        "note": ("The binding free energy was refused (see "
+                                 "`binding.refused`), so its resamples' "
+                                 "interval is not given.")}
 
         destination = Path(self.output_dir) / "pmf.json"
-        destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        # Strict JSON: a NaN or an infinity is saved as null, which jq and a
+        # browser's JSON.parse read, where the bare tokens refuse the file.
+        destination.write_text(
+            json.dumps(_finite_or_null(payload), indent=2, allow_nan=False),
+            encoding="utf-8")
 
         # Cleared before anything is drawn, so a refusal cannot leave the
         # previous run's figure in place. `--force` clears the run
@@ -3617,11 +3659,16 @@ class BatchExplorer:
         if checks.get("refused") and binding.get("delta_g_kjmol") is not None:
             kept = {key: binding.get(key) for key in (
                 "bulk_residual_kjmol", "bulk_from_nm", "minimum_at_nm",
-                "bulk_judged", "bulk_judged_by", "bulk_tilt_kjmol",
-                "bulk_tilt_allowed_kjmol", "bulk_resamples_used",
+                "bulk_judged", "bulk_judged_by", "bulk_worst_at_nm",
+                "bulk_allowed_kjmol", "bulk_tilt_kjmol",
+                "bulk_tilt_error_kjmol", "bulk_tilt_allowed_kjmol",
+                "bulk_resamples_used", "bulk_error_multiplier",
+                "bulk_tilt_multiplier",
                 "bound_cutoff_nm", "cone", "cone_correction_kjmol",
-                "cone_wall_bias_kjmol", "cone_wall_checked_up_to_nm",
-                "cone_wall_not_read_in", "standard_volume_nm3")}
+                "cone_wall_bias_kjmol", "cone_wall_infinite",
+                "cone_wall_checked_up_to_nm", "cone_wall_windows",
+                "cone_wall_bit_in", "cone_wall_not_read_in",
+                "cone_wall_judged", "standard_volume_nm3")}
             return {"delta_g_kjmol": None, **kept, "reference": checks,
                     "refused": checks["refused"]}
         return {**binding, "reference": checks}
