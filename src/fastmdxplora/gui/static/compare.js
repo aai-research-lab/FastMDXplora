@@ -537,7 +537,7 @@
                  series: { x: line.x, y: line.y, x_label: line.x_label } };
       });
       runs.drawOverlay(chart, legend, drawn,
-                       { analysis: s.analysis, label: s.label, unit: s.unit }, 0, times);
+                       { analysis: s.analysis, label: s.label, unit: s.unit, of: "studies" }, 0, times);
       chart.setAttribute("data-drawn", "2");
     });
   }
