@@ -229,6 +229,17 @@ def test_artifact_links_keep_percent_and_hashes_in_filenames(study):
             assert status == 200 and body == expected
 
 
+def test_an_analysis_data_link_reaches_a_percent_and_hash_filename(study):
+    # The Analysis card's "Data" link is the address the overview gives, used as is.
+    from fastmdxplora.gui.analysis_overview import _data_files
+
+    _write(study, "analysis/rg/rg%41 b#c.csv", "rows")
+    files = {f["name"]: f["href"] for f in _data_files(study, "rg")}
+    with _serving(study.resolve()) as url:
+        status, _headers, body = _get(url + files["rg%41 b#c.csv"])
+        assert status == 200 and body == b"rows"
+
+
 def test_report_panel_links_reach_a_percent_filename(study, monkeypatch):
     # A panel's href is quoted here from its raw path, once.
     from fastmdxplora.gui import report_dashboard
