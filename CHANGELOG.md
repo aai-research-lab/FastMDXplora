@@ -9,6 +9,35 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- Along a distance a barrier's rises on W(r) are judged against W's
+  resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
+  round before judged them against A's, so every departure carried
+  2kT ln(r_i / r_j), the family's multiplier came out at 21 to 26 (8 to 11
+  at 300 frames) in place of about 3.8, and a 5 kJ/mol escape barrier above
+  a 15 kJ/mol well was refused as noise on 5 seeds in 6; it is now given on
+  every seed, 18.9 to 20.9 against 20.0. W's minimum for the binding free
+  energy is searched between the outermost windows' centres
+  (`binding_free_energy(covered_nm=)`, and in the reference checks), so a
+  sparse end bin below the first window no longer takes the well and
+  refuses the study as holding no bound state; an empty bin in the bound
+  range is judged on W against that minimum. The radial `.dat` header says
+  where W is zero, and an older record's W is zeroed between the windows'
+  centres when read. The console's Barrier line says when only the
+  2.5 kJ/mol margin judged it, and otherwise that a barrier sits about 0.8
+  of its error high, as `barrier_zero` says.
+- A binding free energy is refused where W's lowest point between the
+  windows' centres is less than kT below the bulk reference
+  (`well_depth_kjmol` says by how much): the bound range ends where W comes
+  back within kT of bulk, so such a curve has none. A free particle
+  recombined along a distance, given about -6 kJ/mol before this series
+  (its bound range from A's minimum out in bulk), and -7.4 to +0.8 with
+  W's minimum searched between the centres alone, is now refused on every
+  seed tried; a well 1 kT deep or less is refused with it.
+- Running `fastmdx report` or `analyze` over an umbrella study saved
+  before this series recomputes its record, so its barrier and its binding
+  free energy can change: a shallow well's binding number moves to the one
+  its well gives, a free particle's is refused, and a peak within its
+  error is no longer quoted.
 - A turn the umbrella windows tile is recombined on a grid from -pi to
   pi, so the seam is the edge between the first and last bins and a
   barrier at +-pi is read across it; the grid was cut where the samples
