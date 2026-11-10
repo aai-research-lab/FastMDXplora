@@ -347,9 +347,11 @@ What each analysis accepts is in [The FastMDXplora analyses](analyses.md), and
 the GUI shows it beside each analysis. A misspelled option is refused rather
 than ignored.
 
-Clustering checks its frame-by-frame matrix against this machine's memory
-before it makes it, and where it is refused, `cluster: {stride: 4}` clusters
-every fourth frame (the refusal names the stride that fits). The whole
+Clustering clusters at most 5,000 frames, every k-th past them
+(`cluster: {max_frames: 5000}`, `null` for every frame), and checks its
+frame-by-frame matrix against this machine's memory before it makes it;
+where it is refused, `cluster: {stride: 4}` clusters every fourth frame (the
+refusal names the stride that fits). The whole
 matrix is written only with `cluster: {save_full_matrix: true}`. See
 [Conformations](analyses.md#conformations).
 

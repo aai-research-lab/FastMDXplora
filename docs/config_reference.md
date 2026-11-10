@@ -397,6 +397,12 @@ what gates it.
 | `last` | int | end | Last frame, exclusive |
 | `stride` | int | `1` | Take every *n*th frame |
 
+These choose the frames every analysis reads. Clustering then clusters at
+most 5,000 of them, every k-th frame past that, k the least stride that leaves
+at most 5,000, the stride recorded with its populations; it is set under
+`options`, as `cluster: {max_frames: 5000}` (`null` for every frame) or
+`cluster: {stride: k}`. See [Conformations](analyses.md#conformations).
+
 ### What the figures look like
 
 | Setting | Type | Default | What it does |

@@ -202,6 +202,19 @@ equilibration, and `start: 5` at the first frame at or after 5 ns. The `frame`
 column of their data files is the frame of the trajectory analysed, so it
 begins where they began.
 
+`cluster` clusters at most 5,000 frames (`max_frames: 5000`): past them it
+clusters every k-th frame from its start, k the least stride that leaves at
+most 5,000 (every 3rd of 12,000 frames, 4,000 of them). The matrix grows with
+the square of the frames clustered, so this bounds it, and the memory check
+is of the frames clustered. The stride is in `options.json` (`findings.frames`)
+and, with each cluster's frames and fraction, under `findings.populations`;
+each fraction is of the frames clustered, and the report says the
+populations were counted on every k-th frame. `stride: k` under
+`options: {cluster: ...}` clusters every k-th frame, or every k-th of more
+where that would leave more than `max_frames` (said so); `max_frames: null`
+leaves the frames to `stride`, every frame at its default, the memory check
+still made.
+
 `cluster` also writes, for each method, every cluster's share of the frames
 clustered and its medoid (the member with the least summed RMSD to the
 others) as `cluster_<method>_populations.csv`, and each medoid as a
@@ -249,8 +262,12 @@ much larger the limit would have to be), in one unit, MB under 1 GB, to as
 many decimals as tell them apart and read in their order, the share computed
 from the room as said, and last where the memory was read, and said in the
 log and on the Analysis page, in the analysis's own section;
-`stride: k` under `options: {cluster: ...}` clusters every k-th frame, and
-the other analyses still read every frame. On `features: coordinates`,
+`stride: k` under `options: {cluster: ...}` clusters every k-th frame (the
+stride named is never under the one `max_frames` chose), and the other
+analyses still read every frame. With less than about 106 MB of memory left
+to it, clustering is refused at any stride: a clustering of a few hundred
+frames was measured to peak at up to 74.1 MiB, and is planned on 79.7 MB
+(76 MiB) at the least. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
 matrix and is checked the same way (16 n^2 bytes, the matrix and its centred
 square), checked before any of its methods runs and refused past it with the
