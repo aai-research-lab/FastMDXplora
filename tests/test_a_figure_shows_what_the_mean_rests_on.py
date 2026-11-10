@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import matplotlib
 import numpy as np
+import pytest
 
 matplotlib.use("Agg")
 
@@ -105,21 +106,31 @@ class TestAnAbsentErrorBarIsSaidSo:
         assert "too few for an error bar" in labels, (
             "The consequence has to be stated, or the absence reads as an "
             "oversight rather than a decision.")
-        assert "about 10 independent samples" in labels
+        assert "about 9.7 independent samples" in labels
 
-    def test_the_count_is_a_whole_number(self):
-        """N/g is a ratio; a fraction of an observation is not a thing.
-
-        873 equilibrated frames over a statistical inefficiency of 89 gives
-        9.77, and printing "9.8 independent samples" claims a precision the
-        estimate does not have -- `g` is itself uncertain, and on a run this
-        short the software's own record says halving the frames changes it.
-        """
+    def test_the_count_is_rounded_down_as_every_page_says_it(self):
+        """873 equilibrated frames over a statistical inefficiency of 89 gives
+        9.77: rounded to a whole number it read "about 10" beside a rule that
+        withholds a mean under 10, and rounded to one decimal "9.8"."""
         ax = _drawn(_series(_record()))
         labels = " ".join(t.get_text() for t in ax.get_legend().get_texts())
 
         assert "9.8" not in labels
-        assert "about 10" in labels
+        assert "about 10" not in labels
+        assert "about 9.7" in labels
+
+    @pytest.mark.parametrize("samples, said", [
+        (24.6, "about 24.6 independent samples"),
+        (24.999999999999996, "about 24.9 independent samples"),
+        (9.96, "about 9.9 independent samples"),
+    ])
+    def test_a_count_below_a_threshold_is_not_said_at_it(self, samples, said):
+        """24.6 read "about 25 independent samples: too few for an error bar"."""
+        record = _record(effective_samples=samples)
+        label = _series(record)._mean_label(record, has_error=False)
+
+        assert said in label
+        assert "about 25" not in label and "about 10" not in label
 
     def test_a_count_below_one_is_said_in_words(self):
         from fastmdxplora.analysis.base import Analysis
@@ -130,8 +141,8 @@ class TestAnAbsentErrorBarIsSaidSo:
     def test_one_sample_is_singular(self):
         from fastmdxplora.analysis.base import Analysis
 
-        assert "1 independent sample" in Analysis._independent_samples(1.2)
-        assert "samples" not in Analysis._independent_samples(1.2)
+        assert Analysis._independent_samples(1.05) == "about 1 independent sample"
+        assert Analysis._independent_samples(1.2) == "about 1.2 independent samples"
 
     def test_the_count_is_called_independent_not_effective(self):
         """Because the author of this package had to ask what it meant.
@@ -232,7 +243,7 @@ class TestTheLegendStaysInsideTheAxes:
 
         fig, ax = new_figure(title="t", figsize=figsize)
         ax.plot([0, 1], [0, 1], label="mean after equilibration 0.1143 nm\n"
-                                      "about 10 independent samples: too few "
+                                      "about 9.7 independent samples: too few "
                                       "for an error bar")
         ax.legend(loc="best", fontsize=7.5)
         fig.canvas.draw()

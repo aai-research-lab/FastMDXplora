@@ -845,27 +845,21 @@ class Analysis(ABC):
 
     @staticmethod
     def _independent_samples(effective: Any) -> str | None:
-        """How many independent observations the mean rests on, as a count.
+        """How many independent observations the mean rests on, as every
+        page says them (:func:`fastmdxplora.statistics.independent_samples_said`).
 
-        The quantity is N/g -- equilibrated frames over the statistical
-        inefficiency -- so arithmetically it is a ratio and comes out at
-        9.77. Printing that as "9.8 independent samples" claims a precision
-        it does not have: `g` is itself an estimate, and on a run this short
-        it reads low, to a third of the truth at five times its length. There
-        is also no such thing as eight tenths of an observation.
-
-        So it is rounded and hedged. "About 10" is both more honest about
-        the precision and easier to read than "9.8", and nothing downstream
-        turns on the difference -- ten is as far below a usable count as
-        nine point eight is.
+        The quantity is N/g, equilibrated frames over the statistical
+        inefficiency, so it is a ratio, and `g` is itself an estimate: it is
+        hedged with "about". It is rounded down to one decimal, never up to
+        a threshold it is below: rounded to a whole number, 24.6 read "about
+        25 independent samples: too few for an error bar" beside a rule that
+        gives one at 25. Under one is "fewer than one independent sample".
         """
         if effective is None or not np.isfinite(effective):
             return None
-        if effective < 1.0:
-            return "fewer than one independent sample"
-        rounded = int(round(float(effective)))
-        noun = "sample" if rounded == 1 else "samples"
-        return f"about {rounded} independent {noun}"
+        from fastmdxplora.statistics import independent_samples_said
+
+        return independent_samples_said(effective, about=True)
 
     def select_atoms(self, traj: md.Trajectory) -> np.ndarray:
         """Resolve :attr:`selection` to atom indices on a given trajectory.
