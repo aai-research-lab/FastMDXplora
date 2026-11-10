@@ -1101,12 +1101,19 @@ def reweight_results(
 
 
 def _write_table(record: dict[str, Any], path: Path) -> None:
+    from fastmdxplora.statistics import independent_samples_floored
+
+    # Rounded down to one decimal, as every table gives them: 9.96 is not 10.0.
+    independent = record.get("independent_samples")
+    independent = float("nan") if independent is None else float(independent)
+    independent_said = ("nan" if not np.isfinite(independent) else "< 1" if independent < 1
+                        else f"{independent_samples_floored(independent):.1f}")
     lines = [
         "# Averages over a metadynamics trajectory, before and after "
         "reweighting.",
         f"# weight-concentration effective frames "
         f"{record['effective_sample_size']:.1f} of {record['n_frames']}, "
-        f"independent samples {record.get('independent_samples', float('nan')):.1f}",
+        f"independent samples {independent_said}",
     ]
     if not record.get("converged", record.get("settled")):
         lines.append("# provisional: the bias had not converged")

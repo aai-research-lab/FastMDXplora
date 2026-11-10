@@ -308,3 +308,19 @@ def test_the_report_s_convergence_table_says_the_count_as_the_dashboard_does(
     [row] = [line for line in document._convergence_section(tmp_path).splitlines()
              if line.startswith("| RMSD")]
     assert row.startswith(f"| RMSD | 400 | 40 | {cell} | "), row
+
+
+@pytest.mark.parametrize("independent, said", [
+    (9.96, "independent samples 9.9"),
+    (24.999999999999996, "independent samples 24.9"),
+    (0.3, "independent samples < 1"),
+    (None, "independent samples nan"),
+])
+def test_the_reweighted_table_s_header_rounds_its_count_down(tmp_path, independent, said):
+    from fastmdxplora.analysis.reweighted_averages import _write_table
+
+    record = {"effective_sample_size": 40.0, "n_frames": 400, "converged": True,
+              "independent_samples": independent, "quantities": []}
+    _write_table(record, tmp_path / "reweighted_averages.dat")
+    header = (tmp_path / "reweighted_averages.dat").read_text(encoding="utf-8").splitlines()[1]
+    assert header == f"# weight-concentration effective frames 40.0 of 400, {said}"
