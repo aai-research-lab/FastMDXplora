@@ -639,6 +639,35 @@ class TestFewResamplesAreAllowedForByStudentsT:
         assert result["bulk_tilt_multiplier"] == pytest.approx(
             float(student.ppf(1.0 - 0.0125, 19)))
 
+    @pytest.mark.parametrize("resamples", [20, 30])
+    def test_a_flat_tail_is_refused_about_one_time_in_twenty_on_few(
+            self, resamples):
+        """2000 curves on a flat tail, each with its own resamples: an offset
+        common to every bin (2 kJ/mol) and AR(1) bin noise (1 kJ/mol, rho
+        0.6), the same for the curve and for each resample. On the normal's
+        quantile 8.7% at 20 resamples and 7.8% at 30 were refused; the
+        binomial's 95% range about 5% at 2000 is 4.0% to 6.0%."""
+        rng = np.random.default_rng(11)
+        radius = np.linspace(0.05, 3.0, 60)
+        flat = (np.where(radius <= 0.6, -20.0, 0.0)
+                - 2.0 * KT * np.log(radius))
+
+        def noise(count):
+            own = rng.normal(0.0, 1.0, (count, radius.size))
+            for j in range(1, radius.size):
+                own[:, j] = 0.6 * own[:, j - 1] + 0.8 * own[:, j]
+            return own + rng.normal(0.0, 2.0, (count, 1))
+
+        refused = 0
+        for _ in range(2000):
+            real = flat + noise(1)[0]
+            result = binding_free_energy(
+                radius, real, temperature_K=TEMPERATURE, bound_cutoff_nm=0.6,
+                resample_curves_kjmol=real + noise(resamples))
+            refused += result["delta_g_kjmol"] is None
+        assert result["bulk_allowed_kjmol"] > 0.6
+        assert 0.02 <= refused / 2000 <= 0.06
+
     def test_a_refusal_set_by_the_noise_says_to_sample_longer(self):
         radius, energy = _square_well()
         rippled = _with_a_ripple(energy, 3.0)
