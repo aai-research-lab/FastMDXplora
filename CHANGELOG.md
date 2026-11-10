@@ -13,22 +13,45 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   pi, so the seam is the edge between the first and last bins and a
   barrier at +-pi is read across it; the grid was cut where the samples
   stopped, which put the seam inside no bin. A curve given with bins at
-  both -pi and +pi reads them as one bin, their mean. A peak clearing
-  2.5 kJ/mol and not twice the error of its rise is refused as a barrier
-  and named in `summary.within_error` (its rise, error and what it
-  needed), with `summary.barrier_refused` saying why where none is left.
-  The rise's error is its spread over the bootstrap's resampled curves
-  where 20 or more hold both bins, else the two bins' standard errors;
-  `summary.barrier_judged_by` says which and `summary.barrier_error_kjmol`
-  is the barrier's. The PMF analysis reads an older summary again by this
-  rule.
+  both -pi and +pi reads them as one bin, their mean.
+- A barrier is judged with the curve's other peaks as a family: a peak
+  must clear 2.5 kJ/mol and its rise's error times the 95th percentile,
+  over the bootstrap's resampled curves, of the largest departure of any
+  rise from the curve's own over that rise's error (else Sidak's
+  multiplier over every pair of bins, on the bins' standard errors), so a
+  curve with no barrier quotes one about 5% of the time. Judged one peak
+  at a time against twice its error, a flat turn at 90 frames a window
+  quoted a barrier on 20 seeds in 20 and at 300 frames on 7 in 20; now 10
+  in 100 and 2 in 60. A 2 kJ/mol hump at 90 frames is quoted on 5 seeds in
+  14, all at the hump, where 13 in 14 quoted one, two of them elsewhere; a
+  20 kJ/mol hump on the seam is given as before (19.5 to 19.9 against
+  19.52). A peak that does not clear is refused and named in
+  `summary.within_error` (its rise, error, multiplier and what it needed),
+  with `summary.barrier_refused` saying why where none is left,
+  `highest_kjmol` null with `highest_withheld` where the refused peak is
+  the highest point, and `summary.barrier_note` where a lower peak stands.
+  `summary.barrier_judged_by` says how the barrier given was judged,
+  `summary.barrier_multiplier` the multiplier, and positions carry their
+  unit. The console and the comparison report give the barrier in one
+  line, or that it was refused and why. The PMF analysis reads an older
+  summary again by this rule.
+- A binding free energy's bound state starts at the minimum of W(r) =
+  A(r) + 2kT ln r, not of A(r), in the integral's cutoff search and in the
+  reference checks; the integral is still over A(r). A 6 kJ/mol well at
+  0.45 nm had its minimum read at 2.0 nm and its range to 1.64 nm, and was
+  given -6.21 kJ/mol against a 12 kJ/mol well's -5.69; now -0.59. Deep
+  wells' numbers do not move: on the tests' 20 kJ/mol and 15 kJ/mol wells
+  the minimum moves by up to 0.11 nm and the binding free energy not at
+  all.
 - Along a distance between centres `pmf.json` names its two curves in
   `pmf.curves`: `free_energy_kjmol` is A(r) = -kT ln P(r), which the
   binding free energy and the next study's design read, and
   `potential_of_mean_force_kjmol` is W(r) = A(r) + 2kT ln r at the study's
-  temperature, plotted, with the barrier and minima read off it
-  (`summary.read_off`). The figure's x axis is r in nm (a torsion's in
-  rad), the `.dat` header gives the units and kT, and the comparison
+  temperature, zero at its lowest bin between the outermost windows'
+  centres, plotted (faint and dashed beyond them), with the barrier and
+  minima read off it (`summary.read_off`). The figure's x axis is r in nm
+  (a torsion's in rad), the `.dat` header gives the units and kT, and the
+  comparison
   report says which curve the figure is. The coordinates with a binding
   free energy are `umbrella.SHELL_COORDINATES`, one list with those given
   W(r).
