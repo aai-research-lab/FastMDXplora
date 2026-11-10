@@ -406,3 +406,10 @@ def test_the_agent_s_summary_says_the_count_as_the_pages_do(tmp_path, samples, s
     text = _results_summary(_study(tmp_path, {"rg": {
         "mean": 0.328, "standard_error": 0.001, "effective_samples": samples, "unit": "nm"}}))
     assert said in text, text
+
+
+@pytest.mark.parametrize("count", [float("nan"), float("inf"), float("-inf")])
+def test_a_count_that_is_not_a_number_is_returned_as_it_is(count):
+    """NaN raised "cannot convert float NaN to integer", inf an OverflowError."""
+    floored = statistics.independent_samples_floored(count)
+    assert floored == count or (np.isnan(floored) and np.isnan(count))

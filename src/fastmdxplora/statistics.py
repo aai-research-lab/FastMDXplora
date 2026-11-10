@@ -127,8 +127,13 @@ def independent_samples_floored(count: float) -> float:
     :func:`independent_samples_said` says it, for a table's column. Never
     above the count by more than float noise, so 0.39999999999999986 is
     0.4, and never up to a whole number above it, so never up to a threshold
-    it is below: 24.999999999999996 is 24.9."""
+    it is below: 24.999999999999996 is 24.9. A count that is not a finite
+    number has no tenths and is returned as it is, NaN as NaN: every caller
+    says those in words of its own first, and one that does not shows
+    "nan" rather than stopping its page."""
     count = float(count)
+    if not math.isfinite(count):
+        return count
     tenths = math.floor(count * 10 + 1e-6)
     if math.floor(tenths / 10) > count:
         tenths = math.floor(count * 10)
