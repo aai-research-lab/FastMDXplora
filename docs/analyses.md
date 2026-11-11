@@ -609,8 +609,8 @@ computes and why some of it is refused.
 
 ### Enhanced sampling
 
-These four do not analyse the trajectory. They read what a biased or
-replica exchange run itself produced, and each runs only where such a run
+These five do not analyse the trajectory. They read what a biased,
+replica exchange or alchemical run itself produced, and each runs only where such a run
 produced it — so none appears after an ordinary simulation, and none needs a
 ligand.
 
@@ -619,6 +619,7 @@ ligand.
 | `pmf` | The free energy along an umbrella study's coordinate, from the windows it stitched. Reads the study's result rather than recomputing it |
 | `metad_surface` | The free energy surface a metadynamics run filled, from its hills. Plots a provisional surface as readily as a converged one, saying which it is |
 | `steered_work` | The work done by a steered pull, against the coordinate |
+| `alchemical_free_energy` | The free energy of decoupling an alchemical run's group, MBAR's uncertainty, the restraint's correction, and the overlap between neighbouring states |
 | `replica_mixing` | How a replica exchange run's replicas mixed: the swaps accepted between neighbouring conditions, each replica's round trips, and any gap in the ladder |
 
 `steered_work` gives the curve rather than the total, because a pull that
@@ -1057,6 +1058,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.replica_mixing
+   :members:
+
+.. automodule:: fastmdxplora.analysis.alchemical_free_energy
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

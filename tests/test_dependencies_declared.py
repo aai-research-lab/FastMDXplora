@@ -39,6 +39,7 @@ DISTRIBUTION = {
     "PIL": "pillow",
     "openff": "openff-toolkit",
     "openmmplumed": "openmm-plumed",
+    "openmmml": "openmm-ml",
     "umap": "umap-learn",
     "netCDF4": "netcdf4",
 }
@@ -63,6 +64,11 @@ OPTIONAL = {
     # budget is read from /proc/meminfo, the cgroup and os.sysconf, and the
     # refusal says which reading it took.
     "psutil",
+    # A machine-learned potential for part of the system
+    # (`setup.ml_potential`). It brings PyTorch, hundreds of megabytes every
+    # install would carry for what few studies use, so it is absent from the
+    # recipe on purpose; the import raises with the command that installs it.
+    "openmm-ml",
 }
 
 #: Imported, and deliberately absent from pyproject.toml because pip cannot

@@ -138,6 +138,8 @@ from fastmdxplora.analysis import gist as _gist  # noqa: F401, E402
 # How a replica exchange run's replicas mixed: read from its record, where
 # one ran.
 from fastmdxplora.analysis import replica_mixing as _replica_mixing  # noqa: F401, E402
+# The free energy an alchemical run found: read from its record, where one ran.
+from fastmdxplora.analysis import alchemical_free_energy as _alchemical_free_energy  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

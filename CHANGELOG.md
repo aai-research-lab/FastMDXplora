@@ -2305,6 +2305,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Machine-learned potentials: `setup.ml_potential` gives the atoms named
+  (the ligand unless named) their energy within themselves from ANI-2x, or
+  another model openmm-ml knows, as openmm-ml's mixed system, their
+  interactions with the rest staying the force field's. Elements a model
+  was not trained on, a charged group for ANI, and more than 300 atoms are
+  refused. The mixed energy matches ANI-2x's to 0.01 kJ/mol; a whole
+  tri-alanine study runs under it.
+
+- Alchemical free energy: `simulation.alchemical` decouples a group (the
+  ligand unless named) from its surroundings through a schedule of states,
+  charges first and then Lennard-Jones with a soft core, sampled together by
+  replica exchange and estimated by MBAR through openmmtools. One run is
+  one leg; a complex leg takes a flat-bottomed restraint whose
+  standard-state correction is computed and recorded, and
+  `binding_free_energy` combines two legs. The new `alchemical_free_energy`
+  analysis reports the result, its uncertainty and the overlap between
+  neighbouring states, and says where it is thin. Not yet run on a
+  protein-ligand complex.
+
 - Replica exchange: `simulation.replica_exchange` runs REST2 (the solute's
   interactions scaled, by the force field's own terms) or temperature
   replica exchange through openmmtools, after the usual minimisation and

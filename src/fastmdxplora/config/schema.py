@@ -105,6 +105,8 @@ ANALYSIS_NAMES = (
     "gist",
     # How a replica exchange run's replicas mixed: run where one ran.
     "replica_mixing",
+    # The free energy an alchemical run found: run where one ran.
+    "alchemical_free_energy",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",
@@ -624,6 +626,17 @@ SETUP = PhaseSchema(
               "bonded to, which a larger one leaves negative. Default: off.",
               example=4.0,
               minimum=1.008, exclusive_minimum=True, maximum=4.032),
+        Field("ml_potential", dict, None,
+              "A machine-learned potential for part of the system: the "
+              "atoms named (`atoms`, the ligand unless named) have their "
+              "energy within themselves from a neural network trained on "
+              "quantum chemistry (`model`, ani2x unless named), and their "
+              "interactions with the rest from the force field, as "
+              "openmm-ml's mixed system. ANI-2x knows H, C, N, O, F, S and Cl "
+              "and neutral molecules only. Slower than the force field "
+              "alone. Requires openmm-ml and the model's own package "
+              "(torchani for ANI).",
+              example={"model": "ani2x", "atoms": "resname LIG"}),
         Field("temperature_K", (int, float), None,
               "Temperature in K for initial velocity assignment. Default: "
               "the run's `simulation.temperature_K`.",
@@ -1005,6 +1018,22 @@ SIMULATION = PhaseSchema(
               "Requires openmmtools.",
               example={"method": "rest2", "replicas": 8, "max_temperature_K": 450,
                        "solute": "protein", "exchange_interval_steps": 500}),
+        Field("alchemical", dict, None,
+              "Alchemical free energy: the free energy of switching a group's "
+              "interactions with its surroundings off (charges first, then "
+              "Lennard-Jones, with a soft core), one leg of a binding or "
+              "solvation free energy, estimated by MBAR over states sampled "
+              "together by replica exchange. `group` (the ligand unless "
+              "named), `lambda_electrostatics` and `lambda_sterics` (one "
+              "schedule, from both 1 to both 0), `exchange_interval_steps`, "
+              "`equilibration_iterations`, and for a complex leg `restraint` "
+              "(`receptor`, `radius_nm`, `force_constant`), whose standard-"
+              "state correction is recorded. A binding free energy is the "
+              "ligand-in-water leg's less the complex leg's, less that "
+              "correction. Requires openmmtools and pymbar.",
+              example={"group": "resname LIG",
+                       "restraint": {"receptor": "protein and name CA and within 1.0 of resname LIG",
+                                     "radius_nm": 0.5}}),
         Field("plumed", dict, None,
               "Optional PLUMED enhanced sampling: `enabled` turns it on, "
               "and `script` is the PLUMED input -- the script text itself, "
@@ -1320,7 +1349,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Enhanced sampling",
          "Bias the run to reach what it would not reach on its own. Each is "
          "a block of settings, and each says what its output is and is not.",
-         ("umbrella", "steered", "metadynamics", "replica_exchange", "plumed")),
+         ("umbrella", "steered", "metadynamics", "replica_exchange", "alchemical",
+          "plumed")),
         ("Restraints",
          "Hold part of the system still while the rest equilibrates.",
          ("restrain", "restraint_release", "restrain_production")),

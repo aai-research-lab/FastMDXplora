@@ -518,6 +518,7 @@ def prepare_system(
     constraints: str = "HBonds",
     rigid_water: bool = True,
     hydrogen_mass_amu: float | None = None,
+    ml_potential: dict[str, Any] | None = None,
     temperature_K: float = 300.0,
 ) -> dict[str, Path]:
     """Solvate, ionize, parameterize, and serialize an OpenMM system.
@@ -1044,6 +1045,17 @@ def prepare_system(
     except ValueError as exc:
         raise _explain_unparameterized(exc, ff, modeller.topology) from exc
     _refuse_masses_not_positive(system, modeller.topology, hydrogen_mass_amu, unit)
+    ml_record = None
+    if ml_potential is not None:
+        import json
+
+        from fastmdxplora.setup.ml_potential import with_ml_potential
+
+        names = ([ligand_name] if isinstance(ligand_name, str) else list(ligand_name or []))
+        names = [n for n in names if any(r.name == n for r in modeller.topology.residues())]
+        system, ml_record = with_ml_potential(system, modeller.topology, ml_potential, names)
+        (out_dir / "ml_potential.json").write_text(json.dumps(ml_record, indent=2),
+                                                   encoding="utf-8")
     # Only under periodic boundaries: OpenMM applies the tail correction
     # there alone, whatever the flag says for a non-periodic cutoff.
     dispersion_used = _dispersion_correction_of(omm["openmm"], system) \

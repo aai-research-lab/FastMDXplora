@@ -696,6 +696,7 @@ def _run_replica_exchange(params: dict[str, Any], *, run_arguments: dict[str, An
                                 "duration_ns": 0.0, "production_steps": 0})
     state_xml = settled.final_state
     from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.alchemical import run_alchemical
     from fastmdxplora.simulation.replica_exchange import run_replica_exchange
     from fastmdxplora.simulation.runner import SimulationResult
 
@@ -714,28 +715,38 @@ def _run_replica_exchange(params: dict[str, Any], *, run_arguments: dict[str, An
 
     def _said(done: int, total: int) -> None:
         if presenter:
-            presenter.progress("Replica exchange", done, total)
+            presenter.progress(label, done, total)
 
+    alchemical = params.get("alchemical") is not None
+    label = "Alchemical states" if alchemical else "Replica exchange"
     if presenter:
-        presenter.step("Replica exchange")
-    done = run_replica_exchange(
+        presenter.step(label)
+    shared = dict(
         system_xml=system_xml, state_xml=state_xml, topology_pdb=topology,
-        output_dir=output_dir, block=params["replica_exchange"],
-        temperature_K=float(params["temperature_K"]), timestep_fs=timestep,
-        friction_per_ps=float(params["friction_per_ps"]), production_steps=int(steps),
+        output_dir=output_dir, temperature_K=float(params["temperature_K"]),
+        timestep_fs=timestep, friction_per_ps=float(params["friction_per_ps"]),
+        production_steps=int(steps),
         pressure_bar=None if pressure is None else float(pressure),
         save_selection=params.get("save_selection", "not water"),
         platform=str(params.get("platform") or "auto"),
         random_seed=params.get("random_seed"), on_progress=_said)
+    if alchemical:
+        from fastmdxplora.analysis.analyze import _detect_ligand_resname
+
+        done = run_alchemical(block=params["alchemical"] or {},
+                              ligand_resname=_detect_ligand_resname(output_dir.parent),
+                              **shared)
+    else:
+        done = run_replica_exchange(block=params["replica_exchange"] or {}, **shared)
     record = done["record"]
-    notes = [record[k] for k in ("gaps", "no_round_trip") if k in record]
+    notes = [record[k] for k in ("gaps", "no_round_trip", "thin_overlap") if k in record]
     notes.append("The trajectory is of whichever replica was at the run's conditions at "
                  "each exchange: the right ensemble, and not one continuous path, so an "
                  "analysis of motion over time does not apply to it.")
     result = SimulationResult(
         trajectory=done["trajectory"], topology=done["topology"],
         final_state=Path(state_xml), energy_csv=output_dir / "energies.csv",
-        log_file=output_dir / "replica_exchange.log",
+        log_file=output_dir / ("alchemical.log" if alchemical else "replica_exchange.log"),
         platform_used=str(record.get("platform", "")), n_production_frames=done["frames"],
         duration_ns_actual=float(done["duration_ns"]),
         resolved={"production_steps": int(steps)}, notes=notes)
@@ -913,7 +924,8 @@ def run(
             restraint_release=params.get("restraint_release"),
             restrain_production=bool(params.get("restrain_production", False)),
         )
-        if params.get("replica_exchange"):
+        if (params.get("replica_exchange") is not None
+                or params.get("alchemical") is not None):
             result = _run_replica_exchange(params, run_arguments=run_arguments,
                                            system_xml=system_xml, topology=topology,
                                            output_dir=output_dir, presenter=presenter)

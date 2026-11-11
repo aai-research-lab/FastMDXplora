@@ -110,7 +110,15 @@ def segmentability(config: dict[str, Any] | None) -> Segmentability:
     """
     block = (config or {}).get("simulation") or {}
 
-    if block.get("replica_exchange"):
+    if block.get("alchemical") is not None:
+        return Segmentability(
+            False, "alchemical",
+            "An alchemical run cannot be split. Its states and which replica holds "
+            "each live in the sampler's own storage, not in a checkpoint of one "
+            "simulation. Run it through in one piece.",
+            code="simulation.resume.bias_not_carried")
+
+    if block.get("replica_exchange") is not None:
         return Segmentability(
             False, "replica_exchange",
             "A replica exchange run cannot be split. Its replicas and which "

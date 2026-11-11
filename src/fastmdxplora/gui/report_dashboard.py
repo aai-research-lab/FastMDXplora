@@ -94,6 +94,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("metad_surface", "Free-energy surface"),
         ("steered_work", "Steered work"),
         ("replica_mixing", "Replica exchange mixing"),
+        ("alchemical_free_energy", "Alchemical free energy"),
     )),
 )
 

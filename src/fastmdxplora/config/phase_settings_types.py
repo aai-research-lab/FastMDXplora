@@ -60,6 +60,7 @@ class SetupSettings(TypedDict, total=False):
     constraints: str
     rigid_water: bool
     hydrogen_mass_amu: float
+    ml_potential: dict[str, Any]
     temperature_K: float
 
 
@@ -111,6 +112,7 @@ class SimulateSettings(TypedDict, total=False):
     steered: dict[str, Any]
     metadynamics: dict[str, Any]
     replica_exchange: dict[str, Any]
+    alchemical: dict[str, Any]
     plumed: dict[str, Any]
 
 
@@ -127,7 +129,8 @@ class AnalyzeSettings(TypedDict, total=False):
         'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
         'area_per_lipid', 'bilayer_thickness', 'lipid_order', 'pore_profile', 'diffusion',
         'cross_correlation', 'helix_geometry', 'mmgbsa', 'residue_network', 'nmr_observables',
-        'markov_model', 'nucleic_acid', 'gist', 'replica_mixing', 'image_check'
+        'markov_model', 'nucleic_acid', 'gist', 'replica_mixing', 'alchemical_free_energy',
+        'image_check'
     ]]
     exclude: list[Literal[
         'rmsd', 'rmsf', 'rg', 'hbonds', 'ss', 'sasa', 'dihedrals', 'qvalue', 'cluster', 'dimred',
@@ -136,7 +139,8 @@ class AnalyzeSettings(TypedDict, total=False):
         'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
         'area_per_lipid', 'bilayer_thickness', 'lipid_order', 'pore_profile', 'diffusion',
         'cross_correlation', 'helix_geometry', 'mmgbsa', 'residue_network', 'nmr_observables',
-        'markov_model', 'nucleic_acid', 'gist', 'replica_mixing', 'image_check'
+        'markov_model', 'nucleic_acid', 'gist', 'replica_mixing', 'alchemical_free_energy',
+        'image_check'
     ]]
     select_atoms: str
     selection: str

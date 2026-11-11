@@ -73,6 +73,7 @@ FastMDXplora/
 │       │   ├── staged.py          # Running a study the Agent wrote, with the estimate first
 │       │   └── run.py             # Running a queued job as a real study
 │       ├── setup/
+│       │   ├── ml_potential.py    # A machine-learned potential for part of the system
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
 │       │   ├── audit.py           # Optional bounded observations of preparation
 │       │   ├── prepare.py         # Modeller assembly, ligand merge, clash checks
@@ -97,6 +98,7 @@ FastMDXplora/
 │       │   ├── umbrella.py        # Window planning, and the PMF stitched from them
 │       │   ├── steered.py         # A pull along a coordinate, and the work done
 │       │   ├── replica_exchange.py  # REST2 and temperature replica exchange, by openmmtools
+│       │   ├── alchemical.py      # Decoupling a group through lambda states, by MBAR
 │       │   ├── restraints.py      # Positional restraints and the release ladder
 │       │   ├── diagnose.py        # What a failed simulation can be told from its state
 │       │   ├── stopping.py        # Run until what was asked is determined, and no longer
@@ -141,6 +143,7 @@ FastMDXplora/
 │       │   ├── nucleic_acid.py    # A double helix's base-pair and step parameters, as 3DNA's
 │       │   ├── gist.py            # Which waters would be costly to displace (GIST)
 │       │   ├── replica_mixing.py  # How a replica exchange run's replicas mixed
+│       │   ├── alchemical_free_energy.py  # The free energy an alchemical run found
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

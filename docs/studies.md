@@ -965,6 +965,40 @@ two cannot be told apart, and the message says so rather than choosing.
 
 ---
 
+## Machine-learned potentials
+
+```yaml
+setup:
+  ml_potential:
+    model: ani2x             # the default
+    atoms: resname LIG       # the ligand, unless named
+```
+
+The atoms named have their energy within themselves taken from a neural
+network trained on quantum chemistry, in place of the force field's bonds,
+angles, torsions and nonbonded terms between them; their interactions with
+everything else stay the force field's. This is openmm-ml's mixed system,
+built by setup once the force field has made the whole system, so
+`system.xml` carries it and the run needs nothing else.
+
+A ligand's torsions and internal strain are where a general small-molecule
+force field is least reliable, and where a model trained on quantum
+chemistry is closer. **ANI-2x** (the default) knows H, C, N, O, F, S and Cl
+and neutral molecules only; a group with another element or a net charge is
+refused, not extrapolated to. Other models openmm-ml knows
+(`mace-off23-small`, `aimnet2`, ...) are taken by name where their packages
+are installed. At most 300 atoms: the network is evaluated every step, and
+a run is slower than with the force field alone.
+
+Given every atom of alanine dipeptide, the mixed system's energy is ANI-2x's
+to 0.01 kJ/mol, and a whole tri-alanine study runs with the peptide under
+ANI-2x; it has not yet been compared with a reference calculation on a
+protein-ligand complex.
+
+It needs openmm-ml (`conda install -c conda-forge openmm-ml`) and the
+model's own package: for ANI, `pip install torchani==2.2.4`, since
+conda-forge's TorchANI 2.2 cannot be compiled by PyTorch 2.9.
+
 ## Replica exchange
 
 ```yaml
@@ -1019,6 +1053,60 @@ with a bias, and a run cannot be split into segments.
 It needs openmmtools and pymbar (`conda install -c conda-forge openmmtools
 pymbar`). Its whole-study path has been run on tri-alanine on a laptop's
 CPU; it has not yet been validated on a real system on a GPU.
+
+## Alchemical free energy
+
+```yaml
+simulation:
+  duration_ns: 5             # each state's
+  alchemical:
+    group: resname LIG       # the ligand, unless named
+    restraint:               # for the complex leg
+      receptor: protein and name CA and within 1.0 of resname LIG
+      radius_nm: 0.5
+      force_constant: 1000
+```
+
+The group's interactions with everything around it are switched off
+through a schedule of states, its charges first and then its Lennard-Jones
+interactions, with a soft core so other atoms can pass through it as it
+fades. Its interactions within itself are kept: it is decoupled, not
+annihilated. The states are sampled together by Hamiltonian replica exchange
+and the free energy between them is estimated by MBAR, through openmmtools.
+The default schedule has sixteen states (charges off in five steps, then
+the Lennard-Jones in eleven); `lambda_electrostatics` and `lambda_sterics`
+set another, from both 1 to both 0, charges always off before the
+Lennard-Jones begins to fade.
+
+The result, `dG_decouple = G(decoupled) - G(coupled)`, is positive where the
+group is held. **One run is one leg.** Minus the decoupling from a box of
+water is the group's solvation free energy. A binding free energy needs two
+studies, the ligand in water and the ligand in the complex:
+
+    dG_bind = dG_decouple(water) - dG_decouple(complex) - dG_restraint
+
+The complex leg holds the ligand in its site with a flat-bottomed restraint
+on its centre (`restraint`), since a decoupled ligand would otherwise
+wander off. `dG_restraint` is the free energy of confining the ligand from
+1 M to the restraint's volume, computed by integrating the restraint's
+Boltzmann factor, and is recorded with the leg.
+`fastmdxplora.simulation.alchemical.binding_free_energy` combines two
+legs' `alchemical.json` records.
+
+**Whether to believe it.** `alchemical.json`, and the
+`alchemical_free_energy` analysis that reads it, give MBAR's uncertainty and
+the overlap between each pair of neighbouring states. Below 0.03, the
+estimate between two states rests on almost no shared samples: add a state
+there or run longer.
+
+The trajectory written is of whichever replica held the fully coupled
+state: the ordinary ensemble, and not one continuous path. An alchemical run
+cannot be combined with a bias or with replica exchange, nor split into
+segments. It needs openmmtools and pymbar.
+
+Decoupling one TIP3P water from TIP3P water, which should give minus
+water's hydration free energy, is the check in its tests; it has not yet
+been run on a protein-ligand complex.
 
 ## When a run fails
 

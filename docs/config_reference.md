@@ -133,6 +133,7 @@ cube's volume, so about a third of the water a cube would need is saved.
 | `constraints` | str | `HBonds` | `None`, `HBonds`, `AllBonds` or `HAngles` |
 | `rigid_water` | bool | `true` | Constrain water bond lengths and angles |
 | `hydrogen_mass_amu` | int or float | off | Hydrogen-mass repartitioning, which allows a longer timestep: more than 1.008 and at most 4.032 amu (four times hydrogen's) |
+| `ml_potential` | mapping | off | A machine-learned potential (`model`, ANI-2x unless named) for the energy within the atoms named (`atoms`, the ligand unless named); see [Machine-learned potentials](studies.md#machine-learned-potentials) |
 | `temperature_K` | int or float | `300.0` | Temperature for **initial velocity assignment** — not the production temperature, which is `simulation.temperature_K` |
 
 Only a ligand-capable force field accepts `setup.ligand`; `amber-openff` is the
@@ -278,6 +279,7 @@ mapping.
 | `umbrella` | mapping | A free energy along a coordinate, from equilibrium sampling at a series of positions |
 | `steered` | mapping | Pull along a coordinate at constant velocity and record the work |
 | `metadynamics` | mapping | Fill the free energy landscape along a named coordinate |
+| `alchemical` | mapping | Decouple a group from its surroundings through lambda states, one leg of a binding or solvation free energy (see [Alchemical free energy](studies.md#alchemical-free-energy)) |
 | `replica_exchange` | mapping | Run copies at a ladder of conditions that swap, REST2 or temperature (see [Replica exchange](studies.md#replica-exchange)) |
 | `plumed` | mapping | `enabled` and `script` — raw PLUMED input, as text or a path |
 
@@ -362,7 +364,7 @@ Nothing leaves the machine: these are files in the run directory that the
 | `exclude` | list | — | Everything but these. Mutually exclusive with `include` |
 | `options` | mapping | — | Per-analysis settings, keyed by analysis name |
 
-The 42 names `include` and `exclude` accept:
+The 43 names `include` and `exclude` accept:
 
 ```
 rmsd  rmsf  rg  hbonds  ss  sasa  dihedrals  qvalue  cluster  dimred
@@ -372,7 +374,7 @@ end_to_end  moments_of_inertia  pair_distance  pmf  metad_surface  steered_work
 area_per_lipid  bilayer_thickness  lipid_order  pore_profile  diffusion  cross_correlation
 helix_geometry  mmgbsa  residue_network
 nmr_observables  markov_model  nucleic_acid
-gist  replica_mixing  image_check
+gist  replica_mixing  alchemical_free_energy  image_check
 ```
 
 Several do not run by default and are gated on what the run contains — a

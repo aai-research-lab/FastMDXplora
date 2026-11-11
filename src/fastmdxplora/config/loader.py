@@ -773,6 +773,8 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
         check_umbrella_keys(simulation["umbrella"])
     if isinstance(simulation, dict) and simulation.get("replica_exchange") is not None:
         _check_replica_exchange(simulation)
+    if isinstance(simulation, dict) and simulation.get("alchemical") is not None:
+        _check_alchemical(simulation)
 
     # analysis include/exclude mutual exclusion (nested)
     if as_record:
@@ -877,6 +879,38 @@ def _check_phase_values(phase: str, block: dict[str, Any], *, context: str) -> N
         check_umbrella_keys(block["umbrella"])
     if phase == "simulation" and block.get("replica_exchange") is not None:
         _check_replica_exchange(block)
+    if phase == "simulation" and block.get("alchemical") is not None:
+        _check_alchemical(block)
+
+
+def _check_alchemical(simulation: dict[str, Any]) -> None:
+    """An alchemical block's settings, and that it is asked alone: its states
+    are exchanged as replica exchange's are, and a bias or a second ladder
+    would make every exchange wrong."""
+    from fastmdxplora.simulation.alchemical import plan_from_block
+
+    block = simulation.get("alchemical")
+    if not isinstance(block, dict):
+        raise ConfigError(
+            "`simulation.alchemical` is a block of settings (`group`, "
+            "`lambda_sterics`, ...), not a single value.", code="config.option.wrong_type")
+    plan_from_block(block)
+    others = [name for name in ("umbrella", "steered", "metadynamics", "plumed",
+                                "replica_exchange") if _asked(simulation, name)]
+    if others:
+        raise ConfigError(
+            f"An alchemical run cannot be run with {', '.join(others)}: its states are "
+            "exchanged by comparing their energies, which a bias or a second ladder "
+            "would make wrong.", code="config.option.conflicting")
+
+
+def _asked(simulation: dict[str, Any], name: str) -> bool:
+    """Whether a method's block asks for it: given at all (an empty block is
+    its defaults), or for PLUMED, enabled."""
+    block = simulation.get(name)
+    if name == "plumed":
+        return isinstance(block, dict) and bool(block.get("enabled"))
+    return block is not None
 
 
 def _check_replica_exchange(simulation: dict[str, Any]) -> None:
@@ -892,7 +926,7 @@ def _check_replica_exchange(simulation: dict[str, Any]) -> None:
             "`replicas`, ...), not a single value.", code="config.option.wrong_type")
     plan_from_block(block)
     biased = [name for name in ("umbrella", "steered", "metadynamics", "plumed")
-              if simulation.get(name)]
+              if _asked(simulation, name)]
     if biased:
         raise ConfigError(
             f"Replica exchange cannot be run with {', '.join(biased)}: each replica "
