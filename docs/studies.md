@@ -625,12 +625,22 @@ than a 12 kJ/mol well's. That minimum is searched between the outermost
 windows' centres, as the summary and the figure read W, since a sparse end
 bin below the first window can read lower than the well; and an empty bin
 in the bound range is judged on W against it. Where that minimum is less
-than kT below the bulk reference there is no bound range, since the range
-ends where W comes back within kT of bulk, and the binding free energy is
-refused (`binding.well_depth_kjmol` says how deep it is): a free
-particle's flat W is refused so. The barrier and the minima
-in `summary` are read off W(r), as `summary.read_off` says: read off A(r) a radial curve's
-highest point is the wall at the first window, and a depth moves with the
+than kT below the bulk reference there is no bound state as this study
+defines one, since its bound range ends where W comes back within kT of
+bulk, and the binding free energy is refused: a free particle's flat W is
+refused so, and a well that shallow does not bind measurably at 1 M. The
+rule judges the real curve only; each bootstrap resample follows its
+verdict, as it does the bulk's, since resamples refused by their own depth
+are the weakest and an interval made without them loses its weak side (a
+3 kJ/mol well's went from [-2.07, -0.35] to [-2.07, -0.81]). `binding`
+saves the well's depth (`well_depth_kjmol`) and its error
+(`well_depth_error_kjmol`, from the depth's spread over the resamples, or
+the bins' standard errors), and a refusal whose depth is within its error
+of kT says it is marginal (`well_depth_marginal`): longer sampling could
+change it. The console also says when more than a tenth of the resamples
+gave no binding free energy, since its error is then from the rest. The
+barrier and the minima in `summary` are read off W(r), as
+`summary.read_off` says: read off A(r) a radial curve's highest point is the wall at the first window, and a depth moves with the
 range the windows spanned, by `2kT ln(r2 / r1)`. The `.dat` file beside
 the figure has both columns. Along any other coordinate there is one curve
 and it is read as it is, its `.dat` header giving the coordinate's unit.
@@ -668,7 +678,10 @@ the refused peak is the curve's highest point, `highest_kjmol` is null and
 `summary.barrier_note` says a higher one was refused. The console and the
 comparison report give the barrier in one line, or that it was refused and
 why, as in `Barrier: 19.9 +/- 0.3 kJ/mol at 3.09 rad, on the free energy,
-about 0.8 of its error high as the curve's zero is.` With no bootstrap the
+its error the sampling's alone, not the zero's or the bins' width.` The
+curve's zero puts a barrier high and a bin's width puts a narrow one low
+(a 20 kJ/mol escape barrier at 3000 frames came out 19.43 to 19.87, each
++/- 0.15 to 0.23), so neither direction is claimed. With no bootstrap the
 line says the 2.5 kJ/mol margin alone judged it.
 
 **On a full turn the seam is one place.** Windows tiling a torsion's turn
