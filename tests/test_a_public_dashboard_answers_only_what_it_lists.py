@@ -305,6 +305,9 @@ class TestEveryGetRouteIsRefusedUnlessListed:
             # The room in the ligand's pocket, frame by frame, and its empty
             # points in one frame.
             "/api/pocket-volume", "/structure/pocket.dx",
+            # The radius of the pore through a channel along its axis, and
+            # the mean pore as a surface.
+            "/api/pore-profile", "/structure/pore.dx",
             # The views saved with the study, to be shown again; saving one
             # is a POST, answered on loopback only.
             "/api/views",

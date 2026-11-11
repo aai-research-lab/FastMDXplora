@@ -129,6 +129,7 @@ FastMDXplora/
 │       │   ├── pmf.py metad_surface.py steered_work.py   # the result of a biased run
 │       │   ├── bilayer.py         # Where a bilayer is: its lipids, centre and leaflets
 │       │   ├── area_per_lipid.py bilayer_thickness.py lipid_order.py   # the bilayer itself
+│       │   ├── pore_profile.py    # The radius of the way through a channel, as HOLE measures it
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs
@@ -176,6 +177,7 @@ FastMDXplora/
 │       │   ├── overview_view.py   # What the Overview leads with: the means, the production's clock, the phases
 │       │   ├── contact_map.py     # Which residues touch which over the frames played
 │       │   ├── pocket_volume.py   # The room in a ligand's pocket, frame by frame (POVME's way)
+│       │   ├── pore.py            # The pore's profile and the mean pore as a surface, for the Viewer
 │       │   ├── beside.py          # Another study beside this one: paired by sequence, fitted, timed
 │       │   ├── measure.py         # A distance from the Viewer, over every frame
 │       │   ├── series.py          # An analysis's numbers, tied to the trajectory's frames
@@ -230,7 +232,7 @@ FastMDXplora/
 │       │   │                      #   frame-interactions.js, chain-contacts.js,
 │       │   │                      #   viewer-occupancy.js, viewer-motion.js,
 │       │   │                      #   viewer-states.js, viewer-ramachandran.js,
-│       │   │                      #   viewer-contact-map.js, viewer-pocket.js,
+│       │   │                      #   viewer-contact-map.js, viewer-pocket.js, viewer-pore.js,
 │       │   │                      #   viewer-beside.js, viewer-rail.js (one tool at a time);
 │       │   │                      #   palette.js (go to anything, Cmd+K; Cmd+P a file), keys.js
 │       │   │                      #   (every key, and its sheet), place.js and place.css (where you

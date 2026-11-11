@@ -106,6 +106,9 @@ from fastmdxplora.analysis import (  # noqa: F401, E402
     bilayer_thickness as _bilayer_thickness,
 )
 from fastmdxplora.analysis import lipid_order as _lipid_order  # noqa: F401, E402
+# The way through a channel: its radius along its axis. Run only where a
+# study names it, since whether a protein has a pore is not in its frames.
+from fastmdxplora.analysis import pore_profile as _pore_profile  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

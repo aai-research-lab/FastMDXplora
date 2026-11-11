@@ -4587,6 +4587,9 @@ html[data-fixes="some"] .sidebar-progress[data-run="failed"] .sidebar-fix { disp
                  margin: 6px 0 2px; cursor: crosshair; }
 #pocket-now { margin: 2px 0 6px; }
 #pocket-note { margin: 6px 0 0; }
+#pore-canvas { height: 130px; cursor: default; }
+#pore-now { margin: 2px 0 6px; }
+#pore-note { margin: 6px 0 0; }
 #chain-contacts-note:empty { display: none; }
 
 /* A movie of the frames (viewer-movie.js). */

@@ -156,6 +156,7 @@ GETS_ANSWERED_BEYOND_LOOPBACK = frozenset({
     "/api/chain-contacts", "/api/occupancy", "/api/water-sites", "/api/motion",
     "/api/states", "/api/state-difference", "/api/backbone-angles",
     "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
+    "/api/pore-profile", "/structure/pore.dx",
     "/api/views", "/api/viewer-atoms", "/api/viewer-selections", "/api/scenes",
     "/api/stopping", "/api/stream", "/api/problems",
     "/analysis-figures-svg.zip",
@@ -178,6 +179,7 @@ _READ_FROM_THE_RUN_SHOWN = frozenset({
     "/api/frames-pieces", "/structure/frames-piece.xtc", "/api/exact-frame",
     "/structure/exact-frame.xtc", "/api/backbone-angles",
     "/api/contact-map", "/api/contact-pair", "/api/pocket-volume", "/structure/pocket.dx",
+    "/api/pore-profile", "/structure/pore.dx",
     "/api/timeline",
 })
 
@@ -2393,6 +2395,27 @@ def make_handler(
                 self._send_json(self._from_the_frames(
                     root, water_sites_placed, "analysis/water_sites/options.json",
                     "analysis/water_sites/water_sites.dat"))
+                return
+            if path in ("/api/pore-profile", "/structure/pore.dx"):
+                from fastmdxplora.gui.pore import RECORDS, pore_profile, pore_surface
+
+                if path == "/api/pore-profile":
+                    self._send_json(self._from_the_frames(root, pore_profile, *RECORDS))
+                    return
+                said = self._from_the_frames(root, lambda inside: dict(zip(
+                    ("text", "reason"), pore_surface(inside))), *RECORDS)
+                text = said.get("text")
+                if text is None:
+                    # A fixed reason where a record was refused: no path is said.
+                    self.send_error(404, said.get("reason") or "No pore to show")
+                    return
+                data = text.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             if path.startswith("/static/"):
                 self._send_static_asset(path.removeprefix("/static/"))

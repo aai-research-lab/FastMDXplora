@@ -1444,6 +1444,17 @@
                 <label class="chip-toggle" title="Render the pocket's empty space in the frame shown, the frames superposed on the pocket"><input type="checkbox" id="pocket-shown">Show the pocket</label>
                 <p class="muted small" id="pocket-note"></p>
               </details>
+              <!-- The way through a channel: its radius against height,
+                   over the frames and in the frame shown, and the mean
+                   pore as a surface (viewer-pore.js, pore.py). -->
+              <details class="side-section" id="side-pore" hidden>
+                <summary>Pore</summary>
+                <canvas class="pocket-canvas" id="pore-canvas" width="300" height="130" role="img" aria-label="The pore's radius along its axis"></canvas>
+                <ul class="occ-sites" id="pore-key" aria-label="What the plot's marks are"></ul>
+                <p class="small" id="pore-now" role="status"></p>
+                <label class="chip-toggle" title="Render the mean pore, the widest spheres along its axis averaged over the frames, as a surface on the first frame, the frames superposed on the backbone"><input type="checkbox" id="pore-shown">Show the pore</label>
+                <p class="muted small" id="pore-note"></p>
+              </details>
               <!-- Another study's frames beside this one's: its residues
                    paired by sequence, fitted and timed to these
                    (viewer-beside.js, beside.py). -->
@@ -2225,6 +2236,7 @@
   <script src="/static/viewer-ramachandran.js"></script>
   <script src="/static/viewer-contact-map.js"></script>
   <script src="/static/viewer-pocket.js"></script>
+  <script src="/static/viewer-pore.js"></script>
   <script src="/static/viewer-beside.js"></script>
 </body>
 </html>

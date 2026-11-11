@@ -73,6 +73,9 @@ ANALYSIS_NAMES = (
     # measured where there is one: what a membrane run is checked against
     # before anything about the protein in it is believed.
     "area_per_lipid", "bilayer_thickness", "lipid_order",
+    # The radius of the way through a channel, along its axis, as HOLE
+    # measures it: run where a study names it.
+    "pore_profile",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",

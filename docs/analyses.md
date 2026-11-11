@@ -185,6 +185,49 @@ the force field, the temperature or the barostat is wrong. They run only where
 there is a bilayer. See [Membrane proteins](membranes.md) for what each
 computes, and what to compare it with.
 
+### The pore
+
+| | |
+|---|---|
+| `pore_profile` | The radius of the way through a channel along its axis, as HOLE measures it, and its narrowest radius per frame |
+
+At each height along the pore's axis, the largest sphere that fits among the
+protein's van der Waals surfaces with its centre in that plane (Smart et al.,
+J Mol Graph 14, 354 (1996)). The path starts at the protein's centre, or at
+the centre of `start_selection`, and is followed plane by plane both ways
+until the sphere reaches `end_radius_nm` (1 nm), which is bulk solvent. HOLE
+searches each plane by Monte Carlo; this search tries a fixed pattern of
+steps down to 0.005 nm, so the same frames always give the same profile.
+Each frame's protein is first fitted onto the first frame's, so the heights
+and the centre line are the protein's own however it drifts and turns in its
+bilayer. The axis is z where there is a bilayer and otherwise the principal
+axis the protein is most nearly symmetric about; `axis` names another.
+
+The per-frame number is the narrowest radius, with its mean, error and
+independent samples as every time series has. Beside it are the profile
+(`pore_radius.dat`: mean, standard deviation, least and most at each height),
+the path frame by frame (`pore_path.npz`), the residues that line the
+narrowest point, and the share of frames in which that point is at least
+0.115 nm wide, below which a water does not fit. Room for a water is not
+conduction: a hydrophobic gate can be wide enough and dry.
+
+Three things to know before believing one:
+
+- **It does not know whether the protein is a channel.** Through a protein
+  with no pore the path squeezes between helices and reports a radius near
+  zero. So it never runs by default; name it in `include`.
+- **A pore in each subunit needs its start named.** The protein's centre is
+  in the pore of a channel whose subunits surround it, and between the pores
+  of one, such as an aquaporin, with a pore in each subunit: give
+  `start_selection` one subunit or the residues lining its pore.
+- **A path can leave through a gap in the wall**, as HOLE's can. The profile
+  then ends early; `findings.pore` says over which heights it was followed.
+
+It is held against tubes of known radius and against KcsA (1BL8), whose
+selectivity filter it finds closed to water at Gly77 with the cavity beside
+it about 0.45 nm in radius. It has not been compared with HOLE itself, frame
+for frame.
+
 ### Conformations
 
 | | |
@@ -377,12 +420,14 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
 contain which two. Running them anyway would mean picking a pair, which is
-answering the question rather than analysing it.
+answering the question rather than analysing it. `pore_profile` is held back
+for the same reason: whether a protein is a channel is not in its frames, and
+the profile of one that is not is a number about nothing.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -737,6 +782,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.lipid_order
+   :members:
+
+.. automodule:: fastmdxplora.analysis.pore_profile
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster
