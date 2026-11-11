@@ -172,6 +172,12 @@ is checked against before anything about the protein in it is believed.
 Both per-frame quantities carry the mean after equilibration, its error, and the
 number of independent samples behind it, as every time series does.
 
+**For a channel, a fourth is worth naming.** `pore_profile` measures the
+radius of the way through the protein along the bilayer's normal, as HOLE
+does, and its narrowest radius per frame. It does not run by default, since
+whether a protein is a channel is not in its frames: add it to
+`analysis.include`. See [The pore](analyses.md#the-pore).
+
 **The bilayer centre is found across the periodic boundary**, as the middle of
 the lipid slab, and each head is assigned to a leaflet by which side of it it
 is on, every frame. Lipids whose heads do not form two layers normal to z are

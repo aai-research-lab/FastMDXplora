@@ -30,6 +30,7 @@
     "side-rama": '<path d="M4 4v16h16"/><circle cx="9" cy="14" r="1.4"/><circle cx="12" cy="9" r="1.4"/><circle cx="16" cy="12" r="1.4"/>',
     "side-cmap": '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
     "side-pocket": '<path d="M5 6c0 7 3 12 7 12s7-5 7-12"/><path d="M8 6h8"/>',
+    "side-pore": '<path d="M8 3c0 4 2.5 5.5 2.5 9S8 17 8 21"/><path d="M16 3c0 4-2.5 5.5-2.5 9S16 17 16 21"/>',
     "side-beside": '<rect x="3" y="6" width="8" height="12" rx="1.5"/><rect x="13" y="6" width="8" height="12" rx="1.5"/>',
     "side-chains": '<path d="M10 14a4 4 0 0 1 0-5.6l2-2a4 4 0 0 1 5.6 5.6l-1 1"/><path d="M14 10a4 4 0 0 1 0 5.6l-2 2a4 4 0 0 1-5.6-5.6l1-1"/>',
     "side-saved": '<path d="M7 4h10v16l-5-4-5 4z"/>',

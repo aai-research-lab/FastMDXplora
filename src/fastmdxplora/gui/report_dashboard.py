@@ -78,6 +78,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("area_per_lipid", "Area per lipid"),
         ("bilayer_thickness", "Bilayer thickness"),
         ("lipid_order", "Lipid chain order"),
+        ("pore_profile", "Pore radius"),
     )),
     ("Free energy", (
         ("pmf", "Potential of mean force"),
@@ -876,6 +877,7 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
 _UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": "",
           "qvalue": "", "end_to_end": "nm", "pair_distance": "nm", "ligand_rmsd": "nm",
           "area_per_lipid": "nm\u00b2", "bilayer_thickness": "nm",
+          "pore_profile": "nm",
           "moments_of_inertia": "amu nm\u00b2", "coordination_number": "",
           "image_check": "nm"}
 

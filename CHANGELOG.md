@@ -2305,6 +2305,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- The pore through a channel, as HOLE measures it: the `pore_profile`
+  analysis gives, at each height along the pore's axis, the radius of the
+  largest sphere that fits among the protein's van der Waals surfaces, over
+  every frame, each frame's protein fitted onto the first frame's so the
+  profile is the protein's own however it drifts in its bilayer. Its
+  per-frame number is the narrowest radius, with a mean and error as any
+  time series has; beside it are the profile (`pore_radius.dat`), the path
+  frame by frame (`pore_path.npz`), the residues lining the narrowest point
+  and the share of frames wide enough there for a water. The axis is the
+  bilayer's normal, or without a bilayer the principal axis the protein is
+  most nearly symmetric about. It runs only where `analysis.include` names
+  it, since whether a protein is a channel is not in its frames. The
+  Viewer's **Pore** tool plots the profile with the frame shown's own over
+  it and renders the mean pore as a surface on the first frame
+  (`/api/pore-profile`, `/structure/pore.dx`). Held against tubes of known
+  radius and against KcsA (1BL8); not compared with HOLE frame for frame.
+
 - `python -m fastmdxplora.validation.replica_calibration` gives, beside the
   ratio (the SD of the replica means over the mean stated error, near one
   for honest errors; the preprint's ratio is the reciprocal of this one),

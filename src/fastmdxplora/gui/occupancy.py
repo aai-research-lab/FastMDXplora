@@ -300,16 +300,52 @@ def _dx_text(values: Any, origin: Any, spacing: float) -> str:
     return "\n".join(lines)
 
 
+def onto_the_first_frame_played(out: Path, selection: str, what: str) -> tuple[Any, Any]:
+    """What moves and turns a place in the first frame analysed onto the
+    first frame played, by the least-squares fit of ``selection``'s atoms in
+    the one onto the other (moved only, under three atoms), with how many
+    atoms were fitted; or None and why ``what`` cannot be placed."""
+    import mdtraj as md
+
+    from fastmdxplora.analysis.loading import _made_whole
+    from fastmdxplora.gui.series import analysed_axis
+    from fastmdxplora.gui.trajectory_frames import _source
+    from fastmdxplora.utils.native_output import suppress_native_output, topology_quietly
+
+    index = _load_json(out / "simulation" / "frames_index.json")
+    source = _source(out)
+    if not index.get("available") or source is None or source["kind"] != "trajectory":
+        return None, f"There are no frames to place the {what} on yet."
+    whole = topology_quietly(source["topology"])
+    site = whole.select(selection)
+    kept = whole.select("not water")
+    within = np.searchsorted(kept, site)
+    if not len(site) or np.any(within >= len(kept)) or np.any(kept[within] != site):
+        return None, "The site's atoms are not among the atoms played."
+    first = analysed_axis(out, 1)[0][0]
+    with suppress_native_output():
+        with md.formats.DCDTrajectoryFile(str(source["trajectory"])) as handle:
+            handle.seek(first)
+            xyz, lengths, angles = handle.read(1, atom_indices=kept)
+    analysed = md.Trajectory(xyz / 10.0, whole.subset(kept),
+                             unitcell_lengths=None if lengths is None else lengths / 10.0,
+                             unitcell_angles=angles)
+    if lengths is not None:
+        analysed = _made_whole(analysed)
+    played = _frame_xyz(out, 0)[within].astype(float)
+    there = analysed.xyz[0, within].astype(float)
+    turned = len(site) >= 3
+    into = _fit(there, played) if turned else (lambda p: np.asarray(p) - there.mean(axis=0)
+                                                + played.mean(axis=0))
+    return into, len(site)
+
+
 def water_sites_placed(root: str | Path) -> dict[str, Any]:
     """The sites `water_sites` found, placed on the first frame played, with
     what each is; or why there are none."""
-    import mdtraj as md
     import pandas as pd
 
-    from fastmdxplora.analysis.loading import _made_whole
-    from fastmdxplora.gui.series import analysed_axis, of_the_played_trajectory
-    from fastmdxplora.gui.trajectory_frames import _source
-    from fastmdxplora.utils.native_output import suppress_native_output, topology_quietly
+    from fastmdxplora.gui.series import of_the_played_trajectory
 
     out = Path(root)
     folder = out / "analysis" / "water_sites"
@@ -330,31 +366,10 @@ def water_sites_placed(root: str | Path) -> dict[str, Any]:
     if not of_the_played_trajectory(out):
         return {"ok": False, "reason": "The water sites were found in a trajectory other "
                                        "than the one played."}
-    index = _load_json(out / "simulation" / "frames_index.json")
-    source = _source(out)
-    if not index.get("available") or source is None or source["kind"] != "trajectory":
-        return {"ok": False, "reason": "There are no frames to place the sites on yet."}
-    whole = topology_quietly(source["topology"])
-    site = whole.select(str((findings.get("site") or {}).get("selection") or "protein"))
-    kept = whole.select("not water")
-    within = np.searchsorted(kept, site)
-    if not len(site) or np.any(within >= len(kept)) or np.any(kept[within] != site):
-        return {"ok": False, "reason": "The site's atoms are not among the atoms played."}
-    first = analysed_axis(out, 1)[0][0]
-    with suppress_native_output():
-        with md.formats.DCDTrajectoryFile(str(source["trajectory"])) as handle:
-            handle.seek(first)
-            xyz, lengths, angles = handle.read(1, atom_indices=kept)
-    analysed = md.Trajectory(xyz / 10.0, whole.subset(kept),
-                             unitcell_lengths=None if lengths is None else lengths / 10.0,
-                             unitcell_angles=angles)
-    if lengths is not None:
-        analysed = _made_whole(analysed)
-    played = _frame_xyz(out, 0)[within].astype(float)
-    there = analysed.xyz[0, within].astype(float)
-    turned = len(site) >= 3
-    into = _fit(there, played) if turned else (lambda p: np.asarray(p) - there.mean(axis=0)
-                                                + played.mean(axis=0))
+    into, fitted = onto_the_first_frame_played(
+        out, str((findings.get("site") or {}).get("selection") or "protein"), "sites")
+    if into is None:
+        return {"ok": False, "reason": fitted}
     centres = into(sites[["x", "y", "z"]].to_numpy(dtype=float)) * 10.0
     placed = []
     for (_, row), centre in zip(sites.iterrows(), centres):
@@ -367,7 +382,7 @@ def water_sites_placed(root: str | Path) -> dict[str, Any]:
     return {"ok": True, "sites": placed,
             "said": (f"{len(placed)} site{'s' if len(placed) != 1 else ''} the water_sites "
                      f"analysis found near {findings['fitted_on'].get('selection')}, placed by "
-                     f"fitting its {len(site):,} atoms in the first frame analysed onto the "
+                     f"fitting its {fitted:,} atoms in the first frame analysed onto the "
                      "first frame played.")}
 
 
