@@ -166,6 +166,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   against 214.6 planned and 376.0 to 381.2 against 381.5 (Python 3.10,
   3.11 and 3.13). A biased run's reweighted populations weight each frame
   clustered by its own weight, at the cap's stride or one of its own.
+  `docs/gui.md` counts the new setting: 381 analysis options.
 - A joined run of three or four segments can now be called drifting
   (`analysis.sampling.drifting`, `drift_test:
   slope_against_errors_and_scatter`): with each segment mean placed at the
