@@ -655,8 +655,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A study's GPU sampler ends with its run on macOS. macOS says EPERM to
+  the zero signal for a process group whose members are all zombies, and
+  the sampler read it as going, so it did not end with its run; the
+  sampler's test failed on CI's macOS legs on it. Linux answers success
+  there, and the leader's state was read. EPERM, for a group or for one
+  process, now means only another user's processes are left, and `ps` (or
+  `/proc` where `ps` cannot be run) says whether one is still alive. For
+  one process there was no macOS fault, a zombie answering success on both
+  systems; another user's zombie, or a pid `ps` no longer lists, is now
+  read as ended, where EPERM was taken for alive.
+- Tests: CI's coverage leg runs its browser files on two workers. One at a
+  time they took 1 h 56 min after 23 min on every core, against the leg's
+  180 minutes.
 - Tests: CI's other legs run the tests that drive no browser on every core
-  and the browser files one at a time after them, as the coverage leg does.
+  and the browser files one at a time after them, as the coverage leg then
+  did.
   On one core two were cancelled at 90 minutes with nothing failed; their
   limit is now 120. On every core, on every leg, a hung test fails once at
   600 s with its stack and the next test runs, where its worker was ended
