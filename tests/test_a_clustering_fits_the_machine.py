@@ -1419,6 +1419,44 @@ def studies(tmp_path_factory):
             for n in (500, 1001, 2000)}
 
 
+#: ``fastmdx analyze`` in its own process, as `python -m fastmdxplora` runs
+#: it, to clustering's memory check: there it prints what the process holds
+#: (the libraries mapped, as the check maps them) past what it held as it
+#: started, and stops. With :data:`_AT_ITS_START_SCRIPT`, what a run of the
+#: command line holds at the check is read from a process of its own kind,
+#: under coverage or not.
+_TO_THE_CHECK_SCRIPT = r"""
+import os, runpy, sys
+src = sys.argv[1]
+sys.path.insert(0, src)
+
+def held():
+    for line in open("/proc/self/status"):
+        if line.startswith("VmSize:"):
+            return int(line.split()[1]) * 1024
+    raise SystemExit("no VmSize")
+
+start = held()
+from fastmdxplora.analysis import cluster
+
+def at_the_check():
+    cluster.libraries_mapped()
+    print("VMCHECK", held() - start, flush=True)
+    os._exit(0)
+
+cluster.memory_available = at_the_check
+sys.argv = ["fastmdxplora", *sys.argv[2:]]
+runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
+"""
+
+#: What an interpreter holds as it starts, before its first import.
+_AT_ITS_START_SCRIPT = r"""
+for line in open("/proc/self/status"):
+    if line.startswith("VmSize:"):
+        print("VMSTART", int(line.split()[1]) * 1024)
+"""
+
+
 #: The room ``ulimit -v 600000`` left tri-alanine's clustering in ``fastmdx
 #: analyze`` after its RMSD, measured (600,000 KiB less a ``VmSize`` of
 #: 548,937,728 bytes at the check, the libraries mapped).
@@ -1437,30 +1475,39 @@ class TestTheCommandLinesOwnProcess:
     room is read."""
 
     def test_500_frames_run_whole_under_ulimit_v_600000(self, studies):
-        """Under ``ulimit -v`` itself: what this machine holds at the check
-        read first (an unlimited run stopped there), and the limit set to
-        leave the room 600000 left tri-alanine, 600000 KiB where the two
-        hold the same."""
+        """Under ``ulimit -v`` itself, set from the start of `python -m
+        fastmdxplora analyze`: to what that interpreter holds as it starts,
+        what such a run holds at the check past its start
+        (:data:`_TO_THE_CHECK_SCRIPT`), and the room ``ulimit -v`` 600000
+        left tri-alanine. The holding was read whole, in a process of another
+        kind: on CI's coverage leg the run held more than that, and was
+        refused its own 500 frames (56.0 MB of room for 64.0 MB)."""
         import resource
         import subprocess
         from pathlib import Path
 
         study = studies[500]
-        found = _cli(study, 0, ["rmsd", "cluster"])
-        held = int(next(line.split()[1] for line in found.stdout.splitlines()
-                        if line.startswith("VMCHECK")))
-        limit = held + ROOM_AT_600000
         src = str(Path(clustering.__file__).resolve().parents[2])
+        analyze = ["analyze", "--output", str(study), "--rerun", "--no-explain",
+                   "--analyses", "rmsd", "cluster"]
+        env = _cli_env()
+
+        def said(script: str, word: str, *args: str) -> int:
+            done = subprocess.run([sys.executable, "-c", script, *args], capture_output=True,
+                                  text=True, timeout=900, cwd=study, env=env)
+            return int(next(line.split()[1] for line in done.stdout.splitlines()
+                            if line.startswith(word)))
+
+        limit = (said(_AT_ITS_START_SCRIPT, "VMSTART")
+                 + said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze) + ROOM_AT_600000)
 
         def under_the_limit():
             resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
-        env = _cli_env()
-        env["PYTHONPATH"] = src
+        env_run = dict(env, PYTHONPATH=src)
         done = subprocess.run(
-            [sys.executable, "-m", "fastmdxplora", "analyze", "--output", str(study),
-             "--rerun", "--no-explain", "--analyses", "rmsd", "cluster"],
-            capture_output=True, text=True, timeout=900, cwd=study, env=env,
+            [sys.executable, "-m", "fastmdxplora", *analyze],
+            capture_output=True, text=True, timeout=900, cwd=study, env=env_run,
             preexec_fn=under_the_limit)
         assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
         for name in ("rmsd", "cluster"):
