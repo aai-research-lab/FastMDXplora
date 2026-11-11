@@ -1,0 +1,72 @@
+{
+  "purpose": "Illustrative outputs from small CPU software checks; not convergence or independent numerical validation.",
+  "source_commit": "741e36a7",
+  "images": {
+    "replica-mixing.png": {
+      "sha256": "2eb555e6c62c235a039589b1b9dc14da64d363372341a6fca85425924d413d5e"
+    },
+    "gist.png": {
+      "sha256": "bcff6cf4afcaf50ae846776ce094e2946b76f02c73427f56d9a2f861c02da946"
+    }
+  },
+  "replica_mixing": {
+    "test": "tests/test_replica_exchange_keeps_its_ensemble_and_limits.py::test_a_whole_replica_exchange_study_reports_what_it_ran",
+    "record": {
+      "method": "rest2",
+      "replicas": 2,
+      "conditions": [
+        {
+          "effective_temperature_K": 300.0,
+          "scale": 1.0
+        },
+        {
+          "effective_temperature_K": 330.0,
+          "scale": 0.9090909090909091
+        }
+      ],
+      "iterations": 5,
+      "exchange_interval_steps": 20,
+      "neighbour_acceptance": [
+        0.6842105263157895
+      ],
+      "round_trips": [
+        0,
+        0
+      ],
+      "round_trips_total": 0,
+      "trajectory": "the frames of whichever replica was at the conditions of interest at each exchange: the right ensemble, and not one continuous path",
+      "no_round_trip": "No replica went from the bottom of the ladder to the top and back: the this run has not demonstrated traversal of the entire ladder. A longer run or a ladder with more acceptance may be needed.",
+      "saved": "35 of 1403 atoms (not water)",
+      "frames": 5,
+      "platform": "CPU",
+      "platform_properties": {},
+      "production_steps": 100,
+      "temperature_K": 300.0,
+      "pressure_bar": 1.0,
+      "ensemble": "npt",
+      "timestep_fs": 2.0,
+      "integrator": "langevin_middle",
+      "random_seed": 17,
+      "equilibration_iterations": 1,
+      "minimization": {
+        "tolerance_kjmol_per_nm": 10.0,
+        "max_iterations": 1000
+      },
+      "solute": "protein",
+      "storage": "replica_exchange.nc"
+    }
+  },
+  "gist": {
+    "test": "tests/test_which_waters_are_costly_to_displace.py::test_an_ion_s_first_shell_is_dense_held_and_ordered",
+    "system": "fixed sodium ion in TIP3P water",
+    "temperature_K": 300,
+    "timestep_fs": 2,
+    "saved_frames": 100,
+    "sampling_interval_ps": 0.2,
+    "production_ps": 20,
+    "seed": 3,
+    "grid_size_nm": 1.2,
+    "voxel_nm": 0.1,
+    "min_waters": 10
+  }
+}

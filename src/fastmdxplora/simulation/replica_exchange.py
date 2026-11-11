@@ -303,7 +303,7 @@ def mixing_record(plan: Plan, conditions: list[dict[str, float]], states: np.nda
             "More replicas, or a lower top, close it.")
     if not sum(trips):
         record["no_round_trip"] = (
-            "No replica went from the bottom of the ladder to the top and back: the "
+            "No replica went from the bottom of the ladder to the top and back: "
             "this run has not demonstrated traversal of the entire ladder. "
             "A longer run or a ladder with more acceptance may be needed.")
     return record
