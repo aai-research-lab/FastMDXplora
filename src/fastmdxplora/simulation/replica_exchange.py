@@ -271,6 +271,110 @@ def mixing_record(plan: Plan, conditions: list[dict[str, float]], states: np.nda
 # ---------------------------------------------------------------------------
 # Running
 
+def sample_states(*, thermodynamic: list[Any], system: Any, state: Any, topology: Any,
+                  output_dir: Path, storage_name: str, temperature_K: float,
+                  timestep_fs: float, friction_per_ps: float, interval: int,
+                  equilibration: int, iterations: int, save_selection: str | None,
+                  platform: str, random_seed: int | None, on_progress: Any) -> dict[str, Any]:
+    """Run openmmtools' replica exchange over ``thermodynamic`` states, then
+    write the frames and energies of whichever replica held the first state
+    at each exchange as the run's trajectory (``production.dcd``) and energy
+    record (``energies.csv``). Shared by replica exchange and alchemical
+    free energy, which differ only in their states."""
+    import mdtraj as md
+    import openmm
+    from openmm import unit
+    from openmmtools import cache, mcmc, states
+    from openmmtools.multistate import MultiStateReporter, ReplicaExchangeSampler
+
+    from fastmdxplora.simulation.runner import resolve_save_selection
+
+    # The contexts of an earlier run in this process are let go first:
+    # openmmtools' cache will not change platform while it holds any.
+    cache.global_context_cache.empty()
+    if platform and platform != "auto":
+        cache.global_context_cache.platform = openmm.Platform.getPlatformByName(platform)
+    # Velocities drawn at the run's temperature, the constraints applied:
+    # given none, openmmtools leaves them undefined and the first step
+    # of every replica is NaN.
+    drawn = openmm.Context(system, openmm.VerletIntegrator(0.001),
+                           openmm.Platform.getPlatformByName("Reference"))
+    drawn.setPeriodicBoxVectors(*state.getPeriodicBoxVectors())
+    drawn.setPositions(state.getPositions())
+    drawn.setVelocitiesToTemperature(temperature_K * unit.kelvin,
+                                     int(random_seed or 0) % (2 ** 31))
+    drawn.applyVelocityConstraints(1e-8)
+    sampler_state = states.SamplerState(
+        positions=state.getPositions(asNumpy=True),
+        velocities=drawn.getState(getVelocities=True).getVelocities(asNumpy=True),
+        box_vectors=state.getPeriodicBoxVectors(asNumpy=True))
+    del drawn
+    move = mcmc.LangevinDynamicsMove(
+        timestep=timestep_fs * unit.femtoseconds,
+        collision_rate=friction_per_ps / unit.picoseconds,
+        n_steps=interval, reassign_velocities=False)
+    storage = output_dir / storage_name
+    if storage.exists():
+        storage.unlink()
+    # The atoms the study saves are stored every iteration; the whole system
+    # only at checkpoints.
+    kept, described = resolve_save_selection(md.Topology.to_openmm(topology), save_selection)
+    atoms = np.arange(topology.n_atoms) if kept is None else np.asarray(kept)
+    reporter = MultiStateReporter(str(storage), checkpoint_interval=max(1, iterations // 20),
+                                  analysis_particle_indices=[int(a) for a in atoms])
+    sampler = ReplicaExchangeSampler(mcmc_moves=move, number_of_iterations=iterations,
+                                     replica_mixing_scheme="swap-all")
+    if random_seed is not None:
+        np.random.seed(int(random_seed) % (2 ** 32))
+    sampler.create(thermodynamic_states=thermodynamic, sampler_states=sampler_state,
+                   storage=reporter)
+    sampler.minimize()
+    if equilibration:
+        sampler.equilibrate(equilibration)
+    done = 0
+    while done < iterations:
+        step = min(max(1, iterations // 50), iterations - done)
+        sampler.extend(step) if done else sampler.run(step)
+        done += step
+        if on_progress is not None:
+            on_progress(done, iterations)
+
+    # The frames at the conditions of interest, written as the trajectory.
+    held = np.asarray(reporter.read_replica_thermodynamic_states())
+    xyz, boxes = [], []
+    first_iteration = held.shape[0] - iterations
+    for iteration in range(first_iteration, held.shape[0]):
+        replica = int(np.flatnonzero(held[iteration] == 0)[0])
+        sampler_states = reporter.read_sampler_states(iteration=iteration,
+                                                      analysis_particles_only=True)
+        positions = sampler_states[replica].positions.value_in_unit(unit.nanometer)
+        xyz.append(np.asarray(positions))
+        vectors = sampler_states[replica].box_vectors
+        boxes.append(np.asarray(vectors.value_in_unit(unit.nanometer)))
+    saved = topology.subset(atoms)
+    frames = md.Trajectory(np.array(xyz, dtype=np.float32), saved,
+                           time=np.arange(len(xyz)) * interval
+                           * timestep_fs / 1000.0)
+    frames.unitcell_vectors = np.array(boxes, dtype=np.float32)
+    trajectory = output_dir / "production.dcd"
+    frames.save_dcd(str(trajectory))
+    frames[0].save_pdb(str(output_dir / "trajectory_topology.pdb"))
+
+    # The potential energy of the replica at the conditions of interest, at
+    # each exchange, as the run's energy record.
+    energies = np.asarray(reporter.read_energies()[0])
+    kt = (0.0083144626 * temperature_K)
+    with open(output_dir / "energies.csv", "w", encoding="utf-8") as handle:
+        handle.write("time_ps,potential_kj_per_mol\n")
+        for k, iteration in enumerate(range(first_iteration, held.shape[0])):
+            replica = int(np.flatnonzero(held[iteration] == 0)[0])
+            handle.write(f"{k * interval * timestep_fs / 1000.0:.3f},"
+                         f"{energies[iteration, replica, 0] * kt:.4f}\n")
+    return {"reporter": reporter, "held": held, "first_iteration": first_iteration,
+            "frames": len(xyz), "described": described, "trajectory": trajectory,
+            "storage": storage, "cache": cache}
+
+
 def run_replica_exchange(*, system_xml: Path, state_xml: Path, topology_pdb: Path,
                          output_dir: Path, block: dict[str, Any], temperature_K: float,
                          timestep_fs: float, friction_per_ps: float, production_steps: int,
@@ -286,16 +390,14 @@ def run_replica_exchange(*, system_xml: Path, state_xml: Path, topology_pdb: Pat
         import mdtraj as md
         import openmm
         from openmm import unit
-        from openmmtools import cache, mcmc, states
-        from openmmtools.multistate import MultiStateReporter, ReplicaExchangeSampler
+        import pymbar  # noqa: F401 - its analysis needs it, so it is asked for here
+        from openmmtools import states
     except ImportError as exc:
         from fastmdxplora.dependencies import MissingBackendError, MissingDependency
 
         raise MissingBackendError([
             MissingDependency("openmmtools", "openmmtools", "openmmtools"),
             MissingDependency("pymbar", "pymbar", "pymbar")]) from exc
-
-    from fastmdxplora.simulation.runner import resolve_save_selection
 
     plan = plan_from_block(block)
     output_dir = Path(output_dir)
@@ -342,87 +444,18 @@ def run_replica_exchange(*, system_xml: Path, state_xml: Path, topology_pdb: Pat
                          for t in temperatures]
         conditions = [{"temperature_K": t} for t in temperatures]
 
-    # The contexts of an earlier run in this process are let go first:
-    # openmmtools' cache will not change platform while it holds any.
-    cache.global_context_cache.empty()
-    if platform and platform != "auto":
-        cache.global_context_cache.platform = openmm.Platform.getPlatformByName(platform)
-    # Velocities drawn at the run's temperature, the constraints applied:
-    # given none, openmmtools leaves them undefined and the first step
-    # of every replica is NaN.
-    drawn = openmm.Context(system, openmm.VerletIntegrator(0.001),
-                           openmm.Platform.getPlatformByName("Reference"))
-    drawn.setPeriodicBoxVectors(*state.getPeriodicBoxVectors())
-    drawn.setPositions(state.getPositions())
-    drawn.setVelocitiesToTemperature(temperature_K * unit.kelvin,
-                                     int(random_seed or 0) % (2 ** 31))
-    drawn.applyVelocityConstraints(1e-8)
-    sampler_state = states.SamplerState(
-        positions=state.getPositions(asNumpy=True),
-        velocities=drawn.getState(getVelocities=True).getVelocities(asNumpy=True),
-        box_vectors=state.getPeriodicBoxVectors(asNumpy=True))
-    del drawn
-    move = mcmc.LangevinDynamicsMove(
-        timestep=timestep_fs * unit.femtoseconds,
-        collision_rate=friction_per_ps / unit.picoseconds,
-        n_steps=plan.exchange_interval_steps, reassign_velocities=False)
-    storage = output_dir / "replica_exchange.nc"
-    if storage.exists():
-        storage.unlink()
-    # The atoms the study saves are stored every iteration; the whole system
-    # only at checkpoints.
-    kept, described = resolve_save_selection(md.Topology.to_openmm(topology), save_selection)
-    atoms = np.arange(topology.n_atoms) if kept is None else np.asarray(kept)
-    reporter = MultiStateReporter(str(storage), checkpoint_interval=max(1, iterations // 20),
-                                  analysis_particle_indices=[int(a) for a in atoms])
-    sampler = ReplicaExchangeSampler(mcmc_moves=move, number_of_iterations=iterations,
-                                     replica_mixing_scheme="swap-all")
-    if random_seed is not None:
-        np.random.seed(int(random_seed) % (2 ** 32))
-    sampler.create(thermodynamic_states=thermodynamic, sampler_states=sampler_state,
-                   storage=reporter)
-    sampler.minimize()
-    if plan.equilibration_iterations:
-        sampler.equilibrate(plan.equilibration_iterations)
-    done = 0
-    while done < iterations:
-        step = min(max(1, iterations // 50), iterations - done)
-        sampler.extend(step) if done else sampler.run(step)
-        done += step
-        if on_progress is not None:
-            on_progress(done, iterations)
-
-    # The frames at the conditions of interest, written as the trajectory.
-    held = np.asarray(reporter.read_replica_thermodynamic_states())
-    xyz, boxes = [], []
-    first_iteration = held.shape[0] - iterations
-    for iteration in range(first_iteration, held.shape[0]):
-        replica = int(np.flatnonzero(held[iteration] == 0)[0])
-        sampler_states = reporter.read_sampler_states(iteration=iteration,
-                                                      analysis_particles_only=True)
-        positions = sampler_states[replica].positions.value_in_unit(unit.nanometer)
-        xyz.append(np.asarray(positions))
-        vectors = sampler_states[replica].box_vectors
-        boxes.append(np.asarray(vectors.value_in_unit(unit.nanometer)))
-    saved = topology.subset(atoms)
-    frames = md.Trajectory(np.array(xyz, dtype=np.float32), saved,
-                           time=np.arange(len(xyz)) * plan.exchange_interval_steps
-                           * timestep_fs / 1000.0)
-    frames.unitcell_vectors = np.array(boxes, dtype=np.float32)
-    trajectory = output_dir / "production.dcd"
-    frames.save_dcd(str(trajectory))
-    frames[0].save_pdb(str(output_dir / "trajectory_topology.pdb"))
-
-    # The potential energy of the replica at the conditions of interest, at
-    # each exchange, as the run's energy record.
-    energies = np.asarray(reporter.read_energies()[0])
-    kt = (0.0083144626 * temperature_K)
-    with open(output_dir / "energies.csv", "w", encoding="utf-8") as handle:
-        handle.write("time_ps,potential_kj_per_mol\n")
-        for k, iteration in enumerate(range(first_iteration, held.shape[0])):
-            replica = int(np.flatnonzero(held[iteration] == 0)[0])
-            handle.write(f"{k * plan.exchange_interval_steps * timestep_fs / 1000.0:.3f},"
-                         f"{energies[iteration, replica, 0] * kt:.4f}\n")
+    sampled = sample_states(
+        thermodynamic=thermodynamic, system=system, state=state, topology=topology,
+        output_dir=output_dir, storage_name="replica_exchange.nc",
+        temperature_K=temperature_K, timestep_fs=timestep_fs,
+        friction_per_ps=friction_per_ps, interval=plan.exchange_interval_steps,
+        equilibration=plan.equilibration_iterations, iterations=iterations,
+        save_selection=save_selection, platform=platform, random_seed=random_seed,
+        on_progress=on_progress)
+    reporter, held = sampled["reporter"], sampled["held"]
+    first_iteration, described = sampled["first_iteration"], sampled["described"]
+    trajectory, storage, cache = sampled["trajectory"], sampled["storage"], sampled["cache"]
+    xyz = range(sampled["frames"])
     accepted, proposed = reporter.read_mixing_statistics()
     record = mixing_record(plan, conditions, held[first_iteration:],
                            np.asarray(accepted).sum(axis=0) if np.ndim(accepted) == 3
