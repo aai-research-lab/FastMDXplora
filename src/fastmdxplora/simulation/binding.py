@@ -475,6 +475,36 @@ def _array_of_numbers(values: Any, what: str, ndim: int) -> np.ndarray:
                          code="config.option.wrong_type") from exc
 
 
+def _the_depth_s_error(radius: np.ndarray, curves: "np.ndarray | None",
+                       errors_kjmol: Any, order: np.ndarray, minimum_index: int,
+                       n_bulk: int, kt: float) -> "tuple[float | None, str | None]":
+    """The error of the well's depth, the bulk reference (the tail's mean of
+    W) less W at the minimum: its spread over the bootstrap's resampled
+    curves where `BULK_RESAMPLES_NEEDED` or more hold the tail and the
+    minimum's bin, which no zero moves; else the minimum's standard error and
+    the tail's mean standard error together; else None."""
+    shift = 2.0 * kt * np.log(radius)
+    if curves is not None:
+        rows = curves + shift[None, :]
+        tails = rows[:, -n_bulk:]
+        held = np.isfinite(tails).all(axis=1) & np.isfinite(rows[:, minimum_index])
+        if int(held.sum()) >= BULK_RESAMPLES_NEEDED:
+            depths = tails[held].mean(axis=1) - rows[held, minimum_index]
+            return (float(np.std(depths, ddof=1)),
+                    f"the depth's spread over {int(held.sum())} resamples")
+    if errors_kjmol is not None:
+        try:
+            errors = np.asarray([np.nan if v is None else float(v)
+                                 for v in errors_kjmol], dtype=float)[order]
+        except (TypeError, ValueError, IndexError):
+            return None, None
+        tail = errors[-n_bulk:]
+        if np.isfinite(errors[minimum_index]) and np.isfinite(tail).any():
+            return (float(np.hypot(errors[minimum_index], np.nanmean(tail))),
+                    "the bins' standard errors")
+    return None, None
+
+
 def binding_free_energy(
     coordinate: Any,
     free_energy_kjmol: Any,
@@ -741,20 +771,41 @@ def binding_free_energy(
     # has no bound range at all. Without this a free particle's flat W,
     # its minimum wherever the noise put it, was integrated from there and
     # given a binding free energy of -7.4 to +0.8 kJ/mol.
+    #
+    # Judged on the real curve only, never on a resample: a resample refused
+    # by its own depth left the interval, and those are the weakest ones, so
+    # a 3 kJ/mol well's interval lost its weak side ([-1.30, +0.25] in place
+    # of [-1.29, +0.89]). A resample follows the real curve's verdict, as
+    # it does for the bulk.
     depth = (float(reference_at - mean_force[minimum_index])
              if np.isfinite(mean_force[minimum_index]) else None)
-    if bound_cutoff_nm is None and depth is not None and depth < kt:
+    depth_error, depth_error_from = _the_depth_s_error(
+        radius, curves, errors_kjmol, order, minimum_index, n_bulk, kt)
+    depth_record = ({} if depth is None or bound_cutoff_nm is not None else {
+        "well_depth_kjmol": depth,
+        "well_depth_error_kjmol": depth_error,
+        "well_depth_error_from": depth_error_from})
+    if (judge_the_bulk and bound_cutoff_nm is None and depth is not None
+            and depth < kt):
+        spread = (f" +/- {depth_error:.2f}" if depth_error is not None else "")
+        marginal = depth_error is not None and kt - depth <= depth_error
         return {"delta_g_kjmol": None, **judged_record,
                 "bulk_from_nm": float(radius[-n_bulk]),
                 "minimum_at_nm": minimum_at, "bound_cutoff_nm": None,
-                "well_depth_kjmol": depth,
+                **depth_record, "well_depth_marginal": marginal,
                 "refused": (
             "The curve's lowest point"
             + (" between the windows' centres" if covered_nm is not None else "")
-            + f", at {minimum_at:.3g} nm, is {depth:.2f} kJ/mol below the bulk "
-            f"reference, less than kT ({kt:.2f} kJ/mol), so there is no "
-            "bound state: the bound range is where W(r) stands more than kT "
-            "below bulk, and nowhere here does."
+            + f", at {minimum_at:.3g} nm, is {depth:.2f}{spread} kJ/mol below "
+            f"the bulk reference, less than kT ({kt:.2f} kJ/mol), so there is "
+            "no bound state as this study defines one: its bound range is "
+            "where W(r) stands more than kT below bulk over the windows' "
+            "span, and nowhere here does. A well this shallow does not bind "
+            "measurably at 1 M; where the depth is near kT, longer sampling "
+            "could change the verdict."
+            + (f" Here it is within its error of kT ({kt - depth:.2f} short, "
+               f"against an error of {depth_error:.2f}), so the verdict is "
+               "marginal." if marginal else "")
         )}
     if bound_cutoff_nm is None:
         beyond = known & (radius > minimum_at) & (energy >= bulk_level - kt)
@@ -899,6 +950,9 @@ def binding_free_energy(
     return {
         "delta_g_kjmol": delta_g,
         "delta_g_kcalmol": delta_g / 4.184,
+        # How deep the well the bound range starts from is, and its error, so
+        # a number from a well just over kT says so.
+        **depth_record,
         # The statistical uncertainty, where the caller measured one. It comes
         # from resampling the windows and recomputing this whole quantity, so
         # it is the spread of the measurement rather than a propagated

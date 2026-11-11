@@ -619,12 +619,16 @@ class TestTheBarrierLineSaysWhatItRestsOn:
             "6.3 kJ/mol at 0.0524 rad, on the free energy (no error computed; "
             "judged by the 2.5 kJ/mol margin alone).")
 
-    def test_with_one_it_sits_high_by_its_zero(self) -> None:
+    def test_with_one_it_claims_no_direction(self) -> None:
+        # The curve's zero puts a barrier high and the bins' width a narrow
+        # one low (19.43 +/- 0.15 for a 20 kJ/mol escape barrier), so the
+        # line says the error is the sampling's and claims neither.
         from fastmdxplora.simulation.umbrella import THE_CURVE_SITS_HIGH
 
-        assert self._line(barrier_error_kjmol=1.0, barrier_zero=THE_CURVE_SITS_HIGH) == (
-            "6.3 +/- 1.0 kJ/mol at 0.0524 rad, on the free energy, about 0.8 of "
-            "its error high as the curve's zero is.")
+        line = self._line(barrier_error_kjmol=1.0, barrier_zero=THE_CURVE_SITS_HIGH)
+        assert line == ("6.3 +/- 1.0 kJ/mol at 0.0524 rad, on the free energy, its "
+                        "error the sampling's alone, not the zero's or the bins' width.")
+        assert "high" not in line and "low" not in line
 
 
 class TestNoWellIsNoBoundState:
@@ -666,3 +670,160 @@ class TestNoWellIsNoBoundState:
                                   temperature_K=300.0, covered_nm=(0.4, 2.0))
         assert got["delta_g_kjmol"] is None
         assert "no bound state" in got["refused"]
+
+
+class TestTheKtRuleIsTheRealCurve_s:
+    """The kT rule ran inside each resample too, so the resamples of a weak
+    well that fell under kT left its interval, and those are its weakest:
+    a 3 kJ/mol well's interval lost its weak side."""
+
+    def _curve(self, depth_kt, error=None):
+        kt = KB_KJMOL * 300.0
+        r = np.linspace(0.4, 2.0, 50)
+        w = -depth_kt * kt * np.exp(-((r - 0.8) / 0.08) ** 2)
+        a = w - 2.0 * kt * np.log(r)
+        return r, list(a - a.min()), (None if error is None else [error] * 50)
+
+    def test_a_resample_follows_the_real_curve(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        r, a, _ = self._curve(0.9)
+        got = binding_free_energy(r, a, temperature_K=300.0, covered_nm=(0.4, 2.0),
+                                  judge_the_bulk=False)
+        assert got["delta_g_kjmol"] is not None
+
+    def test_a_weak_well_s_interval_keeps_its_weak_side(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        kt = KB_KJMOL * 300.0
+        centres = np.linspace(0.4, 2.0, 25)
+        plan = _plan(centres, force=1000.0)
+        plan = UmbrellaPlan(windows=plan.windows, collective_variable="ligand_distance",
+                            equilibration_fraction=0.2, minimum_overlap=0.0,
+                            minimum_samples=50, cone=None, bootstrap_resamples=40)
+        grid = np.linspace(0.3, 2.2, 200001)
+        step = grid[1] - grid[0]
+        a_true = -3.0 * np.exp(-((grid - 0.7) / 0.1) ** 2) - 2.0 * kt * np.log(grid)
+        rng = np.random.default_rng(6)
+        picked = {}
+        for window in plan.windows:
+            weight = np.exp(-(a_true + 0.5 * 1000.0 * (grid - window.centre) ** 2) / kt)
+            picked[window.index] = (rng.choice(grid, size=1600, p=weight / weight.sum())
+                                    + rng.uniform(0.0, step, size=1600))
+        span = (0.4, 2.0)
+
+        def also(where, curve):
+            return binding_free_energy(where, curve, temperature_K=300.0,
+                                       covered_nm=span, judge_the_bulk=False
+                                       ).get("delta_g_kjmol")
+
+        logging.disable(logging.WARNING)
+        try:
+            payload = compute_pmf(picked, plan, temperature_K=300.0,
+                                  bootstrap_resamples=40, bootstrap_seed=6, also=also)
+        finally:
+            logging.disable(logging.NOTSET)
+        spread = payload["pmf"]["uncertainty"]
+        got = binding_free_energy(
+            payload["pmf"]["coordinate"], payload["pmf"]["free_energy_kjmol"],
+            temperature_K=300.0, covered_nm=span, resampled=payload["derived"],
+            errors_kjmol=spread["standard_error"],
+            resample_curves_kjmol=spread["resample_curves_kjmol"])
+        # With the rule in each resample, 16 of 40 gave no number and the
+        # interval was [-2.07, -0.81]; on the real curve only, [-2.07, -0.35]
+        # from all 40.
+        assert got["delta_g_kjmol"] == pytest.approx(-1.18, abs=0.01)
+        assert got["delta_g_resamples_without_a_number"] == 0
+        assert got["delta_g_confidence_kjmol"][1] > -0.5
+        # The well's depth, 2.66 kJ/mol, and its error from the resamples.
+        assert got["well_depth_kjmol"] == pytest.approx(2.66, abs=0.02)
+        assert 0.15 < got["well_depth_error_kjmol"] < 0.5
+        assert "resamples" in got["well_depth_error_from"]
+
+    def test_the_refusal_says_what_it_means_and_when_it_is_marginal(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        r, a, errors = self._curve(0.9, error=0.4)
+        got = binding_free_energy(r, a, temperature_K=300.0, covered_nm=(0.4, 2.0),
+                                  errors_kjmol=errors)
+        said = got["refused"]
+        assert "no bound state as this study defines one" in said
+        assert "over the windows' span" in said
+        assert "does not bind measurably at 1 M" in said
+        assert "longer sampling could change the verdict" in said
+        assert got["well_depth_marginal"] is True
+        assert "so the verdict is marginal" in said
+        assert got["well_depth_error_kjmol"] == pytest.approx(np.hypot(0.4, 0.4))
+        assert "+/- 0.57 kJ/mol below" in said
+
+    def test_far_from_kt_it_is_not_marginal(self) -> None:
+        from fastmdxplora.simulation.binding import binding_free_energy
+
+        r, a, errors = self._curve(0.2, error=0.1)
+        got = binding_free_energy(r, a, temperature_K=300.0, covered_nm=(0.4, 2.0),
+                                  errors_kjmol=errors)
+        assert got["well_depth_marginal"] is False
+        assert "marginal" not in got["refused"]
+
+
+class TestTheExplorerSearchesTheWindowsSpan:
+    """Both of the explorer's binding calls pass the windows' span: the
+    real curve's and each resample's."""
+
+    def test_both_calls(self, tmp_path, monkeypatch) -> None:
+        from fastmdxplora.batch import explorer as explorer_module
+        from fastmdxplora.simulation import binding, umbrella
+        from fastmdxplora.simulation.umbrella import expand_umbrella
+
+        calls = []
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs)
+            return {"delta_g_kjmol": None, "refused": "spied"}
+
+        r = list(np.linspace(0.4, 1.2, 20))
+
+        def recombined(*args, also=None, **kwargs):
+            if also is not None:
+                also(r, [0.0] * 20)
+            return {"pmf": {"coordinate": r, "free_energy_kjmol": [0.0] * 20},
+                    "covered": [0.4, 1.2], "refused": None, "summary": None}
+
+        monkeypatch.setattr(binding, "binding_free_energy", spy)
+        monkeypatch.setattr(umbrella, "collect_samples", lambda *a, **k: {})
+        monkeypatch.setattr(umbrella, "design_from_a_pilot", lambda *a, **k: {})
+        monkeypatch.setattr(umbrella, "compute_pmf", recombined)
+        monkeypatch.setattr(umbrella, "cone_the_windows_ran_under", lambda *a, **k: None)
+        batch = explorer_module.BatchExplorer.__new__(explorer_module.BatchExplorer)
+        batch._raw = expand_umbrella({
+            "systems": [{"id": "s", "system": "x.pdb"}],
+            "simulation": {"umbrella": {
+                "collective_variable": "distance", "select_atoms_a": "resid 1",
+                "select_atoms_b": "resid 2", "force_constant": 1000,
+                "from": 0.4, "to": 1.2, "n_windows": 5}}})
+        batch.run_specs = []
+        batch.output_dir = tmp_path
+        batch._draw_pmf = lambda path: None
+        batch._maybe_build_pmf(bootstrap_resamples=0)
+        # The resample's call (judge_the_bulk False), then the real curve's.
+        assert [c.get("judge_the_bulk", True) for c in calls] == [False, True]
+        assert all(tuple(c["covered_nm"]) == pytest.approx((0.4, 1.2)) for c in calls)
+
+
+class TestTheConsoleSaysWhenResamplesGaveNoNumber:
+    def test_more_than_a_tenth(self) -> None:
+        from fastmdxplora.batch.explorer import _what_the_binding_says
+
+        lines = _what_the_binding_says({
+            "delta_g_kjmol": -1.2, "delta_g_standard_error_kjmol": 0.4,
+            "delta_g_resamples": 24, "delta_g_resamples_without_a_number": 16})
+        assert ("Warning:        16 of 40 resamples gave no binding free energy; "
+                "its error is from the other 24.") in lines
+
+    def test_a_tenth_or_fewer_is_not_said(self) -> None:
+        from fastmdxplora.batch.explorer import _what_the_binding_says
+
+        lines = _what_the_binding_says({
+            "delta_g_kjmol": -1.2, "delta_g_standard_error_kjmol": 0.4,
+            "delta_g_resamples": 36, "delta_g_resamples_without_a_number": 4})
+        assert not any("resamples gave no" in line for line in lines)

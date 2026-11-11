@@ -2364,7 +2364,11 @@ def the_barrier_in_a_line(record: Any) -> str | None:
             said += (f" (no error computed; judged by the "
                      f"{BARRIER_PROMINENCE_KJMOL} kJ/mol margin alone)")
         elif summary.get("barrier_zero"):
-            said += ", about 0.8 of its error high as the curve's zero is"
+            # No direction claimed: the curve's zero puts a barrier high and
+            # a bin's width puts a narrow one low (a 20 kJ/mol escape
+            # barrier came out 19.43 +/- 0.15), each by about its error or
+            # more.
+            said += ", its error the sampling's alone, not the zero's or the bins' width"
         if summary.get("barrier_note"):
             said += "; a higher peak was refused as within its error"
         return said + "."

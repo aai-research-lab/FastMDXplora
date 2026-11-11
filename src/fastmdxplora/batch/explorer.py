@@ -993,6 +993,16 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
                         "(bootstrap_resamples: 0)."
                         if "bootstrap_resamples: 0" in str(
                             binding.get("bulk_judged") or "") else "."))
+    given = binding.get("delta_g_resamples")
+    missing = binding.get("delta_g_resamples_without_a_number")
+    if (value is not None and isinstance(given, int) and isinstance(missing, int)
+            and given + missing and missing > 0.1 * (given + missing)):
+        # The interval is made of the resamples that gave a number, and
+        # those that did not are not a random few: said, so a narrow error
+        # from half a bootstrap is not read as a whole one.
+        lines.append(
+            f"Warning:        {missing} of {given + missing} resamples gave no "
+            f"binding free energy; its error is from the other {given}.")
     for warning in (binding.get("reference") or {}).get("warnings") or []:
         lines.append(f"Warning:        {warning}")
     return lines
