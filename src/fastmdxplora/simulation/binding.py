@@ -248,6 +248,69 @@ def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
     }
 
 
+#: The level of the binding free energy's interval.
+DELTA_G_CONFIDENCE = 0.95
+
+
+def _finite(value: Any) -> "float | None":
+    """`value` as a float, or None where it is missing, NaN or infinite."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) else None
+
+
+def _the_interval(value: float, error: "float | None",
+                  given: "int | None") -> dict[str, Any]:
+    """The 95% interval on the binding free energy: ``value +/- t * error``.
+
+    t is Student's two-sided quantile at 95% on ``given - 1`` degrees of
+    freedom, ``given`` the resamples that gave a number, since the standard
+    error is read off those resamples and no others (`_two_sided`); the
+    normal quantile where the count is not known. The bootstrap's own
+    2.5th and 97.5th percentiles were the interval before, and on umbrella
+    studies of wells with an exact answer they held it about 91% of the
+    time at 40 resamples: the 97.5th percentile of 40 values is read
+    between the largest two, about 1.77 standard errors from the middle,
+    not 1.96. The standard error itself was right there (within a few per
+    cent of the number's spread from study to study), so the interval is
+    built on it, and held the exact answer about 95% of the time
+    (docs/studies.md gives the counts).
+
+    No interval where there is no standard error, as with fewer than two
+    resamples that gave a number (`bootstrap_resamples: 1`): one resample
+    has no spread, and its percentiles made an interval of no width.
+    """
+    none = {"delta_g_confidence_kjmol": None,
+            "delta_g_confidence_multiplier": None,
+            "delta_g_confidence_degrees_of_freedom": None}
+    if error is None or (given is not None and given < 2):
+        count = "no" if given in (None, 0) else str(given)
+        return {**none, "delta_g_no_interval": (
+            f"There is no interval: {count} resample"
+            + ("" if given == 1 else "s")
+            + " gave a binding free energy, and a standard error needs at "
+            "least two (`bootstrap_resamples` sets how many are taken).")}
+    if error == 0.0:
+        # Every resample gave the same number: a window shorter than its own
+        # block is resampled whole, so the resamples say nothing about the
+        # spread, and an interval of no width would claim it is none.
+        return {**none, "delta_g_no_interval": (
+            "There is no interval: every resample gave the same binding "
+            "free energy, so they say nothing about its spread (a window "
+            "shorter than its own block is resampled whole).")}
+    multiplier = _two_sided(1.0 - DELTA_G_CONFIDENCE, given)
+    return {
+        "delta_g_confidence_kjmol": [value - multiplier * error,
+                                     value + multiplier * error],
+        "delta_g_confidence_multiplier": multiplier,
+        "delta_g_confidence_degrees_of_freedom": (
+            None if given is None else int(given) - 1),
+        "delta_g_no_interval": None,
+    }
+
+
 def _what_the_resamples_said(resampled: "dict[str, Any] | None",
                              correction: float) -> dict[str, Any]:
     """The bootstrap's interval on this number, shifted by the corrections.
@@ -256,6 +319,11 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
     that is the part that varies: the cone correction and the standard-state
     term are constants, and adding a constant moves an interval without
     widening it. So the bounds shift and the standard error does not.
+
+    The interval is the number +/- Student's t times its standard error
+    (`_the_interval`), not the resamples' percentiles, which are saved
+    beside it as `delta_g_percentile_interval_kjmol` and held the exact
+    answer too seldom to be called 95%.
 
     `correlation_resolved` travels with it. An interval whose block length is
     a lower bound is optimistic by an unknown factor, and a number carrying
@@ -267,16 +335,37 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
             "delta_g_confidence_kjmol": None,
             "delta_g_uncertainty_is_a_floor": None,
         }
-    error = resampled.get("standard_error")
-    low = resampled.get("confidence_low")
-    high = resampled.get("confidence_high")
+    error = _finite(resampled.get("standard_error"))
+    low = _finite(resampled.get("confidence_low"))
+    high = _finite(resampled.get("confidence_high"))
     resolved = resampled.get("correlation_resolved")
+    given = (resampled.get("resamples_with_a_number")
+             if resampled.get("resamples_with_a_number") is not None
+             else resampled.get("resamples"))
+    given = None if given is None else int(given)
+    interval = _the_interval(float(resampled["value"]) + correction, error,
+                             given)
     return {
-        "delta_g_standard_error_kjmol": (
-            None if error is None else float(error)),
-        "delta_g_confidence_kjmol": (
+        # None where the resamples gave no spread (NaN), never NaN.
+        "delta_g_standard_error_kjmol": error,
+        **interval,
+        "delta_g_confidence_level": DELTA_G_CONFIDENCE,
+        "delta_g_confidence_from": (
+            None if interval["delta_g_confidence_kjmol"] is None else
+            "the number +/- Student's t at 95% times its standard error, on "
+            "one fewer degrees of freedom than the resamples that gave a "
+            "number" if given is not None else
+            "the number +/- the normal quantile at 95% times its standard "
+            "error, the count of resamples not being known"),
+        # The resamples' own 2.5th and 97.5th percentiles, shifted as the
+        # interval is: the interval before, which held the exact answer
+        # about 91% of the time, saved for comparison and not to be quoted
+        # as 95%. None where there is no interval, since one resample's
+        # percentiles have no width.
+        "delta_g_percentile_interval_kjmol": (
             None if low is None or high is None
-            else [float(low) + correction, float(high) + correction]),
+            or interval["delta_g_confidence_kjmol"] is None
+            else [low + correction, high + correction]),
         # Said positively rather than left to be inferred from a flag called
         # `correlation_resolved` two files away.
         "delta_g_uncertainty_is_a_floor": (
