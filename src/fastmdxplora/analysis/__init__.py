@@ -129,6 +129,9 @@ from fastmdxplora.analysis import nmr_observables as _nmr_observables  # noqa: F
 # The slow processes, from a Markov state model. Run only where a study
 # names it.
 from fastmdxplora.analysis import markov_model as _markov_model  # noqa: F401, E402
+# The shape of a double helix: base-pair and step parameters. Run only
+# where a study names it.
+from fastmdxplora.analysis import nucleic_acid as _nucleic_acid  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

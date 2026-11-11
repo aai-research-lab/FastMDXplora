@@ -276,6 +276,26 @@ is given.
 
 Held against MDTraj's own couplings and against NOEs of known averages.
 
+### Double helices
+
+| | |
+|---|---|
+| `nucleic_acid` | A DNA or RNA duplex's base-pair parameters (shear, stretch, stagger, buckle, propeller, opening) and step parameters (shift, slide, rise, tilt, roll, twist), frame by frame |
+
+Each base is given the standard reference frame of Olson et al. (2001),
+fitted to its ring atoms, and the parameters come from the frames by 3DNA's
+own construction (CEHS), in nm and degrees. Watson-Crick pairs are found in
+the first frame and followed; one whose N1 and N3 come over 0.4 nm apart in
+more than a fifth of the frames is said to.
+
+- **Not computed:** groove widths, the helical axis and its bending, sugar
+  puckers and backbone torsions (3DNA, Curves+, cpptraj's `nastruct`).
+
+On the Dickerson dodecamer (1BNA) it gives rise 0.336 nm, twist 35.6
+degrees and propeller -12 degrees on average, with the AATT core's propeller
+near -17; building a helix from given parameters and measuring it gives them
+back. It has not been compared with 3DNA's output for one structure.
+
 ### Helices
 
 | | |
@@ -598,7 +618,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model`, `nucleic_acid` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -616,7 +636,8 @@ of a second a frame for a few thousand atoms, and its number is not a
 free energy. `residue_network` is held back because which sites communicate is the
 study's question. `nmr_observables` is held back because it is for a study
 with an experiment to set beside it. `markov_model` is held back because a
-short run does not hold the slow processes it models.
+short run does not hold the slow processes it models. `nucleic_acid` is held
+back for a study of a double helix that asks for it.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -995,6 +1016,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.markov_model
+   :members:
+
+.. automodule:: fastmdxplora.analysis.nucleic_acid
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

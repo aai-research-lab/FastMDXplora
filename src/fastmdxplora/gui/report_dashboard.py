@@ -56,6 +56,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("dihedrals", "Dihedrals"),
         ("nmr_observables", "NMR couplings and NOEs"),
         ("helix_geometry", "Helix tilt and kink"),
+        ("nucleic_acid", "Base-pair and step parameters"),
     )),
     ("Contacts and solvent", (
         ("hbonds", "Hydrogen bonds"),

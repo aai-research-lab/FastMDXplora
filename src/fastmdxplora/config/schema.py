@@ -97,6 +97,9 @@ ANALYSIS_NAMES = (
     # A Markov state model of the frames and its slow timescales: run where
     # a study names it.
     "markov_model",
+    # A double helix's base-pair and step parameters, as 3DNA defines them:
+    # run where a study names it.
+    "nucleic_acid",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",

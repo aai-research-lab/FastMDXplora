@@ -137,6 +137,7 @@ FastMDXplora/
 │       │   ├── residue_network.py # The residue interaction network and its paths
 │       │   ├── nmr_observables.py # NMR couplings and NOEs, beside the experiment's
 │       │   ├── markov_model.py    # tICA, microstates and a Markov state model's timescales
+│       │   ├── nucleic_acid.py    # A double helix's base-pair and step parameters, as 3DNA's
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs
