@@ -178,13 +178,17 @@ def test_a_real_ended_run_with_no_ps_is_read_gone(monkeypatch):
 _SETPRIV = shutil.which("setpriv")
 _SRC = str(Path(__import__("fastmdxplora").__file__).resolve().parents[1])
 
-_READ = """
-import json, sys
+_STARTED = "reader started"
+
+_READ = f"""
+print({_STARTED!r}, flush=True)
+import json, os, sys
+import fastmdxplora
+print(fastmdxplora.__file__, flush=True)
 from fastmdxplora.gpu_here import _going
 from fastmdxplora.gui.exploration import _process_alive
 pid = int(sys.argv[1])
 try:
-    import os
     os.kill(pid, 0)
     said = "ok"
 except PermissionError:
@@ -198,17 +202,31 @@ print(json.dumps([said, _going(pid), _process_alive(pid)]))
 def _read_as_another_user(pid: int, *, path: str | None = None) -> tuple[str, bool, bool]:
     """The zero signal's answer, then ``_going`` and ``_process_alive`` of
     ``pid``, as user ``nobody`` reads them; ``path`` is that reader's PATH
-    (one without ``ps`` or ``sh``, so ``/proc`` is read)."""
+    (one without ``ps`` or ``sh``, so ``/proc`` is read).
+
+    It skips where ``setpriv`` or the interpreter cannot start as
+    ``nobody``, and where the package ``nobody`` imports is not this
+    source (``nobody`` cannot read it, and Python then imports an installed
+    copy); any other error of the reader fails."""
     import json
 
     env = {"PATH": path or os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONPATH": _SRC,
            "HOME": "/nonexistent"}
-    said = subprocess.run([_SETPRIV, "--reuid=65534", "--regid=65534", "--clear-groups",
-                           sys.executable, "-c", _READ, str(pid)],
-                          capture_output=True, text=True, timeout=60, env=env)
-    if said.returncode != 0:
-        pytest.skip(f"cannot read as another user here: {said.stderr[-300:]}")
-    answer, going, alive = json.loads(said.stdout.strip().splitlines()[-1])
+    try:
+        said = subprocess.run([_SETPRIV, "--reuid=65534", "--regid=65534", "--clear-groups",
+                               sys.executable, "-c", _READ, str(pid)],
+                              capture_output=True, text=True, timeout=60, env=env)
+    except OSError as exc:
+        pytest.skip(f"setpriv cannot start here: {exc}")
+    lines = said.stdout.strip().splitlines()
+    if not lines or lines[0] != _STARTED:
+        pytest.skip(f"cannot start the interpreter as another user here: "
+                    f"{said.stderr[-300:]}")
+    if len(lines) < 2 or not Path(lines[1]).resolve().is_relative_to(_SRC):
+        pytest.skip(f"another user cannot import this source here: "
+                    f"{(lines[1:2] or [said.stderr[-300:]])[0]}")
+    assert said.returncode == 0, said.stderr[-2000:]
+    answer, going, alive = json.loads(lines[-1])
     return answer, going, alive
 
 
