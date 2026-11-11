@@ -903,13 +903,25 @@ t interval held it in 976 of 1023 (95.4% +/- 0.7%; 357 of 375 on the narrow
 well and 619 of 648 on the broad), and in 169 of 180 (93.9% +/- 1.8%) where
 more than two resamples gave no number. With 200 resamples it held it in 107
 of 115 (93% +/- 2.4%, against 104 for the percentiles), too few studies to
-tell from 95%. The percentiles are saved beside it as
+tell from 95%. Those studies' frames were independent, and MD's are not. On
+correlated frames (an AR(1) series at rho 0.9, a correlation time of about 19
+frames and blocks of 31 to 39, 40 resamples) the same interval held the exact
+answer in 527 of 574 studies (91.8% +/- 1.1%), against 493 for the
+percentiles: the standard error ran about 10% low there (the number's spread
+from study to study was 1.10 times it), from the block length rule of two
+correlation times (`BLOCKS_PER_CORRELATION_TIME` in `uncertainty.py`). The t
+multiplier does not correct that, and nothing in the record flags it:
+`correlation_resolved` was true in every one of those studies. So on MD read
+the interval as nearer 92% than 95%. The percentiles are saved beside it as
 `delta_g_percentile_interval_kjmol`, for comparison, and are not a 95%
 interval. Where the resamples give no spread there is no interval:
 `delta_g_confidence_kjmol` and `delta_g_standard_error_kjmol` are `null` and
 `delta_g_no_interval` says why, as with `bootstrap_resamples: 1` (one resample
 has no spread, and its percentiles made an interval of no width) or where every
-resample gave the same number. An interval whose block length is a lower bound
+resample gave the same number. With no bootstrap (`bootstrap_resamples: 0`)
+there is none either, and `delta_g_no_interval` says so. `confidence_low` and
+`confidence_high` in `derived` are the resamples' own uncorrected percentiles,
+of no width with one resample. An interval whose block length is a lower bound
 is still a floor (`delta_g_uncertainty_is_a_floor`), whatever its multiplier.
 
 **The check that comes with it.** The correction depends on the angle and the
