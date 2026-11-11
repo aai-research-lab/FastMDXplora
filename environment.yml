@@ -66,6 +66,9 @@ dependencies:
   # there is deliberately no `plumed` pip extra, so a clone set up any other
   # way has no umbrella, metadynamics or steered support.
   - openmm-plumed
+  # Replica exchange (REST2 and temperature) and free energy estimates.
+  - openmmtools>=0.23
+  - pymbar>=4
   # Reading Amber NetCDF trajectories.
   - netcdf4>=1.6
   # Rendering the report as a PDF. Both halves: WeasyPrint lays the page out
