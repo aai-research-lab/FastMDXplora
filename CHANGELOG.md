@@ -659,12 +659,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   the zero signal for a process group whose members are all zombies, and
   the sampler read it as going, so it did not end with its run; the
   sampler's test failed on CI's macOS legs on it. Linux answers success
-  there, and the leader's state was read. EPERM, for a group or for one
-  process, now means only another user's processes are left, and `ps` (or
-  `/proc` where `ps` cannot be run) says whether one is still alive. For
+  there, and the leader's state was read. EPERM now means nothing is left
+  that this user may signal: another user's processes, or, for a group on
+  macOS, this user's zombies. `ps`, or `/proc` where `ps` cannot be run,
+  says whether one is still alive, for a group and for one process. For
   one process there was no macOS fault, a zombie answering success on both
-  systems; another user's zombie, or a pid `ps` no longer lists, is now
-  read as ended, where EPERM was taken for alive.
+  systems; another user's zombie is now read as ended, where EPERM was
+  taken for alive, and another user's process that `ps` does not list (a
+  `/proc` mounted `hidepid=2`) is alive still.
+- Where `ps` cannot be run (a container built without procps), a run that
+  has ended and is not yet reaped is read as ended from `/proc`. It was
+  read as going until its parent reaped it, and its GPU sampler read on.
 - Tests: CI's coverage leg runs its browser files on two workers. One at a
   time they took 1 h 56 min after 23 min on every core, against the leg's
   180 minutes.
