@@ -82,6 +82,9 @@ ANALYSIS_NAMES = (
     # Which residues move together, the dynamic cross-correlation map: run
     # where a study names it.
     "cross_correlation",
+    # Each helix's tilt and kink, as HELANAL finds them: run where a study
+    # names it.
+    "helix_geometry",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",

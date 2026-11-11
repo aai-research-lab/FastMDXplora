@@ -116,6 +116,8 @@ from fastmdxplora.analysis import diffusion as _diffusion  # noqa: F401, E402
 # Which residues move together. Run only where a study names it: the map
 # costs the square of the atoms, and what it is fitted on is the question.
 from fastmdxplora.analysis import cross_correlation as _cross_correlation  # noqa: F401, E402
+# How each helix lies and bends. Run only where a study names it.
+from fastmdxplora.analysis import helix_geometry as _helix_geometry  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

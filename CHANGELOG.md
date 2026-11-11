@@ -2305,6 +2305,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- How each helix lies and bends: the `helix_geometry` analysis gives each
+  helix's tilt from the bilayer's normal (or `reference_axis`) and its kink,
+  frame by frame, from Kahn's local axes as HELANAL finds them. Helices are
+  DSSP's in the first frame or named in `helices`; one that unwinds is said
+  to. It runs only where `analysis.include` names it. Held against ideal
+  helices and KcsA; not compared with HELANAL.
+
 - Which residues move together: the `cross_correlation` analysis gives the
   dynamic cross-correlation map of the alpha carbons (Ichiye and Karplus),
   each frame fitted to the mean structure or to `fit_selection`. The map is

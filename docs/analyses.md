@@ -230,6 +230,29 @@ selectivity filter it finds closed to water at Gly77 with the cavity beside
 it about 0.45 nm in radius. It has not been compared with HOLE itself, frame
 for frame.
 
+### Helices
+
+| | |
+|---|---|
+| `helix_geometry` | Each helix's tilt from the bilayer's normal (or a named axis) and its kink, frame by frame |
+
+The helices are the runs of DSSP's H of eight residues or more in the first
+frame, or the residue ranges named in `helices`. Each helix's axis is found
+from its alpha carbons by Kahn's local axes, as HELANAL finds it: the tilt is
+the angle from the reference, 0 to 90 degrees; the kink is the angle between
+the mean local axis of its first half and of its second, a few degrees for a
+straight helix and twenty or more at a proline kink.
+
+- **A tilt needs something to be tilted from.** That is z, the normal, where
+  there is a bilayer, or the axis named in `reference_axis`. Without either,
+  only the kink is given.
+- **A helix that unwinds is still followed** as the same residues, and the
+  share of frames in which DSSP still finds it helical is recorded beside it.
+
+Held against ideal helices built at known tilts and kinks, and against KcsA
+(1BL8), whose outer and inner helices it finds 23 and 36 degrees from the
+channel's axis; not compared with HELANAL itself.
+
 ### Motion
 
 | | |
@@ -486,7 +509,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -497,7 +520,9 @@ the profile of one that is not is a number about nothing. `diffusion` is held
 back because which molecules to follow is the study's question, and the
 solvent is in the frames only where the study stored it. `cross_correlation`
 is held back because its map is the square of the atoms and what it is
-fitted on changes what it shows.
+fitted on changes what it shows. `helix_geometry` is held back because
+which helices matter, and whether a tilt means anything without a bilayer,
+are the study's question.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -861,6 +886,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.cross_correlation
+   :members:
+
+.. automodule:: fastmdxplora.analysis.helix_geometry
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

@@ -132,6 +132,7 @@ FastMDXplora/
 │       │   ├── pore_profile.py    # The radius of the way through a channel, as HOLE measures it
 │       │   ├── diffusion.py       # Mean squared displacement and the diffusion coefficient
 │       │   ├── cross_correlation.py  # Which residues move together (DCCM)
+│       │   ├── helix_geometry.py  # Each helix's tilt and kink
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs
