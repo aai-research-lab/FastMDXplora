@@ -110,6 +110,14 @@ def segmentability(config: dict[str, Any] | None) -> Segmentability:
     """
     block = (config or {}).get("simulation") or {}
 
+    if block.get("replica_exchange"):
+        return Segmentability(
+            False, "replica_exchange",
+            "A replica exchange run cannot be split. Its replicas and which "
+            "conditions each holds live in the sampler's own storage, not in a "
+            "checkpoint of one simulation. Run it through in one piece.",
+            code="simulation.resume.bias_not_carried")
+
     if block.get("metadynamics"):
         return Segmentability(
             False, "metadynamics",

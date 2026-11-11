@@ -2305,6 +2305,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Replica exchange: `simulation.replica_exchange` runs REST2 (the solute's
+  interactions scaled, by the force field's own terms) or temperature
+  replica exchange through openmmtools, after the usual minimisation and
+  equilibration. The trajectory written is of whichever replica held the
+  run's conditions, and is said not to be one continuous path. How the
+  replicas mixed (acceptance between neighbours, round trips, gaps) is
+  recorded in `replica_exchange.json` and reported by the new
+  `replica_mixing` analysis, which runs wherever replica exchange ran. It
+  cannot be combined with a bias or split into segments. Needs openmmtools
+  and pymbar. REST2's scaling is checked to be exact; a whole tri-alanine
+  study runs; not yet validated on a real system.
+
 - Which waters would be costly to displace: the `gist` analysis gives, cube
   by cube about a site, the water's density, its energy with the solute and
   with other water against bulk, and its translational and orientational

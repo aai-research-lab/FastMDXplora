@@ -110,6 +110,7 @@ class SimulateSettings(TypedDict, total=False):
     umbrella: dict[str, Any]
     steered: dict[str, Any]
     metadynamics: dict[str, Any]
+    replica_exchange: dict[str, Any]
     plumed: dict[str, Any]
 
 
@@ -126,7 +127,7 @@ class AnalyzeSettings(TypedDict, total=False):
         'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
         'area_per_lipid', 'bilayer_thickness', 'lipid_order', 'pore_profile', 'diffusion',
         'cross_correlation', 'helix_geometry', 'mmgbsa', 'residue_network', 'nmr_observables',
-        'markov_model', 'nucleic_acid', 'gist', 'image_check'
+        'markov_model', 'nucleic_acid', 'gist', 'replica_mixing', 'image_check'
     ]]
     exclude: list[Literal[
         'rmsd', 'rmsf', 'rg', 'hbonds', 'ss', 'sasa', 'dihedrals', 'qvalue', 'cluster', 'dimred',
@@ -135,7 +136,7 @@ class AnalyzeSettings(TypedDict, total=False):
         'steered_work', 'coordination_number', 'end_to_end', 'moments_of_inertia', 'pair_distance',
         'area_per_lipid', 'bilayer_thickness', 'lipid_order', 'pore_profile', 'diffusion',
         'cross_correlation', 'helix_geometry', 'mmgbsa', 'residue_network', 'nmr_observables',
-        'markov_model', 'nucleic_acid', 'gist', 'image_check'
+        'markov_model', 'nucleic_acid', 'gist', 'replica_mixing', 'image_check'
     ]]
     select_atoms: str
     selection: str

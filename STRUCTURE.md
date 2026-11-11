@@ -96,6 +96,7 @@ FastMDXplora/
 │       │   ├── metad_surface.py   # Free energy surface from the hills, and whether it settled
 │       │   ├── umbrella.py        # Window planning, and the PMF stitched from them
 │       │   ├── steered.py         # A pull along a coordinate, and the work done
+│       │   ├── replica_exchange.py  # REST2 and temperature replica exchange, by openmmtools
 │       │   ├── restraints.py      # Positional restraints and the release ladder
 │       │   ├── diagnose.py        # What a failed simulation can be told from its state
 │       │   ├── stopping.py        # Run until what was asked is determined, and no longer
@@ -139,6 +140,7 @@ FastMDXplora/
 │       │   ├── markov_model.py    # tICA, microstates and a Markov state model's timescales
 │       │   ├── nucleic_acid.py    # A double helix's base-pair and step parameters, as 3DNA's
 │       │   ├── gist.py            # Which waters would be costly to displace (GIST)
+│       │   ├── replica_mixing.py  # How a replica exchange run's replicas mixed
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

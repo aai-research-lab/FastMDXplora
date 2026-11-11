@@ -103,6 +103,8 @@ ANALYSIS_NAMES = (
     # The water about a site, cube by cube, against bulk (GIST): run where a
     # study names it.
     "gist",
+    # How a replica exchange run's replicas mixed: run where one ran.
+    "replica_mixing",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",
@@ -986,6 +988,23 @@ SIMULATION = PhaseSchema(
               example={"collective_variable": "radius_of_gyration",
                        "selection": "protein and name CA", "sigma": 0.02,
                        "height_kjmol": 1.2, "pace_steps": 500}),
+        Field("replica_exchange", dict, None,
+              "Replica exchange: several copies of the system at different "
+              "conditions, swapping now and then, so the one at the run's "
+              "conditions crosses barriers the others cross easily. `method` "
+              "is rest2 (the default: the solute alone is heated, by scaling "
+              "its interactions, so a few replicas serve a protein in any "
+              "amount of water) or temperature (the whole system heated, "
+              "which in explicit water needs dozens of replicas). `replicas`, "
+              "`max_temperature_K` (the top of the ladder), `solute` (for "
+              "rest2, a selection; protein unless named), "
+              "`exchange_interval_steps` and `equilibration_iterations`. The "
+              "production length is each replica's. The trajectory written "
+              "is of whichever replica was at the run's conditions at each "
+              "exchange: the right ensemble, and not one continuous path. "
+              "Requires openmmtools.",
+              example={"method": "rest2", "replicas": 8, "max_temperature_K": 450,
+                       "solute": "protein", "exchange_interval_steps": 500}),
         Field("plumed", dict, None,
               "Optional PLUMED enhanced sampling: `enabled` turns it on, "
               "and `script` is the PLUMED input -- the script text itself, "
@@ -1301,7 +1320,7 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Enhanced sampling",
          "Bias the run to reach what it would not reach on its own. Each is "
          "a block of settings, and each says what its output is and is not.",
-         ("umbrella", "steered", "metadynamics", "plumed")),
+         ("umbrella", "steered", "metadynamics", "replica_exchange", "plumed")),
         ("Restraints",
          "Hold part of the system still while the rest equilibrates.",
          ("restrain", "restraint_release", "restrain_production")),

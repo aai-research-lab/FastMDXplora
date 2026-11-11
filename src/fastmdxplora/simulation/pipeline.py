@@ -681,6 +681,67 @@ def _setup_from_recorded(run: Path) -> list[str]:
             and (block.get("setup_from") or block.get("prepared_from"))]
 
 
+
+def _run_replica_exchange(params: dict[str, Any], *, run_arguments: dict[str, Any],
+                          system_xml: Path, topology: Path, output_dir: Path,
+                          presenter: Any) -> Any:
+    """Replica exchange in place of the single production run, its result
+    given as the runner gives one. The system is first minimised and
+    equilibrated as any run is (into ``equilibration/``), and the replicas
+    start from where that left it."""
+    from fastmdxplora.simulation.runner import run_simulation
+
+    settled = run_simulation(**{**run_arguments,
+                                "output_dir": output_dir / "equilibration",
+                                "duration_ns": 0.0, "production_steps": 0})
+    state_xml = settled.final_state
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.replica_exchange import run_replica_exchange
+    from fastmdxplora.simulation.runner import SimulationResult
+
+    timestep = float(params["timestep_fs"])
+    steps = params.get("production_steps")
+    if steps is None:
+        duration = params.get("duration_ns")
+        if duration is None:
+            raise StudyError(
+                "Replica exchange needs a production length: `duration_ns` or "
+                "`production_steps` (each replica's).", code="config.option.missing_companion")
+        steps = int(round(float(duration) * 1e6 / timestep))
+    pressure = params.get("pressure_bar")
+    if pressure is None and params.get("pressure_atm") is not None:
+        pressure = float(params["pressure_atm"]) * 1.01325
+
+    def _said(done: int, total: int) -> None:
+        if presenter:
+            presenter.progress("Replica exchange", done, total)
+
+    if presenter:
+        presenter.step("Replica exchange")
+    done = run_replica_exchange(
+        system_xml=system_xml, state_xml=state_xml, topology_pdb=topology,
+        output_dir=output_dir, block=params["replica_exchange"],
+        temperature_K=float(params["temperature_K"]), timestep_fs=timestep,
+        friction_per_ps=float(params["friction_per_ps"]), production_steps=int(steps),
+        pressure_bar=None if pressure is None else float(pressure),
+        save_selection=params.get("save_selection", "not water"),
+        platform=str(params.get("platform") or "auto"),
+        random_seed=params.get("random_seed"), on_progress=_said)
+    record = done["record"]
+    notes = [record[k] for k in ("gaps", "no_round_trip") if k in record]
+    notes.append("The trajectory is of whichever replica was at the run's conditions at "
+                 "each exchange: the right ensemble, and not one continuous path, so an "
+                 "analysis of motion over time does not apply to it.")
+    result = SimulationResult(
+        trajectory=done["trajectory"], topology=done["topology"],
+        final_state=Path(state_xml), energy_csv=output_dir / "energies.csv",
+        log_file=output_dir / "replica_exchange.log",
+        platform_used=str(record.get("platform", "")), n_production_frames=done["frames"],
+        duration_ns_actual=float(done["duration_ns"]),
+        resolved={"production_steps": int(steps)}, notes=notes)
+    return result
+
+
 def run(
     *,
     orchestrator: "FastMDXplora",
@@ -804,7 +865,7 @@ def run(
                                    rate_ns_per_day=rate,
                                    seconds_left=seconds_left)
 
-        result = run_simulation(
+        run_arguments = dict(
             system_xml=system_xml,
             state_xml=state_xml,
             topology_pdb=topology,
@@ -852,6 +913,12 @@ def run(
             restraint_release=params.get("restraint_release"),
             restrain_production=bool(params.get("restrain_production", False)),
         )
+        if params.get("replica_exchange"):
+            result = _run_replica_exchange(params, run_arguments=run_arguments,
+                                           system_xml=system_xml, topology=topology,
+                                           output_dir=output_dir, presenter=presenter)
+        else:
+            result = run_simulation(**run_arguments)
 
         # Record artifacts relative to output_dir
         for path in (

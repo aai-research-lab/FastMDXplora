@@ -93,6 +93,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("pmf", "Potential of mean force"),
         ("metad_surface", "Free-energy surface"),
         ("steered_work", "Steered work"),
+        ("replica_mixing", "Replica exchange mixing"),
     )),
 )
 

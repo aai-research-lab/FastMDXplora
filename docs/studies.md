@@ -965,6 +965,61 @@ two cannot be told apart, and the message says so rather than choosing.
 
 ---
 
+## Replica exchange
+
+```yaml
+simulation:
+  duration_ns: 20            # each replica's
+  replica_exchange:
+    method: rest2            # or temperature
+    replicas: 8
+    max_temperature_K: 450   # the top of the ladder
+    solute: protein          # rest2's hot region
+    exchange_interval_steps: 500
+```
+
+Several copies of the system run at a ladder of conditions and swap now and
+then by the Metropolis criterion, so the one at the run's conditions crosses
+barriers the others cross easily. The sampler is openmmtools' (Chodera and
+Shirts, 2011), which tries every pair, not only neighbours.
+
+**REST2**, the default (Wang, Friesner and Berne, 2011), keeps every
+replica at the run's temperature and scales the solute's interactions by
+`s = T / T_m`: within the solute by `s`, between it and the rest by
+`sqrt(s)`. Only the solute is heated, so a few replicas serve a protein in
+any amount of water. It is done with the force field's own terms (charges by
+`sqrt(s)`, Lennard-Jones depths by `s`, the solute's torsions by `s`), and
+the energy at any scale is exactly `s E(solute) + sqrt(s) E(solute-water) +
+E(rest)`, which the tests check. A force field with a CustomNonbondedForce
+(a CHARMM NBFIX) is refused for REST2.
+
+**Temperature** exchange heats the whole system. In explicit water the
+replicas needed grow with the square root of the atoms: four replicas from
+300 to 330 K on alanine dipeptide in 2,200 atoms of water accepted 10-29%
+of swaps and made no round trip, where REST2 with four replicas to 400 K
+accepted 70%.
+
+The system is minimised and equilibrated as any run is (into
+`simulation/equilibration/`), and the replicas start from there.
+
+**What the trajectory is.** `production.dcd` holds, at each exchange, the
+frames of whichever replica was at the run's conditions: the right
+ensemble, and **not one continuous path**. Analyses of structure and of
+averages apply; analyses of motion over time (`diffusion`, `markov_model`,
+autocorrelations and the error bars built on them) do not, and the run's
+notes say so.
+
+**Whether it worked.** `replica_exchange.json`, and the `replica_mixing`
+analysis that reads it, give the share of swaps accepted between each pair
+of neighbours (below 10%, the ladder has a gap) and each replica's round
+trips from the bottom of the ladder to the top and back (none, and the run
+sampled no better than one copy would). Replica exchange cannot be combined
+with a bias, and a run cannot be split into segments.
+
+It needs openmmtools and pymbar (`conda install -c conda-forge openmmtools
+pymbar`). Its whole-study path has been run on tri-alanine on a laptop's
+CPU; it has not yet been validated on a real system on a GPU.
+
 ## When a run fails
 
 A simulation that ends with "the coordinates are not finite" has said almost
