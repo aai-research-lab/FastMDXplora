@@ -61,3 +61,53 @@ def test_the_workspace_says_the_analyses_that_ran_alone(tmp_path, plan):
     (tmp_path / "analysis" / "analysis_manifest.json").write_text(json.dumps({"plan": plan}))
     (tmp_path / "manifest.json").write_text(json.dumps({"phases": [{"name": "analysis"}]}))
     assert _ran_analyses(tmp_path) == ["rmsd"]
+
+
+def test_the_reweighting_s_row_is_not_offered_alone(biased):  # noqa: F811
+    from fastmdxplora.gui.analysis_overview import overview_of
+
+    rows = {row["analysis"]: row for row in overview_of(biased)["rows"]}
+    assert rows["reweighted"]["again"] is False
+    assert rows["rmsd"]["again"] is True
+
+
+@pytest.fixture(scope="module")
+def browser():
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        launched = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+        yield launched
+        launched.close()
+
+
+def test_the_reweighting_s_section_has_no_analyze_again(browser, biased):  # noqa: F811
+    """Its section's button opened the panel with nothing ticked, the
+    confirm disabled: a button that led nowhere."""
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    session = start_dashboard_session(output=str(biased), host="127.0.0.1", port=0)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.set_default_timeout(60000)
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_selector('.analysis-cell-head[data-analysis="rmsd"] .cell-again',
+                               state="attached")
+        page.wait_for_selector('.analysis-section[data-cell="reweighted"]', state="attached")
+        # The cells are drawn again once the overview's rows are read, as
+        # its table is: read after them.
+        page.wait_for_function(
+            "() => window.FastMDXAnalysisPage && window.FastMDXAnalysisPage.overviewRead()")
+        page.wait_for_selector('#analysis-results-table tr[data-analysis="rmsd"]',
+                               state="attached")
+        heads = page.evaluate("""() => Object.fromEntries([...document.querySelectorAll(
+            '.analysis-section[data-cell]')].map((s) => [s.dataset.cell,
+            !!s.querySelector('.cell-again')]))""")
+    finally:
+        page.close()
+        session.stop()
+    assert not errors, errors
+    assert heads.get("rmsd") is True and heads.get("reweighted") is False, heads

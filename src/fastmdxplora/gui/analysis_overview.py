@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora import record_access
+from fastmdxplora.config.loader import REWEIGHTING_PASS
 from fastmdxplora.gui.report_dashboard import (
     ANALYSIS_SECTION_BY_FOLDER,
     SECTION_ANCHORS,
@@ -220,6 +221,10 @@ def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
         "mean": None,
         "quantities": [],
         "data": _data_files(root, name) if include_data else [],
+        # Analyze again for it alone: not for the reweighting of a biased
+        # run, which is a pass over the analyses, not one; its section's
+        # button opened the panel with nothing ticked.
+        "again": name != REWEIGHTING_PASS,
     }
     record_path = root / "analysis" / name / "options.json"
     record = _json(record_path)
