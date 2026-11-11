@@ -146,12 +146,12 @@
     if (!said) return;
     if (!state.data.profiles) {
       said.textContent = "The frames played are not the frames analysed, so no frame's own "
-        + "profile is drawn.";
+        + "profile is plotted.";
       return;
     }
     if (!now) {
       said.textContent = "The frame shown was opened from the trajectory and is not one of "
-        + "the frames played; its pore is not drawn.";
+        + "the frames played; its pore is not rendered.";
       return;
     }
     var radii = finite(now);
