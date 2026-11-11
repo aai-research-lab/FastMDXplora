@@ -335,3 +335,12 @@ box's wall, decided 10-18): a setting's default, in the schema's
 structure. The digests were set again, and every verdict of the three
 recordings still replays as recorded, so the runs stand; what the Agent
 would now propose of a box is for a run asked again, not claimed here.
+
+
+### What is sent, changed again (replica exchange, 2026-11-10)
+
+The simulation schema gained `replica_exchange`, and the analysis choices
+gained `replica_mixing`. The suite's three digests of the requests were set
+again for those structural changes. All recorded trial verdicts still
+replay unchanged. This is a replay check, not a new model evaluation or
+evidence that the Agent chooses a suitable exchange ladder.

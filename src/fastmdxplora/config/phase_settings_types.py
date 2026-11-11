@@ -110,6 +110,7 @@ class SimulateSettings(TypedDict, total=False):
     umbrella: dict[str, Any]
     steered: dict[str, Any]
     metadynamics: dict[str, Any]
+    replica_exchange: dict[str, Any]
     plumed: dict[str, Any]
 
 

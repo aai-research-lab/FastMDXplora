@@ -143,6 +143,7 @@ class Diffusion(Analysis):
     """
 
     name = "diffusion"
+    requires_continuous_trajectory = True
     description = "Mean squared displacement"
     default_selection = "water"
     #: Which molecules a study wants followed is not in its frames, and the

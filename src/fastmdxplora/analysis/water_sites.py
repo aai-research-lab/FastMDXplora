@@ -106,6 +106,7 @@ class WaterSites(Analysis):
                "n_distinct_waters", "longest_stay_frames", "interpretation")
 
     name = "water_sites"
+    requires_continuous_trajectory = True
     description = "Water positions occupied through the trajectory"
     default_selection = None
     #: It works out its own atoms from the site selection, so a general

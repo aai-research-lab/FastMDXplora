@@ -965,6 +965,90 @@ two cannot be told apart, and the message says so rather than choosing.
 
 ---
 
+## Replica exchange
+
+```yaml
+simulation:
+  duration_ns: 20            # per replica
+  ensemble: npt
+  replica_exchange:
+    method: rest2            # or temperature
+    replicas: 8
+    max_temperature_K: 450
+    solute: protein          # whole molecules for REST2
+    exchange_interval_steps: 500
+    equilibration_iterations: 50
+```
+
+Replica exchange runs copies at a ladder of conditions and attempts swaps
+using their reduced potentials. The driver uses
+[openmmtools' ReplicaExchangeSampler](https://openmmtools.readthedocs.io/en/stable/api/generated/openmmtools.multistate.ReplicaExchangeSampler.html)
+with its `swap-all` scheme: swaps can involve any pair of states.
+
+**REST2** keeps every replica at the requested bath temperature and scales
+the solute's charges by `sqrt(s)`, Lennard-Jones well depths by `s`, and
+periodic torsions by `s`, where `s = T / T_m`. Solute-solvent nonbonded
+interactions then scale by `sqrt(s)` through the combining rules. Bonds
+and angles remain unchanged. The tests check the resulting energy's
+`a*s + b*sqrt(s) + c` dependence with dispersion correction enabled and
+agreement with the original system at `s = 1`. This implementation requires
+whole solute molecules and standard AMBER-like forces. Custom nonbonded
+terms, existing nonbonded parameter offsets and unsupported force types
+are refused. Use temperature exchange for a different force field.
+
+**Temperature exchange** heats the whole system. The replicas span a
+geometric ladder from `temperature_K` to `max_temperature_K`, which must
+be higher. A solvated system generally needs closer temperature spacing
+than a method that scales only the solute. Replica count and ladder spacing
+need validation for the system being studied.
+
+The ordinary runner first minimises and equilibrates the system into
+`simulation/equilibration/`. The sampler starts from that final state,
+minimises its replicas (10 kJ/mol/nm tolerance, at most 1000 iterations)
+and runs `equilibration_iterations` exchange intervals
+before recording production. NVT production fixes the equilibrated box;
+NPT uses an isotropic barostat at the requested pressure. Membrane NPT
+exchange is currently refused. The integrator is `langevin_middle`.
+Production steps must be a positive multiple of `exchange_interval_steps`;
+a zero-length production still runs an ordinary equilibration-only study.
+
+**What the trajectory contains.** `production.dcd` holds the configuration
+at state zero after each exchange interval. Consecutive frames may belong
+to different replicas. Structure distributions and descriptive averages
+can be read from it. Diffusion, Markov models and water residence analysis
+are skipped with an explanation, and structural means carry no error bar
+from the ordinary continuous-trajectory autocorrelation estimator. Exchange
+intervals are sampling intervals, not physical transition times.
+
+**What is recorded.** `replica_exchange.nc` and its checkpoint hold all
+replicas and assignments. `replica_exchange.json` records the ladder,
+actual ensemble, platform, steps and mixing statistics. `energy.csv`
+reports the target state's potential energy (with the pressure-volume term
+removed in NPT). `state_final.xml` is the last target-state configuration,
+not the equilibration snapshot. These single-state snapshots cannot resume
+the full exchange process.
+
+The `replica_mixing` analysis reads neighbour acceptance fractions and
+bottom-to-top-to-bottom round trips from the sampler record. Acceptance
+below 10% is flagged as a possible ladder gap. No round trip means traversal
+of the entire ladder has not been demonstrated; it does not establish that
+sampling is identical to a single replica or that no improvement occurred.
+Even good mixing alone does not establish convergence of a physical observable.
+
+Replica exchange cannot currently be combined with biases, production
+restraints, adaptive stopping, other integrators or single-run checkpoint
+resume. A study must run its exchange production in one piece, and each
+fresh run needs a new sampler storage file.
+
+Install its optional backend with:
+
+```bash
+conda install -c conda-forge 'openmmtools>=0.26' 'pymbar>=4'
+```
+
+The small CPU runs are integration checks. Validation on representative
+systems and GPUs, including BPTI/6PTI, remains outstanding.
+
 ## When a run fails
 
 A simulation that ends with "the coordinates are not finite" has said almost

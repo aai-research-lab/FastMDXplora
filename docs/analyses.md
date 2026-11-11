@@ -609,7 +609,7 @@ computes and why some of it is refused.
 
 ### Enhanced sampling
 
-These three do not analyse the trajectory. They read what a biased run itself
+These read what an enhanced-sampling run itself
 produced, and each runs only where such a run produced it — so none appears
 after an ordinary simulation, and none needs a ligand.
 
@@ -618,6 +618,7 @@ after an ordinary simulation, and none needs a ligand.
 | `pmf` | The free energy along an umbrella study's coordinate, from the windows it stitched. Reads the study's result rather than recomputing it |
 | `metad_surface` | The free energy surface a metadynamics run filled, from its hills. Plots a provisional surface as readily as a converged one, saying which it is |
 | `steered_work` | The work done by a steered pull, against the coordinate |
+| `replica_mixing` | Neighbour swap acceptance and round trips, from the replica-exchange sampler record |
 
 `steered_work` gives the curve rather than the total, because a pull that
 accumulated work smoothly met resistance all the way and one that accumulated
@@ -647,6 +648,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
+| Replica exchange mixing | `replica_mixing` | `simulation/replica_exchange.json` exists; reports neighbour acceptance and round trips |
 | **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model`, `nucleic_acid`, `gist` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
@@ -1094,6 +1096,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.steered_work
+   :members:
+
+.. automodule:: fastmdxplora.analysis.replica_mixing
    :members:
 
 .. automodule:: fastmdxplora.analysis.reweight

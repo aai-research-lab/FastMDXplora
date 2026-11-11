@@ -52,6 +52,7 @@ NAMES: dict[str, tuple[str, ...]] = {
     "markov_model": ("Markov state model", "MSM", "implied timescale", "tICA"),
     "nucleic_acid": ("base-pair parameters", "step parameters", "twist", "propeller"),
     "gist": ("GIST", "inhomogeneous solvation", "displaceable water"),
+    "replica_mixing": ("replica exchange", "REST2", "round trip"),
     "moments_of_inertia": ("moment of inertia", "moments of inertia"),
     "coordination_number": ("coordination number",),
     "rdf": ("RDF", "radial distribution"),
@@ -67,7 +68,7 @@ LABELS: dict[str, str] = {
     "cross_correlation": "Cross-correlation", "helix_geometry": "Helix tilt and kink",
     "mmgbsa": "MM/GBSA", "residue_network": "Residue network",
     "nmr_observables": "NMR observables", "markov_model": "Markov state model",
-    "nucleic_acid": "Double helix", "gist": "GIST",
+    "nucleic_acid": "Double helix", "gist": "GIST", "replica_mixing": "Replica exchange",
     "moments_of_inertia": "Moments of inertia", "rdf": "RDF",
     "coordination_number": "Coordination number",
 }

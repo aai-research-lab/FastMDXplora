@@ -1078,8 +1078,10 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: among the analyses that give a value for every frame, which the Agent is
 #: told of; an analysis that gives none, as `diffusion`, changes nothing here);
 #: no verdict changed. Set again by `mmgbsa`, which gives a value every
-#: frame; no verdict changed.
-ASKED_NOW = "3f82669b5f1db280bcd784bd5e92a17dddfccdb4429becf51825f42cb87d9f15"
+#: frame; no verdict changed. Set again for `replica_exchange` in the
+#: simulation schema and `replica_mixing` in the analysis choices; no
+#: recorded verdict changed.
+ASKED_NOW = "b535b96ba85c3102f7354af9a09b03bee8d1f32481b4ecbc3f9354cc9e0e5fd1"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1440,8 +1442,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "93f4d02923a28d7d86ed712b4f0d5a167289742c6894e29e0a082d5da8bcf34c",
-    False: "4d332a7e318129a87d79218a7a03f306e384e4499dcaac02024af7b70447e25b"}
+    True: "fed8977823275df6988fabb4a3f1f6d55e44d5c4a2b3f8c39826fac308ae35e5",
+    False: "9ca00227f6f4b9cf7edfdc49aa3d2bb2ab01b38580d8a27786a10f26d71fd19f"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:

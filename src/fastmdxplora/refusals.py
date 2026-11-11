@@ -671,6 +671,11 @@ CODES: tuple[Code, ...] = (
          "A biased run deposited nothing, so it did not bias anything.",
          Kind.INSUFFICIENT, Disclosure.NOTHING,
          detail_keys=("path",)),
+    Code("simulation.method.inapplicable",
+         "A sampling method asked of a system whose force field it cannot "
+         "work with as asked.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         detail_keys=("method", "reason")),
     Code("simulation.restraint.selection_arity",
          "A restraint selection matched a number of atoms the restraint "
          "cannot use.",

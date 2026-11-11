@@ -89,6 +89,8 @@ install.
 
 **Want to know what it does?** [How FastMDXplora works](how_it_works.md) —
 the four phases, and what each one decides.
+The [feature campaign](feature_campaign.md) tracks the new capabilities,
+their validation limits and the remaining simulation work.
 
 **Writing a study?** [The FastMDXplora Config](config.md) for the shape of
 one, [Config reference](config_reference.md) for every setting,
