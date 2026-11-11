@@ -519,6 +519,7 @@ def prepare_system(
     rigid_water: bool = True,
     hydrogen_mass_amu: float | None = None,
     ml_potential: dict[str, Any] | None = None,
+    membrane_composition: dict[str, Any] | None = None,
     temperature_K: float = 300.0,
 ) -> dict[str, Path]:
     """Solvate, ionize, parameterize, and serialize an OpenMM system.
@@ -683,6 +684,17 @@ def prepare_system(
     modeller = omm["Modeller"](pdb.topology, pdb.positions)
     system_generator = None
     lipid_parameters: str | None = None
+    if membrane_composition is not None:
+        # A mixture is built as a bilayer is, with its patch in place of a
+        # lipid's name when it is packed. The protein is placed for the
+        # thickness the upper leaflet's commonest lipid stands for, where
+        # OpenMM knows it, and POPC's otherwise.
+        from fastmdxplora.setup.membrane import LIPIDS as _BUILT
+        from fastmdxplora.setup.membrane_mixture import leaflets
+
+        upper, _ = leaflets(membrane_composition)
+        commonest = max(upper, key=upper.get)
+        membrane = commonest if commonest in _BUILT else "POPC"
     if membrane:
         # Lipid parameters, or the run fails at system creation with a
         # message about a residue template for POPC -- which names the
@@ -805,6 +817,7 @@ def prepare_system(
             place_for_membrane,
         )
 
+        patch = None
         lipid = str(membrane).upper()
         if lipid not in LIPIDS:
             raise StudyError(
@@ -848,11 +861,18 @@ def prepare_system(
             "with a short simulation, reporting nothing until it is done.%s",
             lipid, (" With CHARMM36 on a CPU this can take tens of minutes."
                     if slow else ""))
+        if membrane_composition is not None:
+            from fastmdxplora.setup.membrane_mixture import build_patch
+
+            logger.info("Building the mixed bilayer's patch with PACKMOL-Memgen "
+                        "(minutes, the first time for this composition).")
+            patch, mixture = build_patch(membrane_composition, ff, work_dir=out_dir)
+            membrane_record["mixture"] = mixture
         try:
             packed = _pack_the_bilayer(
                 modeller,
                 ff,
-                lipid,
+                patch if patch is not None else lipid,
                 membraneCenterZ=0.0 * unit.nanometer,
                 minimumPadding=solvent_padding_nm * unit.nanometer,
                 positiveIon=ion_positive,
@@ -1215,7 +1235,7 @@ def _seeded_packing(seed: int):
     return seeded()
 
 
-def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
+def _pack_the_bilayer(modeller: Any, ff: Any, lipid: Any,
                       **packing: Any) -> dict[str, Any]:
     """Pack the bilayer, seeded from setup's stream, trying again on a NaN.
 
@@ -1234,6 +1254,14 @@ def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
     """
     import random
 
+    if not isinstance(lipid, str):
+        # A patch built for a mixture: CHARMM36 has two templates matching
+        # cholesterol (CHL1 and CLOL), and the patch's is CHL1.
+        templates = {r: "CHL1" for r in lipid.topology.residues()
+                     if r.name == "CHL1" and "CHL1" in getattr(ff, "_templates", {})}
+        if templates:
+            packing.setdefault("residueTemplates", templates)
+    name = lipid if isinstance(lipid, str) else "mixed"
     tried: list[int] = []
     for _ in range(PACKING_ATTEMPTS):
         seed = random.randint(1, 2**31 - 1)
@@ -1252,7 +1280,7 @@ def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
             if not _RAN_AWAY.search(str(exc)):
                 raise
             logger.warning(
-                "Packing the %s bilayer with seed %d failed (%s); %s", lipid, seed,
+                "Packing the %s bilayer with seed %d failed (%s); %s", name, seed,
                 str(exc).strip(),
                 "trying again with the next seed." if len(tried) < PACKING_ATTEMPTS
                 else "that was the last packing tried.")
@@ -1265,7 +1293,7 @@ def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
         return {"packing_seed": made[0] if made else None,
                 "packing_attempts": len(tried)}
     raise StudyError(
-        f"The {lipid} bilayer could not be packed round this structure: "
+        f"The {name} bilayer could not be packed round this structure: "
         f"OpenMM's relaxation, which grows the protein back through the "
         f"lipids from half its width, ran away to a NaN in each of "
         f"{len(tried)} packings (seeds {', '.join(str(s) for s in tried)}). "

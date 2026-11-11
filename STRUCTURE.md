@@ -73,6 +73,7 @@ FastMDXplora/
 │       │   ├── staged.py          # Running a study the Agent wrote, with the estimate first
 │       │   └── run.py             # Running a queued job as a real study
 │       ├── setup/
+│       │   ├── membrane_mixture.py  # A patch of several lipids, built by PACKMOL-Memgen
 │       │   ├── ml_potential.py    # A machine-learned potential for part of the system
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
 │       │   ├── audit.py           # Optional bounded observations of preparation

@@ -60,6 +60,7 @@ class SetupSettings(TypedDict, total=False):
     constraints: str
     rigid_water: bool
     hydrogen_mass_amu: float
+    membrane_composition: dict[str, Any]
     ml_potential: dict[str, Any]
     temperature_K: float
 

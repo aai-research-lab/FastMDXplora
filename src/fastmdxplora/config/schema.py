@@ -626,6 +626,16 @@ SETUP = PhaseSchema(
               "bonded to, which a larger one leaves negative. Default: off.",
               example=4.0,
               minimum=1.008, exclusive_minimum=True, maximum=4.032),
+        Field("membrane_composition", dict, None,
+              "A bilayer of more than one lipid, or with leaflets that "
+              "differ: a ratio of lipids for both leaflets ({POPC: 7, CHL1: "
+              "3}), or one for each ({upper: {...}, lower: {...}}). Built by "
+              "PACKMOL-Memgen as a patch OpenMM tiles round the protein, with "
+              "CHARMM's lipid names (CHL1 is cholesterol). Takes the place of "
+              "`membrane`, and the protein is placed as for it. Not "
+              "equilibrated: a mixed bilayer needs a longer equilibration "
+              "than a pure one. Requires AmberTools (PACKMOL-Memgen).",
+              example={"POPC": 7, "CHL1": 3}),
         Field("ml_potential", dict, None,
               "A machine-learned potential for part of the system: the "
               "atoms named (`atoms`, the ligand unless named) have their "

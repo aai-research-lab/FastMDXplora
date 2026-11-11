@@ -1081,8 +1081,9 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: frame; no verdict changed. Set again by `replica-exchange`
 #: (`simulation.replica_exchange` among the settings); no verdict changed.
 #: Set again by `alchemical` (`simulation.alchemical`) and `ml-potential`
-#: (`setup.ml_potential`); no verdict changed.
-ASKED_NOW = "6fe5fa42c3c0a7165e69cabd3713fe5cd4d98e9099c673c9b87b6d079e036bb9"
+#: (`setup.ml_potential`); no verdict changed. Set again by `membrane-mixture`
+#: (`setup.membrane_composition`); no verdict changed.
+ASKED_NOW = "5b6468a71ea403eb3e0d4762b698ae15ae98a930cde642b8e34bbe87867941ea"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1443,8 +1444,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "8549b93ba50f0e4b92688b122ae22c4d192a9f60f732fe9cdccca4940921c4a0",
-    False: "a586610dde7d5c8a64fbfbf76752ffd25f369abbca7739461631f286912766db"}
+    True: "dd23ab90c6a49291d8c66641f89c849b962740a317e0f548ed36ffc54dfce6cc",
+    False: "543f10a8925938e9338f281c31823c2980a11a2ab57272490f01a9f62775e51e"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:

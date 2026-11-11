@@ -2305,6 +2305,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Mixed and asymmetric bilayers: `setup.membrane_composition` takes a ratio
+  of lipids for both leaflets, or one for each, builds a patch with
+  PACKMOL-Memgen in CHARMM's lipid names, and has OpenMM tile it round the
+  protein as it does its own patches. Patches are kept by composition and
+  reused. It is said not to be equilibrated. Needs AmberTools.
+
 - Machine-learned potentials: `setup.ml_potential` gives the atoms named
   (the ligand unless named) their energy within themselves from ANI-2x, or
   another model openmm-ml knows, as openmm-ml's mixed system, their
