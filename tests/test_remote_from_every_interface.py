@@ -3420,8 +3420,9 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
                                start_new_session=True)
     started.wait(timeout=10)
     deadline = time.monotonic() + 5
-    # Read as the GPU sampler reads its run's group: on macOS the zero
-    # signal to a group of zombies says EPERM, not ESRCH.
+    # Read as the GPU sampler reads its run's group: macOS says EPERM to the
+    # zero signal for a group whose members are all zombies, where Linux
+    # answers success and the leader's Z is read.
     while _going(started.pid):
         if time.monotonic() > deadline:
             try:
@@ -3432,10 +3433,14 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
         time.sleep(0.05)
 
 
-def _group_refusing(monkeypatch, group: int, listed: str) -> None:
+def _group_refusing(monkeypatch, group: int, listed: str, proc=None) -> None:
     """The zero signal to ``group`` says EPERM, and ``ps -A`` lists
-    ``listed`` (its pgid and state columns)."""
+    ``listed`` (its pgid and state columns); ``/proc`` is ``proc`` where
+    given."""
     from fastmdxplora import gpu_here
+
+    if proc is not None:
+        monkeypatch.setattr(gpu_here, "_PROC", proc)
 
     def refused(pgid, number):
         assert (pgid, number) == (group, 0)
@@ -3451,9 +3456,10 @@ def _group_refusing(monkeypatch, group: int, listed: str) -> None:
 
 def test_a_group_of_zombies_refusing_the_zero_signal_is_gone(monkeypatch):
     """macOS says EPERM to ``killpg(group, 0)`` for a group whose members
-    are all zombies (CI run 42759782805), where Linux says ESRCH. Read as
-    going, the sampler of a run that ended read its GPU for ever. Linux
-    cannot make that EPERM for a group of this user's, so it is simulated."""
+    are all zombies (CI run 42759782805), where Linux answers success. Read
+    as going, the sampler of a run that ended read its GPU for ever. Linux
+    says EPERM only for another user's processes, so it is simulated here
+    (and made for real in test_a_refused_zero_signal_is_read_by_its_state.py)."""
     from fastmdxplora.gpu_here import _going
 
     _group_refusing(monkeypatch, 4242, "    1 Ss\n 4242 Z\n 4242 Z+\n 4300 S\n")
@@ -3469,14 +3475,49 @@ def test_a_group_with_a_live_member_refusing_the_zero_signal_is_going(monkeypatc
     assert _going(4242) is True
 
 
-def test_a_group_refusing_the_zero_signal_and_unlisted_is_gone(monkeypatch):
-    """No member of the group in ``ps``, or ``ps`` not read: a process of
-    this user's would have answered, so it is gone."""
+def test_a_group_refusing_the_zero_signal_and_unlisted_is_gone(tmp_path, monkeypatch):
+    """No member of the group in ``ps``, or neither ``ps`` nor ``/proc``
+    read: a process of this user's would have answered, so it is gone."""
     from fastmdxplora.gpu_here import _going
 
     _group_refusing(monkeypatch, 4242, "    1 Ss\n 4300 S\n")
     assert _going(4242) is False
-    _group_refusing(monkeypatch, 4242, "")
+    _group_refusing(monkeypatch, 4242, "", proc=tmp_path / "no proc")
+    assert _going(4242) is False
+
+
+def _proc_of(folder, processes):
+    """A ``/proc`` holding ``processes`` as (pid, command, state, pgid)."""
+    folder.mkdir()
+    for pid, command, state, pgid in processes:
+        (folder / str(pid)).mkdir()
+        (folder / str(pid) / "stat").write_text(
+            f"{pid} ({command}) {state} 1 {pgid} {pgid} 0 -1 4194560 0 0\n")
+    (folder / "self").mkdir()
+    return folder
+
+
+def test_a_group_refusing_the_zero_signal_with_no_ps_is_read_from_proc(tmp_path, monkeypatch):
+    """Where ``ps`` cannot be run (a container built without procps), a
+    group of another user's processes with a live member was read as gone.
+    ``/proc`` says which, a command with spaces and a parenthesis in it
+    read whole."""
+    from fastmdxplora.gpu_here import _going
+
+    proc = _proc_of(tmp_path / "proc", [(1, "init", "S", 1), (4242, "sh", "Z", 4242),
+                                         (4243, "a (b) c", "S", 4242)])
+    _group_refusing(monkeypatch, 4242, "", proc=proc)
+    assert _going(4242) is True
+
+
+def test_a_group_of_zombies_refusing_the_zero_signal_with_no_ps_is_gone(tmp_path, monkeypatch):
+    from fastmdxplora.gpu_here import _going
+
+    proc = _proc_of(tmp_path / "proc", [(1, "init", "S", 1), (4242, "sh", "Z", 4242),
+                                         (4300, "sleep", "S", 4300)])
+    _group_refusing(monkeypatch, 4242, "", proc=proc)
+    assert _going(4242) is False
+    _group_refusing(monkeypatch, 4242, "", proc=tmp_path / "no proc")
     assert _going(4242) is False
 
 

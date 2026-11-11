@@ -156,26 +156,61 @@ def start_sampler(group: int, folder: Path, choice: Choice, since: float) -> Non
         logger.warning("What %s holds on its GPU is not read: %s", folder, exc)
 
 
+#: Where Linux lists its processes, read where ``ps`` cannot be run (a
+#: container built without procps).
+_PROC = Path("/proc")
+
+
 def _states_in(group: int) -> list[str] | None:
     """The state ``ps`` gives each process of the group (none where it has
-    none); ``None`` where ``ps`` lists no process at all, so was not read."""
+    none), or ``/proc`` where ``ps`` lists no process at all; ``None``
+    where neither can be read."""
     rows = [line.split() for line in
             _answer("ps -A -o pgid= -o stat= 2>/dev/null\n").splitlines()]
     rows = [row for row in rows if len(row) >= 2]
     if not rows:
-        return None
+        return _states_in_proc(group)
     return [row[1] for row in rows if row[0] == str(int(group))]
+
+
+def _states_in_proc(group: int) -> list[str] | None:
+    """The state of each process of the group, from ``/proc/<pid>/stat``
+    (its state and process group follow the command's closing
+    parenthesis); ``None`` where there is no ``/proc``."""
+    try:
+        entries = [entry for entry in _PROC.iterdir() if entry.name.isdigit()]
+    except OSError:
+        return None
+    if not entries:
+        return None
+    states = []
+    for entry in entries:
+        try:
+            fields = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+        except OSError:  # it ended as it was read
+            continue
+        fields = fields.rpartition(")")[2].split()
+        if len(fields) >= 3 and fields[2] == str(int(group)):
+            states.append(fields[0])
+    return states
 
 
 def _going(group: int) -> bool:
     """Whether the process group is still there, and its leader not a
     process ended and not yet reaped.
 
-    EPERM to the zero signal is not the group going: macOS says it for a
-    group whose members are all zombies, where Linux says ESRCH, and both
-    say it for a group of another user's processes. ``ps`` then says which:
-    a group of zombies, or of none, is gone. Where ``ps`` cannot be read it
-    is gone too, since a process of this user's would have answered."""
+    Where the zero signal reaches the group, only the leader is read: a
+    group whose leader has ended and is not yet reaped is gone, whatever
+    members live on. Linux answers success for a zombie and for a group of
+    them, and the leader's Z is read here. macOS leaves zombies out of the
+    group it signals and says EPERM where no member is left that may be
+    signalled: a group whose members are all zombies (CI run 42759782805),
+    or one of another user's processes, which is where Linux says EPERM.
+    ``ps``, or ``/proc`` where ``ps`` cannot be run, then says which: a
+    group with a member not a zombie is going, one of zombies or of none is
+    gone. Where neither can be read it is gone: a process of this user's
+    would have answered, and a sampler reading a group for ever is the
+    worse mistake."""
     try:
         os.killpg(group, 0)
     except ProcessLookupError:
