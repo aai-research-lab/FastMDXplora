@@ -84,7 +84,7 @@ def test_named_helices_are_followed_with_a_named_axis(tmp_path):
     ca = np.concatenate([_ideal(14, (1.0, 0.0, 1.0)),
                          _ideal(14, (0.0, 0.0, 1.0), start=(2.0, 0.0, 0.0))])
     analysis = HelixGeometry(output_dir=tmp_path, reference_axis="z",
-                             helices=["resid 0 to 13", "resid 14 to 27"])
+                             helices="resid 0 to 13; resid 14 to 27")
     result = analysis.run(_trajectory(ca))
     assert result.status == "ok", result.message
     first, second = analysis.findings["helices"]

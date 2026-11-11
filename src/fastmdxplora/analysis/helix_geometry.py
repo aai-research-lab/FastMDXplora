@@ -88,9 +88,10 @@ class HelixGeometry(Analysis):
 
     Options
     -------
-    helices : list of str, default ()
-        Residue ranges as MDTraj selections, one per helix (``resid 10 to
-        32``). Empty: the helices DSSP finds in the first frame.
+    helices : str, default ""
+        Residue ranges as MDTraj selections, one per helix, separated by
+        semicolons (``resid 10 to 32; resid 40 to 61``); a list in YAML is
+        read too. Empty: the helices DSSP finds in the first frame.
     reference_axis : str, default "auto"
         What a tilt is measured from: ``x``, ``y`` or ``z``, or ``auto``,
         which is z (the normal) where there is a bilayer and no tilt where
@@ -115,12 +116,12 @@ class HelixGeometry(Analysis):
 
     AXES = ("auto", "x", "y", "z")
 
-    def __init__(self, *, helices: Any = (), reference_axis: str = "auto",
+    def __init__(self, *, helices: Any = "", reference_axis: str = "auto",
                  min_length: int = 8, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         if isinstance(helices, str):
-            helices = [helices]
-        self.helices = [str(h) for h in (helices or ())]
+            helices = helices.split(";")
+        self.helices = [str(h).strip() for h in (helices or ()) if str(h).strip()]
         if reference_axis not in self.AXES:
             raise StudyError(
                 f"`reference_axis` is one of {', '.join(self.AXES)}; it was "

@@ -140,6 +140,9 @@ class MMGBSA(Analysis):
 
     Options
     -------
+    ligand_resname : str
+        Ligand residue name (e.g. ``"LIG"``). Supplied automatically by the
+        orchestrator from the setup manifest; ``ligand_selection`` overrides it.
     ligand_selection : str, default ""
         The ligand's atoms. Empty: the residues named by the study's ligand
         (``ligand_resname``).
