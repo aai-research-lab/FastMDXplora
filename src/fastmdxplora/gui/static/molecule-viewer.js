@@ -2024,9 +2024,16 @@
     const width = pictureWidth();
     const height = Math.max(1, Math.round(width * canvas.clientHeight / Math.max(1, canvas.clientWidth)));
     const transparent = !!document.getElementById("picture-transparent")?.checked;
+    const traced = !!document.getElementById("picture-traced")?.checked;
     let uri = "";
     try {
-      uri = await engine.picture(width, height, transparent);
+      uri = await engine.picture(width, height, transparent, traced);
+      const said = document.getElementById("picture-traced-said");
+      if (said) {
+        said.textContent = traced && !engine.lastPictureTraced
+          ? "This browser's graphics cannot trace the lighting; the picture was saved without it."
+          : "";
+      }
     } catch (error) {
       console.warn("the picture could not be made", error);
       return;

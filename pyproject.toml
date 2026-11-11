@@ -147,6 +147,13 @@ umap = [
 movies = [
     "playwright>=1.40",
 ]
+# Replica exchange (REST2 and temperature) and, with it, the free energy
+# estimators: openmmtools runs the replicas and pymbar is what its analysis
+# and an alchemical study's estimate are computed with.
+sampling = [
+    "openmmtools>=0.23",
+    "pymbar>=4",
+]
 # There is deliberately no `plumed` extra. Enhanced sampling needs
 # openmm-plumed, which has no PyPI distribution at all -- it is a conda-forge
 # package -- so naming it in an extra did not make it reachable: it made
@@ -168,7 +175,7 @@ all = [
     # "does not provide the extra 'plumed'" and carry on, so `[all]`
     # resolved without it and installed silently with no PLUMED support.
     # A warning nobody reads is the same as no warning.
-    "fastmdxplora[md,ligand,amber,umap]",
+    "fastmdxplora[md,ligand,amber,umap,sampling]",
 ]
 test = [
     # A test asserts the lint gate is clean, so the linter is part of

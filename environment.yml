@@ -66,6 +66,14 @@ dependencies:
   # there is deliberately no `plumed` pip extra, so a clone set up any other
   # way has no umbrella, metadynamics or steered support.
   - openmm-plumed
+  # Replica exchange (REST2 and temperature) and free energy estimates.
+  - openmmtools>=0.23
+  - pymbar>=4
+  # A machine-learned potential for a ligand (`setup.ml_potential`). Not in
+  # the conda recipe: it brings PyTorch, hundreds of megabytes every install
+  # would carry for a feature few studies use. ANI-2x's TorchANI is below,
+  # from pip: conda-forge's 2.2 cannot be compiled by PyTorch 2.9.
+  - openmm-ml
   # Reading Amber NetCDF trajectories.
   - netcdf4>=1.6
   # Rendering the report as a PDF. Both halves: WeasyPrint lays the page out
@@ -75,3 +83,5 @@ dependencies:
   - markdown>=3.4
   # UMAP, for the dimensionality-reduction analysis that offers it.
   - umap-learn>=0.5
+  - pip:
+      - torchani==2.2.4

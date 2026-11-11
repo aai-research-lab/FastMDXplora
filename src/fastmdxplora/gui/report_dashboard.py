@@ -54,6 +54,9 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("Secondary structure and backbone", (
         ("ss", "Secondary structure"),
         ("dihedrals", "Dihedrals"),
+        ("nmr_observables", "NMR couplings and NOEs"),
+        ("helix_geometry", "Helix tilt and kink"),
+        ("nucleic_acid", "Base-pair and step parameters"),
     )),
     ("Contacts and solvent", (
         ("hbonds", "Hydrogen bonds"),
@@ -62,10 +65,15 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("rdf", "Radial distribution function"),
         ("coordination_number", "Coordination number"),
         ("water_sites", "Water sites"),
+        ("gist", "Solvation by GIST"),
+        ("diffusion", "Diffusion"),
     )),
     ("Conformations", (
         ("cluster", "Clustering"),
         ("dimred", "Dimensionality reduction"),
+        ("cross_correlation", "Dynamic cross-correlation"),
+        ("residue_network", "Residue interaction network"),
+        ("markov_model", "Markov state model"),
     )),
     ("The ligand", (
         ("ligand_rmsd", "Ligand pose RMSD"),
@@ -73,6 +81,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("pl_contacts", "Protein-ligand contacts"),
         ("pl_hbonds", "Protein-ligand hydrogen bonds"),
         ("pl_interactions", "Protein-ligand interactions"),
+        ("mmgbsa", "MM/GBSA binding energy"),
     )),
     ("The bilayer", (
         ("area_per_lipid", "Area per lipid"),
@@ -84,6 +93,8 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("pmf", "Potential of mean force"),
         ("metad_surface", "Free-energy surface"),
         ("steered_work", "Steered work"),
+        ("replica_mixing", "Replica exchange mixing"),
+        ("alchemical_free_energy", "Alchemical free energy"),
     )),
 )
 
@@ -877,7 +888,7 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
 _UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": "",
           "qvalue": "", "end_to_end": "nm", "pair_distance": "nm", "ligand_rmsd": "nm",
           "area_per_lipid": "nm\u00b2", "bilayer_thickness": "nm",
-          "pore_profile": "nm",
+          "pore_profile": "nm", "mmgbsa": "kJ/mol",
           "moments_of_inertia": "amu nm\u00b2", "coordination_number": "",
           "image_check": "nm"}
 

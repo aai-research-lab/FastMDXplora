@@ -92,6 +92,10 @@ requirements:
     # PyPI at all, so this is the only distribution that can carry it, and a
     # metadynamics run without it fails at the point of use.
     - openmm-plumed >=1.0
+    # Replica exchange, and the estimators its analysis and an alchemical
+    # study use.
+    - openmmtools >=0.23
+    - pymbar >=4
 
 tests:
   - python:

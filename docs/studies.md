@@ -965,6 +965,152 @@ two cannot be told apart, and the message says so rather than choosing.
 
 ---
 
+## Machine-learned potentials
+
+```yaml
+setup:
+  ml_potential:
+    model: ani2x             # the default
+    atoms: resname LIG       # the ligand, unless named
+```
+
+The atoms named have their energy within themselves taken from a neural
+network trained on quantum chemistry, in place of the force field's bonds,
+angles, torsions and nonbonded terms between them; their interactions with
+everything else stay the force field's. This is openmm-ml's mixed system,
+built by setup once the force field has made the whole system, so
+`system.xml` carries it and the run needs nothing else.
+
+A ligand's torsions and internal strain are where a general small-molecule
+force field is least reliable, and where a model trained on quantum
+chemistry is closer. **ANI-2x** (the default) knows H, C, N, O, F, S and Cl
+and neutral molecules only; a group with another element or a net charge is
+refused, not extrapolated to. Other models openmm-ml knows
+(`mace-off23-small`, `aimnet2`, ...) are taken by name where their packages
+are installed. At most 300 atoms: the network is evaluated every step, and
+a run is slower than with the force field alone.
+
+Given every atom of alanine dipeptide, the mixed system's energy is ANI-2x's
+to 0.01 kJ/mol, and a whole tri-alanine study runs with the peptide under
+ANI-2x; it has not yet been compared with a reference calculation on a
+protein-ligand complex.
+
+It needs openmm-ml (`conda install -c conda-forge openmm-ml`) and the
+model's own package: for ANI, `pip install torchani==2.2.4`, since
+conda-forge's TorchANI 2.2 cannot be compiled by PyTorch 2.9.
+
+## Replica exchange
+
+```yaml
+simulation:
+  duration_ns: 20            # each replica's
+  replica_exchange:
+    method: rest2            # or temperature
+    replicas: 8
+    max_temperature_K: 450   # the top of the ladder
+    solute: protein          # rest2's hot region
+    exchange_interval_steps: 500
+```
+
+Several copies of the system run at a ladder of conditions and swap now and
+then by the Metropolis criterion, so the one at the run's conditions crosses
+barriers the others cross easily. The sampler is openmmtools' (Chodera and
+Shirts, 2011), which tries every pair, not only neighbours.
+
+**REST2**, the default (Wang, Friesner and Berne, 2011), keeps every
+replica at the run's temperature and scales the solute's interactions by
+`s = T / T_m`: within the solute by `s`, between it and the rest by
+`sqrt(s)`. Only the solute is heated, so a few replicas serve a protein in
+any amount of water. It is done with the force field's own terms (charges by
+`sqrt(s)`, Lennard-Jones depths by `s`, the solute's torsions by `s`), and
+the energy at any scale is exactly `s E(solute) + sqrt(s) E(solute-water) +
+E(rest)`, which the tests check. A force field with a CustomNonbondedForce
+(a CHARMM NBFIX) is refused for REST2.
+
+**Temperature** exchange heats the whole system. In explicit water the
+replicas needed grow with the square root of the atoms: four replicas from
+300 to 330 K on alanine dipeptide in 2,200 atoms of water accepted 10-29%
+of swaps and made no round trip, where REST2 with four replicas to 400 K
+accepted 70%.
+
+The system is minimised and equilibrated as any run is (into
+`simulation/equilibration/`), and the replicas start from there.
+
+**What the trajectory is.** `production.dcd` holds, at each exchange, the
+frames of whichever replica was at the run's conditions: the right
+ensemble, and **not one continuous path**. Analyses of structure and of
+averages apply; analyses of motion over time (`diffusion`, `markov_model`,
+autocorrelations and the error bars built on them) do not, and the run's
+notes say so.
+
+**Whether it worked.** `replica_exchange.json`, and the `replica_mixing`
+analysis that reads it, give the share of swaps accepted between each pair
+of neighbours (below 10%, the ladder has a gap) and each replica's round
+trips from the bottom of the ladder to the top and back (none, and the run
+sampled no better than one copy would). Replica exchange cannot be combined
+with a bias, and a run cannot be split into segments.
+
+It needs openmmtools and pymbar (`conda install -c conda-forge openmmtools
+pymbar`). Its whole-study path has been run on tri-alanine on a laptop's
+CPU; it has not yet been validated on a real system on a GPU.
+
+## Alchemical free energy
+
+```yaml
+simulation:
+  duration_ns: 5             # each state's
+  alchemical:
+    group: resname LIG       # the ligand, unless named
+    restraint:               # for the complex leg
+      receptor: protein and name CA and within 1.0 of resname LIG
+      radius_nm: 0.5
+      force_constant: 1000
+```
+
+The group's interactions with everything around it are switched off
+through a schedule of states, its charges first and then its Lennard-Jones
+interactions, with a soft core so other atoms can pass through it as it
+fades. Its interactions within itself are kept: it is decoupled, not
+annihilated. The states are sampled together by Hamiltonian replica exchange
+and the free energy between them is estimated by MBAR, through openmmtools.
+The default schedule has sixteen states (charges off in five steps, then
+the Lennard-Jones in eleven); `lambda_electrostatics` and `lambda_sterics`
+set another, from both 1 to both 0, charges always off before the
+Lennard-Jones begins to fade.
+
+The result, `dG_decouple = G(decoupled) - G(coupled)`, is positive where the
+group is held. **One run is one leg.** Minus the decoupling from a box of
+water is the group's solvation free energy. A binding free energy needs two
+studies, the ligand in water and the ligand in the complex:
+
+    dG_bind = dG_decouple(water) - dG_decouple(complex) - dG_restraint
+
+The complex leg holds the ligand in its site with a flat-bottomed restraint
+on its centre (`restraint`), since a decoupled ligand would otherwise
+wander off. `dG_restraint` is the free energy of confining the ligand from
+1 M to the restraint's volume, computed by integrating the restraint's
+Boltzmann factor, and is recorded with the leg.
+`fastmdxplora.simulation.alchemical.binding_free_energy` combines two
+legs' `alchemical.json` records.
+
+**Whether to believe it.** `alchemical.json`, and the
+`alchemical_free_energy` analysis that reads it, give MBAR's uncertainty and
+the overlap between each pair of neighbouring states. Below 0.03, the
+estimate between two states rests on almost no shared samples: add a state
+there or run longer.
+
+The trajectory written is of whichever replica held the fully coupled
+state: the ordinary ensemble, and not one continuous path. An alchemical run
+cannot be combined with a bias or with replica exchange, nor split into
+segments. It needs openmmtools and pymbar.
+
+Decoupling one TIP3P water from 2 nm of TIP3P water, through eight states
+for 100 ps each, gave +27.6 ± 1.7 kJ/mol (6.6 kcal/mol), every neighbouring
+pair overlapping by 0.06 or more, where minus TIP3P's hydration free energy
+is about 6.1 to 6.3 kcal/mol. That run took two hours on a laptop's CPU, so
+it is not among the automated tests. It has not yet been run on a
+protein-ligand complex.
+
 ## When a run fails
 
 A simulation that ends with "the coordinates are not finite" has said almost

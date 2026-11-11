@@ -76,6 +76,37 @@ ANALYSIS_NAMES = (
     # The radius of the way through a channel, along its axis, as HOLE
     # measures it: run where a study names it.
     "pore_profile",
+    # The mean squared displacement of the selection's molecules and the
+    # diffusion coefficient it gives: run where a study names it.
+    "diffusion",
+    # Which residues move together, the dynamic cross-correlation map: run
+    # where a study names it.
+    "cross_correlation",
+    # Each helix's tilt and kink, as HELANAL finds them: run where a study
+    # names it.
+    "helix_geometry",
+    # The ligand's MM/GBSA binding energy, frame by frame: run where a study
+    # names it.
+    "mmgbsa",
+    # The residue interaction network, its bottlenecks and the path between
+    # two sites: run where a study names it.
+    "residue_network",
+    # 3J(HN,HA) couplings and NOE distances, beside the experiment's: run
+    # where a study names it.
+    "nmr_observables",
+    # A Markov state model of the frames and its slow timescales: run where
+    # a study names it.
+    "markov_model",
+    # A double helix's base-pair and step parameters, as 3DNA defines them:
+    # run where a study names it.
+    "nucleic_acid",
+    # The water about a site, cube by cube, against bulk (GIST): run where a
+    # study names it.
+    "gist",
+    # How a replica exchange run's replicas mixed: run where one ran.
+    "replica_mixing",
+    # The free energy an alchemical run found: run where one ran.
+    "alchemical_free_energy",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",
@@ -595,6 +626,27 @@ SETUP = PhaseSchema(
               "bonded to, which a larger one leaves negative. Default: off.",
               example=4.0,
               minimum=1.008, exclusive_minimum=True, maximum=4.032),
+        Field("membrane_composition", dict, None,
+              "A bilayer of more than one lipid, or with leaflets that "
+              "differ: a ratio of lipids for both leaflets ({POPC: 7, CHL1: "
+              "3}), or one for each ({upper: {...}, lower: {...}}). Built by "
+              "PACKMOL-Memgen as a patch OpenMM tiles round the protein, with "
+              "CHARMM's lipid names (CHL1 is cholesterol). Takes the place of "
+              "`membrane`, and the protein is placed as for it. Not "
+              "equilibrated: a mixed bilayer needs a longer equilibration "
+              "than a pure one. Requires AmberTools (PACKMOL-Memgen).",
+              example={"POPC": 7, "CHL1": 3}),
+        Field("ml_potential", dict, None,
+              "A machine-learned potential for part of the system: the "
+              "atoms named (`atoms`, the ligand unless named) have their "
+              "energy within themselves from a neural network trained on "
+              "quantum chemistry (`model`, ani2x unless named), and their "
+              "interactions with the rest from the force field, as "
+              "openmm-ml's mixed system. ANI-2x knows H, C, N, O, F, S and Cl "
+              "and neutral molecules only. Slower than the force field "
+              "alone. Requires openmm-ml and the model's own package "
+              "(torchani for ANI).",
+              example={"model": "ani2x", "atoms": "resname LIG"}),
         Field("temperature_K", (int, float), None,
               "Temperature in K for initial velocity assignment. Default: "
               "the run's `simulation.temperature_K`.",
@@ -959,6 +1011,39 @@ SIMULATION = PhaseSchema(
               example={"collective_variable": "radius_of_gyration",
                        "selection": "protein and name CA", "sigma": 0.02,
                        "height_kjmol": 1.2, "pace_steps": 500}),
+        Field("replica_exchange", dict, None,
+              "Replica exchange: several copies of the system at different "
+              "conditions, swapping now and then, so the one at the run's "
+              "conditions crosses barriers the others cross easily. `method` "
+              "is rest2 (the default: the solute alone is heated, by scaling "
+              "its interactions, so a few replicas serve a protein in any "
+              "amount of water) or temperature (the whole system heated, "
+              "which in explicit water needs dozens of replicas). `replicas`, "
+              "`max_temperature_K` (the top of the ladder), `solute` (for "
+              "rest2, a selection; protein unless named), "
+              "`exchange_interval_steps` and `equilibration_iterations`. The "
+              "production length is each replica's. The trajectory written "
+              "is of whichever replica was at the run's conditions at each "
+              "exchange: the right ensemble, and not one continuous path. "
+              "Requires openmmtools.",
+              example={"method": "rest2", "replicas": 8, "max_temperature_K": 450,
+                       "solute": "protein", "exchange_interval_steps": 500}),
+        Field("alchemical", dict, None,
+              "Alchemical free energy: the free energy of switching a group's "
+              "interactions with its surroundings off (charges first, then "
+              "Lennard-Jones, with a soft core), one leg of a binding or "
+              "solvation free energy, estimated by MBAR over states sampled "
+              "together by replica exchange. `group` (the ligand unless "
+              "named), `lambda_electrostatics` and `lambda_sterics` (one "
+              "schedule, from both 1 to both 0), `exchange_interval_steps`, "
+              "`equilibration_iterations`, and for a complex leg `restraint` "
+              "(`receptor`, `radius_nm`, `force_constant`), whose standard-"
+              "state correction is recorded. A binding free energy is the "
+              "ligand-in-water leg's less the complex leg's, less that "
+              "correction. Requires openmmtools and pymbar.",
+              example={"group": "resname LIG",
+                       "restraint": {"receptor": "protein and name CA and within 1.0 of resname LIG",
+                                     "radius_nm": 0.5}}),
         Field("plumed", dict, None,
               "Optional PLUMED enhanced sampling: `enabled` turns it on, "
               "and `script` is the PLUMED input -- the script text itself, "
@@ -1274,7 +1359,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
         ("Enhanced sampling",
          "Bias the run to reach what it would not reach on its own. Each is "
          "a block of settings, and each says what its output is and is not.",
-         ("umbrella", "steered", "metadynamics", "plumed")),
+         ("umbrella", "steered", "metadynamics", "replica_exchange", "alchemical",
+          "plumed")),
         ("Restraints",
          "Hold part of the system still while the rest equilibrates.",
          ("restrain", "restraint_release", "restrain_production")),

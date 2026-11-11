@@ -73,6 +73,8 @@ FastMDXplora/
 │       │   ├── staged.py          # Running a study the Agent wrote, with the estimate first
 │       │   └── run.py             # Running a queued job as a real study
 │       ├── setup/
+│       │   ├── membrane_mixture.py  # A patch of several lipids, built by PACKMOL-Memgen
+│       │   ├── ml_potential.py    # A machine-learned potential for part of the system
 │       │   ├── pipeline.py        # Phase driver: fix, protonate, solvate, ionize
 │       │   ├── audit.py           # Optional bounded observations of preparation
 │       │   ├── prepare.py         # Modeller assembly, ligand merge, clash checks
@@ -96,6 +98,8 @@ FastMDXplora/
 │       │   ├── metad_surface.py   # Free energy surface from the hills, and whether it settled
 │       │   ├── umbrella.py        # Window planning, and the PMF stitched from them
 │       │   ├── steered.py         # A pull along a coordinate, and the work done
+│       │   ├── replica_exchange.py  # REST2 and temperature replica exchange, by openmmtools
+│       │   ├── alchemical.py      # Decoupling a group through lambda states, by MBAR
 │       │   ├── restraints.py      # Positional restraints and the release ladder
 │       │   ├── diagnose.py        # What a failed simulation can be told from its state
 │       │   ├── stopping.py        # Run until what was asked is determined, and no longer
@@ -130,6 +134,17 @@ FastMDXplora/
 │       │   ├── bilayer.py         # Where a bilayer is: its lipids, centre and leaflets
 │       │   ├── area_per_lipid.py bilayer_thickness.py lipid_order.py   # the bilayer itself
 │       │   ├── pore_profile.py    # The radius of the way through a channel, as HOLE measures it
+│       │   ├── diffusion.py       # Mean squared displacement and the diffusion coefficient
+│       │   ├── cross_correlation.py  # Which residues move together (DCCM)
+│       │   ├── helix_geometry.py  # Each helix's tilt and kink
+│       │   ├── mmgbsa.py          # The ligand's MM/GBSA binding energy
+│       │   ├── residue_network.py # The residue interaction network and its paths
+│       │   ├── nmr_observables.py # NMR couplings and NOEs, beside the experiment's
+│       │   ├── markov_model.py    # tICA, microstates and a Markov state model's timescales
+│       │   ├── nucleic_acid.py    # A double helix's base-pair and step parameters, as 3DNA's
+│       │   ├── gist.py            # Which waters would be costly to displace (GIST)
+│       │   ├── replica_mixing.py  # How a replica exchange run's replicas mixed
+│       │   ├── alchemical_free_energy.py  # The free energy an alchemical run found
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

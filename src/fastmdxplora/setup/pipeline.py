@@ -1777,6 +1777,8 @@ def _run(
             constraints=str(params["constraints"]),
             rigid_water=bool(params["rigid_water"]),
             hydrogen_mass_amu=params["hydrogen_mass_amu"],
+            ml_potential=params.get("ml_potential"),
+            membrane_composition=params.get("membrane_composition"),
             temperature_K=_starting_temperature(params, orchestrator),
         )
 

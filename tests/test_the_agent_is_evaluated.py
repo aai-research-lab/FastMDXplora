@@ -1075,8 +1075,15 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: it is the run's `simulation.temperature_K`); no verdict changed. Set again
 #: by `setup-honest` (`verlet` and `variable_verlet` not among the integrator's
 #: choices); no verdict changed. Set again by `pore-profile` (`pore_profile`
-#: among the analyses `include` and `exclude` accept); no verdict changed.
-ASKED_NOW = "5a5d841ae17761e8b56bce42a897080ae05b0fecba6e419982ddd3a91f29e0a7"
+#: among the analyses that give a value for every frame, which the Agent is
+#: told of; an analysis that gives none, as `diffusion`, changes nothing here);
+#: no verdict changed. Set again by `mmgbsa`, which gives a value every
+#: frame; no verdict changed. Set again by `replica-exchange`
+#: (`simulation.replica_exchange` among the settings); no verdict changed.
+#: Set again by `alchemical` (`simulation.alchemical`) and `ml-potential`
+#: (`setup.ml_potential`); no verdict changed. Set again by `membrane-mixture`
+#: (`setup.membrane_composition`); no verdict changed.
+ASKED_NOW = "5b6468a71ea403eb3e0d4762b698ae15ae98a930cde642b8e34bbe87867941ea"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1437,8 +1444,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "2e06ee96fa6dea88a4e6c8848af38a89f3cf2f8d549bfbedc6ff77256bf73f19",
-    False: "7459ddba7039ed12f077e497bfb7a00c607ecde8c2bdf15f73718350ad57d1e7"}
+    True: "dd23ab90c6a49291d8c66641f89c849b962740a317e0f548ed36ffc54dfce6cc",
+    False: "543f10a8925938e9338f281c31823c2980a11a2ab57272490f01a9f62775e51e"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:

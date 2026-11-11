@@ -559,6 +559,28 @@ class AnalysisOrchestrator:
                 or (parent / "simulation" / "metadynamics_surface.json").is_file()
                 for parent in (here, here.parent))
 
+        def _alchemical_ok(name: str) -> bool:
+            """An alchemical free energy exists only where an alchemical run ran."""
+            cls = _REGISTRY[name]
+            if not getattr(cls, "requires_alchemical", False):
+                return True
+            here = Path(self.output_dir)
+            return any(
+                (parent / "alchemical.json").is_file()
+                or (parent / "simulation" / "alchemical.json").is_file()
+                for parent in (here, here.parent))
+
+        def _replica_exchange_ok(name: str) -> bool:
+            """How the replicas mixed exists only where replica exchange ran."""
+            cls = _REGISTRY[name]
+            if not getattr(cls, "requires_replica_exchange", False):
+                return True
+            here = Path(self.output_dir)
+            return any(
+                (parent / "replica_exchange.json").is_file()
+                or (parent / "simulation" / "replica_exchange.json").is_file()
+                for parent in (here, here.parent))
+
         def _fold_ok(name: str) -> bool:
             """A fold analysis needs a chain long enough to have one.
 
@@ -820,7 +842,7 @@ class AnalysisOrchestrator:
                 and _amide_ok(n) and _bfactor_ok(n) and _state_ok(n)
                 and _box_ok(n) and _named_ok(n) and _bilayer_ok(n)
                 and _umbrella_ok(n) and _metadynamics_ok(n)
-                and _steered_ok(n) and _fold_ok(n)
+                and _steered_ok(n) and _fold_ok(n) and _replica_exchange_ok(n) and _alchemical_ok(n)
                 and _alignable(n) and _solute_ok(n)
             ]
 
@@ -830,7 +852,7 @@ class AnalysisOrchestrator:
                 if _ligand_ok(n) and _water_ok(n) and _amide_ok(n)
                 and _bfactor_ok(n) and _state_ok(n) and _box_ok(n)
                 and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
-                and _metadynamics_ok(n) and _steered_ok(n)
+                and _metadynamics_ok(n) and _steered_ok(n) and _replica_exchange_ok(n) and _alchemical_ok(n)
                 and _fold_ok(n) and _alignable(n) and _solute_ok(n)]
 
     def _merge_options(

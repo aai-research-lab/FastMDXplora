@@ -230,6 +230,208 @@ selectivity filter it finds closed to water at Gly77 with the cavity beside
 it about 0.45 nm in radius. It has not been compared with HOLE itself, frame
 for frame.
 
+### Slow processes
+
+| | |
+|---|---|
+| `markov_model` | A Markov state model of the frames: tICA, k-means microstates, a reversible transition matrix, and the implied timescales of the slowest processes across lags |
+
+The frames are described by alpha-carbon distances or backbone torsions
+(`features`), projected by tICA and scaled by the kinetic map, and cut into
+`states` (100) microstates by k-means. The transition matrix is estimated by
+maximum likelihood under detailed balance on the largest set of microstates
+that reach each other, at every lag from one frame to a fifth of the run, and
+the model is built at the shortest lag at which the slowest timescale has
+levelled off.
+
+- **Where the timescales never level off**, the model is said not to be
+  Markovian at any lag tried, and its timescales are lower bounds.
+- **A process crossed fewer than ten times**, or slower than a third of the
+  run, is said to be unresolved: its timescale is a lower bound.
+- **Not built:** metastable sets (PCCA+), Chapman-Kolmogorov tests, Bayesian
+  errors. deeptime and PyEMMA do these.
+
+Held against a hidden Markov chain of known transition matrix, whose
+timescales it recovers within 15%; not compared with deeptime on one
+trajectory.
+
+### Against experiment
+
+| | |
+|---|---|
+| `nmr_observables` | 3J(HN,HA) couplings from each residue's phi and NOE distances, averaged as the experiment averages them, beside the measured values where given |
+
+Couplings come from a Karplus equation (Vögeli et al., 2007, unless
+`karplus` names MDTraj's `Bax1997` or `Ruterjans1999`), averaged over the
+frames; NOE distances are `<sum r^-6>^(-1/6)`, summed over the atoms each
+side names. With `j_couplings_file` (`residue`, `j_hz`, and `chain` where
+there are several) the RMS difference is given beside the Karplus set's own
+scatter (0.39 Hz for Bax2007), the least difference that says anything; with
+`noe_file` (`selection_1`, `selection_2`, `upper_nm`) each pair's violation
+is given.
+
+- **Not computed:** a SAXS curve, which needs the hydration shell modelled
+  (CRYSOL, Pepsi-SAXS), and chemical shifts, which need a trained predictor
+  (SPARTA+, SHIFTX2).
+
+Held against MDTraj's own couplings and against NOEs of known averages.
+
+### Double helices
+
+| | |
+|---|---|
+| `nucleic_acid` | A DNA or RNA duplex's base-pair parameters (shear, stretch, stagger, buckle, propeller, opening) and step parameters (shift, slide, rise, tilt, roll, twist), frame by frame |
+
+Each base is given the standard reference frame of Olson et al. (2001),
+fitted to its ring atoms, and the parameters come from the frames by 3DNA's
+own construction (CEHS), in nm and degrees. Watson-Crick pairs are found in
+the first frame and followed; one whose N1 and N3 come over 0.4 nm apart in
+more than a fifth of the frames is said to.
+
+- **Not computed:** groove widths, the helical axis and its bending, sugar
+  puckers and backbone torsions (3DNA, Curves+, cpptraj's `nastruct`).
+
+On the Dickerson dodecamer (1BNA) it gives rise 0.336 nm, twist 35.6
+degrees and propeller -12 degrees on average, with the AATT core's propeller
+near -17; building a helix from given parameters and measuring it gives them
+back. It has not been compared with 3DNA's output for one structure.
+
+### Helices
+
+| | |
+|---|---|
+| `helix_geometry` | Each helix's tilt from the bilayer's normal (or a named axis) and its kink, frame by frame |
+
+The helices are the runs of DSSP's H of eight residues or more in the first
+frame, or the residue ranges named in `helices`. Each helix's axis is found
+from its alpha carbons by Kahn's local axes, as HELANAL finds it: the tilt is
+the angle from the reference, 0 to 90 degrees; the kink is the angle between
+the mean local axis of its first half and of its second, a few degrees for a
+straight helix and twenty or more at a proline kink.
+
+- **A tilt needs something to be tilted from.** That is z, the normal, where
+  there is a bilayer, or the axis named in `reference_axis`. Without either,
+  only the kink is given.
+- **A helix that unwinds is still followed** as the same residues, and the
+  share of frames in which DSSP still finds it helical is recorded beside it.
+
+Held against ideal helices built at known tilts and kinks, and against KcsA
+(1BL8), whose outer and inner helices it finds 23 and 36 degrees from the
+channel's axis; not compared with HELANAL itself.
+
+### Solvation
+
+| | |
+|---|---|
+| `gist` | Which waters about a site would be costly to displace: each cube's water density, energy and entropy against bulk water (grid inhomogeneous solvation theory) |
+
+Space about the ligand (or `center_selection`) is cut into cubes `voxel_nm`
+wide, the protein fitted to its first frame. For each, from the waters found
+there: the density over bulk, each water's energy with the solute and half
+its energy with other water less bulk water's (from the study's own force
+field, Coulomb and Lennard-Jones by the minimum image to `cutoff_nm`), and the
+first-order translational and orientational entropies. Summed over a region,
+`dA = dE_sw + dE_ww - TdS` is what the water there costs a ligand that
+displaces it. Maps of density and free energy are written as OpenDX.
+
+- **Every water has to be stored** (`simulation.save_selection: all`).
+- **Long-range electrostatics are cut off**, with no Ewald correction, as
+  cpptraj's GIST does by default.
+- **Orientational entropy needs waters**: a cube that held fewer than
+  `min_waters` over the run is left at zero, and counted.
+- **First-order entropies** leave out waters' joint ordering, and overstate
+  the loss, as GIST generally does.
+
+Its orientational entropy matches the analytic value for Gaussian spreads
+and is zero for random orientations; its energies match OpenMM's; for a
+sodium ion in TIP3P it finds the first shell dense, held and ordered, and
+bulk water at TIP3P's density. **It has not been compared with cpptraj's GIST
+on one trajectory**; that is to be done on aailab01.
+
+### Motion
+
+| | |
+|---|---|
+| `diffusion` | The mean squared displacement of the selection's molecules against the lag, and the diffusion coefficient its slope gives |
+
+Each molecule of the selection (water unless another is named) is followed by
+its centre of mass, and its mean squared displacement is averaged over the
+molecules and over every pair of frames the same lag apart. The coefficient is
+the slope between a tenth and a half of the run (`fit_from`, `fit_to`) over
+2d, d the dimensions, in nm²/ns, which is 1e-5 cm²/s.
+
+- **The paths are put back together.** A molecule that crosses a face of the
+  cell is stored on the other side. Each step between consecutive frames is
+  taken to its nearest periodic image in the later frame's cell and the steps
+  summed (von Bülow, Bullerjahn and Hummer, 2020), which stays right under a
+  barostat. Frames saved so far apart that a molecule moves over a fifth of
+  the cell between two of them are refused: a step past half the cell is
+  stored as a shorter one the other way, and the coefficient would be too
+  small with nothing to show for it.
+- **Motion is measured against the centre of mass of every atom stored**,
+  since the frames follow the solute. For the lipids of a bilayer it is
+  measured in the plane of the bilayer against each leaflet's own centre
+  (`plane`, `relative_to`).
+- **The exponent says whether it is diffusion.** `findings.diffusion.exponent`
+  is how the displacement grows with the lag over the lags fitted: 1 is
+  diffusion, and below 0.8 the result says the molecules are still caged or
+  confined and the slope is not a coefficient.
+- **The cell's size is not corrected for.** A periodic cell lowers the
+  coefficient by 2.837 kT / (6πηL) (Yeh and Hummer, 2004), about a tenth for
+  water in a 4 nm cell; that needs the viscosity, which is not in the frames.
+- **A lone solute cannot be followed in frames that hold nothing else.**
+  The frames are centred on it; with the solvent stored
+  (`simulation.save_selection: all`) its motion against the whole is
+  recovered, and without it the analysis refuses.
+
+The error is the standard error across five groups of molecules, withheld
+for fewer than 25. It is held against random walks of a known coefficient,
+in a fixed cell, a cell that breathes and frames that drift; it has not been
+compared with `gmx msd` on one trajectory.
+
+| | |
+|---|---|
+| `cross_correlation` | Which residues move together: the dynamic cross-correlation map of the alpha carbons, from -1 (always opposite) to 1 (always alike) |
+
+Each frame is fitted to the mean structure (on the selection, or on
+`fit_selection` to see the rest move against one domain), and every pair's
+displacements are correlated (Ichiye and Karplus, 1991). Two domains closing
+on a hinge show as two blocks, positive within and negative between. The map
+is in `cross_correlation.npz`, and the 100 strongest pairs each way, less
+neighbours fewer than `min_separation` (4) residues apart, in
+`cross_correlation.dat`.
+
+- **It sees motion along one line only.** Two parts moving in concert at
+  right angles correlate to zero, so zero does not mean independent.
+- **The map is a property of the fit.** Fitted on the whole, a small mobile
+  part is read against the frame the rigid part sets.
+- **It needs sampling.** The map is made again from each half of the run;
+  where the two agree to less than 0.5 the result says the run has not
+  sampled the motions it shows.
+
+Held against motions whose correlations are known by construction; not
+compared with Bio3D or cpptraj on one trajectory.
+
+| | |
+|---|---|
+| `residue_network` | The residue interaction network: which residues are its bottlenecks, and the shortest path between two named sites |
+
+Each residue is a node; two are joined where their heavy atoms are within
+0.45 nm in at least 75% of the frames (`contact_cutoff_nm`,
+`contact_share`), neighbours along a chain left out, and each join is as
+long as -log|C| of their alpha carbons' cross-correlation, so residues that
+move together are close (Sethi et al., 2009, the method of VMD's
+NetworkView). Each residue's betweenness, the share of shortest paths
+running through it, is in `residue_network.dat`; with `source` and `sink`
+named, the shortest path between them is in the findings.
+
+- **A path is not a signal.** It runs where residues in lasting contact move
+  together; that communication travels along it is not shown.
+- It carries the cross-correlation's blindness to motion at right angles.
+
+Held against networks whose bottleneck and best path are known by
+construction; not compared with NetworkView on one trajectory.
+
 ### Conformations
 
 | | |
@@ -378,21 +580,47 @@ of the method rather than a threshold to tune.
 | `pl_hbonds` | Hydrogen bonds between them |
 | `pl_interactions` | What holds the ligand: eight interaction types, each against a published criterion |
 
-The five ligand analyses run automatically when a ligand is present. See
+| `mmgbsa` | How tightly the ligand is held: its MM/GBSA binding energy each frame, with the electrostatic, van der Waals, polar and nonpolar solvation parts |
+
+The energy of the complex less those of the receptor and the ligand, each in
+a continuum of water, from one trajectory of the complex. The force field is
+the study's own, read from `setup/system.xml` (the ligand's parameters
+included); the solvent is OpenMM's OBC2 generalised Born model (AMBER's
+`igb=5`) with mbondi2 radii, and the nonpolar part comes from the Born radii
+(ACE). The bonded terms cancel, since the partners are cut from the
+complex's frame. Each frame's value is a time series with a mean and error.
+
+- **It is not a binding free energy.** The loss of entropy and the
+  partners' reorganisation are left out. Use it to rank ligands bound to one
+  receptor, not to compare with a measured affinity.
+- **The partners are placed together** each frame, moved by whole cell
+  vectors, so a ligand stored in the next cell is not counted as unbound.
+- **It reads one NonbondedForce.** A force field with a CHARMM NBFIX, a
+  polarisable model, or anything else outside the standard forces is
+  refused.
+
+It agrees with OpenMM's own `implicit/obc2.xml`, built independently for
+hemoglobin's two chains, to 0.04 kJ/mol a frame. It has not been compared
+with `MMPBSA.py` or gmx_MMPBSA on one trajectory.
+
+The five ligand analyses above run automatically when a ligand is present. See
 [Protein-ligand interactions](interactions.md) for what `pl_interactions`
 computes and why some of it is refused.
 
 ### Enhanced sampling
 
-These three do not analyse the trajectory. They read what a biased run itself
-produced, and each runs only where such a run produced it — so none appears
-after an ordinary simulation, and none needs a ligand.
+These five do not analyse the trajectory. They read what a biased,
+replica exchange or alchemical run itself produced, and each runs only where such a run
+produced it — so none appears after an ordinary simulation, and none needs a
+ligand.
 
 | | |
 |---|---|
 | `pmf` | The free energy along an umbrella study's coordinate, from the windows it stitched. Reads the study's result rather than recomputing it |
 | `metad_surface` | The free energy surface a metadynamics run filled, from its hills. Plots a provisional surface as readily as a converged one, saying which it is |
 | `steered_work` | The work done by a steered pull, against the coordinate |
+| `alchemical_free_energy` | The free energy of decoupling an alchemical run's group, MBAR's uncertainty, the restraint's correction, and the overlap between neighbouring states |
+| `replica_mixing` | How a replica exchange run's replicas mixed: the swaps accepted between neighbouring conditions, each replica's round trips, and any gap in the ladder |
 
 `steered_work` gives the curve rather than the total, because a pull that
 accumulated work smoothly met resistance all the way and one that accumulated
@@ -422,14 +650,27 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model`, `nucleic_acid`, `gist` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
 contain which two. Running them anyway would mean picking a pair, which is
 answering the question rather than analysing it. `pore_profile` is held back
 for the same reason: whether a protein is a channel is not in its frames, and
-the profile of one that is not is a number about nothing.
+the profile of one that is not is a number about nothing. `diffusion` is held
+back because which molecules to follow is the study's question, and the
+solvent is in the frames only where the study stored it. `cross_correlation`
+is held back because its map is the square of the atoms and what it is
+fitted on changes what it shows. `helix_geometry` is held back because
+which helices matter, and whether a tilt means anything without a bilayer,
+are the study's question. `mmgbsa` is held back because it costs a third
+of a second a frame for a few thousand atoms, and its number is not a
+free energy. `residue_network` is held back because which sites communicate is the
+study's question. `nmr_observables` is held back because it is for a study
+with an experiment to set beside it. `markov_model` is held back because a
+short run does not hold the slow processes it models. `nucleic_acid` is held
+back for a study of a double helix that asks for it. `gist` is held back because it
+needs every water stored and a site to describe.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -787,6 +1028,39 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.pore_profile
+   :members:
+
+.. automodule:: fastmdxplora.analysis.diffusion
+   :members:
+
+.. automodule:: fastmdxplora.analysis.cross_correlation
+   :members:
+
+.. automodule:: fastmdxplora.analysis.helix_geometry
+   :members:
+
+.. automodule:: fastmdxplora.analysis.mmgbsa
+   :members:
+
+.. automodule:: fastmdxplora.analysis.residue_network
+   :members:
+
+.. automodule:: fastmdxplora.analysis.nmr_observables
+   :members:
+
+.. automodule:: fastmdxplora.analysis.markov_model
+   :members:
+
+.. automodule:: fastmdxplora.analysis.nucleic_acid
+   :members:
+
+.. automodule:: fastmdxplora.analysis.gist
+   :members:
+
+.. automodule:: fastmdxplora.analysis.replica_mixing
+   :members:
+
+.. automodule:: fastmdxplora.analysis.alchemical_free_energy
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

@@ -232,11 +232,47 @@ and not the same quantity.
 
 ---
 
+## Mixed and asymmetric bilayers
+
+```yaml
+setup:
+  membrane_composition: {POPC: 7, CHL1: 3}      # both leaflets
+  # or
+  membrane_composition:
+    upper: {POPC: 7, CHL1: 3}
+    lower: {POPE: 6, POPS: 2, CHL1: 2}
+```
+
+OpenMM builds a bilayer of one lipid from patches it ships, and of anything
+else from a patch it is given. Here the patch is built by PACKMOL-Memgen
+(Schott-Verdugo and Gohlke, 2019) from the composition, 5 nm square, with
+CHARMM's lipid names (CHL1 is cholesterol), which both CHARMM36 and AMBER
+Lipid17 have templates for; it is then tiled round the protein, the lipids
+it overlaps removed and the rest relaxed, exactly as for one lipid. The
+protein is placed for the thickness of the upper leaflet's commonest lipid
+where OpenMM knows it, and POPC's otherwise. The lipids the patch holds (the
+whole numbers nearest the ratio) are recorded under `bilayer.mixture`.
+
+- **It is not equilibrated.** PACKMOL places lipids without overlaps and
+  nothing more, and the relaxation after tiling is short. Run a longer
+  equilibration, and watch area per lipid and thickness settle, before
+  measuring anything that depends on them.
+- **Tiling repeats the patch**, so lipids do not mix beyond its width until
+  they diffuse.
+- **A patch takes minutes to build** (about ten for 5 nm on a laptop's CPU)
+  and is kept by its composition under the user's FastMDXplora directory, so
+  a study run again, or another with the same membrane, reuses it.
+
+It needs AmberTools, which carries PACKMOL-Memgen. A whole setup has been
+run with POPC and cholesterol 7:3 round tri-alanine; it has not yet been
+run round a real membrane protein.
+
 ## What is not built
 
-- **Mixtures, cholesterol and asymmetric bilayers.** OpenMM builds one lipid.
-  A mixed or asymmetric membrane built elsewhere (CHARMM-GUI, for instance)
-  can still be analysed: the three bilayer analyses read every lipid name
+- **Mixtures, cholesterol and asymmetric bilayers** are built now (see
+  below), but not equilibrated: a mixed bilayer needs a longer equilibration
+  than a pure one. A membrane built elsewhere (CHARMM-GUI, for instance)
+  can also be analysed: the three bilayer analyses read every lipid name
   OpenMM has a template for, CHARMM36's (about 300, from DSPE to the
   cardiolipins, ceramides and phytosterols) and AMBER Lipid17's and
   Lipid21's, which make each chain a residue of its own, and count a sterol

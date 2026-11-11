@@ -2305,6 +2305,130 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Mixed and asymmetric bilayers: `setup.membrane_composition` takes a ratio
+  of lipids for both leaflets, or one for each, builds a patch with
+  PACKMOL-Memgen in CHARMM's lipid names, and has OpenMM tile it round the
+  protein as it does its own patches. Patches are kept by composition and
+  reused. It is said not to be equilibrated. Needs AmberTools.
+
+- Machine-learned potentials: `setup.ml_potential` gives the atoms named
+  (the ligand unless named) their energy within themselves from ANI-2x, or
+  another model openmm-ml knows, as openmm-ml's mixed system, their
+  interactions with the rest staying the force field's. Elements a model
+  was not trained on, a charged group for ANI, and more than 300 atoms are
+  refused. The mixed energy matches ANI-2x's to 0.01 kJ/mol; a whole
+  tri-alanine study runs under it.
+
+- Alchemical free energy: `simulation.alchemical` decouples a group (the
+  ligand unless named) from its surroundings through a schedule of states,
+  charges first and then Lennard-Jones with a soft core, sampled together by
+  replica exchange and estimated by MBAR through openmmtools. One run is
+  one leg; a complex leg takes a flat-bottomed restraint whose
+  standard-state correction is computed and recorded, and
+  `binding_free_energy` combines two legs. The new `alchemical_free_energy`
+  analysis reports the result, its uncertainty and the overlap between
+  neighbouring states, and says where it is thin. One TIP3P water decoupled
+  from water gives 6.6 ± 0.4 kcal/mol, against 6.1 to 6.3 published; not
+  yet run on a protein-ligand complex.
+
+- Replica exchange: `simulation.replica_exchange` runs REST2 (the solute's
+  interactions scaled, by the force field's own terms) or temperature
+  replica exchange through openmmtools, after the usual minimisation and
+  equilibration. The trajectory written is of whichever replica held the
+  run's conditions, and is said not to be one continuous path. How the
+  replicas mixed (acceptance between neighbours, round trips, gaps) is
+  recorded in `replica_exchange.json` and reported by the new
+  `replica_mixing` analysis, which runs wherever replica exchange ran. It
+  cannot be combined with a bias or split into segments. Needs openmmtools
+  and pymbar. REST2's scaling is checked to be exact; a whole tri-alanine
+  study runs; not yet validated on a real system.
+
+- Which waters would be costly to displace: the `gist` analysis gives, cube
+  by cube about a site, the water's density, its energy with the solute and
+  with other water against bulk, and its translational and orientational
+  entropy (grid inhomogeneous solvation theory), with OpenDX maps of density
+  and free energy. It needs every water stored and runs only where
+  `analysis.include` names it. Held against analytic entropies, OpenMM's
+  energies and an ion in water; not yet compared with cpptraj's GIST.
+
+- The shape of a double helix: the `nucleic_acid` analysis gives each
+  Watson-Crick pair's six base-pair parameters and each step's six step
+  parameters, frame by frame, from Olson et al.'s standard base frames by
+  3DNA's construction. On 1BNA it gives B-DNA's rise, twist and propeller.
+  It runs only where `analysis.include` names it; not compared with 3DNA's
+  own output.
+
+- Traced lighting for the Viewer's pictures: **Traced lighting**, beside
+  **Transparent**, saves the picture with Mol*'s traced global illumination
+  (shadows, and light carried between surfaces, as a ray tracer gives), the
+  view on screen left as it is. Where the browser's WebGL cannot trace, the
+  picture is saved without it and the page says so.
+
+- The protein's slow processes: the `markov_model` analysis builds a Markov
+  state model of the frames (tICA scaled by the kinetic map, k-means
+  microstates, a reversible maximum-likelihood transition matrix) and gives
+  the implied timescales across lags, building the model at the lag where
+  they level off. A process crossed fewer than ten times, or slower than a
+  third of the run, is said to be unresolved, and timescales that never
+  level off are said to be lower bounds. It runs only where
+  `analysis.include` names it. Held against a hidden Markov chain of known
+  timescales; not compared with deeptime.
+
+- What an NMR experiment would see: the `nmr_observables` analysis gives
+  each residue's 3J(HN,HA) coupling from phi (Vögeli and Bax's Karplus
+  coefficients unless another set is named) and, from an NOE file, each
+  pair's <r^-6>^(-1/6) distance and violation; with measured couplings it
+  gives the RMS difference beside the Karplus set's own scatter. SAXS and
+  chemical shifts are said not to be computed. It runs only where
+  `analysis.include` names it.
+
+- How a signal could cross the protein: the `residue_network` analysis
+  joins residues in lasting contact, weights each join by how much the two
+  move together (-log|C|, as VMD's NetworkView does), and gives each
+  residue's betweenness and, with `source` and `sink` named, the shortest
+  path between two sites. It says a path is not shown to carry a signal. It
+  runs only where `analysis.include` names it. Held against networks of
+  known shape; not compared with NetworkView.
+
+- How tightly the ligand is held: the `mmgbsa` analysis gives the ligand's
+  MM/GBSA binding energy every frame, from the study's own force field in
+  `setup/system.xml` and OpenMM's OBC2 generalised Born solvent, with its
+  electrostatic, van der Waals, polar and nonpolar parts
+  (`mmgbsa_parts.dat`). The partners are placed in one cell each frame. It
+  leaves out entropy and says it is not a binding free energy. It runs only
+  where `analysis.include` names it. Agrees with OpenMM's `implicit/obc2.xml`
+  to 0.04 kJ/mol a frame; not compared with MMPBSA.py.
+
+- How each helix lies and bends: the `helix_geometry` analysis gives each
+  helix's tilt from the bilayer's normal (or `reference_axis`) and its kink,
+  frame by frame, from Kahn's local axes as HELANAL finds them. Helices are
+  DSSP's in the first frame or named in `helices`; one that unwinds is said
+  to. It runs only where `analysis.include` names it. Held against ideal
+  helices and KcsA; not compared with HELANAL.
+
+- Which residues move together: the `cross_correlation` analysis gives the
+  dynamic cross-correlation map of the alpha carbons (Ichiye and Karplus),
+  each frame fitted to the mean structure or to `fit_selection`. The map is
+  in `cross_correlation.npz` and the strongest pairs each way in
+  `cross_correlation.dat`, chain neighbours left out. The map is made again
+  from each half of the run, and where the halves disagree the result says
+  the motions were not sampled. It runs only where `analysis.include` names
+  it. Held against motions of known correlation; not compared with Bio3D.
+
+- How fast molecules move: the `diffusion` analysis follows each molecule of
+  the selection (water unless named) by its centre of mass, gives the mean
+  squared displacement against the lag (`diffusion.dat`) and reads the
+  diffusion coefficient from its slope between a tenth and a half of the
+  run, in nm²/ns. Paths are put back together across the periodic faces a
+  step at a time, in the later frame's cell, so a barostat's changes do not
+  distort them; frames too far apart for that are refused. Motion is
+  measured against the centre of mass of every atom stored, or for a
+  bilayer's lipids in its plane against each leaflet's centre. The exponent
+  of the growth is reported, and a result well below 1 is said not to be a
+  coefficient. Not corrected for the cell's size (Yeh and Hummer), which is
+  said. It runs only where `analysis.include` names it. Held against random
+  walks of a known coefficient; not compared with `gmx msd`.
+
 - The pore through a channel, as HOLE measures it: the `pore_profile`
   analysis gives, at each height along the pore's axis, the radius of the
   largest sphere that fits among the protein's van der Waals surfaces, over

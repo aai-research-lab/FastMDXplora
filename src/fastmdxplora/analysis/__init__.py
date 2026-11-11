@@ -109,6 +109,37 @@ from fastmdxplora.analysis import lipid_order as _lipid_order  # noqa: F401, E40
 # The way through a channel: its radius along its axis. Run only where a
 # study names it, since whether a protein has a pore is not in its frames.
 from fastmdxplora.analysis import pore_profile as _pore_profile  # noqa: F401, E402
+# How fast the selection's molecules move. Run only where a study names it:
+# which molecules to follow is the study's question, and the solvent is in
+# the frames only where it was stored.
+from fastmdxplora.analysis import diffusion as _diffusion  # noqa: F401, E402
+# Which residues move together. Run only where a study names it: the map
+# costs the square of the atoms, and what it is fitted on is the question.
+from fastmdxplora.analysis import cross_correlation as _cross_correlation  # noqa: F401, E402
+# How each helix lies and bends. Run only where a study names it.
+from fastmdxplora.analysis import helix_geometry as _helix_geometry  # noqa: F401, E402
+# How tightly the ligand is held, by MM/GBSA. Run only where a study names it.
+from fastmdxplora.analysis import mmgbsa as _mmgbsa  # noqa: F401, E402
+# How a signal could cross the protein: the residue interaction network.
+# Run only where a study names it.
+from fastmdxplora.analysis import residue_network as _residue_network  # noqa: F401, E402
+# What an NMR experiment would see: couplings and NOEs. Run only where a
+# study names it.
+from fastmdxplora.analysis import nmr_observables as _nmr_observables  # noqa: F401, E402
+# The slow processes, from a Markov state model. Run only where a study
+# names it.
+from fastmdxplora.analysis import markov_model as _markov_model  # noqa: F401, E402
+# The shape of a double helix: base-pair and step parameters. Run only
+# where a study names it.
+from fastmdxplora.analysis import nucleic_acid as _nucleic_acid  # noqa: F401, E402
+# Which waters would be costly to displace (GIST). Run only where a study
+# names it.
+from fastmdxplora.analysis import gist as _gist  # noqa: F401, E402
+# How a replica exchange run's replicas mixed: read from its record, where
+# one ran.
+from fastmdxplora.analysis import replica_mixing as _replica_mixing  # noqa: F401, E402
+# The free energy an alchemical run found: read from its record, where one ran.
+from fastmdxplora.analysis import alchemical_free_energy as _alchemical_free_energy  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water
