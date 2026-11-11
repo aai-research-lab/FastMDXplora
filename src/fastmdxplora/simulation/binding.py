@@ -278,6 +278,14 @@ def _the_interval(value: float, error: "float | None",
     built on it, and held the exact answer about 95% of the time
     (docs/studies.md gives the counts).
 
+    Those studies' frames were independent. On correlated frames (an AR(1)
+    series at rho 0.9, a correlation time of about 19 frames, blocks of
+    31 to 39) the same interval held the exact answer in 527 of 574
+    studies (91.8% +/- 1.1%): the standard error ran about 10% low there
+    (the number's spread was 1.10 times it), from the block length rule
+    (`uncertainty.BLOCKS_PER_CORRELATION_TIME`), which t does not correct
+    and nothing in the record flags.
+
     No interval where there is no standard error, as with fewer than two
     resamples that gave a number (`bootstrap_resamples: 1`): one resample
     has no spread, and its percentiles made an interval of no width.
@@ -285,13 +293,21 @@ def _the_interval(value: float, error: "float | None",
     none = {"delta_g_confidence_kjmol": None,
             "delta_g_confidence_multiplier": None,
             "delta_g_confidence_degrees_of_freedom": None}
-    if error is None or (given is not None and given < 2):
-        count = "no" if given in (None, 0) else str(given)
+    if given is not None and given < 2:
         return {**none, "delta_g_no_interval": (
-            f"There is no interval: {count} resample"
+            f"There is no interval: {'no' if given == 0 else given} resample"
             + ("" if given == 1 else "s")
             + " gave a binding free energy, and a standard error needs at "
             "least two (`bootstrap_resamples` sets how many are taken).")}
+    if error is None:
+        # Not from `block_bootstrap`, which gives a finite error with two or
+        # more numbers; an older or edited record, or infinite resamples.
+        return {**none, "delta_g_no_interval": (
+            "There is no interval: the standard error could not be computed "
+            "(it is missing or not a finite number)"
+            + ("" if given is None else
+               f", though {given} resamples gave a binding free energy")
+            + ".")}
     if error == 0.0:
         # Every resample gave the same number: a window shorter than its own
         # block is resampled whole, so the resamples say nothing about the
@@ -333,6 +349,17 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
         return {
             "delta_g_standard_error_kjmol": None,
             "delta_g_confidence_kjmol": None,
+            "delta_g_confidence_multiplier": None,
+            "delta_g_confidence_degrees_of_freedom": None,
+            "delta_g_no_interval": (
+                "There is no interval: no bootstrap was run (as with "
+                "`bootstrap_resamples: 0`), so there is no standard error."
+                if not resampled else
+                "There is no interval: the bootstrap gave no binding free "
+                "energy, so there is no standard error."),
+            "delta_g_confidence_level": DELTA_G_CONFIDENCE,
+            "delta_g_confidence_from": None,
+            "delta_g_percentile_interval_kjmol": None,
             "delta_g_uncertainty_is_a_floor": None,
         }
     error = _finite(resampled.get("standard_error"))
@@ -346,8 +373,9 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
     interval = _the_interval(float(resampled["value"]) + correction, error,
                              given)
     return {
-        # None where the resamples gave no spread (NaN), never NaN.
-        "delta_g_standard_error_kjmol": error,
+        # None where the resamples gave no spread (NaN, or 0 with every
+        # resample the same number), never NaN.
+        "delta_g_standard_error_kjmol": None if error == 0.0 else error,
         **interval,
         "delta_g_confidence_level": DELTA_G_CONFIDENCE,
         "delta_g_confidence_from": (

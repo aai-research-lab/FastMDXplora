@@ -232,7 +232,54 @@ class TestNoSpreadIsNoInterval:
                     confidence_high=-20.0), correction=0.0)
 
         assert said["delta_g_confidence_kjmol"] is None
+        assert said["delta_g_standard_error_kjmol"] is None
         assert "the same binding free energy" in said["delta_g_no_interval"]
+
+    @pytest.mark.parametrize("error", [None, float("nan"), float("inf")])
+    def test_an_error_lost_beside_many_resamples_says_it_was_not_computed(
+            self, error):
+        """A record with no finite error but 40 resamples that gave a number
+        must not say a standard error needs at least two."""
+        said = _what_the_resamples_said(
+            derived(standard_error=error, resamples=40,
+                    resamples_with_a_number=40, resamples_without_a_number=0),
+            correction=0.0)
+
+        assert said["delta_g_confidence_kjmol"] is None
+        assert said["delta_g_standard_error_kjmol"] is None
+        reason = said["delta_g_no_interval"]
+        assert "could not be computed" in reason
+        assert "needs at least two" not in reason
+        assert "40 resamples" in reason
+
+    def test_no_bootstrap_carries_the_same_keys_and_says_why(self):
+        """`bootstrap_resamples: 0` passes no resamples at all."""
+        said = _what_the_resamples_said(None, correction=2.5)
+        full = _what_the_resamples_said(derived(), correction=2.5)
+
+        for key in ("delta_g_confidence_kjmol",
+                    "delta_g_confidence_multiplier",
+                    "delta_g_confidence_degrees_of_freedom",
+                    "delta_g_confidence_from",
+                    "delta_g_percentile_interval_kjmol",
+                    "delta_g_standard_error_kjmol"):
+            assert key in said and said[key] is None
+        assert set(full) - set(said) <= {
+            "delta_g_uncertainty_note", "delta_g_resamples",
+            "delta_g_resamples_without_a_number"}
+        assert said["delta_g_confidence_level"] == 0.95
+        assert "no bootstrap was run" in said["delta_g_no_interval"]
+
+    def test_a_study_with_no_bootstrap_says_there_is_no_interval(self):
+        """Through `binding_free_energy`, as a study with
+        `bootstrap_resamples: 0` calls it."""
+        result = binding_free_energy(
+            CENTRES, well(CENTRES) - 2.0 * KT * np.log(CENTRES),
+            temperature_K=TEMPERATURE, judge_the_bulk=False, resampled=None)
+
+        assert result["delta_g_kjmol"] is not None
+        assert result["delta_g_confidence_kjmol"] is None
+        assert "no bootstrap was run" in result["delta_g_no_interval"]
 
     def test_a_study_run_with_one_resample_gives_no_interval(self):
         """Through `compute_pmf` and `binding_free_energy`, as a study with
