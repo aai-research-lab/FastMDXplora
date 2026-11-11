@@ -191,6 +191,8 @@ computes, and what to compare it with.
 |---|---|
 | `pore_profile` | The radius of the way through a channel along its axis, as HOLE measures it, and its narrowest radius per frame |
 
+![The Viewer's Pore tool on KcsA: the radius against height, and the mean pore as a blue surface through the channel](_static/pore-viewer.png)
+
 At each height along the pore's axis, the largest sphere that fits among the
 protein's van der Waals surfaces with its centre in that plane (Smart et al.,
 J Mol Graph 14, 354 (1996)). The path starts at the protein's centre, or at
