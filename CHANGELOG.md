@@ -726,16 +726,38 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - A metadynamics study reads its own record after it is analysed. Its
   `resolved_config.yml` listed the reweighting pass (`reweighted`) under
   `analysis.include`, and `fastmdx report` and `fastmdx analyze --rerun`
-  refused the study (exit 2, "No analysis is called 'reweighted'"), as
-  did `resume`. The record lists the analyses alone, and a record saved
-  with the name reads; the GUI's Analyze again, and the Agent's offer of
-  it, offer the analyses alone. A Config that names `reweighted` in
-  `analysis.include` or `exclude` is refused by name, as before: the
-  reweighting runs wherever a bias applies.
+  refused the study (exit 2, "No analysis is called 'reweighted'");
+  `fastmdx resume` of a study whose analysis did not finish ended with a
+  traceback (exit 1). An umbrella-window study's record lists the name
+  too: its extension (`explore` with `resume_from` and `extra_ns`, and
+  the rounds of a study run until it knows) ended with a `ConfigError`,
+  and `fastmdx resume` of an extension stopped before its join exited 1
+  with the study's analysis set aside in `previous/`. A study of several
+  runs left a run's report as it was where it wrote it again. The record
+  lists the analyses alone, and a record saved with the name reads, in
+  `report`, `analyze --rerun`, `resume`, an extension and its join, and a
+  run's report written again alike; the GUI's Analyze again, and the
+  Agent's offer of it, offer the analyses alone, and the reweighting's
+  own section offers no Analyze again (it opened with nothing ticked). A
+  Config that names `reweighted` in `analysis.include` or `exclude` is
+  refused by name, as before: the reweighting runs wherever a bias
+  applies.
 - The timeline's medoid marks give a cluster's share "of the frames
   clustered". Clustering's sentences say "every frame from frame N" for a
   start alone, the stride as an ordinal, and thousands alike ("All 12,000
   frames", with "4,000 frames").
+- Tests: the test of 500 frames under `ulimit -v` 600000 sets the limit
+  from what a run of the command line holds at clustering's check, read in
+  a run of its own kind, and the reading and the run load bytecode
+  compiled into a cache of their own. With the source's bytecode written
+  by the reading and loaded by the run, or some of it stale, the run held
+  4 to 8 MiB more than the reading said and was refused its own frames
+  (Python 3.11 here, 55.0 to 59.6 MiB of room for 61.0). CI's coverage leg
+  refused them (56.0 MB of room for 64.0), but its child processes are not
+  traced: the earlier form was refused here without coverage too, from a
+  fresh tree writing its bytecode (57.7 MB for 64.0), and passed or failed
+  under `--cov` as the caches stood. The room the check reads is now the
+  one the test means, 62.2 to 62.5 MiB, and 3 MiB less fails.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
