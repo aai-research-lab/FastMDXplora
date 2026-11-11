@@ -980,9 +980,20 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
         lines.append(f"Binding:        {value:.1f}{spread} kJ/mol "
                      "(standard state, 1 M)")
     elif binding.get("refused"):
+        from fastmdxplora.simulation.binding import the_kt_refusal
+
+        # A kT refusal whole: what it means at 1 M and, near kT, that it is
+        # marginal. Its first sentence alone read the same for a free
+        # particle and for a well 0.04 kJ/mol short of kT.
+        refused = str(binding["refused"])
         lines.append("Binding:        not reported -- "
-                     + str(binding["refused"]).split(". ")[0].rstrip(".") + ".")
-    from fastmdxplora.simulation.binding import BULK_RESIDUAL_KJMOL
+                     + (refused if the_kt_refusal(binding)
+                        else refused.split(". ")[0].rstrip(".") + "."))
+    from fastmdxplora.simulation.binding import (
+        BULK_RESIDUAL_KJMOL, the_depth_s_verdict)
+
+    if value is not None and the_depth_s_verdict(binding):
+        lines.append(f"Warning:        {the_depth_s_verdict(binding)}")
 
     if value is not None and binding.get("bulk_judged_by") == (
             f"{BULK_RESIDUAL_KJMOL} kJ/mol alone"):

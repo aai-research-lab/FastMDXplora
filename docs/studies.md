@@ -632,12 +632,16 @@ refused so, and a well that shallow does not bind measurably at 1 M. The
 rule judges the real curve only; each bootstrap resample follows its
 verdict, as it does the bulk's, since resamples refused by their own depth
 are the weakest and an interval made without them loses its weak side (a
-3 kJ/mol well's went from [-2.07, -0.35] to [-2.07, -0.81]). `binding`
+3 kJ/mol well's [-2.07, -0.35] was cut to [-2.07, -0.81]). `binding`
 saves the well's depth (`well_depth_kjmol`) and its error
 (`well_depth_error_kjmol`, from the depth's spread over the resamples, or
-the bins' standard errors), and a refusal whose depth is within its error
-of kT says it is marginal (`well_depth_marginal`): longer sampling could
-change it. The console also says when more than a tenth of the resamples
+the bins' standard errors). Where the depth is within its error of kT,
+on either side, `well_depth_marginal` is true: a refusal says in its text
+that the verdict is marginal and longer sampling could give a number, and
+a number given is marked marginal, since longer sampling could find no
+bound state. The console and the GUI give a kT refusal whole, its meaning
+at 1 M and its marginal sentence with it, and add a line to a marginal
+number. The console also says when more than a tenth of the resamples
 gave no binding free energy, since its error is then from the rest. The
 barrier and the minima in `summary` are read off W(r), as
 `summary.read_off` says: read off A(r) a radial curve's highest point is the wall at the first window, and a depth moves with the
@@ -678,7 +682,8 @@ the refused peak is the curve's highest point, `highest_kjmol` is null and
 `summary.barrier_note` says a higher one was refused. The console and the
 comparison report give the barrier in one line, or that it was refused and
 why, as in `Barrier: 19.9 +/- 0.3 kJ/mol at 3.09 rad, on the free energy,
-its error the sampling's alone, not the zero's or the bins' width.` The
+its error from sampling only (the zero and the bins' width can each move it
+by about that much).` The
 curve's zero puts a barrier high and a bin's width puts a narrow one low
 (a 20 kJ/mol escape barrier at 3000 frames came out 19.43 to 19.87, each
 +/- 0.15 to 0.23), so neither direction is claimed. With no bootstrap the

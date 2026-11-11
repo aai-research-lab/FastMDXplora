@@ -2368,7 +2368,8 @@ def the_barrier_in_a_line(record: Any) -> str | None:
             # a bin's width puts a narrow one low (a 20 kJ/mol escape
             # barrier came out 19.43 +/- 0.15), each by about its error or
             # more.
-            said += ", its error the sampling's alone, not the zero's or the bins' width"
+            said += (", its error from sampling only (the zero and the bins' "
+                     "width can each move it by about that much)")
         if summary.get("barrier_note"):
             said += "; a higher peak was refused as within its error"
         return said + "."

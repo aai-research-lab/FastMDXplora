@@ -627,7 +627,8 @@ class TestTheBarrierLineSaysWhatItRestsOn:
 
         line = self._line(barrier_error_kjmol=1.0, barrier_zero=THE_CURVE_SITS_HIGH)
         assert line == ("6.3 +/- 1.0 kJ/mol at 0.0524 rad, on the free energy, its "
-                        "error the sampling's alone, not the zero's or the bins' width.")
+                        "error from sampling only (the zero and the bins' width can "
+                        "each move it by about that much).")
         assert "high" not in line and "low" not in line
 
 
@@ -827,3 +828,77 @@ class TestTheConsoleSaysWhenResamplesGaveNoNumber:
             "delta_g_kjmol": -1.2, "delta_g_standard_error_kjmol": 0.4,
             "delta_g_resamples": 36, "delta_g_resamples_without_a_number": 4})
         assert not any("resamples gave no" in line for line in lines)
+
+
+def _kt_binding(depth_kt, error):
+    """A binding record from an exact well ``depth_kt`` kT deep, its bins'
+    errors ``error``, at 300 K."""
+    from fastmdxplora.simulation.binding import binding_free_energy
+
+    kt = KB_KJMOL * 300.0
+    r = np.linspace(0.4, 2.0, 50)
+    w = -depth_kt * kt * np.exp(-((r - 0.8) / 0.08) ** 2)
+    a = w - 2.0 * kt * np.log(r)
+    return binding_free_energy(r, list(a - a.min()), temperature_K=300.0,
+                               covered_nm=(0.4, 2.0), errors_kjmol=[error] * 50)
+
+
+def _gui_says(tmp_path, binding):
+    from fastmdxplora.gui.records_answer import _free_energy
+
+    (tmp_path / "pmf.json").write_text(json.dumps(
+        {"refused": None, "binding": binding}, allow_nan=False), encoding="utf-8")
+    return _free_energy(tmp_path)
+
+
+class TestAMarginalVerdictIsSaidWhereItIsRead:
+    """The console printed a refusal's first sentence and the GUI its first
+    clause, so a well 0.27 kJ/mol short of kT against an error of 0.57 read
+    as a free particle's refusal does; and a number from a well within its
+    error of kT carried no mark at all."""
+
+    def test_a_marginal_refusal_on_the_console(self) -> None:
+        from fastmdxplora.batch.explorer import _what_the_binding_says
+
+        said = "\n".join(_what_the_binding_says(_kt_binding(0.9, 0.4)))
+        assert "no bound state as this study defines one" in said
+        assert "does not bind measurably at 1 M" in said
+        assert "so the verdict is marginal" in said
+
+    def test_a_far_refusal_on_the_console(self) -> None:
+        from fastmdxplora.batch.explorer import _what_the_binding_says
+
+        said = "\n".join(_what_the_binding_says(_kt_binding(0.2, 0.1)))
+        assert "does not bind measurably at 1 M" in said
+        assert "marginal" not in said
+
+    def test_a_marginal_refusal_in_the_gui(self, tmp_path) -> None:
+        said = _gui_says(tmp_path, _kt_binding(0.9, 0.4))
+        assert "no binding free energy is given" in said
+        assert "does not bind measurably at 1 M" in said
+        assert "so the verdict is marginal" in said
+
+    def test_a_far_refusal_in_the_gui(self, tmp_path) -> None:
+        said = _gui_says(tmp_path, _kt_binding(0.2, 0.1))
+        assert "does not bind measurably at 1 M" in said
+        assert "marginal" not in said
+
+    def test_a_marginal_number_is_marked(self, tmp_path) -> None:
+        from fastmdxplora.batch.explorer import _what_the_binding_says
+
+        binding = _kt_binding(1.1, 0.4)
+        assert binding["delta_g_kjmol"] is not None
+        assert binding["well_depth_marginal"] is True
+        line = ("The well's depth, {:.2f} +/- 0.57 kJ/mol, is within its error of kT "
+                "(2.49 kJ/mol), so the number is marginal: longer sampling could find "
+                "no bound state.").format(binding["well_depth_kjmol"])
+        assert f"Warning:        {line}" in _what_the_binding_says(binding)
+        assert line in _gui_says(tmp_path, binding)
+
+    def test_a_number_well_over_kt_is_not(self, tmp_path) -> None:
+        from fastmdxplora.batch.explorer import _what_the_binding_says
+
+        binding = _kt_binding(3.0, 0.1)
+        assert binding["well_depth_marginal"] is False
+        assert not any("marginal" in line for line in _what_the_binding_says(binding))
+        assert "marginal" not in _gui_says(tmp_path, binding)

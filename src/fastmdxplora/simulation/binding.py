@@ -475,6 +475,34 @@ def _array_of_numbers(values: Any, what: str, ndim: int) -> np.ndarray:
                          code="config.option.wrong_type") from exc
 
 
+def the_depth_s_verdict(binding: Any) -> str | None:
+    """One sentence for the console and the GUI where a binding free energy
+    rests on a well within its error of kT: given, it could become no bound
+    state; refused, it could become a number. None otherwise."""
+    if not isinstance(binding, dict) or not binding.get("well_depth_marginal"):
+        return None
+    depth = binding.get("well_depth_kjmol")
+    error = binding.get("well_depth_error_kjmol")
+    kt = binding.get("well_depth_kt_kjmol")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+               for v in (depth, error, kt)):
+        return None
+    said = (f"The well's depth, {depth:.2f} +/- {error:.2f} kJ/mol, is within "
+            f"its error of kT ({kt:.2f} kJ/mol), so ")
+    if binding.get("delta_g_kjmol") is None:
+        return said + ("the refusal is marginal: longer sampling could give "
+                       "a number.")
+    return said + ("the number is marginal: longer sampling could find no "
+                   "bound state.")
+
+
+def the_kt_refusal(binding: Any) -> bool:
+    """Whether a binding record was refused by the kT rule, whose whole text
+    is said on the console and in the GUI, not its first sentence."""
+    return (isinstance(binding, dict) and binding.get("delta_g_kjmol") is None
+            and bool(binding.get("refused")) and "well_depth_kjmol" in binding)
+
+
 def _the_depth_s_error(radius: np.ndarray, curves: "np.ndarray | None",
                        errors_kjmol: Any, order: np.ndarray, minimum_index: int,
                        n_bulk: int, kt: float) -> "tuple[float | None, str | None]":
@@ -576,7 +604,9 @@ def binding_free_energy(
     judging its shape: for each of the bootstrap's resamples, whose curve
     the real curve's verdict stands for. A resample judged on its own would
     be refused by its own noise, and the interval would be made of the
-    resamples whose tails happened to be flattest.
+    resamples whose tails happened to be flattest. It skips the kT rule too
+    (a curve whose well is not kT deep has no bound state), for the same
+    reason: the real curve's verdict stands for each resample.
     """
     radius = np.asarray(coordinate, dtype=float)
     energy = np.asarray(free_energy_kjmol, dtype=float)
@@ -774,25 +804,31 @@ def binding_free_energy(
     #
     # Judged on the real curve only, never on a resample: a resample refused
     # by its own depth left the interval, and those are the weakest ones, so
-    # a 3 kJ/mol well's interval lost its weak side ([-1.30, +0.25] in place
-    # of [-1.29, +0.89]). A resample follows the real curve's verdict, as
-    # it does for the bulk.
+    # a 3 kJ/mol well's interval lost its weak side: [-2.07, -0.35] from all
+    # 40 resamples was cut to [-2.07, -0.81] from 24 (the round's test, seed
+    # 6). A resample follows the real curve's verdict, as it does for the
+    # bulk.
     depth = (float(reference_at - mean_force[minimum_index])
              if np.isfinite(mean_force[minimum_index]) else None)
     depth_error, depth_error_from = _the_depth_s_error(
         radius, curves, errors_kjmol, order, minimum_index, n_bulk, kt)
+    # Marginal where the depth is within its error of kT, either side: a
+    # refusal that longer sampling could turn into a number, or a number it
+    # could turn into a refusal.
+    marginal = depth_error is not None and depth is not None and abs(depth - kt) <= depth_error
     depth_record = ({} if depth is None or bound_cutoff_nm is not None else {
         "well_depth_kjmol": depth,
         "well_depth_error_kjmol": depth_error,
-        "well_depth_error_from": depth_error_from})
+        "well_depth_error_from": depth_error_from,
+        "well_depth_kt_kjmol": kt,
+        "well_depth_marginal": marginal})
     if (judge_the_bulk and bound_cutoff_nm is None and depth is not None
             and depth < kt):
         spread = (f" +/- {depth_error:.2f}" if depth_error is not None else "")
-        marginal = depth_error is not None and kt - depth <= depth_error
         return {"delta_g_kjmol": None, **judged_record,
                 "bulk_from_nm": float(radius[-n_bulk]),
                 "minimum_at_nm": minimum_at, "bound_cutoff_nm": None,
-                **depth_record, "well_depth_marginal": marginal,
+                **depth_record,
                 "refused": (
             "The curve's lowest point"
             + (" between the windows' centres" if covered_nm is not None else "")
@@ -950,8 +986,9 @@ def binding_free_energy(
     return {
         "delta_g_kjmol": delta_g,
         "delta_g_kcalmol": delta_g / 4.184,
-        # How deep the well the bound range starts from is, and its error, so
-        # a number from a well just over kT says so.
+        # How deep the well the bound range starts from is, its error, and
+        # whether that depth is within its error of kT (`well_depth_marginal`,
+        # which the console and the GUI say as a line beside the number).
         **depth_record,
         # The statistical uncertainty, where the caller measured one. It comes
         # from resampling the windows and recomputing this whole quantity, so
