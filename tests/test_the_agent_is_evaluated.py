@@ -1074,8 +1074,9 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: `setup-temp` (`setup.temperature_K` has no default of its own, as unset
 #: it is the run's `simulation.temperature_K`); no verdict changed. Set again
 #: by `setup-honest` (`verlet` and `variable_verlet` not among the integrator's
-#: choices); no verdict changed.
-ASKED_NOW = "34b11158700faaac629d863445de8aedd83c084969a06ea5ed2830f97c451e7d"
+#: choices); no verdict changed. Set again by `pore-profile` (`pore_profile`
+#: among the analyses `include` and `exclude` accept); no verdict changed.
+ASKED_NOW = "5a5d841ae17761e8b56bce42a897080ae05b0fecba6e419982ddd3a91f29e0a7"
 
 
 def _asked_in_own_words(monkeypatch) -> list[str]:
@@ -1436,8 +1437,8 @@ def test_a_version_1_recording_replays_and_another_version_does_not():
 #: cases resolve what is named from the folders here, where the study the
 #: run was asked against is not.
 CONTEXT_ASKED_NOW = {
-    True: "8628909bc5d38721f02b6474f1d2d7a9893a0c4e6f8d5f5a4123d7a55e7a5182",
-    False: "f329e1988077a59698b90cdef9b68f83a612966d0ba78b02af20999655f15005"}
+    True: "2e06ee96fa6dea88a4e6c8848af38a89f3cf2f8d549bfbedc6ff77256bf73f19",
+    False: "7459ddba7039ed12f077e497bfb7a00c607ecde8c2bdf15f73718350ad57d1e7"}
 
 
 def _replayed_context_run(monkeypatch, context: bool) -> tuple[dict, dict, list[str]]:
