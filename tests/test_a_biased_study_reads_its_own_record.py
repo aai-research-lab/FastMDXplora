@@ -82,3 +82,22 @@ def test_a_config_that_names_the_pass_is_refused_by_name(key):
     recorded = {"analysis": {key: ["rmsd", "reweighted"]}}
     validate_config(recorded, as_record=True)
     assert recorded["analysis"][key] == ["rmsd"]
+
+
+def test_resume_reads_a_record_saved_with_the_name(biased, capsys):
+    """An analysis cut short (no Manifest, as a killed run leaves it) of a
+    study whose record was saved by an earlier version: `resume` gave the
+    record to the study as a Config, which refused the name (exit 1, a
+    traceback)."""
+    import shutil
+
+    path = biased / "resolved_config.yml"
+    saved = yaml.safe_load(path.read_text())
+    saved["analysis"]["include"] = ["rmsd", "rg", "reweighted"]
+    path.write_text(yaml.safe_dump(saved, sort_keys=False))
+    (biased / "manifest.json").unlink()
+    shutil.rmtree(biased / "analysis" / "reweighted")
+    assert main(["resume", str(biased)]) == 0
+    assert "No analysis is called" not in capsys.readouterr().err
+    assert (biased / "analysis" / "reweighted" / "reweighted_averages.json").is_file()
+    assert _include(biased) == ["rmsd", "rg"]

@@ -53,6 +53,16 @@ from fastmdxplora import record_access as _records
 from fastmdxplora.refusals import CodedError, Refusal, StudyError
 from fastmdxplora.simulation.ensembles import NPT, resolve_ensemble
 
+
+def _as_a_record(config: Any) -> Any:
+    """A study's saved config read as its record
+    (:func:`fastmdxplora.config.recorded.as_a_record`): resumed, it is
+    given to the study as a Config, which refused the reweighting pass's
+    name a record saved by an earlier version lists."""
+    from fastmdxplora.config.recorded import as_a_record
+
+    return as_a_record(config)
+
 __all__ = [
     "Segment",
     "extended_production",
@@ -1298,8 +1308,8 @@ def _chosen_by_the_person(root: Path, given: Any, joined: Path) -> bool:
     if not isinstance(given, str) or not given:
         return False
     try:
-        config = yaml.safe_load(_records.read_text(root / "resolved_config.yml",
-                                                   encoding="utf-8"))
+        config = _as_a_record(yaml.safe_load(_records.read_text(root / "resolved_config.yml",
+                                                   encoding="utf-8")))
     except (OSError, ValueError, yaml.YAMLError):
         return False
     analysis = config.get("analysis") if isinstance(config, dict) else None
@@ -1606,8 +1616,8 @@ def trajectory_interval_of(segment: str | Path) -> int | None:
     except (OSError, ValueError, AttributeError):
         pass
     try:
-        config = yaml.safe_load(_records.read_text(
-            folder / "resolved_config.yml", encoding="utf-8")) or {}
+        config = _as_a_record(yaml.safe_load(_records.read_text(
+            folder / "resolved_config.yml", encoding="utf-8")) or {})
         found = whole((config.get("simulation") or {}).get("trajectory_interval_steps"))
         if found:
             return found
@@ -1806,7 +1816,7 @@ def _length_asked_of(aside: Path) -> tuple[float | None, str | None, str | None]
     import yaml
 
     try:
-        config = yaml.safe_load((aside / "resolved_config.yml").read_text(encoding="utf-8"))
+        config = _as_a_record(yaml.safe_load((aside / "resolved_config.yml").read_text(encoding="utf-8")))
         simulation = config.get("simulation") or {}
         output = str(config.get("output") or "")
         return (float(simulation["duration_ns"]), str(simulation.get("resume_from") or ""),
@@ -1858,7 +1868,7 @@ def _owed_by_the_last_piece(root: Path) -> float | None:
             or not (last / "simulation" / "checkpoint.chk").is_file()):
         return None
     try:
-        config = yaml.safe_load((last / "resolved_config.yml").read_text(encoding="utf-8"))
+        config = _as_a_record(yaml.safe_load((last / "resolved_config.yml").read_text(encoding="utf-8")))
         asked = float((config.get("simulation") or {})["duration_ns"])
     except (OSError, ValueError, TypeError, KeyError, AttributeError, yaml.YAMLError):
         return None
@@ -1884,8 +1894,8 @@ def _the_last_piece_s_answer(root: Path, *, lengths: bool = True
     found = max(pieces, key=lambda each: each.index)
     last = found.directory
     try:
-        config = yaml.safe_load(_records.read_text(last / "resolved_config.yml",
-                                                   encoding="utf-8")) or {}
+        config = _as_a_record(yaml.safe_load(_records.read_text(last / "resolved_config.yml",
+                                                   encoding="utf-8")) or {})
     except (OSError, yaml.YAMLError):
         config = {}
     config = config if isinstance(config, dict) else {}
@@ -1899,7 +1909,7 @@ def _the_last_piece_s_answer(root: Path, *, lengths: bool = True
     past = asked = 0.0
     try:
         asked = float((config.get("simulation") or {})["duration_ns"])
-        plan = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+        plan = _as_a_record(yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {})
         planned = float((plan.get("simulation") or {})["duration_ns"])
         from fastmdxplora.simulation.runner import read_checkpoint_sidecar
 
@@ -2911,8 +2921,8 @@ def _where_it_stands(root: Path, *, lengths: bool = True) -> tuple[bool, str | N
 
     from fastmdxplora.analysis.joining import survey_segments
 
-    config = yaml.safe_load(_records.read_text(root / "resolved_config.yml",
-                                               encoding="utf-8")) or {}
+    config = _as_a_record(yaml.safe_load(_records.read_text(root / "resolved_config.yml",
+                                               encoding="utf-8")) or {})
     finished, stopped = _finished_record(root, config)
     # Pieces that cannot be told apart (two folders for one number) are
     # said here, as an answer, before anything reads them.
@@ -2978,7 +2988,7 @@ def _carry_the_run_on(root: Path, base: dict[str, Any], *,
 
     resolved = root / "resolved_config.yml"
     try:
-        config = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
+        config = _as_a_record(yaml.safe_load(resolved.read_text(encoding="utf-8")) or {})
     except (OSError, yaml.YAMLError) as exc:
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": f"The study's config could not be read: {exc}"}
@@ -3328,7 +3338,7 @@ def resume_batch(root: str | Path) -> dict[str, Any]:
                          f"{'is' if len(going) == 1 else 'are'} still running. "
                          "Resume it once every run has stopped."}
     try:
-        config = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {}
+        config = _as_a_record(yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8")) or {})
     except (OSError, yaml.YAMLError) as exc:
         return {**base, "ok": False, "did": RESUMED_NOTHING,
                 "error": f"The study's config could not be read: {exc}"}
