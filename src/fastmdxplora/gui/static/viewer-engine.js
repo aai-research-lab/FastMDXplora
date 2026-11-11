@@ -2325,13 +2325,42 @@
       if (this.plugin.canvas3d) this.plugin.canvas3d.handleResize();
     }
 
+    /** Whether this browser's WebGL can trace the lighting: Mol*'s
+     * illumination needs float colour buffers, float textures, depth
+     * textures and several draw buffers. */
+    canTrace() {
+      try {
+        const extensions = this.plugin.canvas3d.webgl.extensions;
+        return !!(extensions.colorBufferFloat && extensions.textureFloat
+          && extensions.depthTexture && extensions.drawBuffers);
+      } catch (error) {
+        return false;
+      }
+    }
+
     /** The view as a PNG, `width` by `height` pixels, on the ground or,
-     * `transparent`, on none. */
-    async picture(width, height, transparent) {
+     * `transparent`, on none; `traced`, with its lighting traced (Mol*'s
+     * illumination: shadows and light carried between surfaces, as a ray
+     * tracer gives) where this browser can, the view on screen left as it
+     * was. Says whether it was traced. */
+    async picture(width, height, transparent, traced) {
+      const canvas3d = this.plugin.canvas3d;
       const helper = this.plugin.helpers.viewportScreenshot;
-      helper.behaviors.values.next({...helper.behaviors.values.value,
-        resolution: {name: "custom", params: {width, height}}, transparent: !!transparent});
-      return helper.getImageDataUri();
+      const tracing = !!traced && this.canTrace();
+      const before = canvas3d.props.illumination;
+      if (tracing) {
+        canvas3d.setProps({illumination: {...before, enabled: true, maxIterations: 7,
+          denoise: true}});
+      }
+      try {
+        helper.behaviors.values.next({...helper.behaviors.values.value,
+          resolution: {name: "custom", params: {width, height}}, transparent: !!transparent});
+        const uri = await helper.getImageDataUri();
+        this.lastPictureTraced = tracing;
+        return uri;
+      } finally {
+        if (tracing) canvas3d.setProps({illumination: before});
+      }
     }
 
     /** The view rendered at `width` by `height` pixels, as a canvas, for a

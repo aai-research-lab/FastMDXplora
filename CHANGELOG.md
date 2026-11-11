@@ -2305,6 +2305,19 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- The shape of a double helix: the `nucleic_acid` analysis gives each
+  Watson-Crick pair's six base-pair parameters and each step's six step
+  parameters, frame by frame, from Olson et al.'s standard base frames by
+  3DNA's construction. On 1BNA it gives B-DNA's rise, twist and propeller.
+  It runs only where `analysis.include` names it; not compared with 3DNA's
+  own output.
+
+- Traced lighting for the Viewer's pictures: **Traced lighting**, beside
+  **Transparent**, saves the picture with Mol*'s traced global illumination
+  (shadows, and light carried between surfaces, as a ray tracer gives), the
+  view on screen left as it is. Where the browser's WebGL cannot trace, the
+  picture is saved without it and the page says so.
+
 - The protein's slow processes: the `markov_model` analysis builds a Markov
   state model of the frames (tICA scaled by the kinetic map, k-means
   microstates, a reversible maximum-likelihood transition matrix) and gives
