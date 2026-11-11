@@ -673,6 +673,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   equilibration in steps; it gave steps times the timestep, 4 ps for a run
   whose clock read 3.28 ps. `recorded_stage_lengths` gives such a summed
   production no steps beside it, the first piece's as `first_piece_steps`.
+- A binding free energy's 95% interval (`delta_g_confidence_kjmol`) is the
+  number +/- Student's t times its standard error, on one fewer degrees of
+  freedom than the resamples that gave a number (2.02 standard errors with
+  40). It was the resamples' 2.5th and 97.5th percentiles, about 1.77
+  standard errors either side with 40, which held the exact answer on 931
+  of 1023 umbrella studies of wells with one (91.0% +/- 0.9%); the t
+  interval held it on 976 (95.4% +/- 0.7%). The percentiles are saved beside it as
+  `delta_g_percentile_interval_kjmol`, and the multiplier, degrees of
+  freedom, level and method as `delta_g_confidence_multiplier`,
+  `delta_g_confidence_degrees_of_freedom`, `delta_g_confidence_level` and
+  `delta_g_confidence_from`.
 
 ### Fixed
 
@@ -2494,6 +2505,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Tests: the Agent's cut-thread tests wait for the page to read its study
   before Retry; the 1L2Y particle count is bounded at the 2.0 nm default
   solvent padding (7,067).
+- A binding free energy whose resamples give no spread (`bootstrap_resamples:
+  1`, or every resample the same number) has no interval and says so in
+  `delta_g_no_interval`, its standard error `null`. Its standard error was
+  saved as `null` with no word why and its interval as one of no width.
 
 ### Added
 
