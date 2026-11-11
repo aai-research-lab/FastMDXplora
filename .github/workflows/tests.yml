@@ -305,11 +305,13 @@ jobs:
           # the files that drive Chromium run after them, two at a time
           # (below), not on every core: four browsers on the runner's four
           # cores, traced, timed out on waits that pass alone (16 of them in
-          # the first try, on #65). A file drives Chromium if it names Playwright, or opens a
-          # page or takes a browser from a fixture it imports from another.
+          # the first try, on #65). A file drives Chromium if it names
+          # Playwright, or opens a page or takes a browser from a fixture it
+          # imports from another.
           # pytest-cov appends the second run to the first.
           #
-          # The plain legs run the same way since 11-09, untraced. On one
+          # The plain legs run as the coverage leg does since 11-09,
+          # untraced, but their browser files one at a time (below). On one
           # core they took up to 89 minutes and two were cancelled at 90
           # (the timings are at `timeout-minutes`). Only the browser tests
           # skip there, Playwright being absent: the other tests of the
