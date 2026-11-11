@@ -204,18 +204,70 @@ def run_in_stages(
 
     _hold_run_process(Path(output_dir))
     before = os.environ.get(RUN_AGAIN_BEFORE_ITS_PRICE)
+    # A command's first SIGTERM where no study listens (its pricing, just
+    # after setup's study ended) ended the process by the signal, nothing
+    # said: from a command (``again``), it is a stop asked, raised.
+    raising = _ASigtermRaises() if again else None
     try:
         return _run_in_stages(config, output_dir, budget_hours=budget_hours,
                               platform_name=platform_name, precision=precision,
                               explore=explore, measure=measure, staged=staged,
                               force=force, keep_previous=keep_previous,
-                              again=again, again_argv=again_argv)
+                              again=again, again_argv=again_argv, raising=raising)
+    except KeyboardInterrupt:
+        # Stopped before the second stage began (its pricing): the study's
+        # record says what runs it again, where a run's record of the stop
+        # does not. Once it began, nothing is said here (the variable went).
+        _said_where_it_heard_the_stop(Path(output_dir))
+        raise
     finally:
+        if raising is not None:
+            raising.end()
         if before is None:
             os.environ.pop(RUN_AGAIN_BEFORE_ITS_PRICE, None)
         else:
             os.environ[RUN_AGAIN_BEFORE_ITS_PRICE] = before
         _release_run_process(Path(output_dir))
+
+
+class _ASigtermRaises:
+    """SIGTERM raised as a stop asked (`runner.StoppedAgain`, a
+    KeyboardInterrupt), from setup's stage to the second stage, where it
+    was at its default: a study's own listener puts it back as it ends, so
+    a SIGTERM in the pricing is heard. At its default again before the
+    second stage, and as the stages end, unless a study heard a stop."""
+
+    def __init__(self) -> None:
+        import signal
+        import threading
+
+        from fastmdxplora.simulation.runner import _stopped_when_asked_again
+
+        self.previous: Any = None
+        if threading.current_thread() is not threading.main_thread():
+            return
+        try:
+            if signal.getsignal(signal.SIGTERM) == signal.SIG_DFL:
+                self.previous = signal.signal(signal.SIGTERM, _stopped_when_asked_again)
+        except (ValueError, OSError):  # pragma: no cover - a platform without it
+            self.previous = None
+
+    def end(self) -> None:
+        import signal
+
+        from fastmdxplora.simulation import runner
+
+        if self.previous is None:
+            return
+        try:
+            # Left as it is where a study heard a stop: a further one ends
+            # the command (`runner._a_further_stop_ends_the_command`).
+            if (signal.getsignal(signal.SIGTERM) is runner._stopped_when_asked_again
+                    and not runner._A_STUDY_HEARD_A_STOP):
+                signal.signal(signal.SIGTERM, self.previous)
+        except (ValueError, OSError):  # pragma: no cover
+            pass
+        self.previous = None
 
 
 def _run_in_stages(
@@ -232,6 +284,7 @@ def _run_in_stages(
     keep_previous: bool = False,
     again: str = "",
     again_argv: tuple[str, ...] = (),
+    raising: "_ASigtermRaises | None" = None,
 ) -> StagedRun:
     import json
     import os
@@ -273,6 +326,7 @@ def _run_in_stages(
         # nothing is priced or run. It was refused for want of a particle
         # count, or priced and simulated as if no stop was asked.
         staged.stopped = True
+        _said_where_it_heard_the_stop(out)
         return staged
 
     after_setup = [phase for phase in asked if phase != "setup"]
@@ -375,6 +429,8 @@ def _run_in_stages(
     # From here a stop is carried on by `fastmdx resume`, once the second
     # stage's record is written.
     os.environ.pop(_signals.RUN_AGAIN_BEFORE_ITS_PRICE, None)
+    if raising is not None:
+        raising.end()
     try:
         staged.results = runner(config=rest, output_dir=str(out), **given)
     except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
@@ -438,19 +494,47 @@ def _the_second_stage_began(out: Path, sent: list[str]) -> bool:
     return any(_phases_recorded(path) == list(sent) for path in _its_records(out))
 
 
+def _said_where_it_heard_the_stop(out: Path) -> None:
+    """What runs a budget study stopped in its setup stage again, written
+    into its own record where none says it yet: its batch manifest, or a
+    study of one's Manifest. A stop heard as a run's setup ended left no
+    run's record saying it (`stopped_before_its_price`)."""
+    import json
+
+    from fastmdxplora.batch.explorer import _what_runs_it_again
+    from fastmdxplora.orchestrator import _put_in_place
+
+    again = _what_runs_it_again()
+    if not again:
+        return
+    for name in ("batch_manifest.json", "manifest.json"):
+        where = out / name
+        try:
+            record = json.loads(where.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict) and not record.get("run_again"):
+            try:
+                _put_in_place(where, json.dumps({**record, **again}, indent=2, default=str))
+            except OSError:  # its stop lines said it
+                pass
+        return
+
+
 def stopped_before_its_price(study: Path | str) -> dict[str, Any] | None:
-    """What runs the study again (``said``, ``argv``), where it is a study
-    with a budget stopped in its setup stage: every record of it and its
-    runs says setup alone, and a run's record of its stop says what runs it
-    again (`runner.run_again_before_its_price`). A resume of it runs setup
-    alone and reads it finished. None for any other study."""
+    """What runs the study again (``said``, ``argv``, ``cwd``), where it is a
+    study with a budget stopped in its setup stage: every record of it and
+    its runs says setup alone, and the study's record (its batch manifest,
+    or its Manifest) or a run's record of its stop says what runs it again
+    (`runner.run_again_before_its_price`). A resume of it runs setup alone
+    and reads it finished. None for any other study."""
     import json
 
     root = Path(study)
     records = _its_records(root)
     if not records or any(_phases_recorded(path) != ["setup"] for path in records):
         return None
-    manifests = [root / "manifest.json"]
+    manifests = [root / "batch_manifest.json", root / "manifest.json"]
     if (root / "runs").is_dir():
         manifests += sorted(run / "manifest.json" for run in (root / "runs").iterdir())
     for manifest in manifests:
@@ -458,6 +542,12 @@ def stopped_before_its_price(study: Path | str) -> dict[str, Any] | None:
             record = json.loads(manifest.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        if isinstance(record, dict) and record.get("run_again"):
+            # Where the study heard the stop: a stop as a run's setup ended
+            # is said by no run's record.
+            return {"said": str(record["run_again"]),
+                    "argv": [str(word) for word in record.get("run_again_argv") or []],
+                    "cwd": str(record.get("run_again_cwd") or "")}
         for phase in (record.get("phases") or []) if isinstance(record, dict) else []:
             details = ((phase.get("refusal") or {}).get("details") or {}
                        if isinstance(phase, dict) else {})

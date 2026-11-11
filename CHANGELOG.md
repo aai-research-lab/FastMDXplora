@@ -9,6 +9,44 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- An umbrella study's binding free energy judges its bulk tail against the
+  bootstrap's resampled curves (saved in `pmf.json` under `uncertainty` as
+  `resample_curves_kjmol`): each point's departure from the tail's mean,
+  and the tail's tilt, against the larger of 0.6 kJ/mol and a multiple of
+  its own spread over the resamples (Sidak's bound for the points, Student's
+  t on one fewer degrees of freedom than the resamples, 2.5% each), so a
+  tail truly in bulk is refused by its noise alone about 5% of the time or
+  less. On the tests' well at 3000 frames a window, a tail still falling
+  by 1 kJ/mol, given a number before, is now refused about seven times in
+  ten. With fewer than 20 resamples whose tail is whole, 0.6 kJ/mol is the
+  whole allowance and the tilt is not judged, as before; with
+  `bootstrap_resamples: 0` the record and the console say so in those
+  words. `binding` says which in `bulk_judged` and `bulk_judged_by`, with
+  `bulk_tilt_kjmol` against `bulk_tilt_allowed_kjmol`. A resample's number
+  is worked out without judging its own tail, so the interval is made of
+  every resample that gave a number (`delta_g_resamples`, and the rest in
+  `delta_g_resamples_without_a_number`); judged on its own, on that well at
+  300 frames a window, 39 of 40 resamples were refused and the interval had
+  no width. Where the binding free energy is refused, `derived` in
+  `pmf.json` gives no number either (`value: null`, with a note).
+- The cone's wall is judged in every window with frames at or inside the
+  cutoff the integral uses, over those frames alone, wherever the window
+  was centred, where it was judged only in windows centred within 1.25
+  times the minimum. A wall that bit inside the cutoff beyond that range
+  now refuses the number, naming the windows. A window with frames in the
+  bound range and no bias read there (a COLVAR without `cone.bias`, say)
+  is named in `cone_wall_not_read_in` and refuses it, as does no window
+  sampling the bound range. `cone_wall_judged` gives each judged window's
+  mean bias with `frames_inside` and `frames_unread`, and
+  `cone_wall_checked_up_to_nm` the cutoff. Every binding refusal past the
+  bulk check (the wall, an unread window, a gap in the bound range, the
+  reference checks) saves these fields and how the tail was judged. An
+  unread window is saved with `bias_kjmol: null` and `read: false`, and an
+  infinite wall as `null` with `cone_wall_infinite: true`: `pmf.json` is
+  now written as strict JSON, every NaN or infinity as `null`. The wall's
+  refusal says that a wider cone means every window runs again, since the
+  windows of one study share one cone, and names `fastmdx explore -c
+  <config> --force-overwrite`; `--rerun-window` cannot do it.
 - A joined run of three or four segments can now be called drifting
   (`analysis.sampling.drifting`, `drift_test:
   slope_against_errors_and_scatter`): with each segment mean placed at the
@@ -538,6 +576,17 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study was polled every few seconds for as long as it was open.
 - The Analysis page names protein-ligand interactions in its subtitle only
   where the study has a ligand's analyses.
+- Tests: CI's other legs run the tests that drive no browser on every core
+  and the browser files one at a time after them, as the coverage leg does.
+  On one core two were cancelled at 90 minutes with nothing failed; their
+  limit is now 120. On every core, on every leg, a hung test fails once at
+  600 s with its stack and the next test runs, where its worker was ended
+  and the test run again on each new one. If its cleanup then waits on what
+  hung, every thread's stack is written at 660 s and its worker ended. A
+  worker that crashes or is ended ends the run on every core, naming its
+  test, and the tests not yet run there are not counted.
+  The browser test of a rerun over an unfinished round has a file of its
+  own, so the other tests of a failed round run on every core.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
@@ -983,13 +1032,38 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   exits 130, "stopped when asked", and from `fastmdx explore` names the
   command as it was given, with `--force-overwrite` added, as what runs it
   again, its setup first. From `fastmdx agent --autonomous` or Python it names
-  no command, and says the study is run again from its setup. A Ctrl-C in its
-  pricing, or any stop there once a study heard one, does the same, not a
-  traceback; a first SIGTERM there still ends the process by the signal.
+  no command, and says the study is run again from its setup. A Ctrl-C or a
+  SIGTERM in its pricing (the GUI's Stop there too), or any stop there once a
+  study heard one, does the same, not a traceback or a process ended by the
+  signal. Where the line names no `--output`, the command names the study's
+  folder with `--output`, so it runs again there, not in a new folder named
+  for the time, whether the config's `output` named the folder or nothing
+  did.
   `fastmdx resume` runs setup alone for such a study and reads it finished, so
-  its stop lines, its runs' records of the stop, its fixes (without a price)
-  and the GUI's Stop, where a run of setup recorded the stop, say what runs it
-  again instead. `fastmdx agent --autonomous` says a study stopped or failed
+  its stop lines, its runs' records of the stop, a run it did not start, its
+  fixes (without a price) and the GUI's Stop say what runs it again instead.
+  The study saves that command, and the folder it was typed in, in its own
+  record (its batch manifest, or a study of one's Manifest), so a stop heard
+  as a run's setup ended, which no run's record says, is read so too. Its
+  fixes' records (`/api/fixes`, `fastmdx resume --json`) carry that folder
+  (`cwd`), and its lines, the GUI's card and the terminal text where the GUI
+  does not run it say it ("Run, in <folder>: ...", `cd <folder> && ...`).
+  Where that folder is gone, or the study was moved or renamed since it
+  stopped so that the command's `--output` (read as the command run reads
+  it: `~` after `--output=` not expanded; a command saved by an earlier
+  build with no `--output` is read by its config's `output`, and refused
+  where that names none either) is not the study open, the fix is not runnable and nothing is run into the old path. It
+  says why first (`refused`, its code marks set as code on the card), and
+  what to do instead, and gives the command only as it was typed ("It was
+  typed, in <folder>, as: ..."), never as the thing to run; `POST /api/fix`
+  of it answers with the refusal alone, a link out of the study or not.
+  The fix's command leaves out explore's dashboard flags (`--dashboard`,
+  `--dashboard-port` and the rest, and their prefixes), since the page that
+  runs it watches it. Where the line had `--dashboard`, its study is in the
+  folder explore made of `--output` with `~` expanded, so the fix names
+  that folder in full. The stop line and the final line say the command as
+  it was typed. A study with a budget still starts no GUI for `--dashboard`.
+  `fastmdx agent --autonomous` says a study stopped or failed
   in its simulation so, exiting 130 or 1, not "Ran within the budget." and 0.
   `--force-overwrite` and `--rerun` now reach both of its stages where only
   setup is there; over a study holding more they are refused before anything
@@ -999,6 +1073,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   its setup alone. Its study stopped when asked in its simulation exits 130,
   and one with a run that failed exits 1, as without a budget, where both
   exited 0.
+- A run's `resolved_config.yml` is written whole, to a file beside it that
+  is then put in its place, by the run and where a study's phases are put
+  back after some were run again: a stop raised as it was written left it
+  cut short, and the study unread.
 - A stop's lines (the first stop, the stop under way, stopping now) are
   said once, by the study's process: each worker of a parallel study said
   them too. A study of several runs one after another says them on the

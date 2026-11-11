@@ -497,8 +497,6 @@ def _fixes_offered(root: Path) -> dict[str, Any]:
     the study walked first (`_links_out`). Where the POST would refuse, no
     fix is offered to run: each says why (``not_run_here``) with its own
     command (``terminal``), as the POST would say it."""
-    import shlex
-
     from fastmdxplora.gui.fixes_view import study_of
 
     study = study_of(root)
@@ -509,7 +507,7 @@ def _fixes_offered(root: Path) -> dict[str, Any]:
         return answer
     for fix in answer.get("fixes") or []:
         if fix.get("runnable"):
-            terminal = shlex.join(["fastmdx", *(fix.get("argv") or [])])
+            terminal = _at_the_terminal(fix.get("argv") or [], fix.get("cwd") or "")
             fix["runnable"] = False
             fix["terminal"] = terminal
             fix["not_run_here"] = (_links_said(links) + " To run it anyway, at the terminal: "
@@ -529,7 +527,7 @@ def _the_fix_shown(root: Path, index: Any, run_in: Path | None = None) -> bool:
     except (TypeError, ValueError):
         return True
     shown, run = _fixes_held(root), fixes_payload(root if run_in is None else run_in)
-    keys = ("code", "where", "command", "argv")
+    keys = ("code", "where", "command", "argv", "cwd")
     try:
         return ([shown["fixes"][index].get(key) for key in keys]
                 == [run["fixes"][index].get(key) for key in keys])
@@ -859,18 +857,26 @@ def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dic
     return answer
 
 
-def _fix_refused(study: Path, argv: list[str] | None) -> dict[str, Any] | None:
+def _at_the_terminal(argv: list[str], cwd: str = "") -> str:
+    """A fix's command as typed at the terminal, quoted: from the folder it
+    is run from (``cwd``) where it has one, since its paths are as typed."""
+    import shlex
+
+    command = shlex.join(["fastmdx", *argv])
+    return f"cd {shlex.quote(cwd)} && {command}" if cwd else command
+
+
+def _fix_refused(study: Path, argv: list[str] | None,
+                 cwd: str = "") -> dict[str, Any] | None:
     """Why a fix (`POST /api/fix`: a resume, umbrella windows again) is not
     started in ``study``: as for running a phase again, a link leading out
     of it, or a file of it that is a hard link (`_links_out`), with the fix's own command, quoted, to run at the
     terminal instead, where it is known without reading the study
-    (``argv``). None where there is none."""
-    import shlex
-
+    (``argv``, run from ``cwd`` where given). None where there is none."""
     links = _links_out(_the_study_run(Path(study)))
     if not links:
         return None
-    terminal = shlex.join(["fastmdx", *argv]) if argv else None
+    terminal = _at_the_terminal(argv, cwd) if argv else None
     return {"ok": False, "error": _links_said(links) + (
         " To run it anyway, at the terminal: " + terminal if terminal else ""),
         "terminal": terminal, "links_out": [name for name, _ in links]}
@@ -888,14 +894,21 @@ def _fix_walked(app_runtime: Any, asked: dict[str, Any]) -> dict[str, Any] | Non
     study = study_of(getattr(app_runtime, "active_root", None))
     if study is None or not Path(study).is_dir():
         return None
-    argv = None
+    argv, cwd = None, ""
     if "windows" not in asked and _links_out(_the_study_run(Path(study))):
         try:
-            shown = _fixes_held(app_runtime.data_root()).get("fixes") or []
-            argv = shown[int(asked.get("index"))].get("argv") or None
+            fix = (_fixes_held(app_runtime.data_root()).get("fixes") or [])[
+                int(asked.get("index"))]
         except (TypeError, ValueError, IndexError, AttributeError):
-            argv = None
-    return _fix_refused(study, argv)
+            fix = {}
+        if fix.get("refused"):
+            # Not run anywhere (its folder gone, its study moved): its
+            # refusal alone, never its command to run "anyway" into the old
+            # path.
+            return {"ok": False, "error": str(fix["refused"]), "terminal": None}
+        argv = fix.get("argv") or None
+        cwd = str(fix.get("cwd") or "")
+    return _fix_refused(study, argv, cwd)
 
 
 def _again_refused(root: Path | None, phase: str | list[str] = "analysis",

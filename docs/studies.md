@@ -606,6 +606,28 @@ anywhere on the sphere of that radius. That is what the `−2kT ln r` in the bul
 reference is about: the room at radius r is `4πr²`, so a free ligand is more
 likely to be found at 2 nm than at 1 nm for no energetic reason at all.
 
+**How the tail is judged to be bulk.** In bulk `A(r) + 2kT ln r` is a constant,
+so the outer quarter of the curve is checked for two things: how far each point
+of that sum departs from its mean there, and how far the tail tilts across its
+length (the least-squares slope against r, times the length). Each is allowed
+the larger of 0.6 kJ/mol and a multiple of its own spread over the bootstrap's
+resampled curves (saved under `uncertainty` as `resample_curves_kjmol`):
+Šidák's bound for the points and a two-sided limit for the tilt, each at a 2.5%
+chance, on Student's t with one fewer degrees of freedom than the resamples
+(3.37 for 15 points and 2.33 for the tilt with 40 resamples; 3.14 and 2.24 with
+very many), so that a tail truly in bulk is refused by its noise alone no more
+than about 5% of the time. The spread is read off the resamples rather than off
+the curve's error bars, because each error bar holds the noise of the bin the
+curve is zeroed at, which every point of the tail shares and which cancels in a
+departure, so an allowance made from them is several times too wide. Where a
+study has fewer than 20 resamples holding a free energy in every bin of the
+tail (`bootstrap_resamples: 0` or a small count, or a record saved before they
+were), 0.6 kJ/mol is the whole allowance for each point and the tilt is not
+judged. `binding` in `pmf.json` says which was judged in `bulk_judged` and
+`bulk_judged_by` (`bulk_allowed_kjmol` at `bulk_worst_at_nm`, `bulk_tilt_kjmol`
+against `bulk_tilt_allowed_kjmol`), and a refusal names the point or the tilt
+and both numbers.
+
 Two things have to be true for that reference to mean anything, and on a real
 site neither is:
 
@@ -739,7 +761,26 @@ binding integral is taken over, and no analytic term puts that back. So every
 window writes the wall's bias beside its coordinate, and the binding free
 energy is **refused** where the wall carried more than 0.25 kJ/mol in the
 windows holding the bound state, naming the number and asking for a wider
-angle. Where no such column exists the result says `cone_wall_checked: false`
+angle. The windows of one study share one cone, so a wider angle means every
+window runs again, not only those named: `fastmdx explore -c <config>
+--force-overwrite` with the new `half_angle_deg` in the config.
+`--rerun-window` cannot do it. Every window with frames after equilibration at or inside the cutoff the
+integral uses is judged, wherever it was centred (a window held just outside a
+steep well is pulled into it), and it is judged on those frames alone: the mean
+of the wall's bias over its frames in the bound range, so a window that touched
+the cutoff once and met the wall further out is not taken for a wall over the
+bound state. A window is judged however few its frames inside, and the count is
+recorded. The windows judged are in `cone_wall_judged` (with `frames_inside`
+and `frames_unread`) and `cone_wall_windows` up to
+`cone_wall_checked_up_to_nm`, those that bit in `cone_wall_bit_in`. An infinite
+bias is a wall that bit, saved as `null` with `cone_wall_infinite: true` (and
+`infinite` on its window), since `pmf.json` is strict JSON; a window with no
+bias read is saved with `bias_kjmol: null` and `read: false`. A refusal saves
+how the tail and the wall were judged, as a number does. A frame whose bias is not a number is left out and
+counted; a judged window with no bias read on its frames inside (one whose
+COLVAR lacks the `cone.bias` column, say) is named in `cone_wall_not_read_in`
+and the number is refused, as it is where no window sampled the bound range at
+all. Where no window has the column the result says `cone_wall_checked: false`
 rather than implying the check passed.
 
 `pmf.json` carries both numbers: `delta_g_before_the_cone_kjmol` is what the
@@ -763,11 +804,11 @@ quantities from their trajectories and records them under `binding.reference` in
   of the sphere at its radius (of the cap, under a cone) and counted as free
   where none of its heavy atoms comes within 0.4 nm of anything that is not
   solvent. The reference assumes all of it is open, so a share `f` that is
-  not makes the answer too negative by `kT ln(1/f)`. Where that exceeds the
-  0.6 kJ/mol the tail's shape is allowed, the number is **withheld**, with the
-  radius, the share and the cost. On trypsin with benzamidine the cap was 18%
-  to 58% open across the outer range, about 3 kJ/mol; no length of run
-  changes that.
+  not makes the answer too negative by `kT ln(1/f)`. Where that exceeds
+  0.6 kJ/mol, the floor of what the tail's shape is allowed, the number is
+  **withheld**, with the radius, the share and the cost. On trypsin with
+  benzamidine the cap was 18% to 58% open across the outer range, about
+  3 kJ/mol; no length of run changes that.
 - **Whether the system has a membrane.** Bulk is then a slab of water. Without
   a cone the number is withheld; with one, the cap is computed as above, the
   bilayer counting as something the ligand is not free beside.

@@ -31,8 +31,10 @@ def study_of(root: Any) -> Path | None:
 
 def runnable(remedy: Any) -> bool:
     """Whether the GUI may run this fix for the person: a command of this
-    software's, and not one waiting on a choice only the person can make."""
-    return bool(getattr(remedy, "argv", ())) and not getattr(remedy, "decision", False)
+    software's, not one waiting on a choice only the person can make, and
+    not one that would not run into the study (`Remedy.refused`)."""
+    return (bool(getattr(remedy, "argv", ())) and not getattr(remedy, "decision", False)
+            and not getattr(remedy, "refused", ""))
 
 
 def fixes_payload(root: Any) -> dict[str, Any]:
@@ -51,6 +53,9 @@ def fixes_payload(root: Any) -> dict[str, Any]:
         record = remedy.as_record()
         record["index"] = index
         record["runnable"] = runnable(remedy)
+        if getattr(remedy, "refused", ""):
+            # Said where its Run would be, as a fix not run from here is.
+            record["not_run_here"] = remedy.refused
         record["price_said"] = remedy.price.as_text() if remedy.price else ""
         fixes.append(record)
     return {"ok": True, "study": str(study), "fixes": fixes}

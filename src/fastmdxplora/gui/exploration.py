@@ -998,8 +998,10 @@ def stopped_said(where: Any) -> str:
 
         again = stopped_before_its_price(Path(where))
         if again is not None and again.get("argv"):
+            # Its paths as typed, so said with where it is run from.
             return ("Workflow stopped before its simulation began; "
-                    f"{again.get('said')}.")
+                    f"{again.get('said')}"
+                    + (f", in {again['cwd']}." if again.get("cwd") else "."))
         if again is not None:
             # No command to name (the Agent, Python): said once, not twice.
             return ("Workflow stopped before its simulation began, and the study is run "
@@ -2266,6 +2268,10 @@ class DashboardRuntime:
                 return {"ok": False, "error": "Nothing stopped this study that a "
                                               "command would fix."}
             remedy = found[index]
+            if getattr(remedy, "refused", ""):
+                # Its folder gone, or the study moved since: nothing is run
+                # into the old path.
+                return {"ok": False, "error": remedy.refused}
             if not runnable(remedy):
                 return {"ok": False, "error": (
                     "This fix is not a command run from here: " + remedy.fix)}
@@ -2273,7 +2279,7 @@ class DashboardRuntime:
             # the study, as Analyze again is not (`server._fix_refused`).
             from fastmdxplora.gui.server import _fix_refused
 
-            refused = _fix_refused(study, list(remedy.argv))
+            refused = _fix_refused(study, list(remedy.argv), remedy.cwd)
             if refused is not None:
                 return refused
             # Run from where the person ran it, where its paths, as typed,

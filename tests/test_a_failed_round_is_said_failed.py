@@ -3594,7 +3594,8 @@ def test_a_stop_in_a_budget_s_pricing_says_what_carries_it_on(tmp_path, monkeypa
     said = capsys.readouterr().err
     assert code == 130, said
     assert "fastmdx resume" not in said, said
-    assert f"`fastmdx explore -c {config} --force-overwrite`" in said, said
+    assert (f"`fastmdx explore -c {config} --force-overwrite --output {tmp_path / 'study'}`"
+            in said), said
     assert [phases for phases, _ in stages] == [["setup"]]
     # As it says: the machine calibrated now, its simulation runs.
     cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
@@ -4187,6 +4188,594 @@ def test_the_gui_s_stop_says_a_python_budget_s_stop_once(tmp_path):
     said = exploration.stopped_said(tmp_path)
     assert said.count("before its simulation began") == 1, said
     assert "run again from its setup" in said, said
+
+
+def _heard_as_its_first_run_s_setup_ended(tmp_path: Path, monkeypatch):
+    """A budget study of two runs whose stop was heard as its first run's
+    setup ended: that run's record says setup "ok", the second was not
+    started, and the study's batch manifest is written as it ends. The
+    batch, its argv and the folder it was typed in."""
+    import os
+
+    from fastmdxplora.batch.explorer import BatchExplorer
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.simulation import runner
+
+    (tmp_path / "tri-ala.pdb").write_text(TRI_ALANINE)
+    study = tmp_path / "w" / "st"
+    batch = BatchExplorer(config_data={
+        "systems": [{"id": "tri", "system": str(tmp_path / "tri-ala.pdb")}],
+        "sweep": {"simulation.random_seed": [1, 2]}, "budget_hours": 50},
+        output_dir=str(study))
+    first, second = batch.run_specs
+    setup_alone = yaml.safe_dump({"include_phase": ["setup"]})
+    (study / "runs" / first.run_id).mkdir(parents=True)
+    (study / "resolved_config.yml").write_text(setup_alone)
+    (study / "runs" / first.run_id / "resolved_config.yml").write_text(setup_alone)
+    (study / "runs" / first.run_id / "manifest.json").write_text(json.dumps({
+        "phases": [{"name": "setup", "status": "ok"}]}))
+    argv = ["explore", "-c", "two.yml", "--output", "st", "--force-overwrite"]
+    typed = tmp_path / "w"
+    monkeypatch.setenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE, json.dumps({
+        "said": f"`fastmdx {' '.join(argv)}` runs the study again, its setup first",
+        "argv": argv, "cwd": str(typed)}))
+    batch._listens = runner._StopInTheStudy(folder=study)
+    batch._listens.signal = signal.SIGTERM
+    batch.results = [RunResult(run_id=first.run_id, system="tri", status="ok",
+                               output_dir=study / "runs" / first.run_id, sweep_values={},
+                               phases=[]), *batch._not_started([second])]
+    batch._write_batch_manifest()
+    monkeypatch.delenv(runner.RUN_AGAIN_BEFORE_ITS_PRICE)
+    assert os.environ.get(runner.RUN_AGAIN_BEFORE_ITS_PRICE) is None
+    return batch, argv, typed
+
+
+def test_a_budget_s_stop_heard_as_a_run_s_setup_ended_runs_it_again(tmp_path, monkeypatch,
+                                                                    capsys):
+    """A stop in a budget study's setup heard just as a run's setup ended:
+    no run's record said what runs it again, and its fixes, the GUI's fix
+    and the GUI's Stop answer named `fastmdx resume`, which ran setup alone
+    and read the study finished."""
+    from fastmdxplora.batch.explorer import _what_would_fix_it
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.remedies import remedies_of
+
+    batch, argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    record = json.loads((batch.output_dir / "batch_manifest.json").read_text())
+    assert record["run_again_argv"] == argv and record["run_again_cwd"] == str(typed), record
+    found = remedies_of(batch.output_dir)
+    assert [remedy.argv for remedy in found] == [tuple(argv)], found
+    assert not any("fastmdx resume" in remedy.command for remedy in found), found
+    fixes = fixes_payload(batch.output_dir)["fixes"]
+    assert [fix["argv"] for fix in fixes] == [argv], fixes
+    said = exploration.stopped_said(batch.output_dir)
+    assert "before its simulation began" in said and "fastmdx explore" in said, said
+    printed = "\n".join(_what_would_fix_it(batch.output_dir))
+    assert "fastmdx resume" not in printed and "fastmdx explore" in printed, printed
+
+
+def test_a_budget_s_stop_heard_as_a_study_of_one_s_setup_ended_runs_it_again(
+        tmp_path, monkeypatch, capsys):
+    """The same for a study of one, which writes no batch manifest: its run
+    ended "ok" in setup and the stop was heard as its study ended."""
+    import importlib
+
+    from fastmdxplora.orchestrator import RunResult
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def first(out: Path):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({
+            "phases": [{"name": "setup", "status": "ok"}]}))
+        with runner.listening_for_the_study(out) as listens:
+            listens.stage = "finishing"
+            listens._note(signal.SIGTERM, None)
+        return [RunResult(run_id="tri", system="tri", status="ok", output_dir=out,
+                          sweep_values={}, phases=[])]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    line = ["explore", "-c", str(config), "--output", str(tmp_path / "study")]
+    runner._listen_afresh()
+    try:
+        assert cli.main(line) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    found = remedies_of(tmp_path / "study")
+    assert found and all(remedy.argv == (*line, "--force-overwrite") for remedy in found), found
+
+
+def test_a_run_a_budget_study_stopped_in_setup_did_not_start_names_its_run_again(
+        tmp_path, monkeypatch):
+    """A run a budget study stopped in its setup stage did not start said
+    `fastmdx resume` runs it, which ran setup alone and read it finished."""
+    batch, argv, _typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    record = json.loads((batch.output_dir / "batch_manifest.json").read_text())
+    said = [run["message"] for run in record["runs"] if run["status"] == "skipped"]
+    assert len(said) == 1 and said[0].startswith("Not started"), said
+    assert "fastmdx resume" not in said[0] and "fastmdx explore" in said[0], said
+
+
+def test_a_fix_run_from_where_it_was_typed_says_that_folder(tmp_path, monkeypatch):
+    """The command that runs a budget study again holds its paths as typed,
+    and is run from where it was typed. Its record (`/api/fixes`, `fastmdx
+    resume --json`), its lines and the terminal text where the GUI does not
+    run it gave no folder; one whose folder is gone was offered as runnable."""
+    import shutil
+
+    from fastmdxplora.batch.explorer import _what_would_fix_it
+    from fastmdxplora.gui import server
+    from fastmdxplora.gui.fixes_view import fixes_payload
+
+    batch, argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    study = batch.output_dir
+    fix = fixes_payload(study)["fixes"][0]
+    assert fix["cwd"] == str(typed) and fix["runnable"] and not fix["refused"], fix
+    assert f"Run, in {typed}: fastmdx explore" in "\n".join(_what_would_fix_it(study))
+    # Not run from the GUI (a link out of the study): the terminal text runs
+    # it from that folder.
+    (tmp_path / "elsewhere").write_text("x")
+    (study / "outlink").symlink_to(tmp_path / "elsewhere")
+    offered = server._fixes_offered(study)["fixes"][0]
+    assert offered["terminal"].startswith(f"cd {typed} && fastmdx explore"), offered
+    assert offered["terminal"] in offered["not_run_here"], offered
+    (study / "outlink").unlink()
+    # The page's fix and the one that would run differ in folder alone: not
+    # the fix shown.
+    shown = {"fixes": [{**fix, "cwd": str(tmp_path)}]}
+    monkeypatch.setattr(server, "_fixes_held", lambda _root: shown)
+    assert not server._the_fix_shown(study, 0)
+    # Its folder gone: shown not runnable, and why.
+    moved = tmp_path / "w2"
+    typed.rename(moved)
+    found = fixes_payload(moved / "st")["fixes"][0]
+    assert not found["runnable"] and "not there now" in found["not_run_here"], found
+    shutil.rmtree(moved)
+
+
+def test_a_fix_of_a_study_moved_since_it_stopped_is_not_run_into_the_old_path(
+        tmp_path, monkeypatch):
+    """A budget study stopped in setup, then moved or renamed with the folder
+    it was typed in still there: its fix ran `--output st` from that folder,
+    into the old path, while the page watched the study where it is now."""
+    from unittest import mock
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.gui.fixes_view import fixes_payload
+    from fastmdxplora.remedies import remedies_of
+
+    batch, _argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    assert not remedies_of(batch.output_dir)[0].refused
+    (typed / "old").mkdir()
+    now = typed / "old" / "st"
+    batch.output_dir.rename(now)
+    remedy = remedies_of(now)[0]
+    assert "moved or renamed" in remedy.refused and str(now) in remedy.refused, remedy
+    fix = fixes_payload(now)["fixes"][0]
+    assert not fix["runnable"] and fix["not_run_here"] == remedy.refused, fix
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=now.parent)
+    runtime.active_root = now
+    with mock.patch.object(DashboardRuntime, "_spawn", return_value={"launched": True}) as spawn:
+        answer = runtime.run_a_fix(0)
+    assert not answer["ok"] and "moved or renamed" in answer["error"], answer
+    assert not spawn.called and not (typed / "st").exists()
+
+
+def test_a_budget_s_run_again_names_the_folder_it_ran_in(tmp_path, monkeypatch, capsys):
+    """A budget study given no folder (neither `--output` nor its config's
+    `output`) runs in one named for the time; the command named to run it
+    again, its setup first, ran it in a new one."""
+    import importlib
+
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+    named = {}
+    stopped = _a_setup_stopped("before its count")
+
+    def first(out: Path):
+        named["argv"], named["out"] = runner.run_again_argv(), out
+        return stopped(out)
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    study = yaml.safe_load(config.read_text())
+    study.pop("output")
+    config.write_text(yaml.safe_dump(study))
+    monkeypatch.chdir(tmp_path)
+    runner._listen_afresh()
+    try:
+        assert cli.main(["explore", "-c", str(config)]) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    assert named["argv"] == ["explore", "-c", str(config), "--force-overwrite",
+                             "--output", str(named["out"])], named
+    assert f"--output {named['out']}" in capsys.readouterr().err
+
+
+def test_a_first_sigterm_in_a_budget_s_pricing_is_a_stop(tmp_path, monkeypatch, capsys):
+    """A first SIGTERM as a budget study timed its prepared system, no stop
+    heard before (the GUI's Stop there, too): the process ended by the
+    signal, nothing said, and its fixes named no way to run it again."""
+    import importlib
+    import os
+
+    from fastmdxplora import cost
+    from fastmdxplora.remedies import remedies_of
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+
+    def first(out: Path):
+        (out / "setup").mkdir(parents=True, exist_ok=True)
+        (out / "setup" / "setup_parameters.json").write_text(
+            json.dumps({"n_atoms_solvated": 2_000}))
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({
+            "phases": [{"name": "setup", "status": "ok"}]}))
+        return []
+
+    config, stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+
+    def priced(*_args, **_kwargs):
+        os.kill(os.getpid(), signal.SIGTERM)
+        raise AssertionError("priced on after a SIGTERM")
+
+    monkeypatch.setattr(cost, "measure_prepared_system", priced)
+    before = signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        code = cli.main(["explore", "-c", str(config)])
+        assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    finally:
+        signal.signal(signal.SIGTERM, before)
+    said = capsys.readouterr().err
+    assert code == 130, said
+    assert (f"`fastmdx explore -c {config} --force-overwrite --output {tmp_path / 'study'}`"
+            in said), said
+    assert [phases for phases, _ in stages] == [["setup"]]
+    found = remedies_of(tmp_path / "study")
+    assert found and found[0].argv == ("explore", "-c", str(config), "--force-overwrite",
+                                       "--output", str(tmp_path / "study")), found
+
+
+def test_a_budget_study_s_dashboard_flags_start_no_gui(tmp_path, monkeypatch):
+    """`fastmdx explore --dashboard` of a study with a budget ignores the
+    dashboard, as it always did: started for it, its live records in a study
+    of one's `simulation/` made the run-again's `--force-overwrite` refuse,
+    and the study could not be run again."""
+    import importlib
+
+    from fastmdxplora import cost
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    cost.calibrate(particles=2_000, steps=5_000, seconds=1.0, platform_name="CPU",
+                   precision="mixed")
+    monkeypatch.setattr(cost, "measure_prepared_system", lambda *_a, **_k: None)
+    config, stages = _a_budget_study(tmp_path, monkeypatch)
+    seen = []
+    monkeypatch.setattr(cli, "_start_dashboard_for_command",
+                        lambda _args, where: seen.append(("started", Path(where))) or "s")
+    monkeypatch.setattr(cli, "_finish_dashboard_for_command",
+                        lambda session, _args, rc=0: seen.append(("finished", session, rc)))
+    assert cli.main(["explore", "-c", str(config), "--dashboard"]) == 0
+    assert seen == [], seen
+    assert [phases for phases, _ in stages][-1] == ["simulation", "analysis", "report"]
+
+
+def test_a_stop_as_a_run_s_resolved_config_is_written_leaves_it_whole(tmp_path, monkeypatch):
+    """A SIGTERM as a run's setup ended raised its stop as the run wrote its
+    resolved config again: the record was left cut short, the study read as
+    no budget's setup alone, and its fixes named `fastmdx resume`."""
+    from fastmdxplora.config import write_resolved_config
+
+    merged = {"system": "tri-ala.pdb", "output": str(tmp_path), "include_phase": ["setup"]}
+    write_resolved_config(merged, tmp_path)
+    before = (tmp_path / "resolved_config.yml").read_text()
+
+    def cut(data, stream=None, **_given):
+        if stream is not None:
+            stream.write("systems:\n- id: s1\n  system")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(yaml, "safe_dump", cut)
+    with pytest.raises(KeyboardInterrupt):
+        write_resolved_config({**merged, "include_phase": ["setup", "simulation"]}, tmp_path)
+    assert (tmp_path / "resolved_config.yml").read_text() == before
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_a_study_named_by_its_config_s_output_moved_since_it_stopped_is_refused(
+        tmp_path, monkeypatch):
+    """A budget study whose folder its config's `output` named, no `--output`
+    typed, stopped in setup and then renamed: its run-again named no
+    `--output`, so nothing told it from the study open, and the GUI's Run
+    made a new study at the old path."""
+    import importlib
+    from unittest import mock
+
+    from fastmdxplora.gui.exploration import DashboardRuntime
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.remedies import remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def first(out: Path):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({"phases": [{
+            "name": "setup", "status": "error",
+            "refusal": refusal_of(RunStopped("SIGTERM").as_error()).as_dict()}]}))
+        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+        from fastmdxplora.orchestrator import RunResult
+
+        return [RunResult(run_id="tri", system="tri", status="error", output_dir=out,
+                          sweep_values={}, phases=[], error_type=STOPPED_ERROR_TYPE,
+                          message="Stopped when asked")]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    monkeypatch.chdir(tmp_path)
+    runner._listen_afresh()
+    try:
+        assert cli.main(["explore", "-c", config.name]) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    named = next(r for r in remedies_of(tmp_path / "study") if r.argv[:1] == ("explore",))
+    assert "--output" in named.argv and not named.refused, named
+    now = tmp_path / "renamed"
+    (tmp_path / "study").rename(now)
+    remedy = next(r for r in remedies_of(now) if r.argv[:1] == ("explore",))
+    assert "moved or renamed" in remedy.refused, remedy
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=tmp_path)
+    runtime.active_root = now
+    with mock.patch.object(DashboardRuntime, "_spawn", return_value={"launched": True}) as spawn:
+        assert not runtime.run_a_fix(0)["ok"]
+    assert not spawn.called and not (tmp_path / "study").exists()
+
+
+def test_a_study_s_phases_put_back_leave_its_record_whole(tmp_path, monkeypatch):
+    """The study's phases put back after some were run again wrote its
+    resolved config in place: a stop as it was written left it cut short."""
+    from fastmdxplora.config.recorded import keep_the_study_s_phases
+
+    record = tmp_path / "resolved_config.yml"
+    record.write_text("# a header\n" + yaml.safe_dump({"include_phase": ["analysis"],
+                                                     "systems": [{"id": "s1"}]}))
+
+    def cut(self, text, *_args, **_kwargs):
+        with open(self, "w", encoding="utf-8") as stream:
+            stream.write(text[: len(text) // 2])
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Path, "write_text", cut)
+    try:
+        keep_the_study_s_phases(tmp_path, ["setup", "simulation"], None)
+    except KeyboardInterrupt:
+        pytest.fail(f"cut as it was written: {record.read_text()!r}")
+    finally:
+        monkeypatch.undo()
+    read = yaml.safe_load(record.read_text())
+    assert read["include_phase"] == ["setup", "simulation"] and read["systems"], read
+    assert record.read_text().startswith("# a header")
+
+
+def test_an_output_given_with_a_tilde_after_equals_is_read_as_explore_reads_it(tmp_path):
+    """`--output=~/x` is not expanded by the shell, and explore writes into
+    `./~/x`; the fix read it as `$HOME/x` and refused it as moved."""
+    from fastmdxplora.remedies import _why_not_run_into
+
+    study = tmp_path / "~" / "x"
+    study.mkdir(parents=True)
+    argv = ("explore", "-c", "s.yml", "--output=~/x", "--force-overwrite")
+    assert _why_not_run_into(study, argv, str(tmp_path)) == ""
+
+
+def test_a_fix_refused_says_why_first_and_its_command_only_as_typed(tmp_path):
+    """A run-again refused (its folder gone, its study moved) still showed
+    "Run, in <folder>: <command>" first, and the refusal under it; the gone
+    folder's refusal said nothing of what to do instead."""
+    from fastmdxplora.remedies import Remedy, _why_not_run_into
+
+    gone = str(tmp_path / "gone")
+    argv = ("explore", "-c", "s.yml", "--output", "st", "--force-overwrite")
+    why = _why_not_run_into(tmp_path / "st", argv, gone)
+    assert "`--output` naming the study where it is now" in why, why
+    remedy = Remedy(code="simulation.run.stopped", where="the study", why="Stopped.",
+                    fix="Run the study again, its setup first.", argv=argv, cwd=gone,
+                    command="fastmdx " + " ".join(argv), refused=why)
+    lines = remedy.as_lines()
+    assert not any(line.strip().startswith("Run") for line in lines), lines
+    assert lines[2].strip() == why and lines[3].strip().startswith("It was typed"), lines
+    text = remedy.as_text()
+    assert "Run," not in text and text.index(why) < text.index("It was typed"), text
+
+
+def test_a_dashboard_budget_s_fix_runs_with_no_dashboard_of_its_own(tmp_path, monkeypatch,
+                                                                    capsys):
+    """A `--dashboard` budget study stopped in setup saved its whole line, so
+    the GUI's Run started a study that finished, then served a GUI of its
+    own and waited for a Ctrl-C the GUI could not give, read running."""
+    import importlib
+
+    from fastmdxplora.refusals import RunStopped, refusal_of
+    from fastmdxplora.remedies import _without_a_dashboard, remedies_of
+    from fastmdxplora.simulation import runner
+
+    cli = importlib.import_module("fastmdxplora.cli.main")
+    monkeypatch.setattr(runner, "_say_stop", lambda _text: None)
+    monkeypatch.setattr(cli, "_start_dashboard_for_command", lambda *_a: None)
+    monkeypatch.setattr(cli, "_finish_dashboard_for_command", lambda *_a, **_k: None)
+    before = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+
+    def first(out: Path):
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+        (out / "manifest.json").write_text(json.dumps({"phases": [{
+            "name": "setup", "status": "error",
+            "refusal": refusal_of(RunStopped("SIGTERM").as_error()).as_dict()}]}))
+        from fastmdxplora.batch.explorer import STOPPED_ERROR_TYPE
+        from fastmdxplora.orchestrator import RunResult
+
+        return [RunResult(run_id="tri", system="tri", status="error", output_dir=out,
+                          sweep_values={}, phases=[], error_type=STOPPED_ERROR_TYPE,
+                          message="Stopped when asked")]
+
+    config, _stages = _a_budget_study(tmp_path, monkeypatch, first=first)
+    monkeypatch.chdir(tmp_path)
+    line = ["explore", "-c", config.name, "--dashboard", "--dashboard-port", "8999",
+            "--dashboard-refresh-seconds=2", "--output", "study"]
+    runner._listen_afresh()
+    try:
+        assert cli.main(line) == 130
+    finally:
+        runner._listen_afresh()
+        signal.signal(signal.SIGTERM, before[0])
+        signal.signal(signal.SIGINT, before[1])
+    # At the terminal, the line as given.
+    assert "--dashboard --dashboard-port 8999" in capsys.readouterr().err
+    fix = next(r for r in remedies_of(tmp_path / "study") if r.argv[:1] == ("explore",))
+    assert fix.argv == ("explore", "-c", config.name, "--force-overwrite",
+                        "--output", str((tmp_path / "study").resolve())), fix
+    assert not any(word.startswith("--da") for word in fix.argv) and not fix.refused, fix
+    assert _without_a_dashboard(("explore", "--live-dashboard", "--dashboard-p", "1",
+                                 "--dashboard-stop-on-complete", "-c", "x.yml")) == (
+        "explore", "-c", "x.yml")
+
+
+def test_a_refused_fix_posted_where_a_link_leads_out_names_no_command(tmp_path, monkeypatch):
+    """`POST /api/fix` of a fix refused as its study moved, in a study with a
+    link out of it, answered with its command to run "anyway", into the old
+    path."""
+    from fastmdxplora.gui import server
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    batch, _argv, typed = _heard_as_its_first_run_s_setup_ended(tmp_path, monkeypatch)
+    (typed / "old").mkdir()
+    now = typed / "old" / "st"
+    batch.output_dir.rename(now)
+    (tmp_path / "elsewhere").write_text("x")
+    (now / "outlink").symlink_to(tmp_path / "elsewhere")
+    runtime = DashboardRuntime(workspace_root=tmp_path, exploration_root=now.parent)
+    runtime.active_root = now
+    answer = server._fix_walked(runtime, {"index": 0})
+    assert answer is not None and not answer["ok"] and answer["terminal"] is None, answer
+    assert "moved or renamed" in answer["error"], answer
+    assert "fastmdx explore" not in answer["error"], answer
+
+
+@pytest.mark.parametrize("dashboard", [False, True])
+def test_an_output_with_a_tilde_is_read_as_explore_reads_it_in_each_mode(
+        dashboard, tmp_path, monkeypatch):
+    """With `--dashboard`, explore puts the study in `--output=~/x` with `~`
+    expanded (`_resolve_dashboard_output_dir`); without, it does not. The
+    fix is run with no dashboard, so the line it runs and the check read
+    one folder, the study's, in either mode."""
+    from fastmdxplora.remedies import _as_run_again, _output_named, _why_not_run_into
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    typed = tmp_path / "w"
+    for study in (typed / "~" / "x", tmp_path / "home" / "x"):
+        study.mkdir(parents=True)
+    line = ("explore", "-c", "s.yml", "--output=~/x", "--force-overwrite",
+            *(("--dashboard",) if dashboard else ()))
+    there = tmp_path / "home" / "x" if dashboard else typed / "~" / "x"
+    other = typed / "~" / "x" if dashboard else tmp_path / "home" / "x"
+    run = _as_run_again(line, str(typed))
+    assert "--dashboard" not in run
+    # Where the line run puts the study, read as explore with no dashboard
+    # reads it.
+    assert (typed / _output_named(run)).resolve() == there.resolve(), run
+    assert _why_not_run_into(there, run, str(typed)) == ""
+    assert "moved or renamed" in _why_not_run_into(other, run, str(typed))
+
+
+@pytest.mark.parametrize("output", ["--output=~/st", "~/st"])
+def test_a_dashboard_budget_s_fix_never_runs_into_a_folder_named_tilde(
+        output, tmp_path, monkeypatch):
+    """`--dashboard --output=~/st` (or a quoted `~/st`) stopped in setup: the
+    study is at `$HOME/st`, its dashboard having expanded `~`, but its fix,
+    run with no dashboard, was `--output=~/st`, runnable, and made a whole
+    new study at `<cwd>/~/st`."""
+    from fastmdxplora.remedies import _output_named, remedies_of
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    typed = tmp_path / "w"
+    typed.mkdir()
+    study = tmp_path / "home" / "st"
+    study.mkdir(parents=True)
+    words = [output] if output.startswith("--") else ["--output", output]
+    argv = ["explore", "-c", "s.yml", "--dashboard", "--dashboard-port", "8999", *words,
+            "--force-overwrite"]
+    (study / "resolved_config.yml").write_text(yaml.safe_dump({"include_phase": ["setup"]}))
+    (study / "manifest.json").write_text(json.dumps({
+        "phases": [{"name": "setup", "status": "ok"}],
+        "run_again": "`fastmdx ...` runs the study again, its setup first",
+        "run_again_argv": argv, "run_again_cwd": str(typed)}))
+    fix = next(r for r in remedies_of(study) if r.argv[:1] == ("explore",))
+    folder = (typed / _output_named(fix.argv)).resolve()
+    assert folder == study.resolve() and not fix.refused, fix
+    assert not any(word.startswith("--da") or "~" in word for word in fix.argv), fix
+    # Moved since: refused, never runnable into `<cwd>/~/st`.
+    moved = tmp_path / "home" / "old"
+    moved.mkdir()
+    study.rename(moved / "st")
+    fix = next(r for r in remedies_of(moved / "st") if r.argv[:1] == ("explore",))
+    assert "moved or renamed" in fix.refused, fix
+    assert not (typed / "~").exists()
+
+
+def test_live_dashboard_s_short_prefixes_are_left_out_of_a_fix():
+    """argparse takes `--l`, `--li` and `--liv` as `--live-dashboard` (no
+    other flag of explore begins `--l`), and the fix left them in, so it served
+    a GUI of its own and waited."""
+    from fastmdxplora.remedies import _without_a_dashboard
+
+    for prefix in ("--l", "--li", "--liv", "--live"):
+        assert _without_a_dashboard(("explore", prefix, "-c", "x.yml")) == (
+            "explore", "-c", "x.yml"), prefix
+    assert _without_a_dashboard(("explore", "--dash", "-c", "x.yml")) == (
+        "explore", "--dash", "-c", "x.yml")
+
+
+def test_a_refused_fix_s_code_marks_are_set_as_code_on_its_card():
+    """The card set a refusal as plain text: its `--output` read with its
+    backticks, where the Fix line above sets them as code."""
+    script = (Path(__file__).resolve().parents[1] / "src" / "fastmdxplora" / "gui"
+              / "static" / "fixes.js").read_text()
+    assert 'withCode(el("div", "fix-not-here"), fix.refused)' in script
+    assert 'el("div", "fix-not-here", fix.refused)' not in script
+
+
+def test_a_run_again_saved_with_no_output_is_read_by_its_config_s(tmp_path):
+    """A run-again saved by an earlier build named no `--output` where its
+    config's `output` named the folder, and was not compared: moved, its
+    Run went into the config's old path."""
+    from fastmdxplora.remedies import _why_not_run_into
+
+    typed = tmp_path / "w"
+    (typed / "old" / "st").mkdir(parents=True)
+    (typed / "st").mkdir()
+    (typed / "s.yml").write_text(yaml.safe_dump({"output": "st"}))
+    (typed / "n.yml").write_text(yaml.safe_dump({"systems": []}))
+    argv = ("explore", "-c", "s.yml", "--force-overwrite")
+    assert _why_not_run_into(typed / "st", argv, str(typed)) == ""
+    assert "moved or renamed" in _why_not_run_into(typed / "old" / "st", argv, str(typed))
+    assert "names no folder" in _why_not_run_into(
+        typed / "st", ("explore", "--config=n.yml", "--force-overwrite"), str(typed))
 
 
 def test_a_first_stop_says_what_it_does_where_no_run_is_left(monkeypatch):
@@ -7606,62 +8195,6 @@ def test_a_rerun_over_an_unfinished_round_says_what_it_did(request, tmp_path, mo
         assert state["status"] == "completed" and state["error"] is None, state
         assert state["again_round"] and state["again_round"]["said"] == (
             f"{ended.said} {ended.carry_on_on_a_page}"), state
-
-
-@pytest.mark.parametrize("broken", [False, True], ids=["clean", "failing"])
-@pytest.mark.parametrize("case", ["cut", "run page", "one run"])
-def test_a_rerun_over_an_unfinished_round_is_said_in_a_browser(request, tmp_path, monkeypatch,
-                                                                case, broken):
-    """In the GUI (Light, 1440): Analyze again of a cut study and of a run's
-    own page, and Write it again of a study of one run, ending well, said
-    done with the round after it; failing, said with its run and reason and
-    the round after it, its command set as code, never done."""
-    pytest.importorskip("playwright.sync_api")
-    from playwright.sync_api import sync_playwright
-
-    from fastmdxplora.batch.explorer import campaign_of
-    from fastmdxplora.gui.server import start_dashboard_session
-    from fastmdxplora.simulation.stopping import round_ended
-
-    monkeypatch.setenv("PYTHONPATH", _source())
-    made = _rerun_case(request, case, broken, tmp_path)
-    page_of, where = made["page"], made["phase"]
-    done = "Analyzed again." if where == "analysis" else "Written again."
-    box = "#analysis-again-ask" if where == "analysis" else "#report-write-ask"
-    session = start_dashboard_session(output=str(page_of), host="127.0.0.1", port=0)
-    try:
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
-            page = browser.new_page(viewport={"width": 1440, "height": 1000},
-                                    color_scheme="light")
-            page.set_default_timeout(60000)
-            page.goto(session.url + "#" + where, wait_until="domcontentloaded")
-            button = "#analysis-again" if where == "analysis" else "#report-write"
-            page.wait_for_selector(button + ":not([hidden])")
-            page.click(button)
-            page.click(box + " .fix-confirm")
-            page.wait_for_function(
-                "([box, done, reason]) => { const t = (document.querySelector(box) || {})"
-                ".textContent || ''; return t.includes(done) || t.includes(reason); }",
-                arg=[box, done, made["reason"]], timeout=300000)
-            line = box + (" .again-said" if where == "analysis" else " .fix-said")
-            said = page.text_content(line)
-            code = page.eval_on_selector_all(line + " code",
-                                             "nodes => nodes.map(n => n.textContent)")
-            browser.close()
-    finally:
-        session.server.shutdown()
-    ended = round_ended(campaign_of(page_of) or page_of)
-    command = " ".join(ended.argv)
-    terminal = command if command in ended.carry_on_on_a_page else ""
-    if broken:
-        assert done not in said and made["reason"] in said, said
-        for name in made["names"]:
-            assert f"{name} failed in its analysis" in said, said
-    else:
-        assert said.startswith(done), said
-    assert said.endswith(f"{ended.said} {ended.carry_on_on_a_page}"), said
-    assert code == ([terminal] if terminal else []), (code, said)
 
 
 _INTERRUPTED_IN = '''

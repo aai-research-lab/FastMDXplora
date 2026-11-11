@@ -40,6 +40,7 @@ dispatched to a subprocess via a module-level worker function.
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal as _signal
 import time
@@ -331,6 +332,21 @@ def _not_started_by_a_stop(result: Any) -> bool:
     """Whether a run was not started because its study was asked to stop."""
     return (getattr(result, "status", None) == "skipped"
             and str(getattr(result, "message", "") or "").startswith(NOT_STARTED_BY_A_STOP))
+
+
+def _what_runs_it_again() -> dict[str, Any]:
+    """What runs the study again, its setup first, as its records say it
+    (`run_again`, `run_again_argv`, `run_again_cwd`), while a budget study
+    runs its setup stage and pricing (`runner.run_again_before_its_price`);
+    empty otherwise."""
+    from fastmdxplora.simulation.runner import (run_again_argv, run_again_before_its_price,
+                                                run_again_cwd)
+
+    again = run_again_before_its_price()
+    if not again:
+        return {}
+    return {"run_again": again, "run_again_argv": run_again_argv(),
+            "run_again_cwd": run_again_cwd()}
 
 
 def _begun_here(folder: Path) -> bool:
@@ -966,9 +982,32 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     elif binding.get("refused"):
         lines.append("Binding:        not reported -- "
                      + str(binding["refused"]).split(". ")[0].rstrip(".") + ".")
+    from fastmdxplora.simulation.binding import BULK_RESIDUAL_KJMOL
+
+    if value is not None and binding.get("bulk_judged_by") == (
+            f"{BULK_RESIDUAL_KJMOL} kJ/mol alone"):
+        lines.append(
+            f"Warning:        The tail was judged against "
+            f"{BULK_RESIDUAL_KJMOL} kJ/mol alone and its tilt was not "
+            "judged" + (": the study ran no bootstrap "
+                        "(bootstrap_resamples: 0)."
+                        if "bootstrap_resamples: 0" in str(
+                            binding.get("bulk_judged") or "") else "."))
     for warning in (binding.get("reference") or {}).get("warnings") or []:
         lines.append(f"Warning:        {warning}")
     return lines
+
+
+def _finite_or_null(value: Any) -> Any:
+    """`value` with every NaN or infinite float replaced by None, through
+    dicts, lists and tuples, so that it can be written as strict JSON."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _finite_or_null(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_or_null(item) for item in value]
+    return value
 
 
 def _a_prepared_system_is_there(setup_dir: Path) -> bool:
@@ -3392,8 +3431,13 @@ class BatchExplorer:
             def _binding_from(where, curve, _t=temperature):
                 from fastmdxplora.simulation.binding import binding_free_energy
 
+                # The tail is judged once, on the real curve, against these
+                # same resamples; a resample judged on its own would be
+                # refused by its own noise, and the interval would be made of
+                # the resamples whose tails happened to be flattest.
                 return binding_free_energy(
-                    where, curve, temperature_K=_t).get("delta_g_kjmol")
+                    where, curve, temperature_K=_t,
+                    judge_the_bulk=False).get("delta_g_kjmol")
 
             wants_binding = _the_coordinate_has_a_volume(plan)
             # The caller's count, else the study's own (its umbrella block's
@@ -3451,7 +3495,7 @@ class BatchExplorer:
                 # than assumed to be zero.
                 from fastmdxplora.simulation.umbrella import (
                     cone_the_windows_ran_under,
-                    wall_bias_where_the_bound_state_is,
+                    wall_bias_by_window,
                 )
 
                 # What the windows ran under, not what the config asked for.
@@ -3459,16 +3503,11 @@ class BatchExplorer:
                 # config at all, and a config edited since the windows
                 # finished would correct by a cone that did not run.
                 cone = cone_the_windows_ran_under(directories)
-                wall = None
-                if cone is not None:
-                    minimum = min(
-                        (point for point in zip(
-                            payload["pmf"]["coordinate"],
-                            payload["pmf"]["free_energy_kjmol"])
-                         if point[1] is not None),
-                        key=lambda point: point[1], default=(0.0, 0.0))[0]
-                    wall = wall_bias_where_the_bound_state_is(
-                        directories, plan, bound_below=float(minimum) * 1.25)
+                # Every window's, so the wall is judged up to the cutoff the
+                # integral picks rather than a range fixed before the curve
+                # is read.
+                wall = (None if cone is None
+                        else wall_bias_by_window(directories, plan))
                 if plan.cone is not None and cone is None:
                     # Asked for a cone and no window recorded one. The
                     # correction is worth several kJ/mol, so a number without
@@ -3487,13 +3526,36 @@ class BatchExplorer:
                         temperature_K=temperature,
                         cone=cone, wall_bias_kjmol=wall,
                         resampled=payload.get("derived"),
+                        errors_kjmol=(payload["pmf"].get("uncertainty") or {})
+                        .get("standard_error"),
+                        resample_curves_kjmol=(
+                            payload["pmf"].get("uncertainty") or {})
+                        .get("resample_curves_kjmol"),
+                        bulk_fixed_because=(
+                            "the study ran no bootstrap "
+                            "(`bootstrap_resamples: 0`)"
+                            if not how_many["bootstrap_resamples"] else None),
                     )
                     payload["binding"] = self._with_the_reference_checked(
                         payload["binding"], payload["pmf"], plan, directories,
                         temperature=temperature, cone=cone)
+                if (payload["binding"].get("refused")
+                        and isinstance(payload.get("derived"), dict)):
+                    # The resamples' statistic is the uncorrected number and
+                    # rides along unjudged, so a study whose binding free
+                    # energy was refused would otherwise still show one here.
+                    payload["derived"] = {
+                        "value": None,
+                        "note": ("The binding free energy was refused (see "
+                                 "`binding.refused`), so its resamples' "
+                                 "interval is not given.")}
 
         destination = Path(self.output_dir) / "pmf.json"
-        destination.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        # Strict JSON: a NaN or an infinity is saved as null, which jq and a
+        # browser's JSON.parse read, where the bare tokens refuse the file.
+        destination.write_text(
+            json.dumps(_finite_or_null(payload), indent=2, allow_nan=False),
+            encoding="utf-8")
 
         # Cleared before anything is drawn, so a refusal cannot leave the
         # previous run's figure in place. `--force` clears the run
@@ -3597,8 +3659,16 @@ class BatchExplorer:
         if checks.get("refused") and binding.get("delta_g_kjmol") is not None:
             kept = {key: binding.get(key) for key in (
                 "bulk_residual_kjmol", "bulk_from_nm", "minimum_at_nm",
+                "bulk_judged", "bulk_judged_by", "bulk_worst_at_nm",
+                "bulk_allowed_kjmol", "bulk_tilt_kjmol",
+                "bulk_tilt_error_kjmol", "bulk_tilt_allowed_kjmol",
+                "bulk_resamples_used", "bulk_error_multiplier",
+                "bulk_tilt_multiplier",
                 "bound_cutoff_nm", "cone", "cone_correction_kjmol",
-                "cone_wall_bias_kjmol", "standard_volume_nm3")}
+                "cone_wall_bias_kjmol", "cone_wall_infinite",
+                "cone_wall_checked_up_to_nm", "cone_wall_windows",
+                "cone_wall_bit_in", "cone_wall_not_read_in",
+                "cone_wall_judged", "standard_volume_nm3")}
             return {"delta_g_kjmol": None, **kept, "reference": checks,
                     "refused": checks["refused"]}
         return {**binding, "reference": checks}
@@ -3827,12 +3897,17 @@ class BatchExplorer:
 
     # ------------------------------------------------------------------
     def _not_started(self, specs) -> list["RunResult"]:
-        """The runs a stopped study did not start, each saying so."""
-        return [_skipped_run_result(
-            spec, self._run_output_dir(spec),
-            f"{NOT_STARTED_BY_A_STOP} `fastmdx resume "
-            f"{self.output_dir}` runs it, and carries on the runs that were "
-            "stopped.") for spec in specs]
+        """The runs a stopped study did not start, each saying so, and what
+        runs them: in a budget study's setup stage, the study run again,
+        its setup first, where a resume ran setup alone."""
+        from fastmdxplora.simulation.runner import run_again_before_its_price
+
+        again = run_again_before_its_price()
+        said = (f"{again[0].upper()}{again[1:]}." if again else
+                f"`fastmdx resume {self.output_dir}` runs it, and carries on the runs "
+                "that were stopped.")
+        return [_skipped_run_result(spec, self._run_output_dir(spec),
+                                    f"{NOT_STARTED_BY_A_STOP} {said}") for spec in specs]
 
     def _stopped_at_once(self, spec, now: BaseException) -> "RunResult":
         """A run going as its study was stopped now (a second stop), read from
@@ -4286,6 +4361,11 @@ class BatchExplorer:
         ended = self._round_ended() if round_said else None
         if ended is not None:
             manifest["round_ended"] = ended.as_record()
+        # A budget study stopped in its setup stage: what runs it again, said
+        # where the study heard the stop. A stop as a run's setup ended left
+        # no run's record saying it, and its fixes named `fastmdx resume`,
+        # which ran setup alone and read it finished.
+        manifest.update(_what_runs_it_again() if self._stop_asked() else {})
         path = self.output_dir / "batch_manifest.json"
         from fastmdxplora.orchestrator import _put_in_place
 

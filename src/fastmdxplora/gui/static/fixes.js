@@ -211,11 +211,24 @@
       item.appendChild(why);
       item.appendChild(withCode(el("div", "fix-fix"), fix.fix || ""));
       if (fix.price_said) item.appendChild(el("div", "fix-price", "Costs " + fix.price_said + "."));
-      if (fix.command) item.appendChild(el("pre", "fix-command", fix.command));
-      // Not run from here where the run would go through a link out of
-      // the study (`/api/fixes`, as the POST refuses): said, with no Run.
-      if (!fix.runnable && fix.not_run_here) {
-        item.appendChild(withTerminal(el("div", "fix-not-here"), fix.not_run_here, fix.terminal));
+      if (fix.refused) {
+        // Its folder gone, or the study moved since: why first, and the
+        // command only as it was typed, never as the thing to run.
+        item.appendChild(withCode(el("div", "fix-not-here"), fix.refused));
+        if (fix.command) {
+          item.appendChild(el("div", "fix-cwd",
+            "It was typed" + (fix.cwd ? ", in " + fix.cwd + "," : "") + " as:"));
+          item.appendChild(el("pre", "fix-command", fix.command));
+        }
+      } else {
+        // Its paths are as typed: said with the folder it is run from.
+        if (fix.command && fix.cwd) item.appendChild(el("div", "fix-cwd", "In " + fix.cwd + ":"));
+        if (fix.command) item.appendChild(el("pre", "fix-command", fix.command));
+        // Not run from here where the run would go through a link out of
+        // the study (`/api/fixes`, as the POST refuses): said, with no Run.
+        if (!fix.runnable && fix.not_run_here) {
+          item.appendChild(withTerminal(el("div", "fix-not-here"), fix.not_run_here, fix.terminal));
+        }
       }
       if (fix.runnable) {
         var actions = el("div", "fix-actions");

@@ -174,11 +174,21 @@ class Remedy:
     #: line, its paths as typed (`agent.staged.stopped_before_its_price`):
     #: "" for the GUI's own folder.
     cwd: str = ""
+    #: Why ``argv`` is not run, where it would not run into this study: the
+    #: folder it is run from is gone, or the study was moved or renamed
+    #: since. "" where nothing stands in its way.
+    refused: str = ""
 
     def as_text(self, *, with_config: bool = True) -> str:
         text = f"{self.where}: {self.why} Fix: {self.fix}"
-        if self.command:
-            text += f" Run: `{self.command}`."
+        if self.refused:
+            # Not the thing to run: the refusal first, then what was typed.
+            text += f" {self.refused}"
+            if self.command:
+                text += f" It was typed{self._typed_in(True)} as `{self.command}`."
+        elif self.command:
+            text += (f" Run, in `{self.cwd}`: `{self.command}`." if self.cwd
+                     else f" Run: `{self.command}`.")
         if self.price is not None:
             text += f" Costs {self.price.as_text()}."
         if with_config and self.config:
@@ -192,11 +202,22 @@ class Remedy:
     def as_lines(self) -> list[str]:
         """For the console: the refusal, then what fixes it and its price."""
         lines = [f"{self.where}: {self.why}", f"  Fix: {self.fix}"]
-        if self.command:
-            lines.append(f"  Run: {self.command}")
+        if self.refused:
+            # Not the thing to run: the refusal first, then what was typed.
+            lines.append(f"  {self.refused}")
+            if self.command:
+                lines.append(f"  It was typed{self._typed_in(False)} as: {self.command}")
+        elif self.command:
+            lines.append(f"  Run, in {self.cwd}: {self.command}" if self.cwd
+                         else f"  Run: {self.command}")
         if self.price is not None:
             lines.append(f"  Costs {self.price.as_text()}.")
         return lines
+
+    def _typed_in(self, quoted: bool) -> str:
+        if not self.cwd:
+            return ""
+        return f", in `{self.cwd}`," if quoted else f", in {self.cwd},"
 
     def as_record(self) -> dict[str, Any]:
         return {"code": self.code, "where": self.where, "why": self.why,
@@ -205,7 +226,8 @@ class Remedy:
                 "suggestion": self.suggestion,
                 "command": self.command, "argv": list(self.argv), "config": self.config,
                 "decision": self.decision, "covers": list(self.covers),
-                "price": self.price.as_record() if self.price else None}
+                "price": self.price.as_record() if self.price else None,
+                "cwd": self.cwd, "refused": self.refused}
 
 
 # ---------------------------------------------------------------------------
@@ -398,14 +420,25 @@ def remedies_of(study: str | Path) -> list[Remedy]:
     if again is not None:
         # A study with a budget stopped in its setup stage: a resume of it
         # ran setup alone and read it finished.
-        argv = tuple(str(word) for word in again.get("argv") or ())
-        found = [replace(remedy, fix="Run the study again, its setup first: it stopped before "
-                                     "its simulation began, so only its setup is recorded.",
-                         command="fastmdx " + shlex.join(argv) if argv else "",
-                         argv=argv, cwd=str(again.get("cwd") or "") if argv else "",
-                         price=None)
+        typed = tuple(str(word) for word in again.get("argv") or ())
+        cwd = str(again.get("cwd") or "") if typed else ""
+        # Run where a page watches it: a dashboard of its own (`--dashboard`)
+        # waited, once the study ended, for a Ctrl-C the GUI's Run cannot give.
+        # Checked as it is run: read as typed, a `~` its dashboard expanded
+        # was taken for the study's folder, and the Run went into `./~`.
+        argv = _as_run_again(typed, cwd)
+        again_said = dict(fix="Run the study again, its setup first: it stopped before "
+                              "its simulation began, so only its setup is recorded.",
+                          command="fastmdx " + shlex.join(argv) if argv else "",
+                          argv=argv, cwd=cwd, refused=_why_not_run_into(root, argv, cwd),
+                          price=None)
+        found = [replace(remedy, **again_said)
                  if remedy.argv[:1] == ("resume",) or remedy.command.startswith("fastmdx resume")
-                 else remedy for remedy in found]
+                 else remedy for remedy in found] or [
+            # Stopped as its runs' setup ended, each run "ok": nothing else
+            # says it stopped.
+            Remedy(code=STOPPED_REFUSAL, where="the study",
+                   why="It was stopped when asked as its setup ended.", **again_said)]
     try:
         elsewhere = another_host_said(owner)
     except Exception:  # noqa: BLE001 - its fixes as they are
@@ -421,6 +454,157 @@ def remedies_of(study: str | Path) -> list[Remedy]:
                          why=remedy.why if where in remedy.why else f"{remedy.why} {where}")
                  for remedy in found]
     return found
+
+
+def _output_named(argv: tuple[str, ...]) -> str | None:
+    """The folder a command line names with `--output` (as argparse reads
+    it, `--output=DIR` and a prefix such as `--out` too), or None."""
+    named = None
+    for at, word in enumerate(argv):
+        flag, equals, value = word.partition("=")
+        if len(flag) >= 4 and "--output".startswith(flag):
+            named = value if equals else (argv[at + 1] if at + 1 < len(argv) else None)
+    return named
+
+
+#: explore's dashboard flags, and whether each takes a value.
+_DASHBOARD_FLAGS = {"--dashboard": False, "--live-dashboard": False,
+                    "--dashboard-stop-on-complete": False, "--dashboard-open-browser": False,
+                    "--dashboard-host": True, "--dashboard-port": True,
+                    "--dashboard-refresh-seconds": True, "--dashboard-frame-interval": True,
+                    "--dashboard-ligand-resname": True,
+                    "--dashboard-binding-pocket-cutoff-A": True,
+                    "--dashboard-max-playback-frames": True}
+
+
+def _dashboard_flag(word: str) -> str | None:
+    """The dashboard flag ``word`` names (whole, or a prefix argparse takes
+    as only that flag), or None."""
+    flag = word.partition("=")[0]
+    if flag in _DASHBOARD_FLAGS:
+        return flag
+    if not flag.startswith(("--da", "--l")):
+        return None
+    named = [name for name in _DASHBOARD_FLAGS if name.startswith(flag)]
+    return named[0] if len(named) == 1 else None
+
+
+def _without_a_dashboard(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """``argv`` with explore's dashboard flags (and their values) left out."""
+    left: list[str] = []
+    words = iter(argv)
+    for word in words:
+        flag = _dashboard_flag(word)
+        if flag is None:
+            left.append(word)
+        elif _DASHBOARD_FLAGS[flag] and "=" not in word:
+            next(words, None)
+    return tuple(left)
+
+
+def _as_run_again(typed: tuple[str, ...], cwd: str) -> tuple[str, ...]:
+    """The line typed, as its fix runs it: its dashboard flags left out.
+    Where it had a dashboard, explore put the study in its `--output` (or
+    its config's `output`) with `~` expanded and made whole
+    (`cli.main._resolve_dashboard_output_dir`); with none, explore expands
+    nothing, so that folder is named in full."""
+    argv = _without_a_dashboard(typed)
+    if not any(_dashboard_flag(word) in ("--dashboard", "--live-dashboard") for word in typed):
+        return argv
+    named = _output_named(argv) or _output_of_its_config(argv, cwd)
+    if named is None:
+        return argv
+    folder = Path(named).expanduser()
+    if not folder.is_absolute():
+        if not cwd:
+            return argv
+        folder = Path(cwd) / folder
+    left: list[str] = []
+    words = iter(argv)
+    for word in words:
+        flag, equals, _value = word.partition("=")
+        if len(flag) >= 4 and "--output".startswith(flag):
+            if not equals:
+                next(words, None)
+            continue
+        left.append(word)
+    return (*left, "--output", str(folder.resolve()))
+
+
+def _config_named(argv: tuple[str, ...]) -> str | None:
+    """The config file a command line names (`-c`, `-config`, `--config`,
+    with `=` too), or None."""
+    named = None
+    for at, word in enumerate(argv):
+        flag, equals, value = word.partition("=")
+        if flag in ("-c", "-config", "--config"):
+            named = value if equals else (argv[at + 1] if at + 1 < len(argv) else None)
+        elif word.startswith("-c") and not word.startswith("-config") and len(word) > 2:
+            named = word[2:]
+    return named
+
+
+def _output_of_its_config(argv: tuple[str, ...], cwd: str) -> str | None:
+    """The `output` the command line's config names, read from ``cwd`` as
+    explore reads it, or None where it names none or cannot be read."""
+    import yaml
+
+    named = _config_named(argv)
+    if not named:
+        return None
+    path = Path(named)
+    if not path.is_absolute():
+        if not cwd:
+            return None
+        path = Path(cwd) / path
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return None
+    output = data.get("output") if isinstance(data, dict) else None
+    return str(output) if output else None
+
+
+def _why_not_run_into(root: Path, argv: tuple[str, ...], cwd: str) -> str:
+    """Why the command that runs a study again, its setup first, is not run
+    for the study at ``root``: the folder it is run from is gone, or its
+    `--output`, read from there, is not this study (moved or renamed since
+    it stopped), which it would run into a new folder or another study.
+    "" where neither."""
+    if not argv:
+        return ""
+    if cwd and not Path(cwd).is_dir():
+        return (f"It is run from {cwd}, where it was first run, and that folder is not "
+                "there now, so it is not run from here. Run it again from a folder where "
+                "its config is, with `--output` naming the study where it is now.")
+    named = _output_named(argv)
+    if named is None:
+        # Saved before its folder was named on the line (an earlier build):
+        # its config's `output`, where it gives one.
+        named = _output_of_its_config(argv, cwd)
+    if named is None and not cwd:
+        # Saved with no folder it was typed in: nothing to read it from.
+        return ""
+    if named is None:
+        return ("It names no folder for the study, so it would run one elsewhere, and it "
+                "is not run from here. Run it again with `--output` naming the study where "
+                "it is now.")
+    # As the budget path reads it, with no dashboard in the line run
+    # (`_as_run_again`): `~` not expanded after `--output=`.
+    output = Path(named)
+    if not output.is_absolute():
+        if not cwd:
+            return ""
+        output = Path(cwd) / output
+    try:
+        same = output.resolve() == root.resolve()
+    except (OSError, RuntimeError):
+        same = False
+    if same:
+        return ""
+    return (f"It runs into {output}, and this study is at {root}: it was moved or renamed "
+            "since it stopped, so it is not run from here. Run it again with `--output` "
+            "naming the study where it is now.")
 
 
 def _unread(refusal: OSError, root: Path, where: str) -> Remedy:

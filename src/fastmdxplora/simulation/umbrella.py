@@ -54,6 +54,7 @@ __all__ = [
     "plan_windows",
     "windows_as_sweep",
     "collect_samples",
+    "wall_bias_by_window",
     "wall_bias_where_the_bound_state_is",
     "overlap_between",
     "compute_pmf",
@@ -1068,55 +1069,123 @@ def spring_unit(variable: Any) -> str:
     return f"kJ/mol/{unit}^2" if unit else "kJ/mol"
 
 
-def wall_bias_where_the_bound_state_is(
-    directories: "dict[int, Any]", plan: "UmbrellaPlan",
-    bound_below: float, *, equilibration_fraction: float | None = None,
-) -> float | None:
-    """How hard the cone's wall pushed where the bound state is.
+def wall_bias_by_window(
+    directories: "dict[int, Any]", plan: "UmbrellaPlan", *,
+    equilibration_fraction: float | None = None,
+) -> "list[dict[str, Any]] | None":
+    """How hard the cone's wall pushed in each window, after equilibration.
 
     The correction for running inside a cone assumes the bound pose fits
     within it: the bulk state gives up ``4 pi / Omega`` of room and the bound
     state gives up nothing. A wall that bites in the bound windows has taken
     part of the population the binding integral is over, and no analytic term
-    puts that back -- so the assumption is measured here, from the column the
+    puts that back -- so the assumption is read here, from the column the
     run writes for it, rather than assumed.
 
-    Returns None where no window recorded one, which is every study that ran
-    without a cone and every study that ran before the column existed.
+    One row per window, ``{"window", "centre", "bias_kjmol", "nearest_nm",
+    "coordinate_nm", "frame_bias_kjmol"}``, over the frames of production left
+    after equilibration (the same frames `collect_samples` takes): the
+    coordinate and the wall's bias frame by frame (NaN for a frame whose bias
+    is not written, or not a number), so that `binding.binding_free_energy`
+    can judge the wall over the frames in the bound range alone, in every
+    window that sampled it, wherever the window was centred (one held just
+    outside a steep well is pulled into it); ``nearest_nm`` the smallest
+    coordinate; ``bias_kjmol`` the mean over every frame whose bias was read,
+    for callers that take one number per window. The coordinate is read
+    whether or not the bias column is there. A window with no COLVAR or no
+    frames left has NaN and None, and empty frames, so that it is named as
+    not read rather than passed over.
+    Returns None where no window recorded the column, which is every study
+    that ran without a cone and every study that ran before the column
+    existed.
     """
     from pathlib import Path
 
     fraction = (plan.equilibration_fraction if equilibration_fraction is None
                 else float(equilibration_fraction))
-    inside = {w.index for w in plan.windows if w.centre <= bound_below}
-    carried: list[float] = []
+    centres = {w.index: float(w.centre) for w in plan.windows}
+    carried: list[dict[str, Any]] = []
+    recorded = False
     for index, directory in sorted(directories.items()):
-        if index not in inside:
+        if index not in centres:
             continue
         colvar = Path(directory) / "simulation" / "COLVAR"
-        if not colvar.is_file():
-            continue
         names: list[str] = []
-        rows: list[float] = []
-        for line in colvar.read_text(encoding="utf-8").splitlines():
-            if line.startswith("#"):
-                if "FIELDS" in line and not names:
-                    names = line.split("FIELDS")[1].split()
-                continue
-            if not line.strip() or "cone.bias" not in names:
-                continue
-            parts = line.split()
-            column = names.index("cone.bias")
-            if len(parts) > column:
+        rows: list[tuple[float, float, float]] = []
+        if colvar.is_file():
+            for line in colvar.read_text(encoding="utf-8").splitlines():
+                if line.startswith("#"):
+                    if "FIELDS" in line and not names:
+                        names = line.split("FIELDS")[1].split()
+                    continue
+                if not line.strip():
+                    continue
+                # The coordinate is read whether or not the bias is there, so
+                # a window that sampled the bound range is known to have, and
+                # one with no bias to show for it is named, not passed over.
+                parts = line.split()
+                column = (names.index("cone.bias") if "cone.bias" in names
+                          else None)
+                if len(parts) < 2:
+                    continue
                 try:
-                    rows.append(float(parts[column]))
+                    time, where = float(parts[0]), float(parts[1])
                 except ValueError:
                     continue
-        if rows:
-            kept = np.asarray(rows)[int(len(rows) * fraction):]
-            if kept.size:
-                carried.append(float(np.mean(kept)))
-    return max(carried) if carried else None
+                try:
+                    bias = (float(parts[column])
+                            if column is not None and len(parts) > column
+                            else float("nan"))
+                except ValueError:
+                    bias = float("nan")
+                rows.append((time, where, bias))
+        recorded = recorded or "cone.bias" in names
+        table = np.asarray(rows, dtype=float).reshape(-1, 3)
+        table = table[production_begins_at(table[:, 0]):]
+        table = table[int(len(table) * fraction):]
+        read = np.isfinite(table[:, 2])
+        carried.append({
+            "window": int(index), "centre": centres[index],
+            "bias_kjmol": (float(np.mean(table[read, 2])) if read.any()
+                           else float("nan")),
+            "nearest_nm": (float(np.nanmin(table[:, 1]))
+                           if len(table) and np.isfinite(table[:, 1]).any()
+                           else None),
+            # Frame by frame, so the wall can be judged over the frames in
+            # the bound range alone: a window that touched it once is mostly
+            # elsewhere, and its mean over the whole run is not the wall where
+            # the bound state is.
+            "coordinate_nm": table[:, 1].copy(),
+            "frame_bias_kjmol": table[:, 2].copy()})
+    return carried if recorded else None
+
+
+def wall_bias_where_the_bound_state_is(
+    directories: "dict[int, Any]", plan: "UmbrellaPlan",
+    bound_below: float, *, equilibration_fraction: float | None = None,
+) -> float | None:
+    """The largest of `wall_bias_by_window` over windows centred at or below
+    ``bound_below``, or None where none of them recorded the column.
+
+    For callers that fix the bound range before the curve is read.
+    The binding free energy is better given `wall_bias_by_window` whole: it
+    then judges every window that sampled the range up to the cutoff the
+    integral uses, which a range fixed beforehand (1.25 times the minimum,
+    say) can fall short of. A window in that range whose bias could not be
+    read is named in the log and makes the answer NaN, which
+    `binding.binding_free_energy` refuses, rather than being passed over.
+    """
+    rows = wall_bias_by_window(directories, plan,
+                               equilibration_fraction=equilibration_fraction)
+    inside = [row for row in rows or () if row["centre"] <= bound_below]
+    unread = [row["window"] for row in inside
+              if np.isnan(row["bias_kjmol"])]
+    if unread:
+        logger.warning(
+            "The cone's wall bias could not be read in window(s) %s, which "
+            "hold the bound state.", ", ".join(str(w) for w in unread))
+        return float("nan")
+    return max((row["bias_kjmol"] for row in inside), default=None)
 
 
 def collect_samples(
@@ -2513,6 +2582,13 @@ def compute_pmf(
         # Resamples with nothing in the curve's lowest bin, counted for the
         # record.
         unzeroed = [0]
+        # Every curve the statistic is called on, the real one first
+        # (`block_bootstrap` calls it once on the data, then once per
+        # resample), and what `also` gave on each. The binding free energy's
+        # bulk check reads the tail's departures off these, since a per-bin
+        # error holds the zero's noise, which cancels in a departure.
+        curves: list[np.ndarray] = []
+        extras: list[float] = []
 
         def _curve(drawn: dict[int, np.ndarray]) -> np.ndarray:
             inner = compute_pmf(
@@ -2532,6 +2608,7 @@ def compute_pmf(
             if np.isnan(values[anchor]):
                 unzeroed[0] += 1
             values = values - values[anchor]
+            curves.append(values)
             if also is None:
                 return values
             # Carried as one more element of the same array, because
@@ -2545,8 +2622,8 @@ def compute_pmf(
                              inner["pmf"]["free_energy_kjmol"])
             except (ValueError, ZeroDivisionError, KeyError, TypeError):
                 extra = None
-            return np.append(values,
-                             np.nan if extra is None else float(extra))
+            extras.append(np.nan if extra is None else float(extra))
+            return np.append(values, extras[-1])
 
         uncertainty = block_bootstrap(
             {w.index: samples[w.index] for w in ordered}, _curve,
@@ -2554,6 +2631,16 @@ def compute_pmf(
         ).as_dict()
         if also is not None:
             uncertainty, derived = _split_off_the_derived(uncertainty)
+            # Only resamples that gave a number make the interval, so they
+            # are counted apart from those that did not.
+            given = np.isfinite(np.asarray(extras[1:], dtype=float))
+            derived["resamples_with_a_number"] = int(given.sum())
+            derived["resamples_without_a_number"] = int((~given).sum())
+        # One row per resample, the real curve left out; None where a
+        # resample had nothing in a bin, as the curve itself writes one.
+        uncertainty["resample_curves_kjmol"] = [
+            [float(v) if np.isfinite(v) else None for v in row]
+            for row in curves[1:]]
         if uncertainty["note"]:
             logger.info("Free-energy uncertainty: %s", uncertainty["note"])
         # Where the band is zero wide, and what the curve's own zero does.
