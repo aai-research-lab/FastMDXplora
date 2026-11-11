@@ -465,7 +465,30 @@ of the method rather than a threshold to tune.
 | `pl_hbonds` | Hydrogen bonds between them |
 | `pl_interactions` | What holds the ligand: eight interaction types, each against a published criterion |
 
-The five ligand analyses run automatically when a ligand is present. See
+| `mmgbsa` | How tightly the ligand is held: its MM/GBSA binding energy each frame, with the electrostatic, van der Waals, polar and nonpolar solvation parts |
+
+The energy of the complex less those of the receptor and the ligand, each in
+a continuum of water, from one trajectory of the complex. The force field is
+the study's own, read from `setup/system.xml` (the ligand's parameters
+included); the solvent is OpenMM's OBC2 generalised Born model (AMBER's
+`igb=5`) with mbondi2 radii, and the nonpolar part comes from the Born radii
+(ACE). The bonded terms cancel, since the partners are cut from the
+complex's frame. Each frame's value is a time series with a mean and error.
+
+- **It is not a binding free energy.** The loss of entropy and the
+  partners' reorganisation are left out. Use it to rank ligands bound to one
+  receptor, not to compare with a measured affinity.
+- **The partners are placed together** each frame, moved by whole cell
+  vectors, so a ligand stored in the next cell is not counted as unbound.
+- **It reads one NonbondedForce.** A force field with a CHARMM NBFIX, a
+  polarisable model, or anything else outside the standard forces is
+  refused.
+
+It agrees with OpenMM's own `implicit/obc2.xml`, built independently for
+hemoglobin's two chains, to 0.04 kJ/mol a frame. It has not been compared
+with `MMPBSA.py` or gmx_MMPBSA on one trajectory.
+
+The five ligand analyses above run automatically when a ligand is present. See
 [Protein-ligand interactions](interactions.md) for what `pl_interactions`
 computes and why some of it is refused.
 
@@ -509,7 +532,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -522,7 +545,9 @@ solvent is in the frames only where the study stored it. `cross_correlation`
 is held back because its map is the square of the atoms and what it is
 fitted on changes what it shows. `helix_geometry` is held back because
 which helices matter, and whether a tilt means anything without a bilayer,
-are the study's question.
+are the study's question. `mmgbsa` is held back because it costs a third
+of a second a frame for a few thousand atoms, and its number is not a
+free energy.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -889,6 +914,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.helix_geometry
+   :members:
+
+.. automodule:: fastmdxplora.analysis.mmgbsa
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

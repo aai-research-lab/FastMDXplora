@@ -46,6 +46,7 @@ NAMES: dict[str, tuple[str, ...]] = {
     "diffusion": ("diffusion coefficient", "mean squared displacement", "MSD"),
     "cross_correlation": ("cross-correlation", "DCCM", "move together"),
     "helix_geometry": ("helix tilt", "helix kink", "tilt angle"),
+    "mmgbsa": ("MM/GBSA", "MMGBSA", "binding energy"),
     "moments_of_inertia": ("moment of inertia", "moments of inertia"),
     "coordination_number": ("coordination number",),
     "rdf": ("RDF", "radial distribution"),
@@ -59,6 +60,7 @@ LABELS: dict[str, str] = {
     "bilayer_thickness": "Bilayer thickness", "lipid_order": "Order parameters",
     "pore_profile": "Pore radius", "diffusion": "Diffusion",
     "cross_correlation": "Cross-correlation", "helix_geometry": "Helix tilt and kink",
+    "mmgbsa": "MM/GBSA",
     "moments_of_inertia": "Moments of inertia", "rdf": "RDF",
     "coordination_number": "Coordination number",
 }

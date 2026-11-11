@@ -76,6 +76,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("pl_contacts", "Protein-ligand contacts"),
         ("pl_hbonds", "Protein-ligand hydrogen bonds"),
         ("pl_interactions", "Protein-ligand interactions"),
+        ("mmgbsa", "MM/GBSA binding energy"),
     )),
     ("The bilayer", (
         ("area_per_lipid", "Area per lipid"),
@@ -880,7 +881,7 @@ def _dashboard_summaries(project_root: Path) -> dict[str, DashboardAsset]:
 _UNITS = {"rmsd": "nm", "rmsf": "nm", "rg": "nm", "sasa": "nm\u00b2", "hbonds": "",
           "qvalue": "", "end_to_end": "nm", "pair_distance": "nm", "ligand_rmsd": "nm",
           "area_per_lipid": "nm\u00b2", "bilayer_thickness": "nm",
-          "pore_profile": "nm",
+          "pore_profile": "nm", "mmgbsa": "kJ/mol",
           "moments_of_inertia": "amu nm\u00b2", "coordination_number": "",
           "image_check": "nm"}
 

@@ -133,6 +133,7 @@ FastMDXplora/
 │       │   ├── diffusion.py       # Mean squared displacement and the diffusion coefficient
 │       │   ├── cross_correlation.py  # Which residues move together (DCCM)
 │       │   ├── helix_geometry.py  # Each helix's tilt and kink
+│       │   ├── mmgbsa.py          # The ligand's MM/GBSA binding energy
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

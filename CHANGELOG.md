@@ -2305,6 +2305,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- How tightly the ligand is held: the `mmgbsa` analysis gives the ligand's
+  MM/GBSA binding energy every frame, from the study's own force field in
+  `setup/system.xml` and OpenMM's OBC2 generalised Born solvent, with its
+  electrostatic, van der Waals, polar and nonpolar parts
+  (`mmgbsa_parts.dat`). The partners are placed in one cell each frame. It
+  leaves out entropy and says it is not a binding free energy. It runs only
+  where `analysis.include` names it. Agrees with OpenMM's `implicit/obc2.xml`
+  to 0.04 kJ/mol a frame; not compared with MMPBSA.py.
+
 - How each helix lies and bends: the `helix_geometry` analysis gives each
   helix's tilt from the bilayer's normal (or `reference_axis`) and its kink,
   frame by frame, from Kahn's local axes as HELANAL finds them. Helices are

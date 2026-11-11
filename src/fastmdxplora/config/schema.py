@@ -85,6 +85,9 @@ ANALYSIS_NAMES = (
     # Each helix's tilt and kink, as HELANAL finds them: run where a study
     # names it.
     "helix_geometry",
+    # The ligand's MM/GBSA binding energy, frame by frame: run where a study
+    # names it.
+    "mmgbsa",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",
