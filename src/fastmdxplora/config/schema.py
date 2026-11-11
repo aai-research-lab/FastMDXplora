@@ -100,6 +100,9 @@ ANALYSIS_NAMES = (
     # A double helix's base-pair and step parameters, as 3DNA defines them:
     # run where a study names it.
     "nucleic_acid",
+    # The water about a site, cube by cube, against bulk (GIST): run where a
+    # study names it.
+    "gist",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",

@@ -2305,6 +2305,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Which waters would be costly to displace: the `gist` analysis gives, cube
+  by cube about a site, the water's density, its energy with the solute and
+  with other water against bulk, and its translational and orientational
+  entropy (grid inhomogeneous solvation theory), with OpenDX maps of density
+  and free energy. It needs every water stored and runs only where
+  `analysis.include` names it. Held against analytic entropies, OpenMM's
+  energies and an ion in water; not yet compared with cpptraj's GIST.
+
 - The shape of a double helix: the `nucleic_acid` analysis gives each
   Watson-Crick pair's six base-pair parameters and each step's six step
   parameters, frame by frame, from Olson et al.'s standard base frames by

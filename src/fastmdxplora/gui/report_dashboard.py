@@ -65,6 +65,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("rdf", "Radial distribution function"),
         ("coordination_number", "Coordination number"),
         ("water_sites", "Water sites"),
+        ("gist", "Solvation by GIST"),
         ("diffusion", "Diffusion"),
     )),
     ("Conformations", (
