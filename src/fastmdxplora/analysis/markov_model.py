@@ -179,6 +179,8 @@ class MarkovModel(Analysis):
                             tica_dimensions=self.tica_dimensions,
                             timescales=self.timescale_count, seed=self.seed)
         self._model: dict[str, np.ndarray] | None = None
+        self._unit = "frames"
+        self._chosen_lag: float | None = None
 
     # ------------------------------------------------------------------
     def _features(self, traj: md.Trajectory) -> tuple[np.ndarray, str]:
@@ -281,6 +283,8 @@ class MarkovModel(Analysis):
                 out["ns"] = float(n_frames * interval)
             return out
 
+        self._unit = "ns" if interval is not None else "frames"
+        self._chosen_lag = chosen_lag * (interval if interval is not None else 1.0)
         if interval is not None:
             table.insert(1, "lag_ns", table["lag_frames"] * interval)
             for k in range(self.timescale_count):
@@ -339,21 +343,28 @@ class MarkovModel(Analysis):
         return written
 
     def default_xlabel(self) -> str | None:
-        return "Lag"
+        return f"Lag ({self._unit})"
 
     def default_ylabel(self) -> str | None:
-        return "Implied timescale"
+        return f"Implied timescale ({self._unit})"
 
     def plot(self, result: pd.DataFrame, ax: plt.Axes) -> None:
         unit = "ns" if "lag_ns" in result.columns else "frames"
         lag = result[f"lag_{unit}"]
         for column in [c for c in result.columns if c.startswith("timescale_")]:
             ax.plot(lag, result[column], marker="o", markersize=3, linewidth=1.0,
-                    label=column.split("_")[1])
-        ax.plot(lag, lag, color="0.5", linewidth=0.8, linestyle="--")
+                    label=f"process {column.split('_')[1]}")
+        # Below the line a timescale is shorter than the lag, and the model
+        # cannot resolve it.
+        ax.fill_between(lag, lag, min(float(np.nanmin(lag)), float(np.nanmin(
+            result[[c for c in result.columns if c.startswith('timescale_')]].to_numpy()))),
+            color="0.85", linewidth=0, label="shorter than the lag")
+        if self._chosen_lag is not None:
+            ax.axvline(self._chosen_lag, color="0.3", linewidth=0.8, linestyle="--",
+                       label="lag of the model")
+        ax.set_xscale("log")
         ax.set_yscale("log")
-        ax.set_xlabel(f"Lag ({unit})")
-        ax.set_ylabel(f"Implied timescale ({unit})")
+        ax.legend(loc="best", fontsize=7)
 
 
 register_analysis(MarkovModel.name, MarkovModel)

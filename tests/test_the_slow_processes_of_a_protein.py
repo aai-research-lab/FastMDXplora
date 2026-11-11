@@ -75,7 +75,7 @@ def test_the_hidden_chain_s_timescales_are_recovered(tmp_path):
     result = analysis.run(_frames(_chain(30000)))
     assert result.status == "ok", result.message
     slow = analysis.findings["slow_processes"]
-    # In frames (10 ps apart): about 166 and 9.6 for this matrix.
+    # In frames (10 ps apart): about 100 and 4.5 for this matrix.
     assert slow[0]["timescale"]["frames"] == pytest.approx(exact[0], rel=0.15)
     assert slow[0]["timescale"]["ns"] == pytest.approx(exact[0] * 0.01, rel=0.15)
     assert slow[1]["timescale"]["frames"] == pytest.approx(exact[1], rel=0.25)
