@@ -457,6 +457,8 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
     config, why = _read_config(resolved)
     if config is None:
         return Continuation(**empty, refusal=f"the study's config could not be read: {why}")
+    # The segment runs from it as a Config.
+    config = _as_a_record(config)
     verdict = segmentability(config)
     if not verdict.allowed:
         return Continuation(**empty, refusal=verdict.reason)
@@ -1132,7 +1134,7 @@ def _join_and_analyse(root: Path, config: dict[str, Any], *, segment: Path | Non
     import yaml
 
     try:
-        own = yaml.safe_load(whole_text) if whole_text is not None else None
+        own = _as_a_record(yaml.safe_load(whole_text)) if whole_text is not None else None
     except yaml.YAMLError:
         own = None
     if not isinstance(own, dict):
@@ -1418,7 +1420,7 @@ def _report_of_the_chosen(root: Path) -> dict[str, Any]:
     import yaml
 
     try:
-        own = yaml.safe_load(whole_text) if whole_text is not None else None
+        own = _as_a_record(yaml.safe_load(whole_text)) if whole_text is not None else None
     except yaml.YAMLError:
         own = None
     if not isinstance(own, dict):

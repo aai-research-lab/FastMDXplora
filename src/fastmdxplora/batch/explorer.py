@@ -2902,6 +2902,10 @@ class BatchExplorer:
         except (OSError, yaml.YAMLError) as exc:
             logger.warning("The report was not written again: %s", exc)
             return
+        from fastmdxplora.config.recorded import as_a_record
+
+        # Its record, given to the run as a Config.
+        config = as_a_record(config)
         manifest = _json_or_none(run / "manifest.json")
         config = {key: value for key, value in config.items() if key != "exclude_phase"}
         config["output"] = str(run)
