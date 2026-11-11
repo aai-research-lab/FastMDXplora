@@ -43,6 +43,9 @@ except ImportError:  # pragma: no cover - the backends are optional
 pytestmark = pytest.mark.skipif(not HAS_BACKENDS, reason="needs OpenMM, MDTraj and PDBFixer")
 
 from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE  # noqa: E402
+from tests.test_a_refused_zero_signal_is_read_by_its_state import (  # noqa: E402
+    _group_gone_within,
+)
 
 #: 300 production steps a piece; the rule cannot be met (±1e-06 nm), so the
 #: study extends its runs after the first piece. Minimization capped at 100
@@ -1518,22 +1521,6 @@ def _a_broken_pool(tmp_path: Path, method: str, *, grace: str = "1"):
     return ran, [int(pid) for pid in first[1:]]
 
 
-def _group_gone_within(group: int, seconds: float) -> bool:
-    """Whether the process group is gone within ``seconds``, read as the GPU
-    sampler reads a run's group: on macOS the zero signal to a group of
-    zombies says EPERM, not ESRCH."""
-    import time
-
-    from fastmdxplora.gpu_here import _going
-
-    until = time.monotonic() + seconds
-    while _going(group):
-        if time.monotonic() > until:
-            return False
-        time.sleep(0.1)
-    return True
-
-
 def _ended(ran, seconds: float, what: str) -> tuple[str, str]:
     """``ran``'s output once it has ended within ``seconds``; fails where it
     has not. Whether any process of its group outlived it is noted as
@@ -2146,7 +2133,7 @@ def test_a_ctrl_c_while_a_broken_study_waits_lets_its_worker_save(presses, tmp_p
         for _ in range(presses):
             try:
                 os.killpg(ran.pid, signal.SIGINT)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):  # macOS: a group of zombies
                 break
             time.sleep(0.5)
     finally:
@@ -8975,85 +8962,3 @@ def test_an_integrator_with_no_thermostat_lists_brownian_among_those_permitted()
         check_integrator("verlet", temperature_K=300.0, friction_per_ps=1.0, timestep_fs=2.0)
     refusal = refused.value.refusal
     assert "brownian" in refusal.details["permitted"], refusal.details
-
-
-# ---------------------------------------------------------------------------
-# EPERM to the zero signal (CI run 42759782805, macOS): a zombie, or a group
-# of them, says EPERM there where Linux says ESRCH. Linux cannot make that
-# EPERM for this user's processes, so it is simulated.
-# ---------------------------------------------------------------------------
-def _signal_refused(monkeypatch, listed: str) -> None:
-    """Every signal to a group says EPERM, and ``ps -A`` lists ``listed``."""
-    import os
-
-    from fastmdxplora import gpu_here
-
-    def refused(*_):
-        raise PermissionError(1, "Operation not permitted")
-
-    monkeypatch.setattr(os, "killpg", refused)
-    monkeypatch.setattr(gpu_here, "_answer", lambda script: listed)
-
-
-class _Ended:
-    pid = 4242
-
-    def communicate(self, timeout=None):
-        return "", ""
-
-    def poll(self):
-        return 0
-
-
-def test_a_run_whose_group_is_zombies_refusing_the_signal_left_nothing(monkeypatch):
-    """The loop after a run ended raised the EPERM out of its cleanup."""
-    _signal_refused(monkeypatch, " 4242 Z\n 4300 S\n")
-    ran = _Ended()
-    assert _ended(ran, 1, "the run") == ("", "")
-    assert ran.left_behind is False
-
-
-def test_a_run_whose_group_has_a_live_member_refusing_the_signal_left_it(monkeypatch):
-    _signal_refused(monkeypatch, " 4242 Z\n 4242 S\n")
-    assert _group_gone_within(4242, 0.3) is False
-
-
-def _pid_refused(monkeypatch, state: str | None) -> None:
-    """The zero signal to a pid says EPERM, and ``ps -p`` says ``state``
-    (``None``: ``ps`` cannot be run)."""
-    import os
-    import subprocess as sub
-
-    from fastmdxplora.gui import exploration
-
-    def refused(pid, number):
-        assert number == 0
-        raise PermissionError(1, "Operation not permitted")
-
-    def ps(command, **_):
-        assert command[:3] == ["ps", "-o", "stat="], command
-        if state is None:
-            raise FileNotFoundError("ps")
-        return sub.CompletedProcess(command, 0, stdout=state, stderr="")
-
-    monkeypatch.setattr(exploration, "_WINDOWS", False)
-    monkeypatch.setattr(os, "kill", refused)
-    monkeypatch.setattr(exploration.subprocess, "run", ps)
-
-
-@pytest.mark.parametrize("state", ["Z\n", "Z+\n", "", None])
-def test_a_process_refusing_the_zero_signal_and_not_alive_in_ps_is_gone(monkeypatch, state):
-    """A zombie, a pid ``ps`` does not list, or ``ps`` not read: gone. Read
-    as alive, a run that ended on macOS read as still going."""
-    from fastmdxplora.gui.exploration import _process_alive
-
-    _pid_refused(monkeypatch, state)
-    assert _process_alive(4242) is False
-
-
-def test_a_process_refusing_the_zero_signal_and_alive_in_ps_is_alive(monkeypatch):
-    """Another user's live process, as through sudo."""
-    from fastmdxplora.gui.exploration import _process_alive
-
-    _pid_refused(monkeypatch, "S\n")
-    assert _process_alive(4242) is True

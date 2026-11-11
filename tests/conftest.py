@@ -115,12 +115,12 @@ def _no_run_outlives_the_test_that_started_it(monkeypatch):
         try:
             os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=10)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):  # gone, or (macOS) zombies
             continue
         except Exception:  # noqa: BLE001 - it must not outlive the suite either way
             try:
                 os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
                 pass
 
 
