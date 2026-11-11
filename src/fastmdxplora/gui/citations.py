@@ -43,6 +43,8 @@ NAMES: dict[str, tuple[str, ...]] = {
     "bilayer_thickness": ("bilayer thickness", "D_PP"),
     "lipid_order": ("order parameter", "order parameters", "S_CD"),
     "pore_profile": ("pore radius", "pore profile", "pore's radius"),
+    "diffusion": ("diffusion coefficient", "mean squared displacement", "MSD"),
+    "cross_correlation": ("cross-correlation", "DCCM", "move together"),
     "moments_of_inertia": ("moment of inertia", "moments of inertia"),
     "coordination_number": ("coordination number",),
     "rdf": ("RDF", "radial distribution"),
@@ -54,7 +56,8 @@ LABELS: dict[str, str] = {
     "ss": "Secondary structure", "end_to_end": "End-to-end distance",
     "pair_distance": "Pair distance", "area_per_lipid": "Area per lipid",
     "bilayer_thickness": "Bilayer thickness", "lipid_order": "Order parameters",
-    "pore_profile": "Pore radius",
+    "pore_profile": "Pore radius", "diffusion": "Diffusion",
+    "cross_correlation": "Cross-correlation",
     "moments_of_inertia": "Moments of inertia", "rdf": "RDF",
     "coordination_number": "Coordination number",
 }

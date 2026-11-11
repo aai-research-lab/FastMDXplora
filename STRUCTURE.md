@@ -130,6 +130,8 @@ FastMDXplora/
 │       │   ├── bilayer.py         # Where a bilayer is: its lipids, centre and leaflets
 │       │   ├── area_per_lipid.py bilayer_thickness.py lipid_order.py   # the bilayer itself
 │       │   ├── pore_profile.py    # The radius of the way through a channel, as HOLE measures it
+│       │   ├── diffusion.py       # Mean squared displacement and the diffusion coefficient
+│       │   ├── cross_correlation.py  # Which residues move together (DCCM)
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

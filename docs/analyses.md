@@ -230,6 +230,70 @@ selectivity filter it finds closed to water at Gly77 with the cavity beside
 it about 0.45 nm in radius. It has not been compared with HOLE itself, frame
 for frame.
 
+### Motion
+
+| | |
+|---|---|
+| `diffusion` | The mean squared displacement of the selection's molecules against the lag, and the diffusion coefficient its slope gives |
+
+Each molecule of the selection (water unless another is named) is followed by
+its centre of mass, and its mean squared displacement is averaged over the
+molecules and over every pair of frames the same lag apart. The coefficient is
+the slope between a tenth and a half of the run (`fit_from`, `fit_to`) over
+2d, d the dimensions, in nm²/ns, which is 1e-5 cm²/s.
+
+- **The paths are put back together.** A molecule that crosses a face of the
+  cell is stored on the other side. Each step between consecutive frames is
+  taken to its nearest periodic image in the later frame's cell and the steps
+  summed (von Bülow, Bullerjahn and Hummer, 2020), which stays right under a
+  barostat. Frames saved so far apart that a molecule moves over a fifth of
+  the cell between two of them are refused: a step past half the cell is
+  stored as a shorter one the other way, and the coefficient would be too
+  small with nothing to show for it.
+- **Motion is measured against the centre of mass of every atom stored**,
+  since the frames follow the solute. For the lipids of a bilayer it is
+  measured in the plane of the bilayer against each leaflet's own centre
+  (`plane`, `relative_to`).
+- **The exponent says whether it is diffusion.** `findings.diffusion.exponent`
+  is how the displacement grows with the lag over the lags fitted: 1 is
+  diffusion, and below 0.8 the result says the molecules are still caged or
+  confined and the slope is not a coefficient.
+- **The cell's size is not corrected for.** A periodic cell lowers the
+  coefficient by 2.837 kT / (6πηL) (Yeh and Hummer, 2004), about a tenth for
+  water in a 4 nm cell; that needs the viscosity, which is not in the frames.
+- **A lone solute cannot be followed in frames that hold nothing else.**
+  The frames are centred on it; with the solvent stored
+  (`simulation.save_selection: all`) its motion against the whole is
+  recovered, and without it the analysis refuses.
+
+The error is the standard error across five groups of molecules, withheld
+for fewer than 25. It is held against random walks of a known coefficient,
+in a fixed cell, a cell that breathes and frames that drift; it has not been
+compared with `gmx msd` on one trajectory.
+
+| | |
+|---|---|
+| `cross_correlation` | Which residues move together: the dynamic cross-correlation map of the alpha carbons, from -1 (always opposite) to 1 (always alike) |
+
+Each frame is fitted to the mean structure (on the selection, or on
+`fit_selection` to see the rest move against one domain), and every pair's
+displacements are correlated (Ichiye and Karplus, 1991). Two domains closing
+on a hinge show as two blocks, positive within and negative between. The map
+is in `cross_correlation.npz`, and the 100 strongest pairs each way, less
+neighbours fewer than `min_separation` (4) residues apart, in
+`cross_correlation.dat`.
+
+- **It sees motion along one line only.** Two parts moving in concert at
+  right angles correlate to zero, so zero does not mean independent.
+- **The map is a property of the fit.** Fitted on the whole, a small mobile
+  part is read against the frame the rigid part sets.
+- **It needs sampling.** The map is made again from each half of the run;
+  where the two agree to less than 0.5 the result says the run has not
+  sampled the motions it shows.
+
+Held against motions whose correlations are known by construction; not
+compared with Bio3D or cpptraj on one trajectory.
+
 ### Conformations
 
 | | |
@@ -422,14 +486,18 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
 contain which two. Running them anyway would mean picking a pair, which is
 answering the question rather than analysing it. `pore_profile` is held back
 for the same reason: whether a protein is a channel is not in its frames, and
-the profile of one that is not is a number about nothing.
+the profile of one that is not is a number about nothing. `diffusion` is held
+back because which molecules to follow is the study's question, and the
+solvent is in the frames only where the study stored it. `cross_correlation`
+is held back because its map is the square of the atoms and what it is
+fitted on changes what it shows.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -787,6 +855,12 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.pore_profile
+   :members:
+
+.. automodule:: fastmdxplora.analysis.diffusion
+   :members:
+
+.. automodule:: fastmdxplora.analysis.cross_correlation
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

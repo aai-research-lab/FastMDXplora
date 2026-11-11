@@ -1075,7 +1075,9 @@ RECORDED = Path(__file__).resolve().parent / "data" / "agent_eval" / "run_2026-1
 #: it is the run's `simulation.temperature_K`); no verdict changed. Set again
 #: by `setup-honest` (`verlet` and `variable_verlet` not among the integrator's
 #: choices); no verdict changed. Set again by `pore-profile` (`pore_profile`
-#: among the analyses `include` and `exclude` accept); no verdict changed.
+#: among the analyses that give a value for every frame, which the Agent is
+#: told of; an analysis that gives none, as `diffusion`, changes nothing here);
+#: no verdict changed.
 ASKED_NOW = "5a5d841ae17761e8b56bce42a897080ae05b0fecba6e419982ddd3a91f29e0a7"
 
 

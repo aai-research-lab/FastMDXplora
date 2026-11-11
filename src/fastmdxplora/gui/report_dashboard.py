@@ -62,10 +62,12 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("rdf", "Radial distribution function"),
         ("coordination_number", "Coordination number"),
         ("water_sites", "Water sites"),
+        ("diffusion", "Diffusion"),
     )),
     ("Conformations", (
         ("cluster", "Clustering"),
         ("dimred", "Dimensionality reduction"),
+        ("cross_correlation", "Dynamic cross-correlation"),
     )),
     ("The ligand", (
         ("ligand_rmsd", "Ligand pose RMSD"),

@@ -109,6 +109,13 @@ from fastmdxplora.analysis import lipid_order as _lipid_order  # noqa: F401, E40
 # The way through a channel: its radius along its axis. Run only where a
 # study names it, since whether a protein has a pore is not in its frames.
 from fastmdxplora.analysis import pore_profile as _pore_profile  # noqa: F401, E402
+# How fast the selection's molecules move. Run only where a study names it:
+# which molecules to follow is the study's question, and the solvent is in
+# the frames only where it was stored.
+from fastmdxplora.analysis import diffusion as _diffusion  # noqa: F401, E402
+# Which residues move together. Run only where a study names it: the map
+# costs the square of the atoms, and what it is fitted on is the question.
+from fastmdxplora.analysis import cross_correlation as _cross_correlation  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

@@ -2305,6 +2305,29 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Which residues move together: the `cross_correlation` analysis gives the
+  dynamic cross-correlation map of the alpha carbons (Ichiye and Karplus),
+  each frame fitted to the mean structure or to `fit_selection`. The map is
+  in `cross_correlation.npz` and the strongest pairs each way in
+  `cross_correlation.dat`, chain neighbours left out. The map is made again
+  from each half of the run, and where the halves disagree the result says
+  the motions were not sampled. It runs only where `analysis.include` names
+  it. Held against motions of known correlation; not compared with Bio3D.
+
+- How fast molecules move: the `diffusion` analysis follows each molecule of
+  the selection (water unless named) by its centre of mass, gives the mean
+  squared displacement against the lag (`diffusion.dat`) and reads the
+  diffusion coefficient from its slope between a tenth and a half of the
+  run, in nm²/ns. Paths are put back together across the periodic faces a
+  step at a time, in the later frame's cell, so a barostat's changes do not
+  distort them; frames too far apart for that are refused. Motion is
+  measured against the centre of mass of every atom stored, or for a
+  bilayer's lipids in its plane against each leaflet's centre. The exponent
+  of the growth is reported, and a result well below 1 is said not to be a
+  coefficient. Not corrected for the cell's size (Yeh and Hummer), which is
+  said. It runs only where `analysis.include` names it. Held against random
+  walks of a known coefficient; not compared with `gmx msd`.
+
 - The pore through a channel, as HOLE measures it: the `pore_profile`
   analysis gives, at each height along the pore's axis, the radius of the
   largest sphere that fits among the protein's van der Waals surfaces, over

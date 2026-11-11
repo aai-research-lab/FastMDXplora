@@ -76,6 +76,12 @@ ANALYSIS_NAMES = (
     # The radius of the way through a channel, along its axis, as HOLE
     # measures it: run where a study names it.
     "pore_profile",
+    # The mean squared displacement of the selection's molecules and the
+    # diffusion coefficient it gives: run where a study names it.
+    "diffusion",
+    # Which residues move together, the dynamic cross-correlation map: run
+    # where a study names it.
+    "cross_correlation",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",
