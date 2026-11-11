@@ -1474,14 +1474,21 @@ class TestTheCommandLinesOwnProcess:
     command line's own process now, with the libraries mapped before the
     room is read."""
 
-    def test_500_frames_run_whole_under_ulimit_v_600000(self, studies):
+    def test_500_frames_run_whole_under_ulimit_v_600000(self, studies, tmp_path):
         """Under ``ulimit -v`` itself, set from the start of `python -m
         fastmdxplora analyze`: to what that interpreter holds as it starts,
         what such a run holds at the check past its start
         (:data:`_TO_THE_CHECK_SCRIPT`), and the room ``ulimit -v`` 600000
         left tri-alanine. The holding was read whole, in a process of another
         kind: on CI's coverage leg the run held more than that, and was
-        refused its own 500 frames (56.0 MB of room for 64.0 MB)."""
+        refused its own 500 frames (56.0 MB of room for 64.0 MB).
+
+        What a run holds at the check also moved with the bytecode it found:
+        with the source's caches written by the reading and loaded by the
+        run, or some of them stale, the run held 4 to 8 MiB more than the
+        reading said (Python 3.11: 58.6 and 55.0 MiB of room for 61.0). Every
+        process here compiles into a cache of its own, written by a first
+        reading, so the reading and the run load the same bytecode."""
         import resource
         import subprocess
         from pathlib import Path
@@ -1490,7 +1497,9 @@ class TestTheCommandLinesOwnProcess:
         src = str(Path(clustering.__file__).resolve().parents[2])
         analyze = ["analyze", "--output", str(study), "--rerun", "--no-explain",
                    "--analyses", "rmsd", "cluster"]
-        env = _cli_env()
+        env = {key: value for key, value in _cli_env().items()
+               if key != "PYTHONDONTWRITEBYTECODE"}
+        env["PYTHONPYCACHEPREFIX"] = str(tmp_path / "bytecode")
 
         def said(script: str, word: str, *args: str) -> int:
             done = subprocess.run([sys.executable, "-c", script, *args], capture_output=True,
@@ -1498,6 +1507,8 @@ class TestTheCommandLinesOwnProcess:
             return int(next(line.split()[1] for line in done.stdout.splitlines()
                             if line.startswith(word)))
 
+        # The cache written, then read as the run reads it.
+        said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze)
         limit = (said(_AT_ITS_START_SCRIPT, "VMSTART")
                  + said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze) + ROOM_AT_600000)
 
