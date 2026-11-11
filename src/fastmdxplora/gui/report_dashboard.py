@@ -54,6 +54,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("Secondary structure and backbone", (
         ("ss", "Secondary structure"),
         ("dihedrals", "Dihedrals"),
+        ("nmr_observables", "NMR couplings and NOEs"),
         ("helix_geometry", "Helix tilt and kink"),
     )),
     ("Contacts and solvent", (

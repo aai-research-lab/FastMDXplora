@@ -2305,6 +2305,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- What an NMR experiment would see: the `nmr_observables` analysis gives
+  each residue's 3J(HN,HA) coupling from phi (Vögeli and Bax's Karplus
+  coefficients unless another set is named) and, from an NOE file, each
+  pair's <r^-6>^(-1/6) distance and violation; with measured couplings it
+  gives the RMS difference beside the Karplus set's own scatter. SAXS and
+  chemical shifts are said not to be computed. It runs only where
+  `analysis.include` names it.
+
 - How a signal could cross the protein: the `residue_network` analysis
   joins residues in lasting contact, weights each join by how much the two
   move together (-log|C|, as VMD's NetworkView does), and gives each

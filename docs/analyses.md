@@ -230,6 +230,27 @@ selectivity filter it finds closed to water at Gly77 with the cavity beside
 it about 0.45 nm in radius. It has not been compared with HOLE itself, frame
 for frame.
 
+### Against experiment
+
+| | |
+|---|---|
+| `nmr_observables` | 3J(HN,HA) couplings from each residue's phi and NOE distances, averaged as the experiment averages them, beside the measured values where given |
+
+Couplings come from a Karplus equation (Vögeli et al., 2007, unless
+`karplus` names MDTraj's `Bax1997` or `Ruterjans1999`), averaged over the
+frames; NOE distances are `<sum r^-6>^(-1/6)`, summed over the atoms each
+side names. With `j_couplings_file` (`residue`, `j_hz`, and `chain` where
+there are several) the RMS difference is given beside the Karplus set's own
+scatter (0.39 Hz for Bax2007), the least difference that says anything; with
+`noe_file` (`selection_1`, `selection_2`, `upper_nm`) each pair's violation
+is given.
+
+- **Not computed:** a SAXS curve, which needs the hydration shell modelled
+  (CRYSOL, Pepsi-SAXS), and chemical shifts, which need a trained predictor
+  (SPARTA+, SHIFTX2).
+
+Held against MDTraj's own couplings and against NOEs of known averages.
+
 ### Helices
 
 | | |
@@ -552,7 +573,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -568,7 +589,8 @@ which helices matter, and whether a tilt means anything without a bilayer,
 are the study's question. `mmgbsa` is held back because it costs a third
 of a second a frame for a few thousand atoms, and its number is not a
 free energy. `residue_network` is held back because which sites communicate is the
-study's question.
+study's question. `nmr_observables` is held back because it is for a study
+with an experiment to set beside it.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -941,6 +963,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.residue_network
+   :members:
+
+.. automodule:: fastmdxplora.analysis.nmr_observables
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

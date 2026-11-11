@@ -361,7 +361,7 @@ Nothing leaves the machine: these are files in the run directory that the
 | `exclude` | list | — | Everything but these. Mutually exclusive with `include` |
 | `options` | mapping | — | Per-analysis settings, keyed by analysis name |
 
-The 37 names `include` and `exclude` accept:
+The 38 names `include` and `exclude` accept:
 
 ```
 rmsd  rmsf  rg  hbonds  ss  sasa  dihedrals  qvalue  cluster  dimred
@@ -369,7 +369,8 @@ water_sites  ligand_rmsd  ligand_rmsf  pl_contacts  pl_hbonds  pl_interactions
 order_parameters  bfactor_comparison  thermodynamics  rdf  coordination_number
 end_to_end  moments_of_inertia  pair_distance  pmf  metad_surface  steered_work
 area_per_lipid  bilayer_thickness  lipid_order  pore_profile  diffusion  cross_correlation
-helix_geometry  mmgbsa  residue_network  image_check
+helix_geometry  mmgbsa  residue_network
+nmr_observables  image_check
 ```
 
 Several do not run by default and are gated on what the run contains — a

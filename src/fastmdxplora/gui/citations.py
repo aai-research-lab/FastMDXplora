@@ -48,6 +48,7 @@ NAMES: dict[str, tuple[str, ...]] = {
     "helix_geometry": ("helix tilt", "helix kink", "tilt angle"),
     "mmgbsa": ("MM/GBSA", "MMGBSA", "binding energy"),
     "residue_network": ("residue network", "betweenness", "allosteric path"),
+    "nmr_observables": ("J-coupling", "scalar coupling", "NOE"),
     "moments_of_inertia": ("moment of inertia", "moments of inertia"),
     "coordination_number": ("coordination number",),
     "rdf": ("RDF", "radial distribution"),
@@ -62,6 +63,7 @@ LABELS: dict[str, str] = {
     "pore_profile": "Pore radius", "diffusion": "Diffusion",
     "cross_correlation": "Cross-correlation", "helix_geometry": "Helix tilt and kink",
     "mmgbsa": "MM/GBSA", "residue_network": "Residue network",
+    "nmr_observables": "NMR observables",
     "moments_of_inertia": "Moments of inertia", "rdf": "RDF",
     "coordination_number": "Coordination number",
 }

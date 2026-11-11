@@ -91,6 +91,9 @@ ANALYSIS_NAMES = (
     # The residue interaction network, its bottlenecks and the path between
     # two sites: run where a study names it.
     "residue_network",
+    # 3J(HN,HA) couplings and NOE distances, beside the experiment's: run
+    # where a study names it.
+    "nmr_observables",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",
