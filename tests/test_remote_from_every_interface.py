@@ -3476,8 +3476,10 @@ def test_a_group_with_a_live_member_refusing_the_zero_signal_is_going(monkeypatc
 
 
 def test_a_group_refusing_the_zero_signal_and_unlisted_is_gone(tmp_path, monkeypatch):
-    """No member of the group in ``ps``, or neither ``ps`` nor ``/proc``
-    read: a process of this user's would have answered, so it is gone."""
+    """No member of the group in ``ps`` (as where ``/proc`` is mounted
+    ``hidepid=2`` and the members are another user's), or neither ``ps``
+    nor ``/proc`` read: a process of this user's would have answered, so
+    the sampler's run is gone."""
     from fastmdxplora.gpu_here import _going
 
     _group_refusing(monkeypatch, 4242, "    1 Ss\n 4300 S\n")
@@ -3519,6 +3521,29 @@ def test_a_group_of_zombies_refusing_the_zero_signal_with_no_ps_is_gone(tmp_path
     assert _going(4242) is False
     _group_refusing(monkeypatch, 4242, "", proc=tmp_path / "no proc")
     assert _going(4242) is False
+
+
+@pytest.mark.parametrize("state, going", [("Z", False), ("S", True), (None, True)],
+                         ids=["Z", "S", "no proc"])
+def test_a_leader_answering_the_zero_signal_with_no_ps_is_read_from_proc(
+        tmp_path, monkeypatch, state, going):
+    """Where ``ps`` cannot be run, the leader of a run that ended and is not
+    yet reaped was read as going, and its sampler read the GPU until the
+    run's parent reaped it. ``/proc`` says it is a zombie; with no
+    ``/proc`` either, the zero signal's success is all there is."""
+    from fastmdxplora import gpu_here
+
+    proc = (_proc_of(tmp_path / "proc", [(4242, "a (b) c", state, 4242)])
+            if state is not None else tmp_path / "no proc")
+    monkeypatch.setattr(gpu_here, "_PROC", proc)
+    monkeypatch.setattr(gpu_here.os, "killpg", lambda pgid, number: None)
+
+    def answer(script):
+        assert script.startswith("ps -o stat= -p 4242"), script
+        return ""
+
+    monkeypatch.setattr(gpu_here, "_answer", answer)
+    assert gpu_here._going(4242) is going
 
 
 def test_ps_names_the_states_of_a_real_group():

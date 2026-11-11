@@ -125,6 +125,53 @@ def test_another_user_s_process_alive_or_unread_is_alive(monkeypatch, state):
     assert _process_alive(4242) is True
 
 
+def _proc_with(folder: Path, pid: int, state: str) -> Path:
+    """A ``/proc`` holding ``pid`` in ``state``, its command holding a
+    parenthesis."""
+    (folder / str(pid)).mkdir(parents=True)
+    (folder / str(pid) / "stat").write_text(f"{pid} (a (b) c) {state} 1 {pid} {pid} 0 -1\n")
+    return folder
+
+
+@pytest.mark.parametrize("refused", [False, True], ids=["this user", "another user"])
+@pytest.mark.parametrize("state, alive", [("Z", False), ("S", True)])
+def test_a_process_ps_cannot_read_is_read_from_proc(tmp_path, monkeypatch, refused, state,
+                                                     alive):
+    """Where ``ps`` cannot be run (a container built without procps), a
+    run that ended and is not yet reaped was read as alive until its
+    parent reaped it. ``/proc`` says it is a zombie."""
+    from fastmdxplora.gui.exploration import _process_alive
+
+    _pid_refused(monkeypatch, None, refused=refused,
+                 proc=_proc_with(tmp_path / "proc", 4242, state))
+    assert _process_alive(4242) is alive
+
+
+def test_a_real_ended_run_with_no_ps_is_read_gone(monkeypatch):
+    """A run's process that has ended and is not reaped, read with no ``ps``
+    on PATH (nor ``sh``): its group and the process are gone, from
+    ``/proc``, before its parent reaps it."""
+    if not (sys.platform.startswith("linux") and Path("/proc/self/stat").exists()):
+        pytest.skip("needs a Linux /proc")
+    from fastmdxplora.gpu_here import _going
+    from fastmdxplora.gui.exploration import _process_alive
+
+    started = subprocess.Popen(["sh", "-c", "read line"], stdin=subprocess.PIPE,
+                               start_new_session=True)
+    try:
+        monkeypatch.setenv("PATH", "/nonexistent")
+        assert _going(started.pid) is True
+        assert _process_alive(started.pid) is True
+        started.stdin.close()
+        _a_zombie(started)
+        assert _going(started.pid) is False
+        assert _process_alive(started.pid) is False
+    finally:
+        if not started.stdin.closed:
+            started.stdin.close()
+        started.wait(timeout=10)
+
+
 # ---------------------------------------------------------------------------
 # Real: read as another user, so the zero signal says EPERM on Linux too
 # ---------------------------------------------------------------------------
@@ -194,16 +241,14 @@ def test_another_user_s_live_group_and_process_read_as_going(path):
 
 
 @_real
-@pytest.mark.parametrize("path, alive", [(None, False), ("/nonexistent", True)],
-                         ids=["ps", "proc"])
-def test_another_user_s_group_of_a_zombie_reads_gone(path, alive):
+@pytest.mark.parametrize("path", [None, "/nonexistent"], ids=["ps", "proc"])
+def test_another_user_s_group_of_a_zombie_reads_gone(path):
     """A group whose one member has ended and is not reaped: EPERM, as
     macOS says for a group of this user's zombies. With no ``ps`` the group
-    is read from ``/proc``; the one pid is taken for alive, EPERM being all
-    there is to read of it."""
+    and the one pid are read from ``/proc``."""
     started = subprocess.Popen(["sh", "-c", "exit 0"], start_new_session=True)
     try:
         _a_zombie(started)
-        assert _read_as_another_user(started.pid, path=path) == ("EPERM", False, alive)
+        assert _read_as_another_user(started.pid, path=path) == ("EPERM", False, False)
     finally:
         started.wait(timeout=10)
