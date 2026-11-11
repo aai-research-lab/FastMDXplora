@@ -23,8 +23,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   range is judged on W against that minimum. The radial `.dat` header says
   where W is zero, and an older record's W is zeroed between the windows'
   centres when read. The console's Barrier line says when only the
-  2.5 kJ/mol margin judged it, and otherwise that a barrier sits about 0.8
-  of its error high, as `barrier_zero` says.
+  2.5 kJ/mol margin judged it, and otherwise that its error is from
+  sampling only and that the curve's zero and the bins' width can each move
+  it by about that much: the zero puts a barrier high and the bins' width
+  puts a narrow one low (19.43 +/- 0.15 for a 20 kJ/mol escape barrier), so
+  no direction is claimed.
 - A binding free energy is refused where W's lowest point between the
   windows' centres is less than kT below the bulk reference
   (`well_depth_kjmol` says by how much): the bound range ends where W comes
@@ -32,7 +35,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   recombined along a distance, given about -6 kJ/mol before this series
   (its bound range from A's minimum out in bulk), and -7.4 to +0.8 with
   W's minimum searched between the centres alone, is now refused on every
-  seed tried; a well 1 kT deep or less is refused with it.
+  seed tried; a well 1 kT deep or less is refused with it. The rule judges
+  the real curve only, and each bootstrap resample follows its verdict, as
+  it does the bulk's: judged in each resample, the weakest resamples of a
+  weak well left its interval, and a 3 kJ/mol well's -1.18 kJ/mol came
+  over [-2.07, -0.81] from 24 of 40 resamples where it comes over
+  [-2.07, -0.35] from all 40. The refusal says there is no bound state as
+  this study defines one (W within kT of bulk over the windows' span), that
+  a well this shallow does not bind measurably at 1 M, and that longer
+  sampling could change the verdict where the depth is near kT. `binding`
+  saves the well's depth and its error (`well_depth_error_kjmol`, from the
+  depth's spread over the resamples, else the bins' standard errors) on a
+  number as well as a refusal. Where the depth is within its error of kT,
+  on either side, `well_depth_marginal` is true: the refusal's text says
+  the verdict is marginal, and a number is marked marginal. The console and
+  the GUI give a kT refusal whole, not its first sentence or clause as for
+  other refusals, so a marginal refusal reads as marginal there too, and
+  add a line to a marginal number ("The well's depth, ... is within its
+  error of kT ..., so the number is marginal: longer sampling could find no
+  bound state."). The comparison report gives no binding free energy, as
+  before.
+- The console warns when more than a tenth of a binding free energy's
+  resamples gave no number, since its error is then from the rest.
 - Running `fastmdx report` or `analyze` over an umbrella study saved
   before this series recomputes its record, so its barrier and its binding
   free energy can change: a shallow well's binding number moves to the one
