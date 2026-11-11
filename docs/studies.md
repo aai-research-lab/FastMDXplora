@@ -1104,9 +1104,12 @@ state: the ordinary ensemble, and not one continuous path. An alchemical run
 cannot be combined with a bias or with replica exchange, nor split into
 segments. It needs openmmtools and pymbar.
 
-Decoupling one TIP3P water from TIP3P water, which should give minus
-water's hydration free energy, is the check in its tests; it has not yet
-been run on a protein-ligand complex.
+Decoupling one TIP3P water from 2 nm of TIP3P water, through eight states
+for 100 ps each, gave +27.6 ± 1.7 kJ/mol (6.6 kcal/mol), every neighbouring
+pair overlapping by 0.06 or more, where minus TIP3P's hydration free energy
+is about 6.1 to 6.3 kcal/mol. That run took two hours on a laptop's CPU, so
+it is not among the automated tests. It has not yet been run on a
+protein-ligand complex.
 
 ## When a run fails
 

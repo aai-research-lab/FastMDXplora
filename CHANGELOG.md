@@ -2327,8 +2327,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   standard-state correction is computed and recorded, and
   `binding_free_energy` combines two legs. The new `alchemical_free_energy`
   analysis reports the result, its uncertainty and the overlap between
-  neighbouring states, and says where it is thin. Not yet run on a
-  protein-ligand complex.
+  neighbouring states, and says where it is thin. One TIP3P water decoupled
+  from water gives 6.6 ± 0.4 kcal/mol, against 6.1 to 6.3 published; not
+  yet run on a protein-ligand complex.
 
 - Replica exchange: `simulation.replica_exchange` runs REST2 (the solute's
   interactions scaled, by the force field's own terms) or temperature
