@@ -92,9 +92,10 @@ def _process_alive(pid: int) -> bool:
 
     macOS and Linux both answer the zero signal with success for a zombie,
     whose Z ``ps`` reads below. EPERM comes for another user's process (a
-    colleague's run, or a pid reused since): ``ps`` says whether it is a
-    zombie, and where ``ps`` cannot be read it is alive, as EPERM proves a
-    process there."""
+    colleague's run, or a pid reused since), and proves a process there:
+    only a Z read of it is gone, and where nothing can be read of it
+    (``ps`` not listing it under a ``/proc`` mounted ``hidepid``, or no
+    ``ps``) it is alive."""
     if _WINDOWS:
         import ctypes
         from ctypes import wintypes
@@ -113,19 +114,20 @@ def _process_alive(pid: int) -> bool:
         finally:
             kernel32.CloseHandle(handle)
 
+    refused = False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        pass  # another user's process: read by its state, as any other
+        refused = True  # another user's process: read by its state, as any other
     try:
         state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
                                capture_output=True, text=True, timeout=2).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return True
-    if not state:
-        return False
+    if not state:  # EPERM: there, and not listed (``hidepid``)
+        return refused
     return not state.startswith("Z")
 
 

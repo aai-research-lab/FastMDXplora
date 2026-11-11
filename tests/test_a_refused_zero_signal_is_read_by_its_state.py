@@ -79,14 +79,18 @@ def test_a_run_whose_group_has_a_live_member_refusing_the_signal_left_it(monkeyp
     assert _group_gone_within(4242, 0.3) is False
 
 
-def _pid_refused(monkeypatch, state: str | None) -> None:
-    """The zero signal to a pid says EPERM, and ``ps -p`` says ``state``
-    (``None``: ``ps`` cannot be run)."""
+def _pid_refused(monkeypatch, state: str | None, *, refused: bool = True,
+                 proc: Path | None = None) -> None:
+    """The zero signal to a pid says EPERM (success where not ``refused``),
+    and ``ps -p`` says ``state`` (``None``: ``ps`` cannot be run, and
+    ``/proc`` is ``proc``, none where not given)."""
+    from fastmdxplora import gpu_here
     from fastmdxplora.gui import exploration
 
-    def refused(pid, number):
+    def signal(pid, number):
         assert number == 0
-        raise PermissionError(1, "Operation not permitted")
+        if refused:
+            raise PermissionError(1, "Operation not permitted")
 
     def ps(command, **_):
         assert command[:3] == ["ps", "-o", "stat="], command
@@ -95,24 +99,26 @@ def _pid_refused(monkeypatch, state: str | None) -> None:
         return subprocess.CompletedProcess(command, 0, stdout=state, stderr="")
 
     monkeypatch.setattr(exploration, "_WINDOWS", False)
-    monkeypatch.setattr(os, "kill", refused)
+    monkeypatch.setattr(os, "kill", signal)
     monkeypatch.setattr(exploration.subprocess, "run", ps)
+    monkeypatch.setattr(gpu_here, "_PROC", proc or Path("/nonexistent/proc"))
 
 
-@pytest.mark.parametrize("state", ["Z\n", "Z+\n", ""])
+@pytest.mark.parametrize("state", ["Z\n", "Z+\n"])
 def test_another_user_s_process_that_ps_says_ended_is_gone(monkeypatch, state):
-    """Another user's zombie (Linux says EPERM for it), or a pid ``ps`` no
-    longer lists, was read as alive: a colleague's run, or a pid reused."""
+    """Another user's zombie (Linux says EPERM for it) was read as alive: a
+    colleague's run, or a pid reused."""
     from fastmdxplora.gui.exploration import _process_alive
 
     _pid_refused(monkeypatch, state)
     assert _process_alive(4242) is False
 
 
-@pytest.mark.parametrize("state", ["S\n", None])
+@pytest.mark.parametrize("state", ["S\n", "", None], ids=["S", "unlisted", "no ps"])
 def test_another_user_s_process_alive_or_unread_is_alive(monkeypatch, state):
-    """A live process of another user's, and one ``ps`` cannot read: EPERM
-    proves a process there."""
+    """A live process of another user's, one ``ps`` does not list (``/proc``
+    mounted ``hidepid=2``, where ``ps`` lists only this user's), and one
+    neither ``ps`` nor ``/proc`` can read: EPERM proves a process there."""
     from fastmdxplora.gui.exploration import _process_alive
 
     _pid_refused(monkeypatch, state)
