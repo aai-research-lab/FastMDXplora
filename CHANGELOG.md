@@ -2305,6 +2305,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- How a signal could cross the protein: the `residue_network` analysis
+  joins residues in lasting contact, weights each join by how much the two
+  move together (-log|C|, as VMD's NetworkView does), and gives each
+  residue's betweenness and, with `source` and `sink` named, the shortest
+  path between two sites. It says a path is not shown to carry a signal. It
+  runs only where `analysis.include` names it. Held against networks of
+  known shape; not compared with NetworkView.
+
 - How tightly the ligand is held: the `mmgbsa` analysis gives the ligand's
   MM/GBSA binding energy every frame, from the study's own force field in
   `setup/system.xml` and OpenMM's OBC2 generalised Born solvent, with its

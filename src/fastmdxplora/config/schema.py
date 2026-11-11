@@ -88,6 +88,9 @@ ANALYSIS_NAMES = (
     # The ligand's MM/GBSA binding energy, frame by frame: run where a study
     # names it.
     "mmgbsa",
+    # The residue interaction network, its bottlenecks and the path between
+    # two sites: run where a study names it.
+    "residue_network",
     # Every frame's solute against its own periodic images, where there is
     # a box: run first, and read by every other analysis of the frames.
     "image_check",

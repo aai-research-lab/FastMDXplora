@@ -69,6 +69,7 @@ ANALYSIS_THEMES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         ("cluster", "Clustering"),
         ("dimred", "Dimensionality reduction"),
         ("cross_correlation", "Dynamic cross-correlation"),
+        ("residue_network", "Residue interaction network"),
     )),
     ("The ligand", (
         ("ligand_rmsd", "Ligand pose RMSD"),

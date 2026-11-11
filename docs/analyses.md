@@ -317,6 +317,26 @@ neighbours fewer than `min_separation` (4) residues apart, in
 Held against motions whose correlations are known by construction; not
 compared with Bio3D or cpptraj on one trajectory.
 
+| | |
+|---|---|
+| `residue_network` | The residue interaction network: which residues are its bottlenecks, and the shortest path between two named sites |
+
+Each residue is a node; two are joined where their heavy atoms are within
+0.45 nm in at least 75% of the frames (`contact_cutoff_nm`,
+`contact_share`), neighbours along a chain left out, and each join is as
+long as -log|C| of their alpha carbons' cross-correlation, so residues that
+move together are close (Sethi et al., 2009, the method of VMD's
+NetworkView). Each residue's betweenness, the share of shortest paths
+running through it, is in `residue_network.dat`; with `source` and `sink`
+named, the shortest path between them is in the findings.
+
+- **A path is not a signal.** It runs where residues in lasting contact move
+  together; that communication travels along it is not shown.
+- It carries the cross-correlation's blindness to motion at right angles.
+
+Held against networks whose bottleneck and best path are known by
+construction; not compared with NetworkView on one trajectory.
+
 ### Conformations
 
 | | |
@@ -532,7 +552,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -547,7 +567,8 @@ fitted on changes what it shows. `helix_geometry` is held back because
 which helices matter, and whether a tilt means anything without a bilayer,
 are the study's question. `mmgbsa` is held back because it costs a third
 of a second a frame for a few thousand atoms, and its number is not a
-free energy.
+free energy. `residue_network` is held back because which sites communicate is the
+study's question.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -917,6 +938,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.mmgbsa
+   :members:
+
+.. automodule:: fastmdxplora.analysis.residue_network
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

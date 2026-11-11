@@ -120,6 +120,9 @@ from fastmdxplora.analysis import cross_correlation as _cross_correlation  # noq
 from fastmdxplora.analysis import helix_geometry as _helix_geometry  # noqa: F401, E402
 # How tightly the ligand is held, by MM/GBSA. Run only where a study names it.
 from fastmdxplora.analysis import mmgbsa as _mmgbsa  # noqa: F401, E402
+# How a signal could cross the protein: the residue interaction network.
+# Run only where a study names it.
+from fastmdxplora.analysis import residue_network as _residue_network  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water
