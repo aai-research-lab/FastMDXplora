@@ -681,6 +681,82 @@ def _setup_from_recorded(run: Path) -> list[str]:
             and (block.get("setup_from") or block.get("prepared_from"))]
 
 
+
+def _run_replica_exchange(params: dict[str, Any], *, run_arguments: dict[str, Any],
+                          system_xml: Path, topology: Path, output_dir: Path,
+                          presenter: Any) -> Any:
+    """Replica exchange in place of the single production run, its result
+    given as the runner gives one. The system is first minimised and
+    equilibrated as any run is (into ``equilibration/``), and the replicas
+    start from where that left it."""
+    from fastmdxplora.config.loader import _check_replica_exchange
+    from fastmdxplora.simulation.runner import plan_stages, run_simulation
+
+    _check_replica_exchange(params)
+    from fastmdxplora.refusals import StudyError
+    from fastmdxplora.simulation.replica_exchange import run_replica_exchange
+    from fastmdxplora.simulation.runner import SimulationResult
+
+    timestep = float(params["timestep_fs"])
+    stages = plan_stages(**{name: run_arguments[name] for name in (
+        "duration_ns", "timestep_fs", "nvt_steps", "npt_steps", "production_steps",
+        "nvt_duration_ns", "npt_duration_ns")})
+    steps = stages["production_steps"]
+    from fastmdxplora.simulation.replica_exchange import plan_from_block
+
+    exchange = plan_from_block(params["replica_exchange"])
+    if steps and (steps < exchange.exchange_interval_steps
+                  or steps % exchange.exchange_interval_steps):
+        raise StudyError(
+            "Replica exchange's production length must be divisible by exchange_interval_steps.",
+            code="config.option.out_of_range")
+    settled = run_simulation(**{**run_arguments,
+                                "output_dir": output_dir / "equilibration" if steps else output_dir,
+                                "duration_ns": 0.0, "production_steps": 0})
+    if not steps:
+        return settled
+    state_xml = settled.final_state
+    pressure = (settled.pressure_bar_used if settled.resolved.get("ensemble") == "npt"
+                else None)
+
+    def _said(done: int, total: int) -> None:
+        if presenter:
+            presenter.progress("Replica exchange", done, total)
+
+    if presenter:
+        presenter.step("Replica exchange")
+    done = run_replica_exchange(
+        system_xml=system_xml, state_xml=state_xml, topology_pdb=topology,
+        output_dir=output_dir, block=params["replica_exchange"],
+        temperature_K=float(params["temperature_K"]), timestep_fs=timestep,
+        friction_per_ps=float(params["friction_per_ps"]), production_steps=int(steps),
+        pressure_bar=None if pressure is None else float(pressure),
+        save_selection=params.get("save_selection", "not water"),
+        platform=str(params.get("platform") or "auto"),
+        precision=str(params.get("precision") or "mixed"),
+        device_index=params.get("device_index"),
+        barostat_frequency=int(params["barostat_frequency"]),
+        minimize=bool(params["minimize"]),
+        random_seed=params.get("random_seed"), on_progress=_said)
+    record = done["record"]
+    notes = [record[k] for k in ("gaps", "no_round_trip") if k in record]
+    notes.append("The trajectory is of whichever replica was at the run's conditions at "
+                 "each exchange: the right ensemble, and not one continuous path, so an "
+                 "analysis of motion over time does not apply to it.")
+    result = SimulationResult(
+        trajectory=done["trajectory"], topology=done["topology"],
+        final_state=done["final_state"], energy_csv=output_dir / "energy.csv",
+        log_file=output_dir / "replica_exchange.log",
+        platform_used=str(record.get("platform", "")), n_production_frames=done["frames"],
+        duration_ns_actual=float(done["duration_ns"]),
+        pressure_bar_used=pressure, barostat="isotropic" if pressure is not None else None,
+        minimized_state=settled.minimized_state,
+        resolved={**settled.resolved, "production_steps": int(steps),
+                  "trajectory_interval_steps": exchange.exchange_interval_steps},
+        notes=[*settled.notes, *notes])
+    return result
+
+
 def run(
     *,
     orchestrator: "FastMDXplora",
@@ -804,7 +880,7 @@ def run(
                                    rate_ns_per_day=rate,
                                    seconds_left=seconds_left)
 
-        result = run_simulation(
+        run_arguments = dict(
             system_xml=system_xml,
             state_xml=state_xml,
             topology_pdb=topology,
@@ -852,6 +928,12 @@ def run(
             restraint_release=params.get("restraint_release"),
             restrain_production=bool(params.get("restrain_production", False)),
         )
+        if params.get("replica_exchange") is not None:
+            result = _run_replica_exchange(params, run_arguments=run_arguments,
+                                           system_xml=system_xml, topology=topology,
+                                           output_dir=output_dir, presenter=presenter)
+        else:
+            result = run_simulation(**run_arguments)
 
         # Record artifacts relative to output_dir
         for path in (
@@ -870,6 +952,9 @@ def run(
                 artifacts.append(result.minimized_state.relative_to(output_dir).as_posix())
             except ValueError:
                 artifacts.append(str(result.minimized_state))
+        if (output_dir / "replica_exchange.json").is_file():
+            artifacts.extend(["replica_exchange.json", "replica_exchange.nc",
+                              "replica_exchange_checkpoint.nc"])
 
         if presenter:
             presenter.step(

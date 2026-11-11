@@ -132,6 +132,12 @@ from fastmdxplora.analysis import markov_model as _markov_model  # noqa: F401, E
 # The shape of a double helix: base-pair and step parameters. Run only
 # where a study names it.
 from fastmdxplora.analysis import nucleic_acid as _nucleic_acid  # noqa: F401, E402
+# Which waters would be costly to displace (GIST). Run only where a study
+# names it.
+from fastmdxplora.analysis import gist as _gist  # noqa: F401, E402
+# How a replica exchange run's replicas mixed: read from its record, where
+# one ran.
+from fastmdxplora.analysis import replica_mixing as _replica_mixing  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water

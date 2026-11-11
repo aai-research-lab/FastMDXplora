@@ -771,6 +771,8 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
         from fastmdxplora.simulation.umbrella import check_umbrella_keys
 
         check_umbrella_keys(simulation["umbrella"])
+    if isinstance(simulation, dict) and simulation.get("replica_exchange") is not None:
+        _check_replica_exchange(simulation)
 
     # analysis include/exclude mutual exclusion (nested)
     if as_record:
@@ -873,6 +875,42 @@ def _check_phase_values(phase: str, block: dict[str, Any], *, context: str) -> N
         from fastmdxplora.simulation.umbrella import check_umbrella_keys
 
         check_umbrella_keys(block["umbrella"])
+    if phase == "simulation" and block.get("replica_exchange") is not None:
+        _check_replica_exchange(block)
+
+
+def _check_replica_exchange(simulation: dict[str, Any]) -> None:
+    """A replica exchange block's settings, and that it is not asked beside a
+    bias: the replicas' exchanges assume each is at its own conditions and
+    nothing else, and a bias in one would make every swap wrong."""
+    from fastmdxplora.simulation.replica_exchange import plan_from_block
+
+    block = simulation.get("replica_exchange")
+    if not isinstance(block, dict):
+        raise ConfigError(
+            "`simulation.replica_exchange` is a block of settings (`method`, "
+            "`replicas`, ...), not a single value.", code="config.option.wrong_type")
+    plan = plan_from_block(block)
+    if plan.max_temperature_K <= float(simulation.get("temperature_K", 300.0)):
+        raise ConfigError("Replica exchange's top temperature must exceed temperature_K.",
+                          code="config.option.out_of_range")
+    biased = [name for name in ("umbrella", "steered", "metadynamics", "plumed")
+              if simulation.get(name) is not None]
+    if biased:
+        raise ConfigError(
+            f"Replica exchange cannot be run with {', '.join(biased)}: each replica "
+            "would carry the bias, and the swaps between them, which compare their "
+            "energies at their own conditions, would be wrong.",
+            code="config.option.conflicting")
+    if simulation.get("integrator", "langevin_middle") != "langevin_middle":
+        raise ConfigError("Replica exchange currently requires integrator: langevin_middle.",
+                          code="config.option.conflicting")
+    unsupported = [name for name in ("resume_from", "stop_when", "restrain_production")
+                   if simulation.get(name)]
+    if unsupported:
+        raise ConfigError(
+            f"Replica exchange cannot carry {', '.join(unsupported)} through its sampler.",
+            code="config.option.conflicting")
 
 
 def _check_system_entries(entries: list[Any]) -> None:

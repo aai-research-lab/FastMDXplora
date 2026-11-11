@@ -19,7 +19,8 @@
 # `ligand`, `amber`, `umap` and `pdf` extras of pyproject.toml -- which is
 # `all` plus `pdf` -- together with the three conda-only packages
 # (`openmm-plumed`, `openff-toolkit`, `ambertools`) that no extra can
-# express. The `validation` extra is deliberately not here: MDAnalysis and
+# express, and openmmtools/pymbar for replica exchange. The `validation`
+# extra is deliberately not here: MDAnalysis and
 # ProLIF are installed for the cross-tool comparison, where the point is that
 # the two stacks are separate.
 #
@@ -66,6 +67,9 @@ dependencies:
   # there is deliberately no `plumed` pip extra, so a clone set up any other
   # way has no umbrella, metadynamics or steered support.
   - openmm-plumed
+  # Replica exchange: 0.26 uses LangevinMiddleIntegrator for its dynamics move.
+  - openmmtools>=0.26
+  - pymbar>=4
   # Reading Amber NetCDF trajectories.
   - netcdf4>=1.6
   # Rendering the report as a PDF. Both halves: WeasyPrint lays the page out

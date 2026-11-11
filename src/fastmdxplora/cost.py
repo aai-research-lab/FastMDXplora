@@ -362,11 +362,16 @@ def total_steps(simulation: dict[str, Any] | None) -> int:
             return steps_in(block[duration], timestep)
         return steps_in(fallback_ns, timestep)
 
-    return (
-        steps_for("production_steps", "duration_ns", DEFAULT_PRODUCTION_NS)
-        + steps_for("nvt_steps", "nvt_duration_ns", DEFAULT_NVT_NS)
-        + steps_for("npt_steps", "npt_duration_ns", DEFAULT_NPT_NS)
-    )
+    production = steps_for("production_steps", "duration_ns", DEFAULT_PRODUCTION_NS)
+    equilibration = (steps_for("nvt_steps", "nvt_duration_ns", DEFAULT_NVT_NS)
+                     + steps_for("npt_steps", "npt_duration_ns", DEFAULT_NPT_NS))
+    if block.get("replica_exchange") is not None and production:
+        from fastmdxplora.simulation.replica_exchange import plan_from_block
+
+        exchange = plan_from_block(block["replica_exchange"])
+        return equilibration + exchange.replicas * (
+            production + exchange.equilibration_iterations * exchange.exchange_interval_steps)
+    return production + equilibration
 
 
 def estimate_study(

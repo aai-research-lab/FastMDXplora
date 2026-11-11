@@ -315,6 +315,9 @@ class AnalysisOrchestrator:
         # of the same frames after it.
         plan.sort(key=lambda name: name != _IMAGE_CHECK)
         merged_options = self._merge_options(plan, options)
+        exchange_trajectory = any((parent / "simulation" / "replica_exchange.json").is_file()
+                                  or (parent / "replica_exchange.json").is_file()
+                                  for parent in (self.output_dir, self.output_dir.parent))
 
         logger.debug("Plan: %s", ", ".join(plan))
 
@@ -323,6 +326,12 @@ class AnalysisOrchestrator:
         image_series: Any = None
         for name in plan:
             cls = get_analysis_class(name)
+            if exchange_trajectory and getattr(cls, "requires_continuous_trajectory", False):
+                self.results[name] = AnalysisResult(
+                    name=name, status="skipped",
+                    message=("Replica-exchange frames switch between replicas; this analysis "
+                             "requires a continuous trajectory and cannot measure kinetics here."))
+                continue
             raw_opts = dict(merged_options[name])
             # Supply the detected ligand residue name to ligand-aware analyses
             # (unless the user already set it). _filter_kwargs drops it for
@@ -377,6 +386,7 @@ class AnalysisOrchestrator:
             # The study this analysis folder is in, whose setup record an
             # analysis may read (the run's cutoff, through `record_access`).
             analysis.study_dir = self.output_dir.parent
+            analysis.replica_exchange = exchange_trajectory
             # Its own trajectory, not the shared one. Superposition in
             # mdtraj rotates coordinates in place, so an analysis that
             # aligns leaves every later analysis reading rotated
@@ -557,6 +567,17 @@ class AnalysisOrchestrator:
             return any(
                 (parent / "metadynamics_surface.json").is_file()
                 or (parent / "simulation" / "metadynamics_surface.json").is_file()
+                for parent in (here, here.parent))
+
+        def _replica_exchange_ok(name: str) -> bool:
+            """How the replicas mixed exists only where replica exchange ran."""
+            cls = _REGISTRY[name]
+            if not getattr(cls, "requires_replica_exchange", False):
+                return True
+            here = Path(self.output_dir)
+            return any(
+                (parent / "replica_exchange.json").is_file()
+                or (parent / "simulation" / "replica_exchange.json").is_file()
                 for parent in (here, here.parent))
 
         def _fold_ok(name: str) -> bool:
@@ -820,7 +841,7 @@ class AnalysisOrchestrator:
                 and _amide_ok(n) and _bfactor_ok(n) and _state_ok(n)
                 and _box_ok(n) and _named_ok(n) and _bilayer_ok(n)
                 and _umbrella_ok(n) and _metadynamics_ok(n)
-                and _steered_ok(n) and _fold_ok(n)
+                and _steered_ok(n) and _fold_ok(n) and _replica_exchange_ok(n)
                 and _alignable(n) and _solute_ok(n)
             ]
 
@@ -830,7 +851,7 @@ class AnalysisOrchestrator:
                 if _ligand_ok(n) and _water_ok(n) and _amide_ok(n)
                 and _bfactor_ok(n) and _state_ok(n) and _box_ok(n)
                 and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
-                and _metadynamics_ok(n) and _steered_ok(n)
+                and _metadynamics_ok(n) and _steered_ok(n) and _replica_exchange_ok(n)
                 and _fold_ok(n) and _alignable(n) and _solute_ok(n)]
 
     def _merge_options(

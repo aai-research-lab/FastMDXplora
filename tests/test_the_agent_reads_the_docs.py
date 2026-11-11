@@ -614,7 +614,7 @@ def test_a_section_is_found_by_the_headings_above_it_too(tmp_path, monkeypatch) 
     for asked in ("simulation how this phase was written",
                   "simulation > How this phase was written"):
         said = read_docs(page="config_reference", section=asked)
-        assert "> `simulation` \u2014 45 settings > How this phase was written." in said
+        assert "> `simulation` \u2014 46 settings > How this phase was written." in said
         assert "other sections of this name" in said
     _synthetic(tmp_path, monkeypatch,
                "# A\n\n## Setup\n\n### Notes\n\nFirst notes.\n\n## Run\n\n### Notes\n\n"

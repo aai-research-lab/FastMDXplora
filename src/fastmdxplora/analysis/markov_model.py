@@ -150,6 +150,7 @@ class MarkovModel(Analysis):
     """
 
     name = "markov_model"
+    requires_continuous_trajectory = True
     description = "Markov state model"
     default_selection = "protein"
     #: A model of the slow processes is the study's question, and a short run

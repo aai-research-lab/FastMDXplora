@@ -447,6 +447,17 @@ class Analysis(ABC):
                 self.findings["made_whole"] = made_whole
             self.result = self.compute(traj)
             self._record_what_the_mean_is_worth(traj)
+            if getattr(self, "replica_exchange", False):
+                for record in self._mean_records():
+                    descriptive = {key: record[key] for key in ("mean", "n_frames", "unit", "units")
+                                   if key in record}
+                    record.clear()
+                    record.update(descriptive)
+                    self._withhold_the_error(
+                        traj, "Replica-exchange frames switch between replicas. The descriptive "
+                        "average is available, but this analysis's continuous-trajectory "
+                        "autocorrelation estimate cannot support its uncertainty.",
+                        because="replica exchange", record=record)
             self._qualify_by_the_solute_image(traj)
             # Written again, because an analysis can only record some things
             # once it has looked at the trajectory: how confidently it knew
@@ -545,6 +556,10 @@ class Analysis(ABC):
         from fastmdxplora.analysis.loading import SEGMENT_JOINS
 
         unit = self._recorded_unit()
+        if getattr(self, "replica_exchange", False):
+            self.findings["mean"] = {"mean": float(np.mean(series)),
+                                     "n_frames": int(len(series)), "unit": unit}
+            return
         record = mean_record(series, frame_interval_ns=_frame_interval_ns(traj),
                              joins=getattr(traj, SEGMENT_JOINS, ()), unit=unit)
         if unit is not None:

@@ -319,6 +319,35 @@ Held against ideal helices built at known tilts and kinks, and against KcsA
 (1BL8), whose outer and inner helices it finds 23 and 36 degrees from the
 channel's axis; not compared with HELANAL itself.
 
+### Solvation
+
+| | |
+|---|---|
+| `gist` | Which waters about a site would be costly to displace: each cube's water density, energy and entropy against bulk water (grid inhomogeneous solvation theory) |
+
+Space about the ligand (or `center_selection`) is cut into cubes `voxel_nm`
+wide, the protein fitted to its first frame. For each, from the waters found
+there: the density over bulk, each water's energy with the solute and half
+its energy with other water less bulk water's (from the study's own force
+field, Coulomb and Lennard-Jones by the minimum image to `cutoff_nm`), and the
+first-order translational and orientational entropies. Summed over a region,
+`dA = dE_sw + dE_ww - TdS` is what the water there costs a ligand that
+displaces it. Maps of density and free energy are written as OpenDX.
+
+- **Every water has to be stored** (`simulation.save_selection: all`).
+- **Long-range electrostatics are cut off**, with no Ewald correction, as
+  cpptraj's GIST does by default.
+- **Orientational entropy needs waters**: a cube that held fewer than
+  `min_waters` over the run is left at zero, and counted.
+- **First-order entropies** leave out waters' joint ordering, and overstate
+  the loss, as GIST generally does.
+
+Its orientational entropy matches the analytic value for Gaussian spreads
+and is zero for random orientations; its energies match OpenMM's; for a
+sodium ion in TIP3P it finds the first shell dense, held and ordered, and
+bulk water at TIP3P's density. **It has not been compared with cpptraj's GIST
+on one trajectory**; that is to be done on aailab01.
+
 ### Motion
 
 | | |
@@ -580,7 +609,7 @@ computes and why some of it is refused.
 
 ### Enhanced sampling
 
-These three do not analyse the trajectory. They read what a biased run itself
+These read what an enhanced-sampling run itself
 produced, and each runs only where such a run produced it — so none appears
 after an ordinary simulation, and none needs a ligand.
 
@@ -589,6 +618,7 @@ after an ordinary simulation, and none needs a ligand.
 | `pmf` | The free energy along an umbrella study's coordinate, from the windows it stitched. Reads the study's result rather than recomputing it |
 | `metad_surface` | The free energy surface a metadynamics run filled, from its hills. Plots a provisional surface as readily as a converged one, saying which it is |
 | `steered_work` | The work done by a steered pull, against the coordinate |
+| `replica_mixing` | Neighbour swap acceptance and round trips, from the replica-exchange sampler record |
 
 `steered_work` gives the curve rather than the total, because a pull that
 accumulated work smoothly met resistance all the way and one that accumulated
@@ -618,7 +648,8 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model`, `nucleic_acid` | **Never automatically** |
+| Replica exchange mixing | `replica_mixing` | `simulation/replica_exchange.json` exists; reports neighbour acceptance and round trips |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model`, `nucleic_acid`, `gist` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -637,7 +668,8 @@ free energy. `residue_network` is held back because which sites communicate is t
 study's question. `nmr_observables` is held back because it is for a study
 with an experiment to set beside it. `markov_model` is held back because a
 short run does not hold the slow processes it models. `nucleic_acid` is held
-back for a study of a double helix that asks for it.
+back for a study of a double helix that asks for it. `gist` is held back because it
+needs every water stored and a site to describe.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -1021,6 +1053,9 @@ read before comparing a result against another tool.
 .. automodule:: fastmdxplora.analysis.nucleic_acid
    :members:
 
+.. automodule:: fastmdxplora.analysis.gist
+   :members:
+
 .. automodule:: fastmdxplora.analysis.cluster
    :members:
 
@@ -1061,6 +1096,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.steered_work
+   :members:
+
+.. automodule:: fastmdxplora.analysis.replica_mixing
    :members:
 
 .. automodule:: fastmdxplora.analysis.reweight
