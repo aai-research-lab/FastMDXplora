@@ -97,7 +97,7 @@ def test_the_reweighting_s_section_has_no_analyze_again(browser, biased):  # noq
         page.wait_for_selector('.analysis-cell-head[data-analysis="rmsd"] .cell-again',
                                state="attached")
         page.wait_for_selector('.analysis-section[data-cell="reweighted"]', state="attached")
-        # The cells are drawn again once the overview's rows are read, as
+        # The cells are rendered again once the overview's rows are read, as
         # its table is: read after them.
         page.wait_for_function(
             "() => window.FastMDXAnalysisPage && window.FastMDXAnalysisPage.overviewRead()")
