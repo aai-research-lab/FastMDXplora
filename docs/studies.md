@@ -883,6 +883,35 @@ rather than implying the check passed.
 curve says, `delta_g_kjmol` is what it means, and `cone_correction_kjmol` is
 the step between them.
 
+**The interval on the binding free energy.** `delta_g_confidence_kjmol` is the
+number +/- Student's t at 95% times its standard error
+(`delta_g_standard_error_kjmol`, the spread of the binding free energy over the
+bootstrap's resamples), on one fewer degrees of freedom than the resamples that
+gave a number (`delta_g_resamples`): 2.02 standard errors with 40, 1.97 with
+200. `delta_g_confidence_multiplier`, `delta_g_confidence_degrees_of_freedom`,
+`delta_g_confidence_level` and `delta_g_confidence_from` say how it was made.
+The corrections shift it and do not widen it, as they do the number. The
+interval was the resamples' own 2.5th and 97.5th percentiles before, and on
+umbrella studies of wells with an exact answer (16 windows from 0.55 to
+2.05 nm, 3000 frames each, a 30° cone, the narrow and the broad wells, 40
+resamples) those held the exact binding free energy in 931 of 1023 studies
+(91.0% +/- 0.9%), while the standard error was right: the number's spread from
+study to study was 0.97 and 1.01 times the median standard error. Of 40
+values the 97.5th percentile is read between the largest two, about 1.77
+standard errors from the middle where 1.96 is meant. On the same studies the
+t interval held it in 976 of 1023 (95.4% +/- 0.7%; 357 of 375 on the narrow
+well and 619 of 648 on the broad), and in 169 of 180 (93.9% +/- 1.8%) where
+more than two resamples gave no number. With 200 resamples it held it in 107
+of 115 (93% +/- 2.4%, against 104 for the percentiles), too few studies to
+tell from 95%. The percentiles are saved beside it as
+`delta_g_percentile_interval_kjmol`, for comparison, and are not a 95%
+interval. Where the resamples give no spread there is no interval:
+`delta_g_confidence_kjmol` and `delta_g_standard_error_kjmol` are `null` and
+`delta_g_no_interval` says why, as with `bootstrap_resamples: 1` (one resample
+has no spread, and its percentiles made an interval of no width) or where every
+resample gave the same number. An interval whose block length is a lower bound
+is still a floor (`delta_g_uncertainty_is_a_floor`), whatever its multiplier.
+
 **The check that comes with it.** The correction depends on the angle and the
 answer must not. Run two cone angles and compare: 20° and 45° differ by
 3.8 kJ/mol in the correction, so if the corrected binding free energies agree
