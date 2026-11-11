@@ -2305,6 +2305,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- The protein's slow processes: the `markov_model` analysis builds a Markov
+  state model of the frames (tICA scaled by the kinetic map, k-means
+  microstates, a reversible maximum-likelihood transition matrix) and gives
+  the implied timescales across lags, building the model at the lag where
+  they level off. A process crossed fewer than ten times, or slower than a
+  third of the run, is said to be unresolved, and timescales that never
+  level off are said to be lower bounds. It runs only where
+  `analysis.include` names it. Held against a hidden Markov chain of known
+  timescales; not compared with deeptime.
+
 - What an NMR experiment would see: the `nmr_observables` analysis gives
   each residue's 3J(HN,HA) coupling from phi (Vögeli and Bax's Karplus
   coefficients unless another set is named) and, from an NOE file, each

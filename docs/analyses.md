@@ -230,6 +230,31 @@ selectivity filter it finds closed to water at Gly77 with the cavity beside
 it about 0.45 nm in radius. It has not been compared with HOLE itself, frame
 for frame.
 
+### Slow processes
+
+| | |
+|---|---|
+| `markov_model` | A Markov state model of the frames: tICA, k-means microstates, a reversible transition matrix, and the implied timescales of the slowest processes across lags |
+
+The frames are described by alpha-carbon distances or backbone torsions
+(`features`), projected by tICA and scaled by the kinetic map, and cut into
+`states` (100) microstates by k-means. The transition matrix is estimated by
+maximum likelihood under detailed balance on the largest set of microstates
+that reach each other, at every lag from one frame to a fifth of the run, and
+the model is built at the shortest lag at which the slowest timescale has
+levelled off.
+
+- **Where the timescales never level off**, the model is said not to be
+  Markovian at any lag tried, and its timescales are lower bounds.
+- **A process crossed fewer than ten times**, or slower than a third of the
+  run, is said to be unresolved: its timescale is a lower bound.
+- **Not built:** metastable sets (PCCA+), Chapman-Kolmogorov tests, Bayesian
+  errors. deeptime and PyEMMA do these.
+
+Held against a hidden Markov chain of known transition matrix, whose
+timescales it recovers within 15%; not compared with deeptime on one
+trajectory.
+
 ### Against experiment
 
 | | |
@@ -573,7 +598,7 @@ question rather than analysing it.
 | Tertiary structure | `qvalue` | The solute has more residues than the sequence separation |
 | Enough atoms to align | any analysis that aligns | The default selection matches at least 3 atoms |
 | A biased run's result | `pmf`, `metad_surface`, `steered_work` | `pmf.json`, `metadynamics_surface.json` or `steered_work.json` exists |
-| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables` | **Never automatically** |
+| **Naming** | `coordination_number`, `pair_distance`, `pore_profile`, `diffusion`, `cross_correlation`, `helix_geometry`, `mmgbsa`, `residue_network`, `nmr_observables`, `markov_model` | **Never automatically** |
 
 The last one is the interesting case. `coordination_number` and
 `pair_distance` compute a quantity between *two named things*, and the trajectory does not
@@ -590,7 +615,8 @@ are the study's question. `mmgbsa` is held back because it costs a third
 of a second a frame for a few thousand atoms, and its number is not a
 free energy. `residue_network` is held back because which sites communicate is the
 study's question. `nmr_observables` is held back because it is for a study
-with an experiment to set beside it.
+with an experiment to set beside it. `markov_model` is held back because a
+short run does not hold the slow processes it models.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
 how you get `rdf` out of a run whose trajectory does carry solvent, or a
@@ -966,6 +992,9 @@ read before comparing a result against another tool.
    :members:
 
 .. automodule:: fastmdxplora.analysis.nmr_observables
+   :members:
+
+.. automodule:: fastmdxplora.analysis.markov_model
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

@@ -136,6 +136,7 @@ FastMDXplora/
 │       │   ├── mmgbsa.py          # The ligand's MM/GBSA binding energy
 │       │   ├── residue_network.py # The residue interaction network and its paths
 │       │   ├── nmr_observables.py # NMR couplings and NOEs, beside the experiment's
+│       │   ├── markov_model.py    # tICA, microstates and a Markov state model's timescales
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs

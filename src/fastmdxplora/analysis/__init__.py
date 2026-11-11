@@ -126,6 +126,9 @@ from fastmdxplora.analysis import residue_network as _residue_network  # noqa: F
 # What an NMR experiment would see: couplings and NOEs. Run only where a
 # study names it.
 from fastmdxplora.analysis import nmr_observables as _nmr_observables  # noqa: F401, E402
+# The slow processes, from a Markov state model. Run only where a study
+# names it.
+from fastmdxplora.analysis import markov_model as _markov_model  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water
