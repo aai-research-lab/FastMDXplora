@@ -142,10 +142,11 @@ jobs:
     # took 50 minutes (ubuntu 3.10), 49 (macOS 3.10) and 89 (macOS 3.13,
     # 55 seconds under its 90), and ubuntu 3.11 and macOS 3.11 were
     # cancelled at 90 with nothing failed; the coverage leg took 139. The
-    # plain legs now run as the coverage leg does (see "Run tests"), and
-    # 120 is a margin for a macOS runner short of capacity, not room for
-    # the suite to grow back into. A hung test does not wait for it. On
-    # every core pytest-timeout fails it at 600 seconds by a signal, with
+    # plain legs now run as the coverage leg does, but their browser files
+    # one at a time (see "Run tests"), and 120 is a margin for a macOS
+    # runner short of capacity, not room for the suite to grow back into.
+    # A hung test does not wait for it. On every core pytest-timeout fails
+    # it at 600 seconds by a signal, with
     # its stack, and the next test runs; its own thread method ends the
     # worker, and xdist ran the test again on each new one, 17 times on four
     # cores, with no stack shown. The signal fires once: a test whose
