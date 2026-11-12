@@ -658,10 +658,12 @@ at 90 frames a window quoted a barrier on 20 seeds in 20, and at 300 frames
 on 7 in 20. The multiplier is the 95th percentile, over the bootstrap's
 resampled curves, of the largest departure of any rise from the curve's
 own over that rise's error, so a curve with no barrier quotes one about 5%
-of the time (`BARRIER_FALSE_RATE`): on those turns 10 in 100 at 90 frames,
-where 72 samples a window leave the bootstrap's errors a little small, and
-2 in 60 at 300. A rise's error is its own spread over the resamples where
-20 or more hold both bins, since a difference carries none of the zero's
+of the time (`BARRIER_FALSE_RATE`): on those turns 2 in 100 at 90 frames and
+1 in 60 at 300, with the spread widened (`spread_factor`); 10 in 100 and 2
+in 60 with blocks of 2g and no widening, as up to 2.6.0, where 72 samples a
+window left the bootstrap's errors a little small. A rise's error is its own
+spread over the resamples where 20 or more hold both bins, since a
+difference carries none of the zero's
 noise that each bin's error holds; else the two bins' standard errors
 together, with Sidak's multiplier over every pair of bins; with no
 bootstrap, the 2.5 kJ/mol alone, and a flat curve's noise can then pass
