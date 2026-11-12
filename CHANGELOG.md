@@ -720,7 +720,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   600 umbrella studies (46 before). The PMF band on
   `validation.pmf_coverage`'s 100 sets held the truth in 91.3% of bins
   (86.4% before), and 94.2% in the mean gauge (89.5%); a curve zeroed at its
-  lowest bin sits about 0.7 of its error high, said as 0.8 before.
+  lowest bin sits about 0.7 of its error high, said as 0.8 before. One
+  factor serves every window, the largest that the windows resolving their
+  correlation time need; a window too short for its blocks is widened about
+  1.2 at most and is a floor, as before.
   `correlation_resolved` and the floor are unchanged. A slow tail beside a
   fast decay still reads low: 92% on 3000 frames with half the correlation
   at 66 frames.
