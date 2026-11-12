@@ -818,6 +818,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   fresh tree writing its bytecode (57.7 MB for 64.0), and passed or failed
   under `--cov` as the caches stood. The room the check reads is now the
   one the test means, 62.2 to 62.5 MiB, and 3 MiB less fails.
+- Tests: the 600000 test reads the room from its run's own record
+  (`findings.memory.bytes_address_space`); where that is more than 1 MiB
+  from the room 600000 left tri-alanine, the limit moves by the
+  difference and the run is made again, 3 runs at the most. On CI's
+  ubuntu 3.13 leg the run held 8.1 to 8.2 MiB more at the check than the
+  readings said, on 2 of 5 runs, and was refused (56.9 MB of room for
+  64.0). Coverage is not the cause: pytest-cov 7 traces no child process.
+  With the readings made 8.56 MB low the test as it was is refused the
+  same way and passes now; with 3 MiB less room meant it still fails.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
