@@ -1537,7 +1537,9 @@ def _ended(ran, seconds: float, what: str) -> tuple[str, str]:
         while ran.poll() is not None and time.monotonic() < until:
             try:
                 os.killpg(ran.pid, 0)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):
+                # macOS says EPERM, not ESRCH, while all the group has left
+                # is a zombie not yet reaped: nothing of it runs.
                 ran.left_behind = False
                 break
             time.sleep(0.1)
@@ -5301,7 +5303,8 @@ def test_a_study_with_runs_queued_ends_when_a_worker_is_killed(tmp_path):
                 os.killpg(process.pid, 0)
                 time.sleep(0.1)
             raise AssertionError("a worker of the study outlived it")
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # EPERM on macOS: only zombies of the group are left.
             pass
     finally:
         if process.poll() is None:
