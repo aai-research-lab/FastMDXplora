@@ -416,8 +416,8 @@ of their own). `--block-factor` widens the spread at its own block length
 too, so the commands above with it read whether the widened error moves
 with the block length, and it does not: at four correlation times 1.02 on
 seeds 1000 to 1099 (93.7% between the centres in the mean gauge, against
-94.2% at three) and 1.06 on seeds 52000 to 52039, and at eight 1.05 there
-(94.8% and 93.9%, against 94.9% at three). With blocks of two correlation
+94.2% at three) and 1.05 on seeds 52000 to 52039 (94.3%, against 94.7% at
+three), and at eight 1.03 there (93.2%). With blocks of two correlation
 times and no widening, as up to 2.6.0, it was about 13% smaller (0.869;
 0.82 and 0.91 on those seeds), and longer blocks alone did not close it:
 four correlation times gave 0.916 (0.949 on seeds 52000 to 52039) and

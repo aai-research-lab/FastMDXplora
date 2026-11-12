@@ -916,8 +916,11 @@ the block rule estimated at about 15 to 16): 91.8% +/- 1.1%, with
 `correlation_resolved` true in every one. Blocks are now three correlation
 times (`BLOCKS_PER_CORRELATION_TIME` in `uncertainty.py`) and the resamples'
 spread is widened for both losses (`spread_factor`, saved beside the
-band as `pmf.uncertainty.spread_factor`, about 1.1). On the same series the
-interval held the exact answer in 550 of 574 (95.8% +/- 0.8%), and in 232
+band as `pmf.uncertainty.spread_factor`, about 1.1). One factor serves every
+window, the largest that the windows long enough to resolve their correlation
+time need: a window too short for its blocks is widened at most about 1.2, and
+its error is a floor, said as such. On the same series the interval held the
+exact answer in 550 of 574 (95.8% +/- 0.8%), and in 232
 of 242 at rho 0.98 (95.9% +/- 1.3%; 225 before). On umbrella studies with
 correlated frames (the broad well above, each window's 3000 frames an AR(1)
 series at rho 0.9) it held it in 547 of 579 (94.5% +/- 0.9%; 508 of 554,

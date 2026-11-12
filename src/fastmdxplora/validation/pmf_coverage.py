@@ -56,11 +56,11 @@ resamples, 0.97 on seeds 1000 to 1029 (the first 30 of these) and 1.05 on
 seeds 52000 to 52039. The same reading in the reported gauge (1.13 here)
 is not a reading of the error alone: there the error and the spread both
 carry the noise of the lowest bin. With ``--block-factor 4`` (200
-resamples) the reading is 1.02 here and 1.06 on seeds 52000 to 52039,
-and 1.05 there with ``--block-factor 8``: with the widening, the block
+resamples) the reading is 1.02 here and 1.05 on seeds 52000 to 52039,
+and 1.03 there with ``--block-factor 8``: with the widening, the block
 length no longer moves it. The coverage between the centres in the mean
-gauge was 93.7% here at 4 (94.2% at 3), and 94.8% and 93.9% on seeds
-52000 to 52039 at 4 and 8 (94.9% at 3).
+gauge was 93.7% here at 4 (94.2% at 3). On seeds 52000 to 52039 it was
+94.3% at 4 and 93.2% at 8 (94.7% at 3).
 
 With blocks of two correlation times and no widening, as up to 2.6.0, the
 band held the truth in 86.4% of bins at 200 resamples and 87.0% at 400,
