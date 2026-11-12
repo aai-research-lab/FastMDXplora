@@ -43,6 +43,9 @@ except ImportError:  # pragma: no cover - the backends are optional
 pytestmark = pytest.mark.skipif(not HAS_BACKENDS, reason="needs OpenMM, MDTraj and PDBFixer")
 
 from tests.test_a_real_study_runs_end_to_end import TRI_ALANINE  # noqa: E402
+from tests.test_a_refused_zero_signal_is_read_by_its_state import (  # noqa: E402
+    _group_gone_within,
+)
 
 #: 300 production steps a piece; the rule cannot be met (±1e-06 nm), so the
 #: study extends its runs after the first piece. Minimization capped at 100
@@ -1525,24 +1528,13 @@ def _ended(ran, seconds: float, what: str) -> tuple[str, str]:
     is then killed whatever happened, so none is left for the next test."""
     import os
     import signal
-    import time
 
     try:
         return ran.communicate(timeout=seconds)
     except subprocess.TimeoutExpired:
         raise AssertionError(f"{what} did not end within {seconds:.0f} s") from None
     finally:
-        ran.left_behind = True
-        until = time.monotonic() + 5
-        while ran.poll() is not None and time.monotonic() < until:
-            try:
-                os.killpg(ran.pid, 0)
-            except (ProcessLookupError, PermissionError):
-                # macOS says EPERM, not ESRCH, while all the group has left
-                # is a zombie not yet reaped: nothing of it runs.
-                ran.left_behind = False
-                break
-            time.sleep(0.1)
+        ran.left_behind = ran.poll() is None or not _group_gone_within(ran.pid, 5)
         try:
             os.killpg(ran.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -2141,7 +2133,7 @@ def test_a_ctrl_c_while_a_broken_study_waits_lets_its_worker_save(presses, tmp_p
         for _ in range(presses):
             try:
                 os.killpg(ran.pid, signal.SIGINT)
-            except ProcessLookupError:
+            except (ProcessLookupError, PermissionError):  # macOS: a group of zombies
                 break
             time.sleep(0.5)
     finally:
@@ -5297,15 +5289,8 @@ def test_a_study_with_runs_queued_ends_when_a_worker_is_killed(tmp_path):
         except subprocess.TimeoutExpired:
             raise AssertionError(f"the study did not end {_A_STUDY_S_WAIT} s after its "
                                  "worker was killed") from None
-        try:
-            # Nothing of its group left: its workers ended with it.
-            for _ in range(50):
-                os.killpg(process.pid, 0)
-                time.sleep(0.1)
-            raise AssertionError("a worker of the study outlived it")
-        except (ProcessLookupError, PermissionError):
-            # EPERM on macOS: only zombies of the group are left.
-            pass
+        # Nothing of its group left: its workers ended with it.
+        assert _group_gone_within(process.pid, 5), "a worker of the study outlived it"
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)

@@ -905,7 +905,12 @@ def _ran_analyses(base: Path) -> list[str] | None:
     """The analyses the study ran, as its analysis manifest planned them."""
     manifest = _read_json(base / "analysis" / "analysis_manifest.json")
     plan = manifest.get("plan") if isinstance(manifest, dict) else None
-    return [str(name) for name in plan] if isinstance(plan, list) and _analysed(base) else None
+    if not (isinstance(plan, list) and _analysed(base)):
+        return None
+    # The reweighting of a biased run is a pass over the analyses, not one.
+    from fastmdxplora.config.loader import REWEIGHTING_PASS
+
+    return [str(name) for name in plan if str(name) != REWEIGHTING_PASS]
 
 
 def _analysed(base: Path) -> bool:

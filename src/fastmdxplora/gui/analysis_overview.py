@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora import record_access
+from fastmdxplora.config.loader import REWEIGHTING_PASS
 from fastmdxplora.gui.report_dashboard import (
     ANALYSIS_SECTION_BY_FOLDER,
     SECTION_ANCHORS,
@@ -220,6 +221,10 @@ def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
         "mean": None,
         "quantities": [],
         "data": _data_files(root, name) if include_data else [],
+        # Analyze again for it alone: not for the reweighting of a biased
+        # run, which is a pass over the analyses, not one; its section's
+        # button opened the panel with nothing ticked.
+        "again": name != REWEIGHTING_PASS,
     }
     record_path = root / "analysis" / name / "options.json"
     record = _json(record_path)
@@ -232,6 +237,14 @@ def _row(root: Path, name: str, result: Any, corrected: dict[Any, Any],
         return row
     findings = record.get("findings") if isinstance(record.get("findings"), dict) else {}
     found = findings.get("mean") if isinstance(findings.get("mean"), dict) else None
+    if name == "cluster":
+        # The Conformations row says the clustering took every k-th frame,
+        # as the figures under it do.
+        from fastmdxplora.gui.figure_data import cluster_stride_said
+
+        said = cluster_stride_said(root)
+        if said:
+            row["finding"] = said
     if name == "image_check":
         # Its finding as a sentence in its row, the paragraph one click away,
         # and the atoms it checks said as they are (not the analyses' scope).

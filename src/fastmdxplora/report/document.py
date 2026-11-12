@@ -810,8 +810,21 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
             lines.append("")
             if selection:
                 lines.append(f"- `selection`: `{_code_text(selection)}`")
+            # The stride the frames were taken at where it is not the one
+            # set (`max_frames` raised it): "`stride`: `1`" stood beside
+            # "counted on every 3rd frame".
+            frames_read = (per_analysis.get("findings") or {}).get("frames") or {}
+            used = frames_read.get("stride") if isinstance(frames_read, dict) else None
             for k, v in shown:
-                lines.append(f"- `{_code_text(k)}`: `{_code_text(v)}`")
+                line = f"- `{_code_text(k)}`: `{_code_text(v)}`"
+                if (k == "stride" and isinstance(used, int) and not isinstance(used, bool)
+                        and used != v):
+                    ending = ("th" if 10 <= used % 100 <= 20
+                              else {1: "st", 2: "nd", 3: "rd"}.get(used % 10, "th"))
+                    line += (f": every {used}{ending} frame was used, the least stride "
+                             f"`max_frames: {_code_text(frames_read.get('max_frames'))}` "
+                             "allows")
+                lines.append(line)
 
         # What the analysis worked out, said in a sentence rather than
         # printed. The structures behind these run to pages of atom indices,
@@ -1396,6 +1409,11 @@ def _findings_notes(findings: dict[str, Any]) -> list[str]:
         notes.append(reason)
     if findings.get("made_whole"):
         notes.append(str(findings["made_whole"]))
+    # A clustering's populations counted at a stride (`max_frames`, or a
+    # stride of its own): a fraction is of the frames clustered.
+    counted = findings.get("populations")
+    if isinstance(counted, dict) and counted.get("said"):
+        notes.append(str(counted["said"]))
     # How close the solute came to its own images: the image check's own
     # paragraph, said once, in its section; on each other analysis whose
     # frames it met its image in, a line pointing there.

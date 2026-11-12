@@ -157,7 +157,10 @@ class TestTheFullMatrixOnlyWhenAsked:
 
 
 class TestTheMemoryCheck:
-    N = 600
+    #: The map of 1,000 frames, planned at 169.2 MiB, over the least
+    #: planned at any (``RESIDENT_LEAST``), which half as many are planned
+    #: on: refused in nine tenths of the room it is planned in, with a stride.
+    N = 1000
 
     def _refused(self, tmp_path, monkeypatch, available: int):
         monkeypatch.setattr(clustering, "memory_available", lambda: (available, "mocked"))
@@ -167,7 +170,7 @@ class TestTheMemoryCheck:
         from fastmdxplora.refusals import CODES
 
         methods = ["kmeans", "hierarchical"]
-        available = memory_needed(self.N, methods, "rmsd", "average") // 5
+        available = memory_needed(self.N, methods, "rmsd", "average") * 9 // 10
         result = self._refused(tmp_path, monkeypatch, available)
 
         assert result.status == "error"
@@ -199,7 +202,8 @@ class TestTheMemoryCheck:
         """The row gives a refusal's first sentence: it gave the bytes and a
         reading three brackets deep, the stride behind the chip; and the
         refusal was not in the log."""
-        available = memory_needed(self.N, ["kmeans", "hierarchical"], "rmsd", "average") // 5
+        available = memory_needed(self.N, ["kmeans", "hierarchical"], "rmsd",
+                                  "average") * 9 // 10
         with caplog.at_level(logging.ERROR, logger="fastmdx.analysis.cluster"):
             result = self._refused(tmp_path, monkeypatch, available)
         said = result.message.split(": ", 1)[1]
@@ -752,7 +756,7 @@ class TestTheFiguresAreCounted:
             found["peak"] / 2**20, found["needed"] / 2**20)
 
     def test_the_stride_a_refusal_gives_fits_the_room(self, tmp_path):
-        room = 110 * 10**6
+        room = 160 * 10**6
         found = _peak_of_a_run(tmp_path, 2000, room)
         assert found["stride"] > 1
         assert found["peak"] <= room, (found["stride"], found["peak"] / 2**20)
@@ -767,6 +771,48 @@ class TestTheFiguresAreCounted:
         the 4 MiB the whole-run test allows for terms in n alone: 162.5 MiB
         were planned, and that run was over it."""
         assert memory_needed(n, ["kmeans"], "rmsd", "average") >= 169.1 * 2**20
+
+
+#: The most a clustering of a few hundred frames peaked at, resident from
+#: the check in ``fastmdx analyze``'s own process, clustering alone: 500
+#: frames, k-means and average linkage, Python 3.13 (``RESIDENT_LEAST``).
+FEW_FRAMES_PEAK = 74.1 * 2**20
+
+
+class TestAFewFramesArePlannedOnWhatAnyClusteringTakes:
+    """The resident plan of a few hundred frames was the map's alone, 10 to
+    48 MiB, where a run of them peaked at 30 to 74: under a container
+    leaving 14 to 45 MiB at the check, 2,000 frames were refused with a
+    stride of 17 to 6, and each was killed following it."""
+
+    @pytest.mark.parametrize("methods", [["kmeans", "hierarchical"], ["kmeans"],
+                                         ["dbscan"], ["hierarchical"]])
+    @pytest.mark.parametrize("n", [2, 118, 223, 334, 500])
+    def test_the_plan_is_not_under_the_most_a_few_frames_took(self, n, methods):
+        assert memory_needed(n, methods, "rmsd", "average") >= FEW_FRAMES_PEAK
+
+    def test_it_holds_what_a_runner_was_counted_to_take_more(self):
+        """CI's Python 3.10 leg counted a whole DBSCAN run of 2,000 frames
+        at 169.1 MiB, 31 over the most this machine counted of it (138.1).
+        Planned at 76 MiB, 500 frames left 2.2 MiB over the 72.0 to 73.8
+        counted here as the command-line test runs them."""
+        assert clustering.RESIDENT_LEAST >= FEW_FRAMES_PEAK + 31 * 2**20
+
+    @pytest.mark.parametrize("room_mib", [14, 30, 45])
+    def test_under_it_the_refusal_names_no_stride(self, monkeypatch, room_mib):
+        from fastmdxplora.refusals import StudyError, refusal_of
+
+        room = room_mib * 2**20
+        monkeypatch.setattr(clustering, "memory_available",
+                            lambda: (room, "the cgroup v2 limit, mocked"))
+        with pytest.raises(StudyError) as raised:
+            Cluster().compute(_chain(2000))
+        refusal = refusal_of(raised.value)
+        assert refusal.code == "analysis.memory.matrix_too_large"
+        assert refusal.details.get("stride") is None, str(raised.value)
+        assert str(raised.value).startswith("Clustering does not fit in the memory at any "
+                                            "stride."), str(raised.value)
+        assert refusal.details["bytes_needed"] == clustering.RESIDENT_LEAST
 
 
 _ADDRESS_SCRIPT = _CHAIN_SCRIPT + r"""
@@ -1188,13 +1234,14 @@ print(json.dumps({"status": result.status, "message": result.message,
         """2,000 frames in a container leaving 116 MB: "0.2 GB ... the
         container allows 0.1 GB, of which clustering plans on 75%, 87.0
         MB", 152 MB said as 0.2 GB and the room said twice by two
-        derivations."""
+        derivations. 160 MB now, over the room the least plan
+        (``RESIDENT_LEAST``) takes, so a stride is named."""
         import re
 
         from fastmdxplora.refusals import StudyError
 
         monkeypatch.setattr(clustering, "memory_available", lambda: (
-            116 * 10**6, "the cgroup v2 limit, mocked"))
+            160 * 10**6, "the cgroup v2 limit, mocked"))
         monkeypatch.setattr(clustering, "_rlimit_room", lambda: (None, ""))
         with pytest.raises(StudyError) as raised:
             Cluster().compute(_chain(2000))
@@ -1305,6 +1352,47 @@ def _cli(study, room: int, analyses, options: dict | None = None, skip: int = 0)
         capture_output=True, text=True, timeout=900, cwd=study, env=_cli_env())
 
 
+#: ``fastmdx analyze`` in its own process, clustering's resident peak
+#: counted from its memory check to its end.
+_PEAK_FROM_THE_CHECK_SCRIPT = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from fastmdxplora.analysis import cluster
+study, options = sys.argv[2], sys.argv[3]
+
+def status(name):
+    for line in open("/proc/self/status"):
+        if line.startswith(name + ":"):
+            return int(line.split()[1]) * 1024
+    raise SystemExit("no " + name)
+
+real, at = cluster.memory_available, {}
+
+def at_the_check():
+    if not at:
+        with open("/proc/self/clear_refs", "w") as refs:
+            refs.write("5")
+        at["rss"] = status("VmRSS")
+    return real()
+
+cluster.memory_available = at_the_check
+run = cluster.Cluster.run
+
+def counted(self, traj):
+    result = run(self, traj)
+    print("PEAK", json.dumps({"peak": status("VmHWM") - at["rss"], "status": result.status,
+                              "message": result.message,
+                              "needed": self.findings["memory"]["bytes_needed"],
+                              "frames": self.findings["memory"]["frames"]}), flush=True)
+    return result
+
+cluster.Cluster.run = counted
+from fastmdxplora.cli.main import main
+main(["analyze", "--output", study, "--rerun", "--no-explain", "--options", options,
+      "--analyses", "cluster"])
+"""
+
+
 def _record(study, name: str) -> tuple[dict, dict]:
     """An analysis's row in the manifest, and its findings."""
     from pathlib import Path
@@ -1331,6 +1419,44 @@ def studies(tmp_path_factory):
             for n in (500, 1001, 2000)}
 
 
+#: ``fastmdx analyze`` in its own process, as `python -m fastmdxplora` runs
+#: it, to clustering's memory check: there it prints what the process holds
+#: (the libraries mapped, as the check maps them) past what it held as it
+#: started, and stops. With :data:`_AT_ITS_START_SCRIPT`, what a run of the
+#: command line holds at the check is read from a process of its own kind,
+#: under coverage or not.
+_TO_THE_CHECK_SCRIPT = r"""
+import os, runpy, sys
+src = sys.argv[1]
+sys.path.insert(0, src)
+
+def held():
+    for line in open("/proc/self/status"):
+        if line.startswith("VmSize:"):
+            return int(line.split()[1]) * 1024
+    raise SystemExit("no VmSize")
+
+start = held()
+from fastmdxplora.analysis import cluster
+
+def at_the_check():
+    cluster.libraries_mapped()
+    print("VMCHECK", held() - start, flush=True)
+    os._exit(0)
+
+cluster.memory_available = at_the_check
+sys.argv = ["fastmdxplora", *sys.argv[2:]]
+runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
+"""
+
+#: What an interpreter holds as it starts, before its first import.
+_AT_ITS_START_SCRIPT = r"""
+for line in open("/proc/self/status"):
+    if line.startswith("VmSize:"):
+        print("VMSTART", int(line.split()[1]) * 1024)
+"""
+
+
 #: The room ``ulimit -v 600000`` left tri-alanine's clustering in ``fastmdx
 #: analyze`` after its RMSD, measured (600,000 KiB less a ``VmSize`` of
 #: 548,937,728 bytes at the check, the libraries mapped).
@@ -1348,31 +1474,51 @@ class TestTheCommandLinesOwnProcess:
     command line's own process now, with the libraries mapped before the
     room is read."""
 
-    def test_500_frames_run_whole_under_ulimit_v_600000(self, studies):
-        """Under ``ulimit -v`` itself: what this machine holds at the check
-        read first (an unlimited run stopped there), and the limit set to
-        leave the room 600000 left tri-alanine, 600000 KiB where the two
-        hold the same."""
+    def test_500_frames_run_whole_under_ulimit_v_600000(self, studies, tmp_path):
+        """Under ``ulimit -v`` itself, set from the start of `python -m
+        fastmdxplora analyze`: to what that interpreter holds as it starts,
+        what such a run holds at the check past its start
+        (:data:`_TO_THE_CHECK_SCRIPT`), and the room ``ulimit -v`` 600000
+        left tri-alanine. The holding was read whole, in a process of another
+        kind: on CI's coverage leg the run held more than that, and was
+        refused its own 500 frames (56.0 MB of room for 64.0 MB).
+
+        What a run holds at the check also moved with the bytecode it found:
+        with the source's caches written by the reading and loaded by the
+        run, or some of them stale, the run held 4 to 8 MiB more than the
+        reading said (Python 3.11: 58.6 and 55.0 MiB of room for 61.0). Every
+        process here compiles into a cache of its own, written by a first
+        reading, so the reading and the run load the same bytecode."""
         import resource
         import subprocess
         from pathlib import Path
 
         study = studies[500]
-        found = _cli(study, 0, ["rmsd", "cluster"])
-        held = int(next(line.split()[1] for line in found.stdout.splitlines()
-                        if line.startswith("VMCHECK")))
-        limit = held + ROOM_AT_600000
         src = str(Path(clustering.__file__).resolve().parents[2])
+        analyze = ["analyze", "--output", str(study), "--rerun", "--no-explain",
+                   "--analyses", "rmsd", "cluster"]
+        env = {key: value for key, value in _cli_env().items()
+               if key != "PYTHONDONTWRITEBYTECODE"}
+        env["PYTHONPYCACHEPREFIX"] = str(tmp_path / "bytecode")
+
+        def said(script: str, word: str, *args: str) -> int:
+            done = subprocess.run([sys.executable, "-c", script, *args], capture_output=True,
+                                  text=True, timeout=900, cwd=study, env=env)
+            return int(next(line.split()[1] for line in done.stdout.splitlines()
+                            if line.startswith(word)))
+
+        # The cache written, then read as the run reads it.
+        said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze)
+        limit = (said(_AT_ITS_START_SCRIPT, "VMSTART")
+                 + said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze) + ROOM_AT_600000)
 
         def under_the_limit():
             resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 
-        env = _cli_env()
-        env["PYTHONPATH"] = src
+        env_run = dict(env, PYTHONPATH=src)
         done = subprocess.run(
-            [sys.executable, "-m", "fastmdxplora", "analyze", "--output", str(study),
-             "--rerun", "--no-explain", "--analyses", "rmsd", "cluster"],
-            capture_output=True, text=True, timeout=900, cwd=study, env=env,
+            [sys.executable, "-m", "fastmdxplora", *analyze],
+            capture_output=True, text=True, timeout=900, cwd=study, env=env_run,
             preexec_fn=under_the_limit)
         assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
         for name in ("rmsd", "cluster"):
@@ -1444,6 +1590,33 @@ class TestTheCommandLinesOwnProcess:
         row, findings = _record(study, "cluster")
         assert row["status"] == "ok", row["message"]
         assert not findings.get("figures_not_plotted"), findings
+
+    @pytest.mark.parametrize("stride", [17, 6, 4])
+    def test_a_few_frames_peak_within_their_plan(self, studies, stride):
+        """Every 17th, 6th and 4th of 2,000 frames, 118, 334 and 500,
+        clustered alone: their resident peak from the check, 50.6 to 54.2,
+        54.1 to 64.6 and 72.0 to 73.8 MiB counted here, against plans of
+        10.2, 26.0 and 48.3 MiB without ``RESIDENT_LEAST``. A container sized
+        by those plans killed them. At 500 frames this says the margin a
+        runner leaves under the least planned."""
+        import subprocess
+        from pathlib import Path
+
+        if not Path("/proc/self/clear_refs").exists():
+            pytest.skip("the peak resident memory is read from Linux's /proc")
+        study = studies[2000]
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        done = subprocess.run(
+            [sys.executable, "-c", _PEAK_FROM_THE_CHECK_SCRIPT, src, str(study),
+             json.dumps({"cluster": {"stride": stride}})],
+            capture_output=True, text=True, timeout=900, cwd=study, env=_cli_env())
+        line = [row for row in done.stdout.splitlines() if row.startswith("PEAK ")]
+        assert line, done.stdout[-3000:] + done.stderr[-2000:]
+        found = json.loads(line[-1][5:])
+        assert found["status"] == "ok", found["message"]
+        assert found["frames"] == -(-2000 // stride)
+        assert found["peak"] <= found["needed"], (found["peak"] / 2**20,
+                                                  found["needed"] / 2**20)
 
     def test_an_mds_the_check_allows_runs_to_its_end(self, studies):
         """2,000 frames, PCA, MDS and t-SNE with 90 MiB of room at the

@@ -759,9 +759,19 @@ def _free_energy(base: Path) -> str:
             else None
         said = (f"Its windows give a binding free energy of {with_its_error(value, error)} "
                 "kJ/mol (standard state, 1 M; the error a standard error).")
-        warnings = (binding.get("reference") or {}).get("warnings") or []
+        from fastmdxplora.simulation.binding import the_depth_s_verdict
+
+        warnings = list((binding.get("reference") or {}).get("warnings") or [])
+        if the_depth_s_verdict(binding):
+            warnings.append(the_depth_s_verdict(binding))
         return said + "".join(f" {warning}" for warning in warnings)
     if binding.get("refused"):
+        from fastmdxplora.simulation.binding import the_kt_refusal
+
+        # A kT refusal whole, so a marginal one reads as marginal.
+        if the_kt_refusal(binding):
+            return ("Its windows were recombined into a free energy profile, and no "
+                    "binding free energy is given. " + str(binding["refused"]).strip())
         return ("Its windows were recombined into a free energy profile, and no binding "
                 "free energy is given: " + _first_clause(binding["refused"]) + ".")
     return ("Its windows were recombined into a free energy profile, on its Report "

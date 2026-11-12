@@ -996,7 +996,10 @@ class AnalysisOrchestrator:
             "resolved": {
                 "trajectory": self._as_setting(self._trajectory_input),
                 "topology": self._as_setting(self._topology_input),
-                "include": list(self.results.keys()),
+                # The analyses alone: the reweighting of a biased run is a
+                # pass over them, not one, and a record listing it was
+                # refused by `report` and `analyze --rerun`.
+                "include": [name for name in self.results if name in _REGISTRY],
                 "stride": self._load_kwargs.get("stride"),
                 "first": self._load_kwargs.get("first"),
                 "last": self._load_kwargs.get("last"),

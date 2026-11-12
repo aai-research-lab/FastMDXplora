@@ -9,7 +9,6 @@ made at a terminal, and no prompt nobody can answer.
 
 from __future__ import annotations
 
-import contextlib
 import copy
 import json
 import subprocess
@@ -3409,6 +3408,7 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
     import signal
     import subprocess
 
+    from fastmdxplora.gpu_here import _going
     from fastmdxplora.remote import gpu_room
     from fastmdxplora.remote.gpu_room import Choice, Gpu
     from fastmdxplora.remote.send import _gpu_lines
@@ -3420,20 +3420,154 @@ def test_a_sampler_stops_once_its_job_is_gone(tmp_path, monkeypatch):
                                start_new_session=True)
     started.wait(timeout=10)
     deadline = time.monotonic() + 5
-    while True:
-        try:
-            os.killpg(started.pid, 0)
-        except ProcessLookupError:
-            break
-        except PermissionError:
-            # macOS says EPERM, not ESRCH, while all the group has left is
-            # a zombie not yet reaped: the sampler has stopped all the same.
-            break
+    # Read as the GPU sampler reads its run's group: macOS says EPERM to the
+    # zero signal for a group whose members are all zombies, where Linux
+    # answers success and the leader's Z is read.
+    while _going(started.pid):
         if time.monotonic() > deadline:
-            with contextlib.suppress(OSError):
+            try:
                 os.killpg(started.pid, signal.SIGKILL)
+            except OSError:
+                pass
             pytest.fail("the sampler outlived its job")
         time.sleep(0.05)
+
+
+def _group_refusing(monkeypatch, group: int, listed: str, proc=None) -> None:
+    """The zero signal to ``group`` says EPERM, and ``ps -A`` lists
+    ``listed`` (its pgid and state columns); ``/proc`` is ``proc`` where
+    given."""
+    from fastmdxplora import gpu_here
+
+    if proc is not None:
+        monkeypatch.setattr(gpu_here, "_PROC", proc)
+
+    def refused(pgid, number):
+        assert (pgid, number) == (group, 0)
+        raise PermissionError(1, "Operation not permitted")
+
+    def answer(script):
+        assert script.startswith("ps -A -o pgid= -o stat="), script
+        return listed
+
+    monkeypatch.setattr(gpu_here.os, "killpg", refused)
+    monkeypatch.setattr(gpu_here, "_answer", answer)
+
+
+def test_a_group_of_zombies_refusing_the_zero_signal_is_gone(monkeypatch):
+    """macOS says EPERM to ``killpg(group, 0)`` for a group whose members
+    are all zombies (CI run 42759782805), where Linux answers success. Read
+    as going, the sampler of a run that ended read its GPU for ever. Linux
+    says EPERM only for another user's processes, so it is simulated here
+    (and made for real in test_a_refused_zero_signal_is_read_by_its_state.py)."""
+    from fastmdxplora.gpu_here import _going
+
+    _group_refusing(monkeypatch, 4242, "    1 Ss\n 4242 Z\n 4242 Z+\n 4300 S\n")
+    assert _going(4242) is False
+
+
+def test_a_group_with_a_live_member_refusing_the_zero_signal_is_going(monkeypatch):
+    """EPERM with a member that is not a zombie (another user's process,
+    as through sudo) is a group still going."""
+    from fastmdxplora.gpu_here import _going
+
+    _group_refusing(monkeypatch, 4242, "    1 Ss\n 4242 Z\n 4242 S+\n")
+    assert _going(4242) is True
+
+
+def test_a_group_refusing_the_zero_signal_and_unlisted_is_gone(tmp_path, monkeypatch):
+    """No member of the group in ``ps`` (as where ``/proc`` is mounted
+    ``hidepid=2`` and the members are another user's), or neither ``ps``
+    nor ``/proc`` read: a process of this user's would have answered, so
+    the sampler's run is gone."""
+    from fastmdxplora.gpu_here import _going
+
+    _group_refusing(monkeypatch, 4242, "    1 Ss\n 4300 S\n")
+    assert _going(4242) is False
+    _group_refusing(monkeypatch, 4242, "", proc=tmp_path / "no proc")
+    assert _going(4242) is False
+
+
+def _proc_of(folder, processes):
+    """A ``/proc`` holding ``processes`` as (pid, command, state, pgid)."""
+    folder.mkdir()
+    for pid, command, state, pgid in processes:
+        (folder / str(pid)).mkdir()
+        (folder / str(pid) / "stat").write_text(
+            f"{pid} ({command}) {state} 1 {pgid} {pgid} 0 -1 4194560 0 0\n")
+    (folder / "self").mkdir()
+    return folder
+
+
+def test_a_group_refusing_the_zero_signal_with_no_ps_is_read_from_proc(tmp_path, monkeypatch):
+    """Where ``ps`` cannot be run (a container built without procps), a
+    group of another user's processes with a live member was read as gone.
+    ``/proc`` says which, a command with spaces and a parenthesis in it
+    read whole."""
+    from fastmdxplora.gpu_here import _going
+
+    proc = _proc_of(tmp_path / "proc", [(1, "init", "S", 1), (4242, "sh", "Z", 4242),
+                                         (4243, "a (b) c", "S", 4242)])
+    _group_refusing(monkeypatch, 4242, "", proc=proc)
+    assert _going(4242) is True
+
+
+def test_a_group_of_zombies_refusing_the_zero_signal_with_no_ps_is_gone(tmp_path, monkeypatch):
+    from fastmdxplora.gpu_here import _going
+
+    proc = _proc_of(tmp_path / "proc", [(1, "init", "S", 1), (4242, "sh", "Z", 4242),
+                                         (4300, "sleep", "S", 4300)])
+    _group_refusing(monkeypatch, 4242, "", proc=proc)
+    assert _going(4242) is False
+    _group_refusing(monkeypatch, 4242, "", proc=tmp_path / "no proc")
+    assert _going(4242) is False
+
+
+@pytest.mark.parametrize("state, going", [("Z", False), ("S", True), (None, True)],
+                         ids=["Z", "S", "no proc"])
+def test_a_leader_answering_the_zero_signal_with_no_ps_is_read_from_proc(
+        tmp_path, monkeypatch, state, going):
+    """Where ``ps`` cannot be run, the leader of a run that ended and is not
+    yet reaped was read as going, and its sampler read the GPU until the
+    run's parent reaped it. ``/proc`` says it is a zombie; with no
+    ``/proc`` either, the zero signal's success is all there is."""
+    from fastmdxplora import gpu_here
+
+    proc = (_proc_of(tmp_path / "proc", [(4242, "a (b) c", state, 4242)])
+            if state is not None else tmp_path / "no proc")
+    monkeypatch.setattr(gpu_here, "_PROC", proc)
+    monkeypatch.setattr(gpu_here.os, "killpg", lambda pgid, number: None)
+
+    def answer(script):
+        assert script.startswith("ps -o stat= -p 4242"), script
+        return ""
+
+    monkeypatch.setattr(gpu_here, "_answer", answer)
+    assert gpu_here._going(4242) is going
+
+
+def test_ps_names_the_states_of_a_real_group():
+    """What ``ps -A`` says of a group is read on this machine: a live
+    member, then the same group with its leader ended and not reaped."""
+    import subprocess
+
+    from fastmdxplora.gpu_here import _states_in
+
+    started = subprocess.Popen(["sh", "-c", "read line"], stdin=subprocess.PIPE,
+                               start_new_session=True)
+    try:
+        states = _states_in(started.pid)
+        assert states and not states[0].startswith("Z"), states
+        started.stdin.close()
+        deadline = time.monotonic() + 10
+        while not (_states_in(started.pid) or ["?"])[0].startswith("Z"):
+            assert time.monotonic() < deadline, _states_in(started.pid)
+            time.sleep(0.05)
+    finally:
+        if started.stdin and not started.stdin.closed:
+            started.stdin.close()
+        started.wait(timeout=10)
+    assert _states_in(started.pid) == []
 
 
 # ---------------------------------------------------------------------------

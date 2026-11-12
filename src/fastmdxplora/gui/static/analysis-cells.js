@@ -137,9 +137,13 @@
    * the run's state changes. */
   function beyondLoopback() { return document.body.dataset.beyondLoopback === "true"; }
 
-  function again(name) {
+  function again(name, row) {
     var offered = byId("analysis-again");
     if (!offered || beyondLoopback()) return null;
+    // Not offered where it is not an analysis to run alone (a biased
+    // run's reweighting, `again: false`): it opened the panel with
+    // nothing ticked.
+    if (row && row.again === false) return null;
     var button = make("button", "chip-btn cell-again", "Analyze again");
     button.type = "button";
     button.hidden = offered.hidden;
@@ -168,7 +172,8 @@
       section.dataset.cell = name;
       var head = make("div", "analysis-cell-head");
       head.dataset.analysis = name;
-      [values(byName[name]), params(made[name], byName[name]), again(name)].forEach(function (part) {
+      var row = byName[name];
+      [values(row), params(made[name], row), again(name, row)].forEach(function (part) {
         if (part) head.appendChild(part);
       });
       if (!head.childElementCount) return;

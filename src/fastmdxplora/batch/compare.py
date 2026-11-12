@@ -416,8 +416,34 @@ def _umbrella_result(md_path: Path) -> tuple[Path | None, str | None] | None:
     return (drawn if drawn.is_file() else None), None
 
 
+def _umbrella_is_radial(md_path: Path) -> bool:
+    """Whether the study's curve is along a distance between centres, so
+    that its figure is W(r) and its binding free energy reads A(r): the
+    record carries W(r) exactly there."""
+    try:
+        record = json.loads((md_path.parent.parent / "pmf.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    pmf = record.get("pmf") if isinstance(record, dict) else None
+    return isinstance(pmf, dict) and pmf.get("potential_of_mean_force_kjmol") is not None
+
+
+def _umbrella_barrier(md_path: Path) -> str | None:
+    """The study's barrier in one line, or that it was refused and why."""
+    from fastmdxplora.simulation.umbrella import the_barrier_in_a_line
+
+    try:
+        record = json.loads((md_path.parent.parent / "pmf.json")
+                            .read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return the_barrier_in_a_line(record)
+
+
 def _umbrella_preamble(
-    free_energy: Path | None, refused: str | None = None
+    free_energy: Path | None, refused: str | None = None, *,
+    radial: bool = False, barrier: str | None = None,
 ) -> list[str]:
     """What the study measured, ahead of what its windows happened to do."""
     lines = [
@@ -442,6 +468,17 @@ def _umbrella_preamble(
         relative = Path("..") / free_energy.relative_to(
             free_energy.parent.parent.parent)
         lines += [f"![Potential of mean force]({relative.as_posix()})", ""]
+        if barrier:
+            lines += [f"**Barrier:** {barrier}", ""]
+        if radial:
+            lines += [
+                "Along this distance the figure is the potential of mean "
+                "force, W(r) = A(r) + 2kT ln r, flat where the two centres no "
+                "longer interact, and its barrier and minima are read off it. "
+                "The binding free energy is integrated from A(r) = -kT ln "
+                "P(r), the distance's distribution with the room in each "
+                "shell in it, which `pmf.json` saves beside W(r).",
+                ""]
     return lines + [
         "The overlays and the table below describe each window\'s own "
         "restrained trajectory. They differ from one another because the "
@@ -487,7 +524,9 @@ def _write_markdown(
     # misled by the time they reach any caveat below it.
     umbrella = _umbrella_result(md_path)
     if umbrella is not None:
-        lines.extend(_umbrella_preamble(*umbrella))
+        lines.extend(_umbrella_preamble(*umbrella,
+                                        radial=_umbrella_is_radial(md_path),
+                                        barrier=_umbrella_barrier(md_path)))
 
     n = len(runs)
     sweep = manifest.get("sweep") or {}

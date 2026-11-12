@@ -42,7 +42,7 @@ def test_the_marks_are_read_from_the_records(tmp_path):
     medoids = [m for m in marks if m["kind"] == "medoid"]
     checks = [m for m in marks if m["kind"] == "check"]
     assert [m["frame"] for m in medoids] == [2, 4]
-    assert medoids[0]["label"] == "The medoid of kmeans cluster 0, 50% of the frames"
+    assert medoids[0]["label"] == "The medoid of kmeans cluster 0, 50% of the frames clustered"
     assert [m["time_ns"] for m in checks] == [0.004, 0.008]
     # As every page and the report say a round (`stopping.round_decided`).
     assert checks[0]["label"] == "Judged after round 1: the run extended by 4 ps"
@@ -122,7 +122,7 @@ def test_a_one_frame_cluster_is_not_said_none_of_the_frames(tmp_path):
 
     _medoids(tmp_path, [(4, 9, 0.005)])
     (mark,) = timeline_payload(tmp_path)["marks"]
-    assert mark["label"] == "The medoid of kmeans cluster 4, 0.5% of the frames"
+    assert mark["label"] == "The medoid of kmeans cluster 4, 0.5% of the frames clustered"
 
 
 def test_the_timeline_reads_only_the_study(tmp_path):
@@ -251,8 +251,8 @@ def test_the_timeline_is_under_the_molecule_and_shows_a_frame_when_asked(study):
     assert errors == []
     assert first["fold"] is False
     assert first["tracks"] == ["rmsd", "rg"]
-    assert first["marks"] == ["The medoid of kmeans cluster 0, 60% of the frames",
-                              "The medoid of kmeans cluster 1, 40% of the frames"]
+    assert first["marks"] == ["The medoid of kmeans cluster 0, 60% of the frames clustered",
+                              "The medoid of kmeans cluster 1, 40% of the frames clustered"]
     # The unit once, in the track's name, not again after its value.
     assert on_mark[0] == "5" and on_mark[1] and not any(v.endswith(" nm") for v in on_mark[1])
     assert panel[0] >= panel[1] - 2 and panel[2] == -1

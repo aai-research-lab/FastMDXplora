@@ -88,7 +88,15 @@ _WINDOWS = sys.platform.startswith("win")
 
 
 def _process_alive(pid: int) -> bool:
-    """Alive, and on POSIX not a zombie. Never touches the process."""
+    """Alive, and on POSIX not a zombie. Never touches the process.
+
+    macOS and Linux both answer the zero signal with success for a zombie,
+    whose Z ``ps``, or ``/proc`` where ``ps`` cannot be run, reads below.
+    EPERM comes for another user's process (a colleague's run, or a pid
+    reused since), and proves a process there: only a Z read of it is
+    gone, and where nothing can be read of it (``ps`` not listing it under
+    a ``/proc`` mounted ``hidepid``, or neither ``ps`` nor ``/proc``) it is
+    alive."""
     if _WINDOWS:
         import ctypes
         from ctypes import wintypes
@@ -107,19 +115,23 @@ def _process_alive(pid: int) -> bool:
         finally:
             kernel32.CloseHandle(handle)
 
+    refused = False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        refused = True  # another user's process: read by its state, as any other
     try:
         state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
                                capture_output=True, text=True, timeout=2).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        return True
-    if not state:
-        return False
+        from fastmdxplora.gpu_here import _state_in_proc
+
+        said = _state_in_proc(pid)
+        return said is None or not said.startswith("Z")
+    if not state:  # EPERM: there, and not listed (``hidepid``)
+        return refused
     return not state.startswith("Z")
 
 

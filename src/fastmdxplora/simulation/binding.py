@@ -475,6 +475,64 @@ def _array_of_numbers(values: Any, what: str, ndim: int) -> np.ndarray:
                          code="config.option.wrong_type") from exc
 
 
+def the_depth_s_verdict(binding: Any) -> str | None:
+    """One sentence for the console and the GUI where a binding free energy
+    rests on a well within its error of kT: given, it could become no bound
+    state; refused, it could become a number. None otherwise."""
+    if not isinstance(binding, dict) or not binding.get("well_depth_marginal"):
+        return None
+    depth = binding.get("well_depth_kjmol")
+    error = binding.get("well_depth_error_kjmol")
+    kt = binding.get("well_depth_kt_kjmol")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+               for v in (depth, error, kt)):
+        return None
+    said = (f"The well's depth, {depth:.2f} +/- {error:.2f} kJ/mol, is within "
+            f"its error of kT ({kt:.2f} kJ/mol), so ")
+    if binding.get("delta_g_kjmol") is None:
+        return said + ("the refusal is marginal: longer sampling could give "
+                       "a number.")
+    return said + ("the number is marginal: longer sampling could find no "
+                   "bound state.")
+
+
+def the_kt_refusal(binding: Any) -> bool:
+    """Whether a binding record was refused by the kT rule, whose whole text
+    is said on the console and in the GUI, not its first sentence."""
+    return (isinstance(binding, dict) and binding.get("delta_g_kjmol") is None
+            and bool(binding.get("refused")) and "well_depth_kjmol" in binding)
+
+
+def _the_depth_s_error(radius: np.ndarray, curves: "np.ndarray | None",
+                       errors_kjmol: Any, order: np.ndarray, minimum_index: int,
+                       n_bulk: int, kt: float) -> "tuple[float | None, str | None]":
+    """The error of the well's depth, the bulk reference (the tail's mean of
+    W) less W at the minimum: its spread over the bootstrap's resampled
+    curves where `BULK_RESAMPLES_NEEDED` or more hold the tail and the
+    minimum's bin, which no zero moves; else the minimum's standard error and
+    the tail's mean standard error together; else None."""
+    shift = 2.0 * kt * np.log(radius)
+    if curves is not None:
+        rows = curves + shift[None, :]
+        tails = rows[:, -n_bulk:]
+        held = np.isfinite(tails).all(axis=1) & np.isfinite(rows[:, minimum_index])
+        if int(held.sum()) >= BULK_RESAMPLES_NEEDED:
+            depths = tails[held].mean(axis=1) - rows[held, minimum_index]
+            return (float(np.std(depths, ddof=1)),
+                    f"the depth's spread over {int(held.sum())} resamples")
+    if errors_kjmol is not None:
+        try:
+            errors = np.asarray([np.nan if v is None else float(v)
+                                 for v in errors_kjmol], dtype=float)[order]
+        except (TypeError, ValueError, IndexError):
+            return None, None
+        tail = errors[-n_bulk:]
+        if np.isfinite(errors[minimum_index]) and np.isfinite(tail).any():
+            return (float(np.hypot(errors[minimum_index], np.nanmean(tail))),
+                    "the bins' standard errors")
+    return None, None
+
+
 def binding_free_energy(
     coordinate: Any,
     free_energy_kjmol: Any,
@@ -489,6 +547,7 @@ def binding_free_energy(
     resample_curves_kjmol: Any = None,
     judge_the_bulk: bool = True,
     bulk_fixed_because: "str | None" = None,
+    covered_nm: Any = None,
 ) -> dict[str, Any]:
     """A standard-state binding free energy, or a refusal saying why not.
 
@@ -499,7 +558,9 @@ def binding_free_energy(
     ``bound_cutoff_nm`` is where the bound state is taken to end. Left out,
     it is placed at the first point beyond the minimum where the curve has
     come within kT of its bulk value, which is a defensible reading of
-    "no longer interacting" and is reported alongside the answer.
+    "no longer interacting" and is reported alongside the answer. The
+    minimum is W(r)'s, A(r) + 2kT ln r, searched between ``covered_nm``
+    (the outermost windows' centres) where given.
 
     ``cone`` is the angular wall the windows ran under, where they ran under
     one: either an `umbrella.Cone` or the record one writes. A cone confines
@@ -543,7 +604,9 @@ def binding_free_energy(
     judging its shape: for each of the bootstrap's resamples, whose curve
     the real curve's verdict stands for. A resample judged on its own would
     be refused by its own noise, and the interval would be made of the
-    resamples whose tails happened to be flattest.
+    resamples whose tails happened to be flattest. It skips the kT rule too
+    (a curve whose well is not kT deep has no bound state), for the same
+    reason: the real curve's verdict stands for each resample.
     """
     radius = np.asarray(coordinate, dtype=float)
     energy = np.asarray(free_energy_kjmol, dtype=float)
@@ -704,8 +767,82 @@ def binding_free_energy(
         shifted = energy[inside] - reference_at
         return float(np.trapezoid(np.exp(-shifted / kt), radius[inside]))
 
-    minimum_at = float(radius[int(np.nanargmin(energy))])
+    # The bound state's minimum is W(r)'s, A(r) + 2kT ln r: A's sits
+    # 2kT ln(r_outer / r_well) further out and can be in bulk. Read off A, a
+    # 6 kJ/mol well at 0.45 nm had its minimum at 1.98 nm, its bound range
+    # integrated out to 1.63 nm, and a binding free energy (-6.15) more
+    # negative than a 12 kJ/mol well's (-5.58). The integral stays on A.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mean_force = np.where(radius > 0.0,
+                              energy + 2.0 * kt * np.log(np.where(radius > 0.0, radius, 1.0)),
+                              np.nan)
+    #
+    # Searched between the outermost windows' centres (``covered_nm``), as
+    # the summary and the plot read W: the bin at the end of the grid, below
+    # the first window, holds the extreme sample and reads low, and W's
+    # 2kT ln r lowers it further. Searched over the whole grid, a 4 kJ/mol
+    # well at 1.0 nm lost its minimum to the end bin at 0.26 nm and was
+    # refused as holding no bound state.
+    searched = np.isfinite(mean_force)
+    if covered_nm is not None:
+        try:
+            low, high = (float(v) for v in covered_nm)
+        except (TypeError, ValueError):
+            low, high = -np.inf, np.inf
+        inside_span = searched & (radius >= low) & (radius <= high)
+        if inside_span.any():
+            searched = inside_span
+    minimum_index = (int(np.argmin(np.where(searched, mean_force, np.inf)))
+                     if searched.any() else int(np.nanargmin(energy)))
+    minimum_at = float(radius[minimum_index])
     bulk_level = reference_at - 2.0 * kt * np.log(radius)
+    # The bound range ends where W comes back within kT of bulk, so a curve
+    # whose lowest point between the windows' centres is not kT below bulk
+    # has no bound range at all. Without this a free particle's flat W,
+    # its minimum wherever the noise put it, was integrated from there and
+    # given a binding free energy of -7.4 to +0.8 kJ/mol.
+    #
+    # Judged on the real curve only, never on a resample: a resample refused
+    # by its own depth left the interval, and those are the weakest ones, so
+    # a 3 kJ/mol well's interval lost its weak side: [-2.07, -0.35] from all
+    # 40 resamples was cut to [-2.07, -0.81] from 24 (the round's test, seed
+    # 6). A resample follows the real curve's verdict, as it does for the
+    # bulk.
+    depth = (float(reference_at - mean_force[minimum_index])
+             if np.isfinite(mean_force[minimum_index]) else None)
+    depth_error, depth_error_from = _the_depth_s_error(
+        radius, curves, errors_kjmol, order, minimum_index, n_bulk, kt)
+    # Marginal where the depth is within its error of kT, either side: a
+    # refusal that longer sampling could turn into a number, or a number it
+    # could turn into a refusal.
+    marginal = depth_error is not None and depth is not None and abs(depth - kt) <= depth_error
+    depth_record = ({} if depth is None or bound_cutoff_nm is not None else {
+        "well_depth_kjmol": depth,
+        "well_depth_error_kjmol": depth_error,
+        "well_depth_error_from": depth_error_from,
+        "well_depth_kt_kjmol": kt,
+        "well_depth_marginal": marginal})
+    if (judge_the_bulk and bound_cutoff_nm is None and depth is not None
+            and depth < kt):
+        spread = (f" +/- {depth_error:.2f}" if depth_error is not None else "")
+        return {"delta_g_kjmol": None, **judged_record,
+                "bulk_from_nm": float(radius[-n_bulk]),
+                "minimum_at_nm": minimum_at, "bound_cutoff_nm": None,
+                **depth_record,
+                "refused": (
+            "The curve's lowest point"
+            + (" between the windows' centres" if covered_nm is not None else "")
+            + f", at {minimum_at:.3g} nm, is {depth:.2f}{spread} kJ/mol below "
+            f"the bulk reference, less than kT ({kt:.2f} kJ/mol), so there is "
+            "no bound state as this study defines one: its bound range is "
+            "where W(r) stands more than kT below bulk over the windows' "
+            "span, and nowhere here does. A well this shallow does not bind "
+            "measurably at 1 M; where the depth is near kT, longer sampling "
+            "could change the verdict."
+            + (f" Here it is within its error of kT ({kt - depth:.2f} short, "
+               f"against an error of {depth_error:.2f}), so the verdict is "
+               "marginal." if marginal else "")
+        )}
     if bound_cutoff_nm is None:
         beyond = known & (radius > minimum_at) & (energy >= bulk_level - kt)
         chosen = float(radius[np.argmax(beyond)]) if beyond.any() else float(
@@ -717,11 +854,15 @@ def binding_free_energy(
     # minimum -- at the wall the ligand cannot enter -- holds no population
     # the integral would notice, and is taken as holding none. One in the
     # well is population nobody measured.
-    lowest = float(np.nanmin(energy))
+    # Judged on W against the minimum the search found, so a minimum of A
+    # far out in bulk does not make a hole's neighbours look higher than
+    # they stand above the bound state.
+    curve_w = mean_force if np.isfinite(mean_force[minimum_index]) else energy
+    lowest = float(curve_w[minimum_index])
     holes = []
     for index in np.flatnonzero((radius <= chosen) & ~known):
-        below = energy[:index][known[:index]]
-        above = energy[index + 1:][known[index + 1:]]
+        below = curve_w[:index][known[:index]]
+        above = curve_w[index + 1:][known[index + 1:]]
         sides = [part[-1] for part in (below,) if part.size] + \
             [part[0] for part in (above,) if part.size]
         if not sides or min(sides) - lowest < UNPOPULATED_ABOVE_KT * kt:
@@ -845,6 +986,10 @@ def binding_free_energy(
     return {
         "delta_g_kjmol": delta_g,
         "delta_g_kcalmol": delta_g / 4.184,
+        # How deep the well the bound range starts from is, its error, and
+        # whether that depth is within its error of kT (`well_depth_marginal`,
+        # which the console and the GUI say as a line beside the number).
+        **depth_record,
         # The statistical uncertainty, where the caller measured one. It comes
         # from resampling the windows and recomputing this whole quantity, so
         # it is the spread of the measurement rather than a propagated

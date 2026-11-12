@@ -142,22 +142,22 @@ def first_frame(traj: md.Trajectory, atom_idx: np.ndarray,
         if equilibrating:
             record["equilibrated_from_ns"] = float(times[min(equilibrating, n - 1)])
     if start is None:
-        opening = f"All {n} frames were analysed, from the first"
+        opening = f"All {n:,} frames were analysed, from the first"
     elif start == EQUILIBRATED:
-        opening = (f"{kept} of {n} frames were analysed, from frame {first}, "
+        opening = (f"{kept:,} of {n:,} frames were analysed, from frame {first:,}, "
                    "where the RMSD equilibrates")
     else:
-        opening = f"{kept} of {n} frames were analysed, from frame {first} ({start:g} ns on)"
+        opening = f"{kept:,} of {n:,} frames were analysed, from frame {first:,} ({start:g} ns on)"
     if equilibrating > first:
         said = (f"{opening}. The RMSD of these atoms from the first frame "
-                f"equilibrates after {equilibrating} frames, and the "
-                f"{equilibrating - first} before that are included: a "
+                f"equilibrates after {equilibrating:,} frames, and the "
+                f"{equilibrating - first:,} before that are included: a "
                 "relaxation from the starting structure can come out as a "
                 f"state or a component of its own. `start: {EQUILIBRATED}` "
                 "leaves them out.")
     elif equilibrating:
         said = (f"{opening}. The RMSD of these atoms from the first frame "
-                f"equilibrates after {equilibrating} frames, and none of "
+                f"equilibrates after {equilibrating:,} frames, and none of "
                 "those are included.")
     else:
         said = (f"{opening}. The RMSD of these atoms detects no equilibration "

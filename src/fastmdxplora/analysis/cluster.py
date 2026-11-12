@@ -38,11 +38,14 @@ the superposed Cartesian coordinates. Outputs per method:
     float32, only where ``save_full_matrix`` asks for it; its size is said
     in the log before it is written. 31,000 frames make 3.8 GB of it.
 
-Every frame is clustered by default, the equilibration from the starting
-structure included; ``start`` begins later, ``stride`` takes every k-th
-frame from there, and the record says how many frames were clustered and
-whether the equilibration the RMSD detects is among them
-(:mod:`fastmdxplora.analysis.starting_frame`).
+At most :data:`MAX_FRAMES` frames are clustered by default, the
+equilibration from the starting structure included: past them, every k-th
+frame is, k the least stride that leaves at most that many (``max_frames``,
+``null`` for every frame, or every ``stride``-th). ``start`` begins later, ``stride`` takes every
+k-th frame from there, and the record says how many frames were clustered,
+at what stride, and whether the equilibration the RMSD detects is among them
+(:mod:`fastmdxplora.analysis.starting_frame`); each cluster's frames are
+counted on the frames clustered (``findings.populations``).
 
 **Memory is checked before the matrix is made.** The frames' pairwise
 matrix grows with the square of their number (128,000 frames want 131 GB
@@ -120,6 +123,27 @@ VALID_FEATURES = ("rmsd", "coordinates")
 #: further, to the cells it shows.
 MOST_MAP_CELLS = 1000
 
+#: The most frames a clustering clusters unless it is told otherwise
+#: (``max_frames``): past them, every k-th frame is clustered, k the least
+#: stride that leaves at most this many. The matrix and its copies grow with
+#: the square of the frames, so this bounds them: 5,000 frames are planned
+#: at 625 MB for k-means and average linkage (:func:`matrix_needed`, 25 n^2
+#: bytes), where a run of 128,000 frames was killed making 131 GB of its
+#: matrix. Frames closer together than the correlation time add little to a
+#: clustering; ``max_frames: null``, or a larger number, clusters more, and
+#: the memory check still applies to them.
+MAX_FRAMES = 5000
+
+
+def stride_for(given: int, max_frames: int | None) -> int:
+    """The least stride that leaves at most ``max_frames`` of ``given``
+    frames: 1 where they are no more than that, or where ``max_frames`` is
+    None (every frame)."""
+    if max_frames is None or given <= max_frames:
+        return 1
+    return -(-int(given) // int(max_frames))
+
+
 #: The share of this machine's available memory a clustering plans on, the
 #: rest left for the trajectory already loaded, the figures and the machine.
 MEMORY_SHARE = 0.75
@@ -158,6 +182,27 @@ ROWS_BYTES = 64 * 2**20
 FIGURE_BYTES_PER_CELL = 161
 FIGURE_BYTES = 8 * 2**20
 
+#: The least resident memory a clustering is planned on, at any number of
+#: frames, in bytes: what the libraries take the first time they run in the
+#: process (k-means' threads, SciPy's linkage, Matplotlib's canvases at 300
+#: dpi), and the timeline, counts and dendrogram figures, which are the
+#: same at any number of frames. Counted in ``fastmdx analyze``'s own
+#: process, clustering alone, as the peak resident memory from the check
+#: (glibc's defaults), every 17th to every 4th of 2,000 frames (118 to 500
+#: frames): with k-means and average linkage 38.4 to 74.1 MiB on Python 3.10,
+#: 3.11 and 3.13 (the most, 74.1, at 500 frames on 3.13), k-means alone 31.9
+#: to 64.9, DBSCAN 30.1 to 55.9, average linkage alone 40.3 to 67.9. Without
+#: it the plan of a few hundred frames was the map's alone, 10 to 48 MiB:
+#: under a container leaving 14 to 45 MiB, the refusal named a stride of 17
+#: to 6, and each was killed. Counted again as the command-line test runs
+#: it (two threads, one malloc arena), 500 frames peaked at 72.0 to 73.8 MiB
+#: on 3.10, 3.11 and 3.13, 2.2 MiB under the 76 first planned: too little
+#: for a runner that takes more, and CI's Python 3.10 leg counted a whole
+#: DBSCAN run of 2,000 frames at 169.1 MiB, 31 over the most this machine
+#: counted of it (138.1). Planned on the most counted here, 74.1, and those
+#: 31 MiB: a room under about 148 MB is refused at any stride.
+RESIDENT_LEAST = 106 * 2**20
+
 
 def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:
     """Whether a clustering makes the frames' n by n distance matrix.
@@ -173,11 +218,12 @@ def builds_matrix(methods: Sequence[str], features: str, linkage: str) -> bool:
 
 
 def memory_needed(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
-    """The peak bytes, of order n squared, that clustering ``n`` frames makes:
-    the larger of what the clustering makes of their matrix
-    (:func:`matrix_needed`) and what plotting its map makes once the matrix
-    is freed (:func:`map_needed`)."""
-    return max(matrix_needed(n, methods, features, linkage), map_needed(n))
+    """The peak bytes that clustering ``n`` frames makes: the larger of what
+    the clustering makes of their matrix (:func:`matrix_needed`) and what
+    plotting its map makes once the matrix is freed (:func:`map_needed`),
+    and :data:`RESIDENT_LEAST` at the least."""
+    return max(matrix_needed(n, methods, features, linkage), map_needed(n),
+               RESIDENT_LEAST)
 
 
 def matrix_needed(n: int, methods: Sequence[str], features: str, linkage: str) -> int:
@@ -973,6 +1019,16 @@ def room_said(available: int, read_from: str, said: str | None = None) -> str:
     return f"this machine has {said} available"
 
 
+def _whole_at_least_one(value: Any) -> bool:
+    """Whether ``value`` is a whole number of 1 or more (not a bool)."""
+    if isinstance(value, bool):
+        return False
+    try:
+        return int(value) == value and int(value) >= 1
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def _ordinal(k: int) -> str:
     """2nd, 3rd, 11th, 22nd."""
     if 10 <= k % 100 <= 20:
@@ -1031,12 +1087,19 @@ class Cluster(Analysis):
         detects in the RMSD of the selected atoms from the first frame. How
         many frames were clustered, from where, and whether the equilibration
         is among them is recorded under ``findings.frames`` either way.
+    max_frames : int or None, default 5000
+        The most frames clustered: past them, every k-th frame from
+        ``start`` is clustered, k the least stride of at least ``stride``
+        that leaves at most this many, and the stride is recorded under
+        ``findings.frames``. ``null`` (None) leaves the frames to
+        ``stride`` alone, every frame at its default.
     stride : int, default 1
-        Cluster every k-th frame from ``start``. Every frame by default. The
-        pairwise matrix grows with the square of the frames, so this is what
-        a clustering refused for memory asks for (it names the stride that
-        fits); the other analyses keep every frame. Frames closer together
-        than the correlation time add little to a clustering.
+        Cluster every k-th frame from ``start``, or every k-th of more
+        where that would leave more than ``max_frames`` (said so). The
+        pairwise matrix grows with the square of the frames, so this is
+        what a clustering refused for memory asks for (it names the stride
+        that fits); the other analyses read every frame. Frames closer
+        together than the correlation time add little to a clustering.
     save_full_matrix : bool, default False
         Also write the whole frame-by-frame RMSD as
         ``cluster_rmsd_matrix_full.npy`` (float32, n by n), its size said in
@@ -1083,6 +1146,7 @@ class Cluster(Analysis):
         random_state: int = 42,
         n_init: int = 10,
         start: float | str = 0.0,
+        max_frames: int | None = MAX_FRAMES,
         stride: int = 1,
         save_full_matrix: bool = False,
         **kwargs: Any,
@@ -1112,13 +1176,23 @@ class Cluster(Analysis):
         self.linkage: str = str(linkage)
         self.random_state: int = int(random_state)
         self.n_init: int = int(n_init)
-        if isinstance(stride, bool) or int(stride) != stride or int(stride) < 1:
+        if not _whole_at_least_one(stride):
             raise StudyError(
                 f"`stride` is the k of every k-th frame, a whole number of 1 or "
                 f"more; {stride!r} was given.",
                 code="analysis.option.out_of_range", option="stride",
                 given=stride, frames=None)
         self.stride: int = int(stride)
+        if max_frames is not None and not _whole_at_least_one(max_frames):
+            raise StudyError(
+                f"`max_frames` is the most frames clustered, a whole number of 1 or "
+                f"more, or null to leave the frames to `stride`; {max_frames!r} was "
+                "given.",
+                code="analysis.option.out_of_range", option="max_frames",
+                given=max_frames, frames=None)
+        self.max_frames: int | None = None if max_frames is None else int(max_frames)
+        # The stride the frames were clustered at, once they are chosen.
+        self._stride: int = self.stride
         self.save_full_matrix: bool = bool(save_full_matrix)
         self.options.update(
             methods=self.methods,
@@ -1130,6 +1204,7 @@ class Cluster(Analysis):
             random_state=self.random_state,
             n_init=self.n_init,
             stride=self.stride,
+            max_frames=self.max_frames,
             save_full_matrix=self.save_full_matrix,
         )
         self.start: float | str | None = start_as_given(start)
@@ -1148,17 +1223,36 @@ class Cluster(Analysis):
         atom_idx = self.select_atoms(traj)
         refuse_too_few_to_align(self, traj, atom_idx)
         first, record = first_frame(traj, atom_idx, self.start)
-        if self.stride > 1:
-            clustered = -(-(traj.n_frames - first) // self.stride)
-            record["stride"] = self.stride
+        given = traj.n_frames - first
+        stride = max(self.stride, stride_for(given, self.max_frames))
+        self._stride = stride
+        if stride > 1:
+            clustered = -(-given // stride)
+            record["stride"] = stride
             record["n_frames_clustered"] = clustered
-            record["said"] = (f"{record['said']} Every {_ordinal(self.stride)} frame "
-                              f"of those was clustered (`stride: {self.stride}`), "
-                              f"{clustered} frames.")
+            if stride == self.stride:
+                why = f"as `stride: {stride}` asks."
+            else:
+                record["max_frames"] = self.max_frames
+                asked = (f", where `stride: {self.stride}` asked for every "
+                         f"{_ordinal(self.stride)}" if self.stride > 1 else "")
+                why = (f"the least stride that leaves at most {self.max_frames:,} "
+                       f"(`max_frames: {self.max_frames}`){asked}. "
+                       + self._every_frame_said())
+            record["said"] = (f"{record['said']} Every {_ordinal(stride)} frame of "
+                              f"those was clustered, {clustered:,} frames, {why}")
+            if stride != self.stride:
+                # On the console too: the cap chose it, not a setting given.
+                logger.info("Clustering every %s frame, %s of the %s analysed: the least "
+                            "stride that leaves at most %s (`max_frames: %s`). %s",
+                            _ordinal(stride), f"{clustered:,}", f"{given:,}",
+                            f"{self.max_frames:,}", self.max_frames,
+                            self._every_frame_said())
         self.findings["frames"] = record
+        self.findings.pop("populations", None)  # counted again, method by method
         self._first_frame = first
-        if first or self.stride > 1:
-            traj = traj[first::self.stride]
+        if first or stride > 1:
+            traj = traj[first::stride]
         # Kept for the medoids and the frame times written beside the labels.
         self._clustered = traj
 
@@ -1186,13 +1280,13 @@ class Cluster(Analysis):
                 self._distances = self._embedding = None
                 raise StudyError(
                     f"Clustering {n_frames:,} frames ran out of memory as it ran "
-                    f"({error}), though the check planned it would fit. Set `stride: {2 * self.stride}` under the analysis's "
+                    f"({error}), though the check planned it would fit. Set `stride: {2 * self._stride}` under the analysis's "
                     "`options: {cluster: ...}` to cluster half as many frames; the "
                     "other analyses keep every frame.",
                     code="analysis.memory.matrix_too_large", frames=n_frames,
                     bytes_needed=self.findings["memory"].get("bytes_needed"),
                     bytes_available=self.findings["memory"].get("bytes_available"),
-                    stride=2 * self.stride) from error
+                    stride=2 * self._stride) from error
 
     def _clustered_by_each_method(self, traj: md.Trajectory,
                                   atom_idx: np.ndarray) -> dict[str, np.ndarray]:
@@ -1300,11 +1394,15 @@ class Cluster(Analysis):
         self._refused_before_it_ran = True
         need, room, room_from, mapped = over[-1]
         given = int(record["n_frames_analysed"])
-        stride = self.stride
+        # From the stride the frames were chosen at: one under it would
+        # cluster more frames than were refused.
+        stride = self._stride
         while stride < given and short(-(-given // stride)):
             stride += 1
         fits = -(-given // stride)
         starting = (f" from frame {first}" if first else "")
+        if self._stride > 1:
+            starting += f" (every {_ordinal(self._stride)} of {given:,})"
         if short(fits):
             # Even a frame or two: the map's figure, or what the figures
             # map, alone is more than the room planned on.
@@ -1389,6 +1487,7 @@ class Cluster(Analysis):
                                            frames=self._frames_given(len(labels)))
                     ax.set_xlabel(self._user_xlabel or "Frame")
                     ax.set_ylabel(self._user_ylabel or "Cluster")
+                    self._noted(fig)
                     save_figure(fig, path)
 
                 artifacts.extend(self._plotted(fig_path, timeline))
@@ -1402,6 +1501,7 @@ class Cluster(Analysis):
                         figsize=(5.8, 3.6),
                     )
                     _plot_cluster_counts(ax_counts, labels)
+                    self._noted(fig_counts)
                     save_figure(fig_counts, path)
 
                 artifacts.extend(self._plotted(counts_path, counts))
@@ -1422,6 +1522,7 @@ class Cluster(Analysis):
                             figsize=(6.5, 3.8),
                         )
                         _plot_hierarchical_dendrogram_from_linkage(ax_den, linkage_matrix)
+                        self._noted(fig_den)
                         save_figure(fig_den, dendro_path)
                         artifacts.append(dendro_path)
                         dendro_svg_path = dendro_path.with_suffix(".svg")
@@ -1526,7 +1627,7 @@ class Cluster(Analysis):
 
     def _frames_given(self, n: int) -> np.ndarray:
         """Each clustered frame's index in the trajectory given."""
-        return self._first_frame + self.stride * np.arange(n)
+        return self._first_frame + self._stride * np.arange(n)
 
     def _distance_rows(self, rows: np.ndarray | slice,
                        columns: np.ndarray | None = None) -> np.ndarray:
@@ -1583,6 +1684,9 @@ class Cluster(Analysis):
                      f"consecutive clustered frames, {averaged.shape[0]} across."
                      if block > 1 else "The map shows every pair of clustered frames."),
         }
+        if self._map_stride_said():
+            # Said below the map, here and in the GUI.
+            self.findings["matrix"]["stride_said"] = self._map_stride_said()
         data_path = self.output_dir / "cluster_rmsd_matrix.npz"
         written = []
         try:
@@ -1617,6 +1721,7 @@ class Cluster(Analysis):
         def the_map() -> None:
             fig, ax = new_figure(title=title, figsize=(5.6, 4.8))
             _plot_distance_matrix(ax, averaged, frames, times, block=block)
+            self._noted(fig, the_map=True)
             save_figure(fig, figure_path)
 
         return written + self._plotted(figure_path, the_map)
@@ -1654,7 +1759,7 @@ class Cluster(Analysis):
         n = int(self.findings.get("matrix", {}).get("frames") or 0)
         halved = path.name.startswith("cluster_rmsd_matrix") and n > 1 and (
             map_needed(-(-n // 2)) < map_needed(n))
-        helps = (f"Set `stride: {2 * self.stride}` under the analysis's "
+        helps = (f"Set `stride: {2 * self._stride}` under the analysis's "
                  "`options: {cluster: ...}` to "
                  + ("save" if saving else "plot") + " the map of half as many frames."
                  if halved else figure_more_said(self.findings.get("memory", {})))
@@ -1749,7 +1854,85 @@ class Cluster(Analysis):
         pd.DataFrame(rows, columns=["cluster", "frames", "fraction", "medoid_frame",
                                     "medoid_time_ns"]).to_csv(table_path, index=False)
         written.insert(0, table_path)
+        self._record_populations(method, labels, rows)
         return written
+
+    def _record_populations(self, method: str, labels: np.ndarray,
+                            rows: list[dict[str, Any]]) -> None:
+        """Each cluster's frames and fraction, under ``findings.populations``
+        with the stride they were counted at: a fraction is of the frames
+        clustered, and at a stride those are every k-th frame, said so."""
+        n = len(labels)
+        stride = self._stride
+        frames = self.findings.get("frames") or {}
+        given = int(frames.get("n_frames_analysed", n))
+        found = self.findings.setdefault("populations", {})
+        found.update(stride=int(stride), n_frames_clustered=int(n),
+                     n_frames_analysed=given)
+        entry: dict[str, Any] = {"clusters": [
+            {"cluster": row["cluster"], "frames": row["frames"],
+             "fraction": row["fraction"]} for row in rows]}
+        noise = int(np.count_nonzero(np.asarray(labels) == -1))
+        if noise:
+            entry["noise_frames"] = noise
+        found.setdefault("by_method", {})[method] = entry
+        said = self._stride_said()
+        if said:
+            found["said"] = said
+        else:
+            found.pop("said", None)
+
+    def _every_frame_said(self) -> str:
+        """What clusters every frame, from the settings this one was given:
+        ``max_frames: null`` where the stride is the cap's alone."""
+        if self.stride == 1:
+            return "`max_frames: null` clusters every frame."
+        return "`stride: 1` with `max_frames: null` clusters every frame."
+
+    def _stride_said(self) -> str:
+        """That the clustering took every k-th frame, the setting that chose
+        it, and what clusters every frame; "" at every frame. Said under
+        ``findings.populations``, in the report, on the clustering's
+        figures (PNG and SVG) and on the GUI's: the GUI's Conformations
+        section and the figures said nothing of it, and a count of 5,000
+        frames read as the whole of a run of 10,000."""
+        stride = self._stride
+        if stride <= 1 or self._clustered is None:
+            return ""
+        n = int(self._clustered.n_frames)
+        frames = self.findings.get("frames") or {}
+        given = int(frames.get("n_frames_analysed", n))
+        why = (f"`stride: {stride}`" if stride == self.stride
+               else f"`max_frames: {self.max_frames}`")
+        return (f"Cluster populations were counted on every {_ordinal(stride)} frame "
+                f"({why}): each cluster's frames are of the {n:,} clustered, of "
+                f"{given:,} analysed, and its fraction is of those {n:,}. "
+                + self._every_frame_said())
+
+    def _map_stride_said(self) -> str:
+        """That the RMSD map is of every k-th frame, the setting that chose
+        it, and what clusters every frame; "" at every frame. The map's note
+        spoke of cluster populations."""
+        said = self._stride_said()
+        if not said:
+            return ""
+        stride = self._stride
+        n = int(self._clustered.n_frames)
+        given = int((self.findings.get("frames") or {}).get("n_frames_analysed", n))
+        why = (f"`stride: {stride}`" if stride == self.stride
+               else f"`max_frames: {self.max_frames}`")
+        return (f"The map is of every {_ordinal(stride)} frame ({why}), the {n:,} "
+                f"clustered of {given:,} analysed. " + self._every_frame_said())
+
+    def _noted(self, fig: Any, the_map: bool = False) -> None:
+        """The stride said below a clustering's figure, where it took every
+        k-th frame (:meth:`_stride_said`, :meth:`_map_stride_said` for the
+        map), as a projection's figure says the methods refused: without the
+        record's code marks, which a figure printed as they are."""
+        said = self._map_stride_said() if the_map else self._stride_said()
+        if said:
+            fig.text(0.5, -0.02, said.replace("`", ""), ha="center", va="top",
+                     fontsize=7, wrap=True)
 
     # Required by the ABC but not used (run() is overridden)
     def plot(self, result: dict[str, np.ndarray], ax: plt.Axes) -> None:

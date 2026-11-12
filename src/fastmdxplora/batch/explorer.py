@@ -926,20 +926,20 @@ def _threads_for_each(n_workers: int) -> int:
     return max(1, cores // max(1, n_workers))
 
 
-#: Coordinates a standard-state binding free energy means anything along.
-#: A distance between two groups has a volume element; a torsion does not.
-COORDINATES_WITH_A_VOLUME = ("ligand_distance", "distance")
-
-
 def _the_coordinate_has_a_volume(plan: Any) -> bool:
     """Whether a standard-state correction has anything to correct.
 
     The correction is about the volume a ligand gives up on binding. Along a
     torsion there is no volume and no concentration, so a number computed
     there would be a category error rather than an inaccuracy.
+
+    The coordinates with a volume are `umbrella.SHELL_COORDINATES`, the same
+    list that decides where `pmf.json` carries W(r) beside A(r), so a study
+    given a binding free energy is one whose curve is plotted as W(r).
     """
-    return getattr(plan, "collective_variable", None) in \
-        COORDINATES_WITH_A_VOLUME
+    from fastmdxplora.simulation.umbrella import SHELL_COORDINATES
+
+    return getattr(plan, "collective_variable", None) in SHELL_COORDINATES
 
 
 def _a_binding_free_energy_belongs_here(payload: dict[str, Any],
@@ -980,9 +980,20 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
         lines.append(f"Binding:        {value:.1f}{spread} kJ/mol "
                      "(standard state, 1 M)")
     elif binding.get("refused"):
+        from fastmdxplora.simulation.binding import the_kt_refusal
+
+        # A kT refusal whole: what it means at 1 M and, near kT, that it is
+        # marginal. Its first sentence alone read the same for a free
+        # particle and for a well 0.04 kJ/mol short of kT.
+        refused = str(binding["refused"])
         lines.append("Binding:        not reported -- "
-                     + str(binding["refused"]).split(". ")[0].rstrip(".") + ".")
-    from fastmdxplora.simulation.binding import BULK_RESIDUAL_KJMOL
+                     + (refused if the_kt_refusal(binding)
+                        else refused.split(". ")[0].rstrip(".") + "."))
+    from fastmdxplora.simulation.binding import (
+        BULK_RESIDUAL_KJMOL, the_depth_s_verdict)
+
+    if value is not None and the_depth_s_verdict(binding):
+        lines.append(f"Warning:        {the_depth_s_verdict(binding)}")
 
     if value is not None and binding.get("bulk_judged_by") == (
             f"{BULK_RESIDUAL_KJMOL} kJ/mol alone"):
@@ -993,6 +1004,16 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
                         "(bootstrap_resamples: 0)."
                         if "bootstrap_resamples: 0" in str(
                             binding.get("bulk_judged") or "") else "."))
+    given = binding.get("delta_g_resamples")
+    missing = binding.get("delta_g_resamples_without_a_number")
+    if (value is not None and isinstance(given, int) and isinstance(missing, int)
+            and given + missing and missing > 0.1 * (given + missing)):
+        # The interval is made of the resamples that gave a number, and
+        # those that did not are not a random few: said, so a narrow error
+        # from half a bootstrap is not read as a whole one.
+        lines.append(
+            f"Warning:        {missing} of {given + missing} resamples gave no "
+            f"binding free energy; its error is from the other {given}.")
     for warning in (binding.get("reference") or {}).get("warnings") or []:
         lines.append(f"Warning:        {warning}")
     return lines
@@ -2881,6 +2902,10 @@ class BatchExplorer:
         except (OSError, yaml.YAMLError) as exc:
             logger.warning("The report was not written again: %s", exc)
             return
+        from fastmdxplora.config.recorded import as_a_record
+
+        # Its record, given to the run as a Config.
+        config = as_a_record(config)
         manifest = _json_or_none(run / "manifest.json")
         config = {key: value for key, value in config.items() if key != "exclude_phase"}
         config["output"] = str(run)
@@ -3428,7 +3453,12 @@ class BatchExplorer:
             # without widening it, and computing them per resample would mean
             # resolving the cone thirty thousand times for no change in the
             # spread.
-            def _binding_from(where, curve, _t=temperature):
+            # Where the windows' centres are, so W's minimum is searched
+            # there and not in a sparse end bin beyond them.
+            span = (min(w.centre for w in plan.windows),
+                    max(w.centre for w in plan.windows))
+
+            def _binding_from(where, curve, _t=temperature, _span=span):
                 from fastmdxplora.simulation.binding import binding_free_energy
 
                 # The tail is judged once, on the real curve, against these
@@ -3436,7 +3466,7 @@ class BatchExplorer:
                 # refused by its own noise, and the interval would be made of
                 # the resamples whose tails happened to be flattest.
                 return binding_free_energy(
-                    where, curve, temperature_K=_t,
+                    where, curve, temperature_K=_t, covered_nm=_span,
                     judge_the_bulk=False).get("delta_g_kjmol")
 
             wants_binding = _the_coordinate_has_a_volume(plan)
@@ -3523,7 +3553,7 @@ class BatchExplorer:
                     payload["binding"] = binding_free_energy(
                         payload["pmf"]["coordinate"],
                         payload["pmf"]["free_energy_kjmol"],
-                        temperature_K=temperature,
+                        temperature_K=temperature, covered_nm=payload.get("covered"),
                         cone=cone, wall_bias_kjmol=wall,
                         resampled=payload.get("derived"),
                         errors_kjmol=(payload["pmf"].get("uncertainty") or {})
@@ -3578,6 +3608,11 @@ class BatchExplorer:
         else:
             drawn_note = f", plotted in {drawn.parent.name}/" if drawn else ""
             print(f"Free energy:    {destination}{drawn_note}")
+            from fastmdxplora.simulation.umbrella import the_barrier_in_a_line
+
+            barrier_line = the_barrier_in_a_line(payload)
+            if barrier_line:
+                print(f"Barrier:        {barrier_line}")
         for line in _what_the_binding_says(payload.get("binding")):
             print(line)
 
@@ -3625,9 +3660,18 @@ class BatchExplorer:
                       .get("index") is not None), {})
         window = with_general_selection_names(dict(first), "ligand_distance")
         centres = {w.index: float(w.centre) for w in plan.windows}
-        points = [(y, x) for x, y in zip(pmf.get("coordinate") or [],
-                                         pmf.get("free_energy_kjmol") or [])
-                  if y is not None]
+        # The well is W(r)'s minimum, A(r) + 2kT ln r, which the record
+        # saves; A's own minimum sits further out and can be in bulk.
+        from fastmdxplora.simulation.umbrella import KB_KJ
+
+        # Between the windows' centres, as the binding searches it.
+        low = min((float(w.centre) for w in plan.windows), default=-math.inf)
+        high = max((float(w.centre) for w in plan.windows), default=math.inf)
+        every = [(y + 2.0 * KB_KJ * temperature * math.log(x), x)
+                 for x, y in zip(pmf.get("coordinate") or [],
+                                 pmf.get("free_energy_kjmol") or [])
+                 if y is not None and x is not None and x > 0]
+        points = [p for p in every if low <= p[1] <= high] or every
         bound_at = (binding.get("minimum_at_nm")
                     or (min(points)[1] if points else None))
         bulk_from = binding.get("bulk_from_nm")

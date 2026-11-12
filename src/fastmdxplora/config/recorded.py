@@ -163,3 +163,26 @@ def laid_over(recorded: dict[str, Any], given: dict[str, Any]) -> dict[str, Any]
     elif given.get("exclude") is not None:
         out.pop("include", None)
     return out
+
+
+def as_a_record(config: Any) -> Any:
+    """A study's saved config (``resolved_config.yml``), loaded as data,
+    read as its record: the reweighting pass's name dropped from each
+    ``analysis`` block's ``include`` and ``exclude``
+    (:func:`fastmdxplora.config.loader.without_the_reweighting_pass`), as
+    :func:`phase_settings` reads it. `resume` loaded the record itself and
+    gave it to the study as a Config, which refused the name a study saved
+    by an earlier version lists. ``config`` is returned, changed in place."""
+    from fastmdxplora.config.loader import without_the_reweighting_pass
+
+    if not isinstance(config, dict):
+        return config
+    blocks = [config.get("analysis")]
+    for key in ("systems", "runs"):
+        entries = config.get(key)
+        if isinstance(entries, list):
+            blocks += [entry.get("analysis") for entry in entries if isinstance(entry, dict)]
+    for block in blocks:
+        if isinstance(block, dict):
+            without_the_reweighting_pass(block)
+    return config

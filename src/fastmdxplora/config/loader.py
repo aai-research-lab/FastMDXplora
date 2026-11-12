@@ -784,6 +784,11 @@ def validate_config(data: dict[str, Any], *, require_systems: bool = False,
             options=["include", "exclude"], context="analysis",
         )
     if isinstance(analysis, dict):
+        if as_record:
+            # A study's own record, saved listing the reweighting pass:
+            # read as the analyses it names. A Config written by hand that
+            # names it is refused below, as before.
+            without_the_reweighting_pass(analysis)
         _check_analysis_names(analysis)
         _check_analysis_options(analysis, context="analysis")
 
@@ -1403,6 +1408,28 @@ def _check_decisions(decisions: Any) -> None:
                 found_type=type(alternatives).__name__)
 
 
+#: The name the reweighting of a biased run is recorded under among the
+#: analyses' results. It is a pass over the analyses, run wherever a bias
+#: applies, and not an analysis that can be named.
+REWEIGHTING_PASS = "reweighted"
+
+
+def without_the_reweighting_pass(analysis: dict[str, Any]) -> None:
+    """``analysis.include`` and ``exclude`` without the reweighting pass's
+    name, which a study's record listed among its analyses once a biased
+    run was analysed (``resolved_config.yml``): `fastmdx report` and
+    `analyze --rerun` then refused the study's own record. It runs where a
+    bias applies, whatever the list says, so the name is read as nothing:
+    in a record alone (``validate_config(as_record=True)``); a Config that
+    names it is refused by name (:func:`_check_analysis_names`)."""
+    for key in ("include", "exclude"):
+        names = analysis.get(key)
+        if isinstance(names, list) and REWEIGHTING_PASS in names:
+            analysis[key] = [name for name in names if name != REWEIGHTING_PASS]
+            if not analysis[key]:
+                del analysis[key]
+
+
 def _check_analysis_names(analysis: dict[str, Any]) -> None:
     """Refuse a name no analysis has.
 
@@ -1430,6 +1457,9 @@ def _check_analysis_names(analysis: dict[str, Any]) -> None:
             near = difflib.get_close_matches(str(name), sorted(known), n=3,
                                              cutoff=0.5)
             suggestion = (f" Did you mean {', '.join(near)}?" if near else "")
+            if str(name) == REWEIGHTING_PASS:
+                suggestion = (" The reweighting of a biased run is not named in "
+                              f"analysis.{key}: it runs wherever a bias applies.")
             raise ConfigError(
                 f"No analysis is called {str(name)!r}, so "
                 f"analysis.{key} asks for something that cannot run."

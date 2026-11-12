@@ -9,6 +9,105 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- Along a distance a barrier's rises on W(r) are judged against W's
+  resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
+  round before judged them against A's, so every departure carried
+  2kT ln(r_i / r_j), the family's multiplier came out at 21 to 26 (8 to 11
+  at 300 frames) in place of about 3.8, and a 5 kJ/mol escape barrier above
+  a 15 kJ/mol well was refused as noise on 5 seeds in 6; it is now given on
+  every seed, 18.9 to 20.9 against 20.0. W's minimum for the binding free
+  energy is searched between the outermost windows' centres
+  (`binding_free_energy(covered_nm=)`, and in the reference checks), so a
+  sparse end bin below the first window no longer takes the well and
+  refuses the study as holding no bound state; an empty bin in the bound
+  range is judged on W against that minimum. The radial `.dat` header says
+  where W is zero, and an older record's W is zeroed between the windows'
+  centres when read. The console's Barrier line says when only the
+  2.5 kJ/mol margin judged it, and otherwise that its error is from
+  sampling only and that the curve's zero and the bins' width can each move
+  it by about that much: the zero puts a barrier high and the bins' width
+  puts a narrow one low (19.43 +/- 0.15 for a 20 kJ/mol escape barrier), so
+  no direction is claimed.
+- A binding free energy is refused where W's lowest point between the
+  windows' centres is less than kT below the bulk reference
+  (`well_depth_kjmol` says by how much): the bound range ends where W comes
+  back within kT of bulk, so such a curve has none. A free particle
+  recombined along a distance, given about -6 kJ/mol before this series
+  (its bound range from A's minimum out in bulk), and -7.4 to +0.8 with
+  W's minimum searched between the centres alone, is now refused on every
+  seed tried; a well 1 kT deep or less is refused with it. The rule judges
+  the real curve only, and each bootstrap resample follows its verdict, as
+  it does the bulk's: judged in each resample, the weakest resamples of a
+  weak well left its interval, and a 3 kJ/mol well's -1.18 kJ/mol came
+  over [-2.07, -0.81] from 24 of 40 resamples where it comes over
+  [-2.07, -0.35] from all 40. The refusal says there is no bound state as
+  this study defines one (W within kT of bulk over the windows' span), that
+  a well this shallow does not bind measurably at 1 M, and that longer
+  sampling could change the verdict where the depth is near kT. `binding`
+  saves the well's depth and its error (`well_depth_error_kjmol`, from the
+  depth's spread over the resamples, else the bins' standard errors) on a
+  number as well as a refusal. Where the depth is within its error of kT,
+  on either side, `well_depth_marginal` is true: the refusal's text says
+  the verdict is marginal, and a number is marked marginal. The console and
+  the GUI give a kT refusal whole, not its first sentence or clause as for
+  other refusals, so a marginal refusal reads as marginal there too, and
+  add a line to a marginal number ("The well's depth, ... is within its
+  error of kT ..., so the number is marginal: longer sampling could find no
+  bound state."). The comparison report gives no binding free energy, as
+  before.
+- The console warns when more than a tenth of a binding free energy's
+  resamples gave no number, since its error is then from the rest.
+- Running `fastmdx report` or `analyze` over an umbrella study saved
+  before this series recomputes its record, so its barrier and its binding
+  free energy can change: a shallow well's binding number moves to the one
+  its well gives, a free particle's is refused, and a peak within its
+  error is no longer quoted.
+- A turn the umbrella windows tile is recombined on a grid from -pi to
+  pi, so the seam is the edge between the first and last bins and a
+  barrier at +-pi is read across it; the grid was cut where the samples
+  stopped, which put the seam inside no bin. A curve given with bins at
+  both -pi and +pi reads them as one bin, their mean.
+- A barrier is judged with the curve's other peaks as a family: a peak
+  must clear 2.5 kJ/mol and its rise's error times the 95th percentile,
+  over the bootstrap's resampled curves, of the largest departure of any
+  rise from the curve's own over that rise's error (else Sidak's
+  multiplier over every pair of bins, on the bins' standard errors), so a
+  curve with no barrier quotes one about 5% of the time. Judged one peak
+  at a time against twice its error, a flat turn at 90 frames a window
+  quoted a barrier on 20 seeds in 20 and at 300 frames on 7 in 20; now 10
+  in 100 and 2 in 60. A 2 kJ/mol hump at 90 frames is quoted on 5 seeds in
+  14, all at the hump, where 13 in 14 quoted one, two of them elsewhere; a
+  20 kJ/mol hump on the seam is given as before (19.5 to 19.9 against
+  19.52). A peak that does not clear is refused and named in
+  `summary.within_error` (its rise, error, multiplier and what it needed),
+  with `summary.barrier_refused` saying why where none is left,
+  `highest_kjmol` null with `highest_withheld` where the refused peak is
+  the highest point, and `summary.barrier_note` where a lower peak stands.
+  `summary.barrier_judged_by` says how the barrier given was judged,
+  `summary.barrier_multiplier` the multiplier, and positions carry their
+  unit. The console and the comparison report give the barrier in one
+  line, or that it was refused and why. The PMF analysis reads an older
+  summary again by this rule.
+- A binding free energy's bound state starts at the minimum of W(r) =
+  A(r) + 2kT ln r, not of A(r), in the integral's cutoff search and in the
+  reference checks; the integral is still over A(r). A 6 kJ/mol well at
+  0.45 nm had its minimum read at 2.0 nm and its range to 1.64 nm, and was
+  given -6.21 kJ/mol against a 12 kJ/mol well's -5.69; now -0.59. Deep
+  wells' numbers do not move: on the tests' 20 kJ/mol and 15 kJ/mol wells
+  the minimum moves by up to 0.11 nm and the binding free energy not at
+  all.
+- Along a distance between centres `pmf.json` names its two curves in
+  `pmf.curves`: `free_energy_kjmol` is A(r) = -kT ln P(r), which the
+  binding free energy and the next study's design read, and
+  `potential_of_mean_force_kjmol` is W(r) = A(r) + 2kT ln r at the study's
+  temperature, zero at its lowest bin between the outermost windows'
+  centres, plotted (faint and dashed beyond them), with the barrier and
+  minima read off it (`summary.read_off`). The figure's x axis is r in nm
+  (a torsion's in rad), the `.dat` header gives the units and kT, and the
+  comparison
+  report says which curve the figure is. The coordinates with a binding
+  free energy are `umbrella.SHELL_COORDINATES`, one list with those given
+  W(r).
 - An umbrella study's binding free energy judges its bulk tail against the
   bootstrap's resampled curves (saved in `pmf.json` under `uncertainty` as
   `resample_curves_kjmol`): each point's departure from the tail's mean,
@@ -47,6 +146,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   refusal says that a wider cone means every window runs again, since the
   windows of one study share one cone, and names `fastmdx explore -c
   <config> --force-overwrite`; `--rerun-window` cannot do it.
+- Clustering clusters at most 5,000 frames by default (`max_frames:
+  5000`): past them, every k-th frame from its start, k the least stride
+  that leaves at most 5,000 (every 3rd of 12,000 frames). The stride is
+  recorded under `findings.frames` and, with each cluster's frames and
+  fraction, under `findings.populations`; each fraction is of the frames
+  clustered. The report, the log, the GUI's Conformations section and its
+  charts, and the clustering's figures (PNG and SVG) say the populations
+  were counted on every k-th frame (the map: that it is of every k-th
+  frame) and that `max_frames: null` clusters every frame, the row with
+  its image note beside it; the report's `stride` line says the stride
+  used. A
+  `stride` under the one the cap needs is raised to it, and said;
+  `max_frames: null` leaves the frames to `stride`, every frame at its
+  default. The memory check is of the frames clustered, and a
+  refusal's stride is never under the one the cap chose. In `fastmdx
+  analyze`, 3,000, 6,000 and 12,000 frames of the tests' alanine chain
+  clustered 3,000, 3,000 and 4,000 frames, peaking at 212.9 to 217.2 MiB
+  against 214.6 planned and 376.0 to 381.2 against 381.5 (Python 3.10,
+  3.11 and 3.13). A biased run's reweighted populations weight each frame
+  clustered by its own weight, at the cap's stride or one of its own.
+  `docs/gui.md` counts the new setting: 381 analysis options.
 - A joined run of three or four segments can now be called drifting
   (`analysis.sampling.drifting`, `drift_test:
   slope_against_errors_and_scatter`): with each segment mean placed at the
@@ -576,8 +696,27 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   study was polled every few seconds for as long as it was open.
 - The Analysis page names protein-ligand interactions in its subtitle only
   where the study has a ligand's analyses.
+- A study's GPU sampler ends with its run on macOS. macOS says EPERM to
+  the zero signal for a process group whose members are all zombies, and
+  the sampler read it as going, so it did not end with its run; the
+  sampler's test failed on CI's macOS legs on it. Linux answers success
+  there, and the leader's state was read. EPERM now means nothing is left
+  that this user may signal: another user's processes, or, for a group on
+  macOS, this user's zombies. `ps`, or `/proc` where `ps` cannot be run,
+  says whether one is still alive, for a group and for one process. For
+  one process there was no macOS fault, a zombie answering success on both
+  systems; another user's zombie is now read as ended, where EPERM was
+  taken for alive, and another user's process that `ps` does not list (a
+  `/proc` mounted `hidepid=2`) is alive still.
+- Where `ps` cannot be run (a container built without procps), a run that
+  has ended and is not yet reaped is read as ended from `/proc`. It was
+  read as going until its parent reaped it, and its GPU sampler read on.
+- Tests: CI's coverage leg runs its browser files on two workers. One at a
+  time they took 1 h 56 min after 23 min on every core, against the leg's
+  180 minutes.
 - Tests: CI's other legs run the tests that drive no browser on every core
-  and the browser files one at a time after them, as the coverage leg does.
+  and the browser files one at a time after them, as the coverage leg then
+  did.
   On one core two were cancelled at 90 minutes with nothing failed; their
   limit is now 120. On every core, on every leg, a hung test fails once at
   600 s with its stack and the next test runs, where its worker was ended
@@ -587,6 +726,59 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   test, and the tests not yet run there are not counted.
   The browser test of a rerun over an unfinished round has a file of its
   own, so the other tests of a failed round run on every core.
+- A biased run's cluster populations are reweighted at any stride or
+  start. Labels not one per frame were left out of the reweighting with no
+  word, so a clustering of every k-th frame had no reweighted populations.
+  Each frame clustered is now weighted by its own weight, from the frames
+  the clustering's record says it read; labels whose frames or weights
+  cannot be read are refused by name (`populations_refused`, said in the
+  report), never counted unweighted.
+- The Viewer's States place each label on the frame it is of. The labels
+  of every k-th frame, or of a clustering begun later, were read as the
+  first frames analysed: every 3rd of 30 frames put frames 9 to 29 in the
+  state of frame 27. The States sentence says the stride.
+- Clustering plans on at least 106 MiB of resident memory at any number of
+  frames. A few hundred frames were planned on their map alone, 10 to 48
+  MiB, where in `fastmdx analyze` they peaked at up to 74.1 MiB from the
+  check; under a container leaving 14 to 45 MiB, the stride the refusal
+  named was killed. The 31 MiB more that CI's Python 3.10 leg took of a
+  whole clustering than this machine is planned on too. With less than
+  about 148 MB of room, clustering is now refused at any stride.
+- A metadynamics study reads its own record after it is analysed. Its
+  `resolved_config.yml` listed the reweighting pass (`reweighted`) under
+  `analysis.include`, and `fastmdx report` and `fastmdx analyze --rerun`
+  refused the study (exit 2, "No analysis is called 'reweighted'");
+  `fastmdx resume` of a study whose analysis did not finish ended with a
+  traceback (exit 1). An umbrella-window study's record lists the name
+  too: its extension (`explore` with `resume_from` and `extra_ns`, and
+  the rounds of a study run until it knows) ended with a `ConfigError`,
+  and `fastmdx resume` of an extension stopped before its join exited 1
+  with the study's analysis set aside in `previous/`. A study of several
+  runs left a run's report as it was where it wrote it again. The record
+  lists the analyses alone, and a record saved with the name reads, in
+  `report`, `analyze --rerun`, `resume`, an extension and its join, and a
+  run's report written again alike; the GUI's Analyze again, and the
+  Agent's offer of it, offer the analyses alone, and the reweighting's
+  own section offers no Analyze again (it opened with nothing ticked). A
+  Config that names `reweighted` in `analysis.include` or `exclude` is
+  refused by name, as before: the reweighting runs wherever a bias
+  applies.
+- The timeline's medoid marks give a cluster's share "of the frames
+  clustered". Clustering's sentences say "every frame from frame N" for a
+  start alone, the stride as an ordinal, and thousands alike ("All 12,000
+  frames", with "4,000 frames").
+- Tests: the test of 500 frames under `ulimit -v` 600000 sets the limit
+  from what a run of the command line holds at clustering's check, read in
+  a run of its own kind, and the reading and the run load bytecode
+  compiled into a cache of their own. With the source's bytecode written
+  by the reading and loaded by the run, or some of it stale, the run held
+  4 to 8 MiB more than the reading said and was refused its own frames
+  (Python 3.11 here, 55.0 to 59.6 MiB of room for 61.0). CI's coverage leg
+  refused them (56.0 MB of room for 64.0), but its child processes are not
+  traced: the earlier form was refused here without coverage too, from a
+  fresh tree writing its bytecode (57.7 MB for 64.0), and passed or failed
+  under `--cov` as the caches stood. The room the check reads is now the
+  one the test means, 62.2 to 62.5 MiB, and 3 MiB less fails.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and

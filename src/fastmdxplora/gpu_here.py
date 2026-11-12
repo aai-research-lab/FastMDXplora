@@ -156,16 +156,87 @@ def start_sampler(group: int, folder: Path, choice: Choice, since: float) -> Non
         logger.warning("What %s holds on its GPU is not read: %s", folder, exc)
 
 
+#: Where Linux lists its processes, read where ``ps`` cannot be run (a
+#: container built without procps).
+_PROC = Path("/proc")
+
+
+def _states_in(group: int) -> list[str] | None:
+    """The state ``ps`` gives each process of the group (none where it has
+    none), or ``/proc`` where ``ps`` lists no process at all; ``None``
+    where neither can be read."""
+    rows = [line.split() for line in
+            _answer("ps -A -o pgid= -o stat= 2>/dev/null\n").splitlines()]
+    rows = [row for row in rows if len(row) >= 2]
+    if not rows:
+        return _states_in_proc(group)
+    return [row[1] for row in rows if row[0] == str(int(group))]
+
+
+def _stat_of(entry: Path) -> tuple[str, str] | None:
+    """The state and process group ``/proc/<pid>/stat`` gives (they follow
+    the command's closing parenthesis, so a command holding one is read
+    whole); ``None`` where it cannot be read."""
+    try:
+        fields = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+    except OSError:  # it ended as it was read, or is hidden
+        return None
+    fields = fields.rpartition(")")[2].split()
+    return (fields[0], fields[2]) if len(fields) >= 3 else None
+
+
+def _state_in_proc(pid: int) -> str | None:
+    """The state of one process from ``/proc``; ``None`` where it cannot be
+    read (no ``/proc``, a pid gone or hidden)."""
+    stat = _stat_of(_PROC / str(int(pid)))
+    return stat[0] if stat is not None else None
+
+
+def _states_in_proc(group: int) -> list[str] | None:
+    """The state of each process of the group, from ``/proc/<pid>/stat``;
+    ``None`` where there is no ``/proc``."""
+    try:
+        entries = [entry for entry in _PROC.iterdir() if entry.name.isdigit()]
+    except OSError:
+        return None
+    if not entries:
+        return None
+    stats = [_stat_of(entry) for entry in entries]
+    return [stat[0] for stat in stats if stat is not None and stat[1] == str(int(group))]
+
+
 def _going(group: int) -> bool:
     """Whether the process group is still there, and its leader not a
-    process ended and not yet reaped."""
+    process ended and not yet reaped.
+
+    Where the zero signal reaches the group, only the leader is read, by
+    ``ps`` or by ``/proc`` where ``ps`` cannot be run: a group whose leader
+    has ended and is not yet reaped is gone, whatever members live on.
+    Linux answers success for a zombie and for a group of them, and the
+    leader's Z is read here. macOS leaves zombies out of the group it
+    signals and says EPERM where no member is left that may be signalled:
+    a group whose members are all zombies (CI run 42759782805), or one of
+    another user's processes, which is where Linux says EPERM. ``ps``, or
+    ``/proc`` where ``ps`` cannot be run, then says which: a group with a
+    member not a zombie is going, one of zombies or of none is gone. Where
+    neither can be read it is gone: a process of this user's would have
+    answered, and a sampler reading a group for ever is the worse mistake.
+    A group whose members neither can see (``/proc`` mounted ``hidepid``)
+    is gone too, though one such pid is alive to ``_process_alive``: EPERM
+    says no live member is this user's, whose processes are always listed,
+    and the sampler's run is this user's, so it has ended. Read as going,
+    the sampler would read the GPU for as long as another user's group of
+    that number lived."""
     try:
         os.killpg(group, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
+        states = _states_in(group)
+        return states is not None and any(not s.startswith("Z") for s in states)
     said = _answer(f"ps -o stat= -p {int(group)} 2>/dev/null\n").strip()
+    if not said:
+        said = _state_in_proc(group) or ""
     return not said.startswith("Z")
 
 

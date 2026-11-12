@@ -78,7 +78,8 @@ def _medoids(root: Path) -> list[dict[str, Any]]:
                 "frame": frames[0],
                 "time_ns": times[0] if axis == "Time (ns)" else _number(row.get("medoid_time_ns")),
                 "label": (f"The medoid of {method} cluster {row.get('cluster', '?')}"
-                          + (f", {_share(share)} of the frames" if share is not None else "")),
+                          + (f", {_share(share)} of the frames clustered" if share is not None
+                             else "")),
             })
     return marks
 
