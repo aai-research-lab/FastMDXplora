@@ -390,6 +390,13 @@ class TestTheEndpointsNeedTheMachinesTrust(unittest.TestCase):
         port = self.serve("127.0.0.1")
         self.assertEqual(self.post(port, "/api/agent/model"), 200)
 
+    def test_clearing_a_conversation_is_an_unknown_post_route(self):
+        port = self.serve("127.0.0.1")
+        unknown = self.post(port, "/api/there-is-no-such-route")
+
+        self.assertEqual(unknown, 404)
+        self.assertEqual(self.post(port, "/api/agent/conversation/clear"), unknown)
+
 
 class TestTheBindAddressIsSaidOutLoud(unittest.TestCase):
     """A network door should announce itself.
