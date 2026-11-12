@@ -975,7 +975,9 @@ def _the_binding_s_interval(binding: dict[str, Any]) -> list[str]:
 
     A record from before the interval was t's (no `delta_g_confidence_level`)
     says neither: its `delta_g_confidence_kjmol` was the resamples'
-    percentiles, which held the answer too seldom to be called 95%.
+    percentiles, which held the answer too seldom to be called 95%. An
+    interval whose error is a floor (`delta_g_uncertainty_is_a_floor`) is
+    said as at least that wide.
     """
     level = binding.get("delta_g_confidence_level")
     if not _a_finite_number(level):
@@ -983,8 +985,12 @@ def _the_binding_s_interval(binding: dict[str, Any]) -> list[str]:
     interval = binding.get("delta_g_confidence_kjmol")
     if (isinstance(interval, (list, tuple)) and len(interval) == 2
             and all(_a_finite_number(bound) for bound in interval)):
+        from fastmdxplora.simulation.binding import FLOOR_SAID
+
         label = f"{level:.0%} interval:"
-        return [f"{label:<16}{interval[0]:.1f} to {interval[1]:.1f} kJ/mol"]
+        return [f"{label:<16}{interval[0]:.1f} to {interval[1]:.1f} kJ/mol"
+                + (f" {FLOOR_SAID}" if binding.get(
+                    "delta_g_uncertainty_is_a_floor") is True else "")]
     reason = str(binding.get("delta_g_no_interval") or "").strip()
     if not reason:
         return []
@@ -1021,6 +1027,10 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     from fastmdxplora.simulation.binding import (
         BULK_RESIDUAL_KJMOL, the_depth_s_verdict)
 
+    # Said once: where the interval's line says no bootstrap was run, the
+    # tail's warning does not say it again.
+    said_no_bootstrap = any("bootstrap_resamples: 0" in line for line in lines)
+
     if value is not None and the_depth_s_verdict(binding):
         lines.append(f"Warning:        {the_depth_s_verdict(binding)}")
 
@@ -1032,7 +1042,8 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
             "judged" + (": the study ran no bootstrap "
                         "(bootstrap_resamples: 0)."
                         if "bootstrap_resamples: 0" in str(
-                            binding.get("bulk_judged") or "") else "."))
+                            binding.get("bulk_judged") or "")
+                        and not said_no_bootstrap else "."))
     given = binding.get("delta_g_resamples")
     missing = binding.get("delta_g_resamples_without_a_number")
     if (value is not None and isinstance(given, int) and isinstance(missing, int)

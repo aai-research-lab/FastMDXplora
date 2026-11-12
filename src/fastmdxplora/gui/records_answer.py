@@ -746,7 +746,8 @@ def _the_binding_s_interval(binding: dict[str, Any], error: float | None) -> str
     error's decimal place, or why there is none (`delta_g_no_interval`).
     Empty for a record from before the interval was t's (no
     `delta_g_confidence_level`), whose interval was the resamples'
-    percentiles and not 95%."""
+    percentiles and not 95%. An interval whose error is a floor is said as
+    at least that wide."""
     import math
 
     level = binding.get("delta_g_confidence_level")
@@ -755,9 +756,14 @@ def _the_binding_s_interval(binding: dict[str, Any], error: float | None) -> str
     interval = binding.get("delta_g_confidence_kjmol")
     if (error is not None and isinstance(interval, (list, tuple)) and len(interval) == 2
             and all(_a_finite_number(bound) for bound in interval)):
+        from fastmdxplora.simulation.binding import FLOOR_SAID
+
         places = max(0, 1 - math.floor(math.log10(error)))
+        # A floor's interval is at least that wide.
         return (f", with a {level:.0%} interval of {interval[0]:,.{places}f} to "
-                f"{interval[1]:,.{places}f} kJ/mol")
+                f"{interval[1]:,.{places}f} kJ/mol"
+                + (f" {FLOOR_SAID}" if binding.get(
+                    "delta_g_uncertainty_is_a_floor") is True else ""))
     reason = str(binding.get("delta_g_no_interval") or "").strip().rstrip(".")
     if not reason:
         return ""

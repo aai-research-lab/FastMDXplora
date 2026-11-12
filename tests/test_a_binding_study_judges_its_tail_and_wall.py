@@ -242,6 +242,9 @@ class TestWhatARefusalSaysAndSaves:
         assert binding["delta_g_kjmol"] is not None
         assert binding["bulk_judged"].endswith(
             "since the study ran no bootstrap (`bootstrap_resamples: 0`)")
+        # Said once, on the interval's line, and not again on the tail's.
+        out = capsys.readouterr().out
         assert ("The tail was judged against 0.6 kJ/mol alone and its tilt "
-                "was not judged: the study ran no bootstrap "
-                "(bootstrap_resamples: 0).") in capsys.readouterr().out
+                "was not judged.\n") in out
+        assert "No interval:    No bootstrap was run" in out
+        assert "the study ran no bootstrap" not in out

@@ -257,6 +257,11 @@ DELTA_G_CONFIDENCE = 0.95
 #: same number. The corrections are constants the resamples never saw.
 NO_SPREAD = 1e-12
 
+#: Said after an interval whose error is a floor
+#: (`delta_g_uncertainty_is_a_floor`), in the console and the GUI: such an
+#: interval is at least that wide.
+FLOOR_SAID = "or wider (a window is too short for its correlation time)"
+
 
 def _finite(value: Any) -> "float | None":
     """`value` as a float, or None where it is missing, NaN or infinite."""
