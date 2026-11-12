@@ -126,6 +126,9 @@
     // written only once its frame is drawn (`setPlaybackFrame`).
     seeking: 0,
     playbackFrameAsked: 0,
+    // The frames asked for and not yet shown (`setPlaybackFrame`): a piece
+    // of the frames arriving waits for them before it shows its frame again.
+    playbackFramesOnTheirWay: new Set(),
     playbackLoaded: false,
     // The frames are in the engine (playbackLoaded: and shown, ready).
     framesRendered: false,
@@ -2318,6 +2321,8 @@
         announce("Trajectory playback could not be loaded. Live molecular updates still work.");
         STATE.playbackLoaded = false;
         STATE.framesRendered = false;
+        // The rest of its frames are not appended to a load that failed.
+        STATE.framesArriving = null;
         return false;
       } finally {
         if (STATE.playbackLoadPromise === loadPromise) STATE.playbackLoadPromise = null;
@@ -2338,6 +2343,7 @@
       pieces = null;
     }
     STATE.framesPieces = null;
+    STATE.framesArriving = null;
     if (!pieces || !pieces.ok || !Array.isArray(pieces.pieces) || !pieces.pieces.length) {
       // Pieces linked out of the study are not read: the frames are played whole.
       if (pieces?.not_read) refuse(`The frames are played whole: ${pieces.not_read}`);
@@ -2366,12 +2372,21 @@
       const arriving = (async () => {
         for (const piece of pieces.pieces.slice(1)) {
           const bytes = await fetched(piece);
-          if (!isViewerGenerationCurrent(generation) || STATE.engine !== engine) return;
+          // The frames loaded again (or their load failed): their own
+          // pieces arrive, and these are not given to them.
+          const ours = () => isViewerGenerationCurrent(generation) && STATE.engine === engine
+            && STATE.framesArriving === arriving;
+          if (!ours()) return;
           parts.push(bytes);
           STATE.framesPieces.baseParts = parts;
           const count = await engine.appendFrames(joinedBytes(parts));
           // Given whole meanwhile (the frames superposed), or loaded again.
-          if (!count || !STATE.framesPieces) return;
+          if (!count || !STATE.framesPieces || !ours()) return;
+          // A frame asked for meanwhile (the first frame of the load, or a
+          // seek) is shown first: the frame shown again below is the one it
+          // showed, where asking over it showed the frame before it.
+          await untilNoFrameIsOnItsWay();
+          if (!STATE.framesPieces || !ours()) return;
           STATE.framesPieces.loaded = count;
           STATE.framesPieces.baseLoaded = Math.min(sourceIndices.length,
             (pieces.pieces.slice(0, parts.length).reduce((sum, one) => sum + one.frames, 0)));
@@ -3170,7 +3185,26 @@
     }
   }
 
+  /** A frame of the playback shown (`showPlaybackFrame`), noted while it
+   * is on its way. A later ask outranks it; the frames arriving in pieces
+   * wait for it (`untilNoFrameIsOnItsWay`) instead of asking over it. */
   async function setPlaybackFrame(frame) {
+    const showing = showPlaybackFrame(frame);
+    STATE.playbackFramesOnTheirWay.add(showing);
+    try {
+      return await showing;
+    } finally {
+      STATE.playbackFramesOnTheirWay.delete(showing);
+    }
+  }
+
+  async function untilNoFrameIsOnItsWay() {
+    while (STATE.playbackFramesOnTheirWay.size) {
+      await Promise.allSettled([...STATE.playbackFramesOnTheirWay]);
+    }
+  }
+
+  async function showPlaybackFrame(frame) {
     const generation = STATE.viewerGeneration;
     const engine = STATE.engine;
     if (!engine || !STATE.framesRendered || STATE.playbackFrames < 1) return false;

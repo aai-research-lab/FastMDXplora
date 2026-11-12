@@ -121,8 +121,9 @@ def test_the_viewer_plays_from_the_first_piece(study, small_pieces):
             if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
                 pytest.skip("this browser has no WebGL, so the viewer cannot render")
             page.wait_for_function(f"() => {state}.model")
-            page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
-                          "await (await fetch('/api/frames-info')).json())")
+            played = page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                                   "await (await fetch('/api/frames-info')).json())")
+            assert played is True, errors
             page.wait_for_function(f"() => {state}.framesPieces"
                                    f" && {state}.framesPieces.loaded === 6"
                                    f" && {state}.engine.frameCount() === 6")
@@ -144,6 +145,128 @@ def test_the_viewer_plays_from_the_first_piece(study, small_pieces):
     assert pieces == {"total": 6, "loaded": 6, "pieces": 3}
     assert loaded == "6"
     assert after == [6, 5, 6]
+
+
+#: The pieces after the first held until the test lets each come.
+_HELD_PIECES = """(() => {
+    const real = window.fetch;
+    const held = {};
+    const one = (k) => held[k] || (held[k] = (() => {
+        let let_it; const coming = new Promise((done) => { let_it = done; });
+        return {coming, let_it};
+    })());
+    window.letThePieceCome = (k) => one(String(k)).let_it();
+    window.fetch = async (input, init) => {
+        const asked = String((input && input.url) || input).match(/frames-piece\\.xtc\\?k=(\\d+)/);
+        if (asked && asked[1] !== "0") await one(asked[1]).coming;
+        return real(input, init);
+    };
+})();"""
+
+
+def test_a_frame_asked_for_while_a_piece_arrives_is_the_frame_shown(study, small_pieces):
+    """A frame asked for while a piece of the frames was appended: the piece
+    then showed the frame again, and asked for the one before the frame
+    asked for over it, as the frame asked for was not yet shown. The frame
+    asked for stayed unshown; at the load's first frame, the load failed."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+            page.add_init_script(_HELD_PIECES)
+            page.set_default_timeout(120000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => {state}.model")
+            played = page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                                   "await (await fetch('/api/frames-info')).json())")
+            first = page.evaluate(f"() => [{state}.engine.frameCount(), {state}.engine.frame()]")
+            # The second piece appended slowly, so a frame is asked for meanwhile.
+            page.evaluate(f"""() => {{
+                const engine = {state}.engine;
+                const real = Object.getPrototypeOf(engine).appendFrames;
+                window.appending = 0;
+                engine.appendFrames = async function (bytes) {{
+                    window.appending += 1;
+                    await new Promise((done) => setTimeout(done, 1500));
+                    return real.call(this, bytes);
+                }};
+            }}""")
+            page.evaluate("() => window.letThePieceCome(1)")
+            page.wait_for_function("() => window.appending === 1")
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {frame: 1}}))")
+            # Said once the piece has shown its frame again.
+            page.wait_for_selector('#trajectory-row[data-frames-loaded="4"]', state="attached")
+            shown = page.evaluate(f"() => [{state}.engine.frameCount(), {state}.engine.frame(),"
+                                  " document.getElementById('traj-slider').value]")
+            page.evaluate("() => window.letThePieceCome(2)")
+            page.wait_for_selector('#trajectory-row[data-frames-loaded="6"]', state="attached")
+            last = page.evaluate(f"() => [{state}.engine.frameCount(), {state}.engine.frame()]")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert played is True
+    assert first == [2, 0]
+    assert shown == [4, 1, "1"]
+    assert last == [6, 1]
+
+
+def test_the_first_frame_is_shown_while_a_piece_arrives(study, small_pieces):
+    """The load's first frame asked for while the second piece was appended:
+    the piece asked over it, and the load said it could not show it."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+            page.set_default_timeout(120000)
+            errors: list[str] = []
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+                pytest.skip("this browser has no WebGL, so the viewer cannot render")
+            page.wait_for_function(f"() => {state}.model && {state}.engine")
+            # Each piece after the first appended slowly: the first frame is
+            # asked for while one is.
+            page.evaluate(f"""() => {{
+                const engine = {state}.engine;
+                const real = Object.getPrototypeOf(engine).appendFrames;
+                engine.appendFrames = async function (bytes) {{
+                    await new Promise((done) => setTimeout(done, 1500));
+                    return real.call(this, bytes);
+                }};
+            }}""")
+            played = page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
+                                   "await (await fetch('/api/frames-info')).json())")
+            page.wait_for_selector('#trajectory-row[data-frames-loaded="6"]', state="attached")
+            after = page.evaluate(f"() => [{state}.playbackLoaded, {state}.engine.frameCount(),"
+                                  f" {state}.engine.frame()]")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert played is True
+    assert after == [True, 6, 0]
 
 
 def test_frames_asked_for_before_the_structure_arrives_keep_the_canvas(study):
