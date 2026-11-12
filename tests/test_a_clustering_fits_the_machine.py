@@ -1422,9 +1422,9 @@ def studies(tmp_path_factory):
 #: ``fastmdx analyze`` in its own process, as `python -m fastmdxplora` runs
 #: it, to clustering's memory check: there it prints what the process holds
 #: (the libraries mapped, as the check maps them) past what it held as it
-#: started, and stops. With :data:`_AT_ITS_START_SCRIPT`, what a run of the
-#: command line holds at the check is read from a process of its own kind,
-#: under coverage or not.
+#: started, and stops. With :data:`_UNDER_THE_LIMIT_SCRIPT`, what a run of
+#: the command line holds at the check is read from a process of its own
+#: kind, under coverage or not.
 _TO_THE_CHECK_SCRIPT = r"""
 import os, runpy, sys
 src = sys.argv[1]
@@ -1449,11 +1449,32 @@ sys.argv = ["fastmdxplora", *sys.argv[2:]]
 runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
 """
 
-#: What an interpreter holds as it starts, before its first import.
-_AT_ITS_START_SCRIPT = r"""
-for line in open("/proc/self/status"):
-    if line.startswith("VmSize:"):
-        print("VMSTART", int(line.split()[1]) * 1024)
+#: ``fastmdx analyze`` in its own process, as :data:`_TO_THE_CHECK_SCRIPT`
+#: runs it, under ``RLIMIT_AS`` set from what this interpreter holds at the
+#: same point of its start: that, what the reading took from there to the
+#: check (``argv[2]``), and the room meant (``argv[3]``). Nothing of the
+#: command line is changed. It prints what it held at its start, the limit
+#: and its threads, and its threads and ``VmSize`` as it exits.
+_UNDER_THE_LIMIT_SCRIPT = r"""
+import os, runpy, sys
+src = sys.argv[1]
+sys.path.insert(0, src)
+
+def status(name):
+    for line in open("/proc/self/status"):
+        if line.startswith(name + ":"):
+            return int(line.split()[1])
+    raise SystemExit("no " + name)
+
+start = status("VmSize") * 1024
+import atexit, resource
+limit = start + int(sys.argv[2]) + int(sys.argv[3])
+resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+print("STARTED", start, limit, status("Threads"), flush=True)
+atexit.register(lambda: print("ENDED", status("Threads"), status("VmSize") * 1024, flush=True))
+from fastmdxplora.analysis import cluster  # noqa: F401 -- as the reading imports it
+sys.argv = ["fastmdxplora", *sys.argv[4:]]
+runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
 """
 
 
@@ -1468,10 +1489,6 @@ ROOM_AT_600000 = 600000 * 1024 - 548937728
 #: plan for its 500 frames (61.0 MiB) is 1.4 MiB under it.
 ROOM_READ_WITHIN = 2**20
 
-#: Runs of the 600000 test, at the most, to bring the room its run reads to
-#: :data:`ROOM_AT_600000`.
-ROOM_TRIES = 3
-
 
 @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
 class TestTheCommandLinesOwnProcess:
@@ -1485,9 +1502,9 @@ class TestTheCommandLinesOwnProcess:
     room is read."""
 
     def test_500_frames_run_whole_under_ulimit_v_600000(self, studies, tmp_path):
-        """Under ``ulimit -v`` itself, set from the start of `python -m
-        fastmdxplora analyze`: to what that interpreter holds as it starts,
-        what such a run holds at the check past its start
+        """Under ``ulimit -v`` itself, set in the run's own interpreter as it
+        starts (:data:`_UNDER_THE_LIMIT_SCRIPT`): to what it holds there,
+        what such a run takes from there to the check
         (:data:`_TO_THE_CHECK_SCRIPT`), and the room ``ulimit -v`` 600000
         left tri-alanine. The holding was read whole, in a process of another
         kind: on CI's coverage leg the run held more than that, and was
@@ -1500,16 +1517,13 @@ class TestTheCommandLinesOwnProcess:
         process here compiles into a cache of its own, written by a first
         reading, so the reading and the run load the same bytecode.
 
-        The run itself is where the room is read, and its record saves it
-        (``findings.memory.bytes_address_space``): where that is not
-        :data:`ROOM_AT_600000` (within :data:`ROOM_READ_WITHIN`), the limit
-        is moved by the difference and the run made again. On CI's ubuntu
-        3.13 leg the run held 8.1 to 8.2 MiB more at the check than the
-        readings said, on 2 of 5 runs, and read 56.9 MB of room for 64.0
-        MB: refused, rightly, at a room the test did not mean. Its child
-        processes are not traced (pytest-cov 7 starts no coverage in them),
-        and under `--cov` here the run read the room meant."""
-        import resource
+        The limit was set from what another interpreter held at its start,
+        and on CI's ubuntu 3.13 leg the run read 56.9 MB of room for 64.0 MB
+        on 2 runs of 5, 8.1 to 8.2 MiB short. Set from the run's own start, a
+        difference at the start is not in the room; one between the start
+        and the check, the command line's own, still is: the room the run
+        read is asserted, and a run that took more than the reading between
+        the two fails, saying both."""
         import subprocess
         from pathlib import Path
 
@@ -1521,38 +1535,42 @@ class TestTheCommandLinesOwnProcess:
                if key != "PYTHONDONTWRITEBYTECODE"}
         env["PYTHONPYCACHEPREFIX"] = str(tmp_path / "bytecode")
 
-        def said(script: str, word: str, *args: str) -> int:
-            done = subprocess.run([sys.executable, "-c", script, *args], capture_output=True,
+        def ran(script: str, *args: str) -> subprocess.CompletedProcess:
+            return subprocess.run([sys.executable, "-c", script, *args], capture_output=True,
                                   text=True, timeout=900, cwd=study, env=env)
-            return int(next(line.split()[1] for line in done.stdout.splitlines()
-                            if line.startswith(word)))
+
+        def said(done: subprocess.CompletedProcess, word: str) -> list[int]:
+            line = next((line for line in done.stdout.splitlines()
+                         if line.startswith(word + " ")), None)
+            assert line is not None, (f"no {word} line, exit {done.returncode}\n"
+                                      + done.stdout[-3000:] + done.stderr[-2000:])
+            return [int(part) for part in line.split()[1:]]
 
         # The cache written, then read as the run reads it.
-        said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze)
-        limit = (said(_AT_ITS_START_SCRIPT, "VMSTART")
-                 + said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze) + ROOM_AT_600000)
+        said(ran(_TO_THE_CHECK_SCRIPT, src, *analyze), "VMCHECK")
+        growth = said(ran(_TO_THE_CHECK_SCRIPT, src, *analyze), "VMCHECK")[0]
 
-        env_run = dict(env, PYTHONPATH=src)
-        rooms = []
-        for _ in range(ROOM_TRIES):
-            def under_the_limit(limit: int = limit) -> None:
-                resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-
-            done = subprocess.run(
-                [sys.executable, "-m", "fastmdxplora", *analyze],
-                capture_output=True, text=True, timeout=900, cwd=study, env=env_run,
-                preexec_fn=under_the_limit)
+        # A record of an earlier run is not read as this run's.
+        (study / "analysis" / "cluster" / "options.json").unlink(missing_ok=True)
+        done = ran(_UNDER_THE_LIMIT_SCRIPT, src, str(growth), str(ROOM_AT_600000), *analyze)
+        output = f"exit {done.returncode}\n" + done.stdout[-3000:] + done.stderr[-2000:]
+        start, limit, threads = said(done, "STARTED")
+        try:
             _, findings = _record(study, "cluster")
-            room = findings.get("memory", {}).get("bytes_address_space")
-            assert room is not None, done.stdout[-3000:] + done.stderr[-2000:]
-            rooms.append(room)
-            if abs(room - ROOM_AT_600000) <= ROOM_READ_WITHIN:
-                break
-            limit += ROOM_AT_600000 - room
-        rooms_said = (f"rooms read at the check {[round(r / 2**20, 2) for r in rooms]} MiB, "
-                      f"meant {ROOM_AT_600000 / 2**20:.2f}\n")
-        assert abs(rooms[-1] - ROOM_AT_600000) <= ROOM_READ_WITHIN, rooms_said
-        assert done.returncode == 0, rooms_said + done.stdout[-3000:] + done.stderr[-2000:]
+        except (OSError, KeyError, ValueError) as error:
+            pytest.fail(f"no record of the run's clustering ({error!r}); {output}")
+        room = findings.get("memory", {}).get("bytes_address_space")
+        assert room is not None, f"no room in the run's record; {output}"
+        took = limit - room - start
+        ended = next((line.split()[1] for line in done.stdout.splitlines()
+                      if line.startswith("ENDED ")), "not read")
+        assert abs(room - ROOM_AT_600000) <= ROOM_READ_WITHIN, (
+            f"the run read {room / 2**20:.2f} MiB of room at the check, meant "
+            f"{ROOM_AT_600000 / 2**20:.2f}: from its start to the check it took "
+            f"{took / 2**20:.2f} MiB, the reading {growth / 2**20:.2f} "
+            f"({(took - growth) / 2**20:+.2f}); threads at its start {threads}, at its "
+            f"end {ended}; {output}")
+        assert done.returncode == 0, output
         for name in ("rmsd", "cluster"):
             row, findings = _record(study, name)
             assert row["status"] == "ok", (name, row["message"])
