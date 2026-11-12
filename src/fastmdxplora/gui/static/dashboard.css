@@ -1509,12 +1509,6 @@ button {
 /* ============================================================ */
 /* Analysis cards                            */
 /* ============================================================ */
-.quick-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 18px;
-}
 /* What the analyses determined, one table (analysis-page.js). */
 .analysis-results { margin-bottom: 20px; padding: 16px 18px; }
 .analysis-results[hidden] { display: none; }
