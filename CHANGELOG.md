@@ -818,15 +818,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   fresh tree writing its bytecode (57.7 MB for 64.0), and passed or failed
   under `--cov` as the caches stood. The room the check reads is now the
   one the test means, 62.2 to 62.5 MiB, and 3 MiB less fails.
-- Tests: the 600000 test reads the room from its run's own record
-  (`findings.memory.bytes_address_space`); where that is more than 1 MiB
-  from the room 600000 left tri-alanine, the limit moves by the
-  difference and the run is made again, 3 runs at the most. On CI's
-  ubuntu 3.13 leg the run held 8.1 to 8.2 MiB more at the check than the
-  readings said, on 2 of 5 runs, and was refused (56.9 MB of room for
-  64.0). Coverage is not the cause: pytest-cov 7 traces no child process.
-  With the readings made 8.56 MB low the test as it was is refused the
-  same way and passes now; with 3 MiB less room meant it still fails.
+- Tests: the 600000 test sets its limit in the run's own interpreter, from
+  what that interpreter holds as it starts, what the reading took from
+  there to the check, and the room 600000 left tri-alanine. The limit was
+  set from another interpreter's start, and on CI's ubuntu 3.13 leg the run
+  read 56.9 MB of room for 64.0 MB on 2 runs of 5, 8.1 to 8.2 MiB short;
+  coverage is not the cause, as pytest-cov 7 traces no child process. A
+  run that takes more than the reading between its start and the check
+  still fails, and says both: one more thread started where the room is
+  read gave 54.38 MiB for 62.43, 8.05 MiB more than the reading. One more
+  thread at the interpreter's start passes, and a plan 3 MiB larger
+  still fails. The record is removed before the run, and a missing
+  reading or record fails with the run's exit status and output.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
