@@ -99,6 +99,11 @@ DEFAULT_RESAMPLES = 200
 #: 10,000 frames and 91.9% on 3,000.
 BLOCKS_PER_CORRELATION_TIME = 3
 
+#: The most of a series' length :func:`spread_factor` takes off for the
+#: centring on its own mean: ``b / n`` of a series that resolves its
+#: correlation time (25 g or more) at blocks of 3g.
+CENTRING_LIMIT = 0.12
+
 #: Below this ratio of effective to actual samples, a resampling error bar
 #: on a *weighted* average stops being an estimate and becomes a floor.
 #:
@@ -212,9 +217,20 @@ def spread_factor(frames: int, block: int, inefficiency: float) -> float:
     ((1 - r)^2 b g)``. About ``1 - 1 / (2k)`` for blocks of ``k g``, so the
     factor is 1.15 at blocks of 2g and 1.10 at 3g, and exactly ``sqrt(g)``
     for blocks of one frame on a long series. ``sqrt(n / (n - b))`` for
-    independent frames, and one where the block is the whole series (there
-    is no spread to widen). The denominator is held at no less than
-    ``(1 - b / n) / g``, what blocks of single frames would give.
+    independent frames.
+
+    The form holds while blocks are short against the series: within 0.5%
+    of the resampler's exact expectation at ten blocks or more, and off by
+    a factor of two either way once a block is most of the series. So the
+    centring is taken at no more than :data:`CENTRING_LIMIT` of the series,
+    the most a series that resolves its correlation time has at blocks of
+    3g (its length 25 g or more), and the denominator is held at no less
+    than ``A / 2``. Neither binds on such a series. On a shorter one they
+    keep the factor at about 1.2 or less at blocks of 3g, continuous in the
+    block up to the whole series, and at least one: its error is a floor
+    then, as `resolved` says, and widening it by a number read off that
+    same short series (A - b/n alone gave 99.5 for 297-frame blocks of 300
+    frames, and 1 at 300) made the floor arbitrary rather than safe.
 
     Computed against AR(1) series (rho 0.5, 0.9 and 0.98, 3,000 to 30,000
     frames, 1,000 to 1,500 series each): with it the standard error of the
@@ -229,16 +245,17 @@ def spread_factor(frames: int, block: int, inefficiency: float) -> float:
     boxcar), it is high (4% at 3g).
     """
     n, b, g = int(frames), int(block), float(inefficiency)
-    if n < 2 or b >= n or b < 1:
+    if n < 2 or b < 1:
         return 1.0
-    centred = b / n
+    b = min(b, n)
+    centred = min(b / n, CENTRING_LIMIT)
     if not np.isfinite(g) or g <= 1.0:
         return float(1.0 / np.sqrt(1.0 - centred))
     r = (g - 1.0) / (g + 1.0)
     held = 1.0 - 2.0 * r * (1.0 - r ** b) / ((1.0 - r) ** 2 * b * g)
     # A block of one frame holds 1/g of it, and a longer block more.
-    held = max(held, 1.0 / g)
-    return float(1.0 / np.sqrt(max(held - centred, (1.0 - centred) / g)))
+    held = min(1.0, max(held, 1.0 / g))
+    return float(1.0 / np.sqrt(max(held - centred, held / 2.0)))
 
 
 def _resample_one(values: np.ndarray, block: int, rng: np.random.Generator) -> np.ndarray:
@@ -298,9 +315,20 @@ def block_bootstrap(
     # resamples of a statistic of several series cannot be widened series
     # by series, and an error read low is the one this module exists to
     # remove.
-    factor = max((spread_factor(s.size, b, g)
-                  for s, (g, _n), b in zip(series, read, blocks)), default=1.0)
-    resolved = all(correlation_is_resolved(s) for s in series if s.size > 1)
+    #
+    # Only series long enough to resolve their own correlation time set it
+    # where there are any. A short one's factor is not to be trusted (its
+    # g is a lower bound), and taken as the largest it widened every other
+    # window with it: one 250-frame window among fifteen of 3000 frames
+    # put a binding free energy's error at 57 kJ/mol where the spread from
+    # study to study was 1.6. Its own error is a floor, which the note and
+    # `resolved` say.
+    each = [correlation_is_resolved(s) if s.size > 1 else True for s in series]
+    factors = [spread_factor(s.size, b, g)
+               for s, (g, _n), b in zip(series, read, blocks)]
+    trusted = [f for f, ok in zip(factors, each) if ok] or factors
+    factor = max(trusted, default=1.0)
+    resolved = all(each)
     note = None
     if not resolved:
         note = (

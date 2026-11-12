@@ -22,7 +22,7 @@ from scipy.special import ndtr
 from scipy.stats import t as student
 
 from fastmdxplora import uncertainty
-from fastmdxplora.statistics import statistical_inefficiency
+from fastmdxplora.statistics import correlation_is_resolved, statistical_inefficiency
 from fastmdxplora.uncertainty import (
     block_bootstrap,
     block_length_for,
@@ -114,9 +114,20 @@ class TestTheFactor:
         assert spread_factor(3000, 300, 1.0) == pytest.approx(
             math.sqrt(3000 / 2700))
 
-    def test_a_block_the_whole_series_has_nothing_to_widen(self):
-        assert spread_factor(3000, 3000, 19.0) == 1.0
+    def test_a_series_too_short_for_its_block_is_widened_a_bounded_amount(self):
+        """Continuous in the block up to the whole series, at least one, and
+        bounded: about 1.2 at blocks of 3g, 1.35 at most from half the
+        series up. ``A - b/n`` alone gave 99.5 for 297-frame blocks of 300
+        frames, and 1 at 300."""
+        for frames, g in ((300, 99.0), (250, 79.6), (60, 17.2), (1000, 330.0)):
+            factors = [spread_factor(frames, b, g)
+                       for b in range(int(0.5 * frames), frames + 1)]
+            assert min(factors) >= 1.0
+            assert max(factors) < 1.4
+            assert spread_factor(frames, frames, g) < 1.2
+            assert max(abs(a - b) for a, b in zip(factors, factors[1:])) < 0.01
         assert spread_factor(1, 1, 19.0) == 1.0
+        assert spread_factor(300, 400, 99.0) == spread_factor(300, 300, 99.0)
 
     def test_blocks_are_three_correlation_times(self):
         values = ar1(0.9, 20000, np.random.default_rng(11))
@@ -286,10 +297,12 @@ def _expected_bootstrap_variance(rho, frames, block):
     return ((count - 1) * spread(block) + spread(last)) / frames ** 2
 
 
-@pytest.mark.parametrize("rho, frames, block", [(0.9, 1000, 58), (0.9, 300, 58)])
+@pytest.mark.parametrize("rho, frames, block", [(0.9, 1000, 58), (0.5, 300, 9),
+                                                (0.98, 3000, 297)])
 def test_the_centring_comes_off_the_long_run_variance(rho, frames, block):
-    """``A - b/n``, not ``A (1 - b/n)``: the product form was 0.5% low here
-    at 17 blocks and 3% low at 5."""
+    """``A - b/n``, not ``A (1 - b/n)``: the product form was 0.5% low at
+    17 blocks and 1% low at 10. Each case here is within
+    `CENTRING_LIMIT` (b/n at most 0.12), where the form holds."""
     g = (1 + rho) / (1 - rho)
     needed = math.sqrt(exact_error(rho, frames) ** 2
                        / _expected_bootstrap_variance(rho, frames, block))
@@ -337,3 +350,37 @@ def test_a_binding_free_energy_saves_its_widening():
     older = {k: v for k, v in derived.items() if k != "spread_factor"}
     assert _what_the_resamples_said(older, 0.0)["delta_g_spread_factor"] is None
     assert _what_the_resamples_said(None, 0.0)["delta_g_spread_factor"] is None
+
+
+def _pooled_mean(windows):
+    return float(np.concatenate(list(windows.values())).mean())
+
+
+@pytest.mark.parametrize("long_rho, long_frames, short_rho, short_frames", [
+    (0.9, 3000, 0.97, 250),   # one window stopped early beside fifteen
+    (0.9, 1500, 0.95, 60),    # a 60-frame window among 1500-frame ones
+])
+def test_one_short_window_does_not_widen_the_others(long_rho, long_frames,
+                                                    short_rho, short_frames):
+    """The largest factor over the windows was every window's, and a short
+    window's was read off its own short series: one 250-frame window among
+    fifteen of 3000 frames set it at 42.5, a binding free energy's error at
+    57 kJ/mol against a spread of 1.6, and a 60-frame window widened a PMF's
+    band 11 times. Only windows that resolve their correlation time set it
+    now; the short one's error is a floor, and said so."""
+    rng = np.random.default_rng(21)
+    windows = {i: ar1(long_rho, long_frames, rng) for i in range(15)}
+    windows[15] = ar1(short_rho, short_frames, rng)
+    total = 15 * long_frames + short_frames
+    exact = math.sqrt((15 * (long_frames * exact_error(long_rho, long_frames)) ** 2
+                       + (short_frames * exact_error(short_rho, short_frames)) ** 2)
+                      / total ** 2)
+    boot = block_bootstrap(windows, _pooled_mean, resamples=200, seed=4)
+    longest = max(spread_factor(long_frames, block_length_for(w),
+                                statistical_inefficiency(w))
+                  for i, w in windows.items()
+                  if i < 15 and correlation_is_resolved(w))
+
+    assert boot.resolved is False
+    assert boot.spread_factor == pytest.approx(longest)
+    assert float(boot.standard_error) == pytest.approx(exact, rel=0.2)
