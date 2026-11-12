@@ -3,7 +3,8 @@
 `simulation.umbrella.compute_pmf` puts a 95% band on each bin of a
 potential of mean force: a moving-block bootstrap over each window's own
 samples (`uncertainty.block_bootstrap`), the band the 2.5th and 97.5th
-percentiles of the resampled curves. Nothing had checked that the band
+percentiles of the resampled curves, widened about their mean by
+`uncertainty.spread_factor`. Nothing had checked that the band
 holds the truth as often as it says. This does, where the truth is known:
 
 - a double well along a coordinate, F(x) = H ((x - c)^2 / a^2 - 1)^2, with
@@ -35,36 +36,36 @@ and the truth to zero at their mean over the bins between the window
 centres, where no single bin's noise sets the zero; it is read from the
 same resamples, so both gauges come from one bootstrap at the same seeds.
 ``--block-factor`` reruns the count with blocks of that many correlation
-times (the package's is 2), to see how much of a short error is the block
+times (the package's is 3), to see how much of a short error is the block
 length.
 
 On the default sets (seeds 1000 to 1099, the command below), zeroed as
-reported, the band held the truth in 86.4% of bins at 200 resamples (+/-
-3.2 points at 95% over sets) and 87.0% at 400, against the 95% it states:
-short by about 9 points. With each resample zeroed at its own lowest bin
-instead, as before, it held 75.5% (76.2% at 400), and its middle sat 0.47
-of its error above the curve. Between the centres the curve sat a median
-0.81 of its error above the truth, and the band's middle +0.01 from the
-curve. Value +/- 1.96 SE held the truth in 87.2% of the bins between the
-centres, against the band's 86.2% (74.7% with the old zeroing): both carry
-the curve's offset. Zeroed at the mean over the bins between the centres,
-from the same resamples, the curve sat on the truth (+0.01 SE), the band's
-middle on the curve (+0.01 SE), and the band held the truth in 89.5% of
-the bins between the centres at 200 resamples and 90.0% at 400.
+reported, the band held the truth in 91.2% of bins at 200 resamples (+/-
+2.5 points at 95% over sets) and 91.7% at 400, against the 95% it states.
+Between the centres the curve sat a median 0.69 of its error above the
+truth, and the band's middle +0.01 from the curve. Value +/- 1.96 SE held
+the truth in 92.4% of the bins between the centres, against the band's
+91.2%: both carry the curve's offset. Zeroed at the mean over the bins
+between the centres, from the same resamples, the curve sat on the truth
+(+0.01 SE), the band's middle on the curve (+0.01 SE), and the band held
+the truth in 94.1% of the bins between the centres at 200 resamples and
+94.5% at 400. In that gauge the stated error is the curve's spread from
+set to set within a few per cent: 1.01 on these sets (1.02 at 400), 0.96
+on seeds 1000 to 1029 (the first 30 of these) and 1.05 on seeds 52000 to
+52039. The same reading in the reported gauge (1.13 here) is not a
+reading of the error alone: there the error and the spread both carry the
+noise of the lowest bin.
 
-What is left is the error's size, read in the second gauge: the stated
-error is about 13% smaller than the curve's spread from set to set (0.869
-on these sets at 200 and 400 resamples). That reading moves with the seeds
-too, from 0.82 on seeds 1000 to 1029 (the first 30 of these) to 0.91 on
-seeds 52000 to 52039, but is below one on each. Blocks of four correlation
-times, twice the package's (``--block-factor 4``, 200 resamples), raise it
-to 0.916, and the coverage between the centres to 90.7%; on seeds 52000 to
-52039 blocks of four gave 0.949 and blocks of eight 0.936, no further. The
-same reading in the reported gauge (0.968 here) is not a reading of the
-error alone: there the error and the spread both carry the noise of the
-lowest bin, and it moves more with the seeds, from 0.86 on seeds 1000 to
-1029 to 1.10 on seeds 52000 to 52039. The band is reported as computed,
-not corrected.
+With blocks of two correlation times and no widening, as before, the band
+held the truth in 86.4% of bins at 200 resamples and 87.0% at 400, 89.5%
+and 90.0% between the centres in the mean gauge, and the stated error was
+about 13% smaller than the spread (0.869; 0.82 on seeds 1000 to 1029 and
+0.91 on seeds 52000 to 52039). Blocks of four correlation times raised it
+to 0.916 (0.949 on seeds 52000 to 52039, and 0.936 at eight there), not to
+one: the block bootstrap's variance runs low whatever the block length,
+which the widening undoes. With each resample zeroed at its own lowest bin
+instead, as before that, the band held 75.5% (76.2% at 400), and its
+middle sat 0.47 of its error above the curve.
 
     python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 400 --out pmf_coverage.json
     python -m fastmdxplora.validation.pmf_coverage --sets 100 --resamples 200 --block-factor 4
@@ -439,7 +440,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resamples", type=int, nargs="+", default=[200])
     parser.add_argument("--first-seed", type=int, default=1000)
     parser.add_argument("--block-factor", type=float, default=None,
-                        help="Blocks of this many correlation times (the package's is 2).")
+                        help="Blocks of this many correlation times (the package's is 3).")
     parser.add_argument("--out", default=None, help="Also write the counts as JSON here.")
     return parser
 
