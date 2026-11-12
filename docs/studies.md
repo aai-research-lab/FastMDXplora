@@ -920,13 +920,15 @@ interval. Where the resamples give no spread there is no interval:
 `delta_g_confidence_kjmol` and `delta_g_standard_error_kjmol` are `null` and
 `delta_g_no_interval` says why, as with `bootstrap_resamples: 1` (one resample
 has no spread, and its percentiles made an interval of no width) or where every
-resample gave the same number (a standard error of rounding, at most 1e-12
-times the number, or 1e-12 kJ/mol for a number under 1, counts as none). With
-no bootstrap (`bootstrap_resamples: 0`) there is none either, and
-`delta_g_no_interval` says so. `confidence_low` and `confidence_high` in
-`derived` are the resamples' own uncorrected percentiles, of no width with one
-resample. An interval whose block length is a lower bound
-is still a floor (`delta_g_uncertainty_is_a_floor`), whatever its multiplier.
+resample gave the same number (a standard error of rounding counts as none:
+at most 1e-12 times the number before the cone and standard-state
+corrections, the number the bootstrap resampled, or 1e-12 kJ/mol where that
+is under 1). With no bootstrap (`bootstrap_resamples: 0`) there is none
+either, and `delta_g_no_interval` says so. `confidence_low` and
+`confidence_high` in `derived` are the resamples' own uncorrected
+percentiles, of no width with one resample. An interval whose block length
+is a lower bound is still a floor (`delta_g_uncertainty_is_a_floor`),
+whatever its multiplier.
 
 **The check that comes with it.** The correction depends on the angle and the
 answer must not. Run two cone angles and compare: 20° and 45° differ by
