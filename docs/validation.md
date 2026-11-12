@@ -386,23 +386,23 @@ python -m fastmdxplora.validation.pmf_coverage --sets 40 --first-seed 52000 --re
 python -m fastmdxplora.validation.pmf_coverage --sets 40 --first-seed 52000 --resamples 200 --block-factor 8
 ```
 
-On 100 sets (seeds 1000 to 1099) the band held the true profile in 91.2%
+On 100 sets (seeds 1000 to 1099) the band held the true profile in 91.3%
 of bins at 200 resamples, +/- 2.5 points at 95% over sets, against the 95%
 it states. On the same sets 400 resamples add 0.5 points. With blocks of
-two correlation times and no widening, as before this round, it held
+two correlation times and no widening, as up to 2.6.0, it held
 86.4% (87.0% at 400); with each resample set to zero at its own lowest bin
 as well, as before that, 75.5%. What is left of the shortfall is the
 curve's zero.
 
 The curve is set to zero at its lowest bin, which noise puts low: between
 the window centres it sits about 0.7 of its error above the truth (a median
-0.69), so barriers read high. The band's middle sits on the curve (+0.01
+0.68), so barriers read high. The band's middle sits on the curve (+0.01
 of its error), so the band carries the curve's offset and adds none. Over
-the bins between the window centres the band held the truth in 91.2% of
+the bins between the window centres the band held the truth in 91.4% of
 them; with the curve, each resample and the truth zeroed instead at their
-mean over those bins, read from the same resamples, it held it in 94.1%
-(94.5% at 400). Value +/- 1.96 SE held the truth in 92.4% of the bins
-between the centres, close to the band's 91.2%. At the curve's lowest bin
+mean over those bins, read from the same resamples, it held it in 94.2%
+(94.5% at 400). Value +/- 1.96 SE held the truth in 92.5% of the bins
+between the centres, close to the band's 91.4%. At the curve's lowest bin
 the band holds the truth only where the truth's own lowest bin is the same
 one. The offset is said in `pmf.json` beside the band
 (`pmf.uncertainty.zero`) and beside a barrier (`summary.barrier_zero`), and
@@ -410,15 +410,21 @@ not corrected: the curve is zeroed at its lowest bin, which noise puts low,
 so the curve and a barrier read off it sit about 0.7 of their error high.
 
 The bootstrap error is the curve's spread from set to set within a few per
-cent, read with the mean zeroing: 1.01 on these sets, 0.96 on seeds 1000
+cent, read with the mean zeroing: 1.02 on these sets, 0.97 on seeds 1000
 to 1029 (the first 30 of them) and 1.05 on seeds 52000 to 52039 (40 sets
-of their own). With blocks of two correlation times and no widening it was
-about 13% smaller (0.869; 0.82 and 0.91 on those seeds), and longer blocks
-alone did not close it: four correlation times gave 0.916 (0.949 on seeds
-52000 to 52039) and eight gave 0.936 there. A block bootstrap's variance
-runs low on correlated samples at any block length, by the correlation
-reaching past each block and by the resamples' centring on the window's
-own mean, and the widening undoes both. The same reading with the
+of their own). `--block-factor` widens the spread at its own block length
+too, so the commands above with it read whether the widened error moves
+with the block length, and it does not: at four correlation times 1.02 on
+seeds 1000 to 1099 (93.7% between the centres in the mean gauge, against
+94.2% at three) and 1.06 on seeds 52000 to 52039, and at eight 1.05 there
+(94.8% and 93.9%, against 94.9% at three). With blocks of two correlation
+times and no widening, as up to 2.6.0, it was about 13% smaller (0.869;
+0.82 and 0.91 on those seeds), and longer blocks alone did not close it:
+four correlation times gave 0.916 (0.949 on seeds 52000 to 52039) and
+eight gave 0.936 there. A block bootstrap's variance runs low on
+correlated samples at any block length, by the correlation reaching past
+each block and by the resamples' centring on the window's own mean, and
+the widening undoes both. The same reading with the
 lowest-bin zeroing (1.13 here) is not a reading of the error alone, since
 the error and the spread there both carry the lowest bin's noise.
 

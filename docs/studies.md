@@ -468,7 +468,7 @@ on seventeen windows the curve took a twentieth of a second and its interval
 fourteen seconds. `bootstrap_resamples` sets the count, fewer for a quick look,
 more for a figure, 0 for the curve alone; the count used is in `pmf.json`.
 The curve is zeroed at its lowest bin, which noise puts low, so the curve and a
-barrier read off it sit about 0.8 of their error high. The interval has no
+barrier read off it sit about 0.7 of their error high. The interval has no
 width at that bin, recorded as `pmf.uncertainty.zeroed_at`; the offset is said
 in `pmf.uncertainty.zero` and `summary.barrier_zero`, not corrected, and
 `pmf.uncertainty.resamples_left_out` counts the resamples empty there and so
@@ -924,26 +924,28 @@ the median standard error (1.14 before). The tail's check reads the
 resampled curves, now as wide as the error, and refused 20 of those 600
 studies where it refused 46, though their tails are flat. On independent
 frames nothing moved (575 of 599, 576 before). Two cases still read low:
-a run of only about 30 correlation times (93% to 94% on AR(1) series of a
-mean), and a correlation with a slow tail beside a fast decay, which the
-widening, reckoned for one exponential decay, undoes only in part (92% on
-3000 frames with half the correlation at 66 frames, 94.6% on 10000). The
-percentiles are saved beside it as
+a run of only about 30 correlation times (92.6% to 93.5% on AR(1) series of
+a mean, the error read off about ten blocks), and a correlation with a slow
+tail beside a fast decay, which the widening, reckoned for one exponential
+decay, undoes only in part (92% on 3000 frames with half the correlation at 66
+frames, 94.6% on 10000). The percentiles, widened about the resamples' mean by
+`spread_factor` as the error is, are saved beside it as
 `delta_g_percentile_interval_kjmol`, for comparison, and are not a 95%
 interval. Where the resamples give no spread there is no interval:
 `delta_g_confidence_kjmol` and `delta_g_standard_error_kjmol` are `null` and
 `delta_g_no_interval` says why, as with `bootstrap_resamples: 1` (one resample
 has no spread, and its percentiles made an interval of no width) or where every
-resample gave the same number (a standard error of rounding counts as none:
-at most 1e-12 times the number before the cone and standard-state
-corrections, the number the bootstrap resampled, or 1e-12 kJ/mol where that
-is under 1). With no bootstrap (`bootstrap_resamples: 0`) there is none
-either, and `delta_g_no_interval` says so. `confidence_low` and
-`confidence_high` in `derived` are the resamples' own uncorrected
-percentiles, of no width with one resample. An interval whose block length
-is a lower bound is still a floor (`delta_g_uncertainty_is_a_floor`),
-whatever its multiplier, and the console and the GUI say it as that
-interval "or wider (a window is too short for its correlation time)".
+resample gave the same number (a standard error of rounding counts as none: at
+most 1e-12 times the number before the cone and standard-state corrections, the
+number the bootstrap resampled, or 1e-12 kJ/mol where that is under 1). With no
+bootstrap (`bootstrap_resamples: 0`) there is none either, and
+`delta_g_no_interval` says so. `confidence_low` and `confidence_high` in
+`derived` are the resamples' percentiles widened by `spread_factor`, before the
+cone and standard-state corrections and with no t multiplier, of no width with
+one resample; `delta_g_spread_factor` is the factor. An interval whose block
+length is a lower bound is still a floor (`delta_g_uncertainty_is_a_floor`),
+whatever its multiplier, and the console and the GUI say it as that interval
+"or wider (a window is too short for its correlation time)".
 
 **The check that comes with it.** The correction depends on the angle and the
 answer must not. Run two cone angles and compare: 20° and 45° differ by
