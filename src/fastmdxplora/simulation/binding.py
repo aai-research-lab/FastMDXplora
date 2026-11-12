@@ -251,8 +251,10 @@ def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
 #: The level of the binding free energy's interval.
 DELTA_G_CONFIDENCE = 0.95
 
-#: A standard error at or below this times the number's size (or 1 kJ/mol)
-#: is rounding: the resamples were all the same number.
+#: A standard error at or below this times the size of the number the
+#: bootstrap resampled (before the cone and standard-state corrections, or
+#: 1 kJ/mol where that is smaller) is rounding: the resamples were all the
+#: same number. The corrections are constants the resamples never saw.
 NO_SPREAD = 1e-12
 
 
@@ -350,7 +352,8 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
     a lower bound is optimistic by an unknown factor, and a number carrying
     one should say so where it is read rather than where it was computed.
     """
-    if not resampled or resampled.get("value") is None:
+    value = None if not resampled else _finite(resampled.get("value"))
+    if value is None:
         return {
             "delta_g_standard_error_kjmol": None,
             "delta_g_confidence_kjmol": None,
@@ -361,7 +364,10 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
                 "`bootstrap_resamples: 0`), so there is no standard error."
                 if not resampled else
                 "There is no interval: the bootstrap gave no binding free "
-                "energy, so there is no standard error."),
+                "energy, so there is no standard error."
+                if resampled.get("value") is None else
+                "There is no interval: the bootstrap's binding free energy "
+                f"({resampled.get('value')!r:.40}) is not a finite number."),
             "delta_g_confidence_level": DELTA_G_CONFIDENCE,
             "delta_g_confidence_from": None,
             "delta_g_percentile_interval_kjmol": None,
@@ -375,13 +381,12 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
              if resampled.get("resamples_with_a_number") is not None
              else resampled.get("resamples"))
     given = None if given is None else int(given)
-    value = float(resampled["value"])
     # Resamples that are all the same number give an error of rounding
-    # (`np.nanstd` of equal values is about 1e-15, not 0), and equal
-    # percentiles; in `block_bootstrap` ties come only from that.
-    alike = error is not None and error >= 0.0 and (
-        error <= NO_SPREAD * max(1.0, abs(value))
-        or (low is not None and low == high))
+    # (`np.nanstd` of equal values is about 1e-15, not 0). Equal percentiles
+    # alone are not that: most resamples alike and a few apart tie them
+    # with a real spread.
+    alike = error is not None and 0.0 <= error <= NO_SPREAD * max(
+        1.0, abs(value))
     interval = _the_interval(value + correction, error, given, alike)
     return {
         # Saved only beside an interval: None with no spread, too few

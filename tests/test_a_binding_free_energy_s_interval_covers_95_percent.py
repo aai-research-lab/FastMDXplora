@@ -273,6 +273,44 @@ class TestNoSpreadIsNoInterval:
         assert said["delta_g_standard_error_kjmol"] == 1e-6
         assert said["delta_g_confidence_kjmol"] is not None
 
+    def test_tied_percentiles_with_a_real_spread_give_an_interval(self):
+        """196 of 200 resamples at -10 and 4 at -9 tie the 2.5th and 97.5th
+        percentiles, with a standard error of about 0.14: a spread, so an
+        interval. Equal percentiles once took it away and said every
+        resample gave the same number."""
+        numbers = np.array([-10.0] * 196 + [-9.0] * 4)
+        low, high = np.percentile(numbers, [2.5, 97.5])
+        error = float(np.std(numbers, ddof=1))
+        assert low == high and 0.13 < error < 0.15
+        said = _what_the_resamples_said(
+            derived(value=-10.0, standard_error=error,
+                    confidence_low=float(low), confidence_high=float(high),
+                    resamples=200, resamples_with_a_number=200,
+                    resamples_without_a_number=0), correction=0.0)
+
+        assert said["delta_g_standard_error_kjmol"] == error
+        assert said["delta_g_no_interval"] is None
+        t = student.ppf(0.975, 199)
+        assert said["delta_g_confidence_kjmol"] == pytest.approx(
+            [-10.0 - t * error, -10.0 + t * error])
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), "n/a"])
+    def test_a_value_that_is_not_a_number_says_there_is_no_interval(
+            self, value):
+        """Not from the package's own path, which saves such a value as
+        null; from a caller's own `resampled=`. No [nan, nan], no
+        exception, and a reason."""
+        said = _what_the_resamples_said(derived(value=value), correction=2.5)
+
+        for key in ("delta_g_confidence_kjmol",
+                    "delta_g_standard_error_kjmol",
+                    "delta_g_confidence_multiplier",
+                    "delta_g_percentile_interval_kjmol"):
+            assert said[key] is None, key
+        assert said["delta_g_no_interval"].startswith(
+            "There is no interval: the bootstrap's binding free energy")
+        assert "is not a finite number" in said["delta_g_no_interval"]
+
     def test_a_negative_error_gives_no_interval(self):
         said = _what_the_resamples_said(
             derived(standard_error=-1.0), correction=0.0)
