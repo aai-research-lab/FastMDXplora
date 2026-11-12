@@ -680,10 +680,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   standard errors either side with 40, which held the exact answer on 931
   of 1023 umbrella studies of wells with an exact answer (91.0% +/- 0.9%);
   the t interval held it on 976 (95.4% +/- 0.7%). Those frames were
-  independent: on correlated frames (AR(1), rho 0.9, blocks of 31 to 39)
-  it held it on 527 of 574 (91.8% +/- 1.1%), the standard error running
-  about 10% low from the block length rule (`BLOCKS_PER_CORRELATION_TIME`),
-  which t does not correct and nothing flags. The percentiles are saved
+  independent: on correlated frames (not umbrella studies but AR(1)
+  series of 30000 frames, rho 0.9, on a 12 kJ/mol well; blocks of 26 to 48
+  frames, median 31) it held it on 527 of 574 (91.8% +/- 1.1%), the
+  standard error running about 10% low, likely from the block length rule
+  (`BLOCKS_PER_CORRELATION_TIME`), which t does not correct and nothing
+  flags. The percentiles are saved
   beside it as `delta_g_percentile_interval_kjmol`, and the multiplier,
   degrees of freedom, level and method as `delta_g_confidence_multiplier`,
   `delta_g_confidence_degrees_of_freedom`, `delta_g_confidence_level` and
@@ -2511,9 +2513,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   solvent padding (7,067).
 - A binding free energy whose resamples give no spread (`bootstrap_resamples:
   1`, or every resample the same number) has no interval and says so in
-  `delta_g_no_interval`, its standard error `null`. Its standard error was
-  saved as `null` with no word why and its interval as one of no width. A
-  study with no bootstrap (`bootstrap_resamples: 0`) says so there too.
+  `delta_g_no_interval`, its standard error `null`. Before, with every
+  resample the same number, it saved a standard error of 0 (or of rounding,
+  about 1e-15) and an interval of no width; with one resample, a standard
+  error of NaN (`null` in `pmf.json`) with no word why, and an interval of
+  no width. A study with no bootstrap (`bootstrap_resamples: 0`) says so
+  there too.
 
 ### Added
 
