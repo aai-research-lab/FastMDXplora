@@ -904,17 +904,31 @@ well and 619 of 648 on the broad), and in 169 of 180 (93.9% +/- 1.8%) where
 more than two resamples gave no number. With 200 resamples it held it in 107
 of 115 (93% +/- 2.4%, against 104 for the percentiles), too few studies to
 tell from 95%. Those studies' frames were independent, and MD's are not. On
-correlated frames the same interval held the exact answer in 527 of 574
-studies (91.8% +/- 1.1%), against 493 for the percentiles. These were not
-umbrella studies: each was one AR(1) series of 30000 frames at rho 0.9 on a
-12 kJ/mol well, 40 resamples, a correlation time of about 19 frames that the
-block rule estimated at about 15 to 16, and blocks of 26 to 48 frames (median
-31). The standard error ran about 10% low there (the number's spread from
-study to study was 1.10 times it), likely from the block length rule of two
-correlation times (`BLOCKS_PER_CORRELATION_TIME` in `uncertainty.py`). The t
-multiplier does not correct that, and nothing in the record flags it:
-`correlation_resolved` was true in every one of those studies. So on MD read
-the interval as nearer 92% than 95%. The percentiles are saved beside it as
+correlated frames a block bootstrap's error runs low: each block misses the
+correlation reaching past its ends, and the resamples are centred on the
+run's own mean. With blocks of two correlation times, as before, that put
+the standard error about 10% low and the interval held the exact answer in
+527 of 574 studies of one AR(1) series each (30000 frames at rho 0.9 on a
+12 kJ/mol well, 40 resamples, a correlation time of about 19 frames that
+the block rule estimated at about 15 to 16): 91.8% +/- 1.1%, with
+`correlation_resolved` true in every one. Blocks are now three correlation
+times (`BLOCKS_PER_CORRELATION_TIME` in `uncertainty.py`) and the resamples'
+spread is widened for both losses (`spread_factor`, saved beside the
+band as `pmf.uncertainty.spread_factor`, about 1.1). On the same series the
+interval held the exact answer in 550 of 574 (95.8% +/- 0.8%), and in 232
+of 242 at rho 0.98 (95.9% +/- 1.3%; 225 before). On umbrella studies with
+correlated frames (the broad well above, each window's 3000 frames an AR(1)
+series at rho 0.9) it held it in 547 of 579 (94.5% +/- 0.9%; 508 of 554,
+91.7%, before), and the number's spread from study to study was 0.99 times
+the median standard error (1.14 before). The tail's check reads the
+resampled curves, now as wide as the error, and refused 20 of those 600
+studies where it refused 46, though their tails are flat. On independent
+frames nothing moved (575 of 599, 576 before). Two cases still read low:
+a run of only about 30 correlation times (93% to 94% on AR(1) series of a
+mean), and a correlation with a slow tail beside a fast decay, which the
+widening, reckoned for one exponential decay, undoes only in part (92% on
+3000 frames with half the correlation at 66 frames, 94.6% on 10000). The
+percentiles are saved beside it as
 `delta_g_percentile_interval_kjmol`, for comparison, and are not a 95%
 interval. Where the resamples give no spread there is no interval:
 `delta_g_confidence_kjmol` and `delta_g_standard_error_kjmol` are `null` and
@@ -928,7 +942,8 @@ either, and `delta_g_no_interval` says so. `confidence_low` and
 `confidence_high` in `derived` are the resamples' own uncorrected
 percentiles, of no width with one resample. An interval whose block length
 is a lower bound is still a floor (`delta_g_uncertainty_is_a_floor`),
-whatever its multiplier.
+whatever its multiplier, and the console and the GUI say it as that
+interval "or wider (a window is too short for its correlation time)".
 
 **The check that comes with it.** The correction depends on the angle and the
 answer must not. Run two cone angles and compare: 20° and 45° differ by
