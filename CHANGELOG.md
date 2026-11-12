@@ -733,6 +733,23 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The Viewer shows the frame asked for while the frames arrive in pieces.
+  A piece appended while a frame was on its way showed its frame again
+  over it, at the frame shown before: a seek then was undone, and the
+  load's own first frame was refused, so the load said the frames could
+  not be played (CI's browser leg waited 120 s for frames that had
+  arrived). Each piece now waits for the frame asked for and shows that
+  one, and the pieces of a load that failed or was loaded again are no
+  longer appended.
+- Tests: each page's place is read once a poll has applied the app state
+  and the status, which it is drawn from. Read 1.2 s after the page's
+  scripts alone, a loaded runner found it empty (6 of 10 under load here,
+  none of 20 now).
+- Tests: in the test that a broken pool's other workers are ended, the
+  idle one has begun before the death. Spawned slowly on a loaded
+  macOS runner, it ran no run and took the pool's own SIGTERM before its
+  stop listener was on, so it ended before the study looked and nothing
+  was said of it.
 - With no bootstrap the console says so once, on the `No interval:` line;
   the tail's warning said it again.
 - A study's GPU sampler ends with its run on macOS. macOS says EPERM to
