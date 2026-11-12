@@ -1628,7 +1628,7 @@ def run(spec, run_out, *_args, **_kwargs):
     out = Path(run_out)
     out.mkdir(parents=True, exist_ok=True)
     _say(here / f"started-{seed}", str(os.getpid()))
-    if role not in ("save", "hold", "listen", "going", "absorb"):
+    if role not in ("save", "hold", "listen", "going", "absorb", "idle"):
         _say(here / f"ready-{seed}", "")
     status, message, error_type = "ok", "", None
     if role == "absorb":
@@ -1654,6 +1654,16 @@ def run(spec, run_out, *_args, **_kwargs):
         _until(lambda: all((here / f"ready-{other}").exists() or other == seed
                            for other in json.loads(os.environ["ROLES"])))
         os.kill(os.getpid(), signal.SIGKILL)
+    elif role == "idle":
+        # Returns once the run that dies has begun, in the other worker
+        # (this one is busy until then): that worker had begun, its stop
+        # listener on, before the death. One still starting (spawned slowly
+        # on a loaded runner) was ended by the pool's own SIGTERM before the
+        # study looked, and there was no other worker left to end or say.
+        dying = next(other for other, what in json.loads(os.environ["ROLES"]).items()
+                     if what == "die")
+        _until(lambda: (here / f"started-{dying}").exists())
+        _say(here / f"ready-{seed}", "")
     elif role == "after":
         # Returns once the worker that dies has ended: the death is then
         # in the window before this result reaches the study.
@@ -1981,7 +1991,7 @@ def test_no_run_is_handed_to_a_broken_pool_in_30_studies(tmp_path):
 
 
 @pytest.mark.parametrize("roles,said", [
-    ({"1": "ok", "2": "die"}, "1 carried no run"),
+    ({"1": "idle", "2": "die"}, "1 carried no run"),
     ({"1": "save", "2": "die"}, "1 had ended the run it carried"),
     ({"1": "hold", "2": "die"}, "1 still held a run 11 s after being asked to stop, and "
                                 "`fastmdx resume` carries that run on from its last checkpoint"),
