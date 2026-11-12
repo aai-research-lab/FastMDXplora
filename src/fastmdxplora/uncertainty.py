@@ -87,11 +87,14 @@ DEFAULT_RESAMPLES = 200
 #: of either length miss, :func:`spread_factor` undoes. Counted on AR(1)
 #: series (rho 0.5, 0.9 and 0.98, 3,000 to 30,000 frames, 1,000 to 1,500
 #: series each, 200 resamples, t on 199 degrees of freedom), the 95%
-#: interval on the mean held the answer 93.5% to 95.7% of the time at 3g
+#: interval on the mean held the answer 92.6% to 95.7% of the time at 3g
 #: with the factor, and 88.9% to 93.4% at 2g without it (the rule before).
-#: 2g to 5g with the factor were within a point of each other except where
-#: the blocks were few: on 3,000 frames at rho 0.98 (30 correlation times)
-#: 93.5% at 3g, 92.7% at 4g and 91.6% at 5g. Where the correlation has a
+#: The low end is 3,000 frames at rho 0.98 (30 correlation times, 10 to 12
+#: blocks): 93.5% +/- 0.6 and 93.2% +/- 0.5 on two runs of this harness,
+#: 92.6% +/- 0.5 on a second harness, the shortfall the noise of an error
+#: read off so few blocks. 2g to 5g with the factor were within a point of
+#: each other except where the blocks were few: there 93.5% at 3g, 92.7%
+#: at 4g and 91.6% at 5g. Where the correlation has a
 #: slow tail (half of it at g = 66 under a fast decay), 3g gave 94.6% on
 #: 10,000 frames and 91.9% on 3,000.
 BLOCKS_PER_CORRELATION_TIME = 3
@@ -194,19 +197,24 @@ def _block(g: float, n: int) -> int:
 def spread_factor(frames: int, block: int, inefficiency: float) -> float:
     """What a moving-block bootstrap's standard error on ``frames``
     correlated frames, in blocks of ``block``, is multiplied by to be the
-    standard error of the series' mean: the square root of
-    ``n / (n - b) / A``.
+    standard error of the series' mean: ``1 / sqrt(A - b / n)``.
 
-    ``n / (n - b)`` undoes the centring: each block's mean is read against
-    the run's own mean, which has followed the run's slow fluctuations, and
-    that takes ``b / n`` off the variance (the overlapping-batch-means
-    correction). ``A`` is the share of the variance a block of ``b`` holds
+    ``b / n`` is the centring: each block's mean is read against the run's
+    own mean, which has followed the run's slow fluctuations, and that
+    takes ``b / n`` of the long-run variance off (the overlapping-batch-means
+    correction). It comes off the long-run variance, not off what the
+    blocks hold, so it is subtracted from ``A`` rather than dividing by
+    ``1 - b / n``: the product form, used first, was 1% low at 10 blocks
+    and 3% low at 5 against the package's resampler's exact expectation on
+    AR(1) series. ``A`` is the share of the variance a block of ``b`` holds
     when the correlation decays as one exponential, ``r^t`` with ``r = (g -
     1) / (g + 1)``, the decay with the same ``g``: ``1 - 2 r (1 - r^b) /
     ((1 - r)^2 b g)``. About ``1 - 1 / (2k)`` for blocks of ``k g``, so the
     factor is 1.15 at blocks of 2g and 1.10 at 3g, and exactly ``sqrt(g)``
-    for blocks of one frame. About one for independent frames, and one
-    where the block is the whole series (there is no spread to widen).
+    for blocks of one frame on a long series. ``sqrt(n / (n - b))`` for
+    independent frames, and one where the block is the whole series (there
+    is no spread to widen). The denominator is held at no less than
+    ``(1 - b / n) / g``, what blocks of single frames would give.
 
     Computed against AR(1) series (rho 0.5, 0.9 and 0.98, 3,000 to 30,000
     frames, 1,000 to 1,500 series each): with it the standard error of the
@@ -223,14 +231,14 @@ def spread_factor(frames: int, block: int, inefficiency: float) -> float:
     n, b, g = int(frames), int(block), float(inefficiency)
     if n < 2 or b >= n or b < 1:
         return 1.0
-    centring = n / (n - b)
+    centred = b / n
     if not np.isfinite(g) or g <= 1.0:
-        return float(np.sqrt(centring))
+        return float(1.0 / np.sqrt(1.0 - centred))
     r = (g - 1.0) / (g + 1.0)
     held = 1.0 - 2.0 * r * (1.0 - r ** b) / ((1.0 - r) ** 2 * b * g)
     # A block of one frame holds 1/g of it, and a longer block more.
     held = max(held, 1.0 / g)
-    return float(np.sqrt(centring / held))
+    return float(1.0 / np.sqrt(max(held - centred, (1.0 - centred) / g)))
 
 
 def _resample_one(values: np.ndarray, block: int, rng: np.random.Generator) -> np.ndarray:
@@ -388,8 +396,19 @@ def paired_block_bootstrap(
         raise StudyError("paired_block_bootstrap needs non-empty arrays", code="analysis.sampling.too_few_frames")
 
     rng = np.random.default_rng(seed)
-    g = (_inefficiency_of(series[0])[0] if inefficiency is None
-         else max(1.0, float(inefficiency)))
+    if inefficiency is None:
+        g = _inefficiency_of(series[0])[0]
+    else:
+        try:
+            g = float(inefficiency)
+        except (TypeError, ValueError):
+            g = float("nan")
+        if not np.isfinite(g) or g <= 0.0:
+            raise StudyError(
+                f"`inefficiency` is frames per independent sample, a finite "
+                f"positive number; got {inefficiency!r:.40}.",
+                code="config.option.wrong_type")
+        g = max(1.0, g)
     block = block_length or _block(g, _inefficiency_of(series[0])[1])
     factor = spread_factor(n, block, g)
     resolved = correlation_is_resolved(series[0]) if n > 1 else False

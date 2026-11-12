@@ -153,19 +153,21 @@ def test_a_small_count_at_fixed_seeds_is_held(small_count):
     # Blocks of 3g, the spread widened (`uncertainty.spread_factor`), moved
     # them again, since the resamples are others: 191, 178, 197, 187 and
     # 199 at 2g, the offsets 0.40827 and 0.03484, and the mean gauge's
-    # band offset under 0.01 (now 0.021). Twenty resamples on four sets
-    # are the guard's, too few to read coverage from.
+    # band offset under 0.01 (now 0.020). Twenty resamples on four sets
+    # are the guard's, too few to read coverage from. The centring taken
+    # off the long-run variance (``A - b/n``) moved two: 184 and 171 with
+    # ``n / (n - b) / A``.
     row = small_count
     assert row["bins_with_a_band"] == 240
-    assert row["coverage"] == pytest.approx(184 / 240, abs=1e-12)
-    assert row["coverage_between_centres"] == pytest.approx(171 / 222, abs=1e-12)
+    assert row["coverage"] == pytest.approx(187 / 240, abs=1e-12)
+    assert row["coverage_between_centres"] == pytest.approx(174 / 222, abs=1e-12)
     assert row["coverage_1_96_se_between_centres"] == pytest.approx(196 / 222, abs=1e-12)
     assert row["mean_gauge"]["coverage_between_centres"] == pytest.approx(
         182 / 222, abs=1e-12)
     assert row["mean_gauge"]["coverage_1_96_se_between_centres"] == pytest.approx(
         200 / 222, abs=1e-12)
-    assert row["curve_offset_between_centres"] == pytest.approx(0.37711, abs=1e-4)
-    assert row["band_offset_between_centres"] == pytest.approx(0.05507, abs=1e-4)
+    assert row["curve_offset_between_centres"] == pytest.approx(0.37555, abs=1e-4)
+    assert row["band_offset_between_centres"] == pytest.approx(0.05500, abs=1e-4)
     assert abs(row["mean_gauge"]["band_offset_between_centres"]) < 0.03
 
 

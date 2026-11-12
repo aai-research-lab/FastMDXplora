@@ -356,6 +356,8 @@ def reweighted_estimate(
     bootstrap = weighted_uncertainty(array, weights, resamples=resamples,
                                      seed=seed, inefficiency=g)
     record["standard_error"] = float(bootstrap["standard_error"])
+    # What the resamples' spread was widened by (`uncertainty.spread_factor`).
+    record["spread_factor"] = float(bootstrap["spread_factor"])
     record["is_a_floor"] = bool(bootstrap["is_a_floor"])
     if bootstrap.get("note"):
         record["note"] = bootstrap["note"]

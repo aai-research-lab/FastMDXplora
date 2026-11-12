@@ -380,6 +380,7 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
             "delta_g_confidence_from": None,
             "delta_g_percentile_interval_kjmol": None,
             "delta_g_uncertainty_is_a_floor": None,
+            "delta_g_spread_factor": None,
         }
     error = _finite(resampled.get("standard_error"))
     low = _finite(resampled.get("confidence_low"))
@@ -425,6 +426,9 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
         "delta_g_uncertainty_is_a_floor": (
             None if resolved is None else not bool(resolved)),
         "delta_g_uncertainty_note": resampled.get("note") or None,
+        # What the resamples' spread was widened by
+        # (`uncertainty.spread_factor`); None from a record before it.
+        "delta_g_spread_factor": _finite(resampled.get("spread_factor")),
         # Only the resamples that gave a number make the interval, so only
         # they are counted in it; the rest are said beside it.
         "delta_g_resamples": (

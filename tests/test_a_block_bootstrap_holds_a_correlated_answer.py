@@ -264,3 +264,76 @@ def test_a_reweighted_estimate_passes_the_slower_g(monkeypatch):
     assert record["standard_error"] is not None
     assert seen["inefficiency"] == pytest.approx(record["statistical_inefficiency"])
     assert "block_length" not in seen
+
+
+def _expected_bootstrap_variance(rho, frames, block):
+    """The package's resampler's variance of the mean, in expectation over
+    AR(1) series, from the covariance itself: ceil(n/b) blocks with starts
+    uniform on 0..n-b, the last cut to fit."""
+    index = np.arange(frames)
+    covariance = rho ** np.abs(index[:, None] - index[None, :])
+    starts = frames - block + 1
+
+    def spread(length):
+        sums = np.zeros((starts, frames))
+        for s in range(starts):
+            sums[s, s:s + length] = 1.0
+        held = sums @ covariance @ sums.T
+        return np.trace(held) / starts - held.sum() / starts ** 2
+
+    count = math.ceil(frames / block)
+    last = frames - (count - 1) * block
+    return ((count - 1) * spread(block) + spread(last)) / frames ** 2
+
+
+@pytest.mark.parametrize("rho, frames, block", [(0.9, 1000, 58), (0.9, 300, 58)])
+def test_the_centring_comes_off_the_long_run_variance(rho, frames, block):
+    """``A - b/n``, not ``A (1 - b/n)``: the product form was 0.5% low here
+    at 17 blocks and 3% low at 5."""
+    g = (1 + rho) / (1 - rho)
+    needed = math.sqrt(exact_error(rho, frames) ** 2
+                       / _expected_bootstrap_variance(rho, frames, block))
+    assert spread_factor(frames, block, g) == pytest.approx(needed, rel=0.012)
+    assert spread_factor(frames, block, g) == pytest.approx(
+        1.0 / math.sqrt(1.0 - 2.0 * ((g - 1) / (g + 1)) * (1 - ((g - 1) / (g + 1)) ** block)
+                        / ((2.0 / (g + 1)) ** 2 * block * g) - block / frames))
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("nan"), -1.0, 0.0, "slow"])
+def test_an_inefficiency_that_is_not_a_finite_positive_number_is_refused(bad):
+    from fastmdxplora.analysis import reweight
+    from fastmdxplora.refusals import StudyError
+
+    values = np.random.default_rng(1).normal(size=200)
+    with pytest.raises(StudyError, match="finite positive"):
+        paired_block_bootstrap([values, np.ones(200)], lambda v, w: v.mean(),
+                               resamples=5, inefficiency=bad)
+    weights = reweight.Weights(values=np.ones(200), effective_sample_size=200.0,
+                               converged=True)
+    with pytest.raises(StudyError, match="finite positive"):
+        reweight.weighted_uncertainty(values, weights, resamples=5, inefficiency=bad)
+
+
+def test_a_reweighted_estimate_saves_its_widening():
+    from fastmdxplora.analysis import reweight
+
+    values = ar1(0.5, 6000, np.random.default_rng(6))
+    weights = reweight.Weights(values=np.ones(6000), effective_sample_size=6000.0,
+                               converged=True)
+    record = reweight.reweighted_estimate(values, weights, inefficiency=40.0,
+                                          resamples=20)
+    assert record["spread_factor"] == pytest.approx(
+        spread_factor(6000, 120, record["statistical_inefficiency"]))
+
+
+def test_a_binding_free_energy_saves_its_widening():
+    from fastmdxplora.simulation.binding import _what_the_resamples_said
+
+    derived = {"value": -20.0, "standard_error": 1.0, "confidence_low": -21.9,
+               "confidence_high": -18.1, "resamples": 40,
+               "resamples_with_a_number": 40, "resamples_without_a_number": 0,
+               "correlation_resolved": True, "note": None, "spread_factor": 1.11}
+    assert _what_the_resamples_said(derived, 0.0)["delta_g_spread_factor"] == 1.11
+    older = {k: v for k, v in derived.items() if k != "spread_factor"}
+    assert _what_the_resamples_said(older, 0.0)["delta_g_spread_factor"] is None
+    assert _what_the_resamples_said(None, 0.0)["delta_g_spread_factor"] is None
