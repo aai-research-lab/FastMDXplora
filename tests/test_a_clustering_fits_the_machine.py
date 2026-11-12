@@ -1462,6 +1462,16 @@ for line in open("/proc/self/status"):
 #: 548,937,728 bytes at the check, the libraries mapped).
 ROOM_AT_600000 = 600000 * 1024 - 548937728
 
+#: How far the room a run of the 600000 test reads at its check may be from
+#: :data:`ROOM_AT_600000` for the run to be the one the test means, in
+#: bytes. Here the run read within 0.22 MiB of it in each of 21 runs; the
+#: plan for its 500 frames (61.0 MiB) is 1.4 MiB under it.
+ROOM_READ_WITHIN = 2**20
+
+#: Runs of the 600000 test, at the most, to bring the room its run reads to
+#: :data:`ROOM_AT_600000`.
+ROOM_TRIES = 3
+
 
 @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
 class TestTheCommandLinesOwnProcess:
@@ -1488,7 +1498,17 @@ class TestTheCommandLinesOwnProcess:
         run, or some of them stale, the run held 4 to 8 MiB more than the
         reading said (Python 3.11: 58.6 and 55.0 MiB of room for 61.0). Every
         process here compiles into a cache of its own, written by a first
-        reading, so the reading and the run load the same bytecode."""
+        reading, so the reading and the run load the same bytecode.
+
+        The run itself is where the room is read, and its record saves it
+        (``findings.memory.bytes_address_space``): where that is not
+        :data:`ROOM_AT_600000` (within :data:`ROOM_READ_WITHIN`), the limit
+        is moved by the difference and the run made again. On CI's ubuntu
+        3.13 leg the run held 8.1 to 8.2 MiB more at the check than the
+        readings said, on 2 of 5 runs, and read 56.9 MB of room for 64.0
+        MB: refused, rightly, at a room the test did not mean. Its child
+        processes are not traced (pytest-cov 7 starts no coverage in them),
+        and under `--cov` here the run read the room meant."""
         import resource
         import subprocess
         from pathlib import Path
@@ -1512,15 +1532,27 @@ class TestTheCommandLinesOwnProcess:
         limit = (said(_AT_ITS_START_SCRIPT, "VMSTART")
                  + said(_TO_THE_CHECK_SCRIPT, "VMCHECK", src, *analyze) + ROOM_AT_600000)
 
-        def under_the_limit():
-            resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
-
         env_run = dict(env, PYTHONPATH=src)
-        done = subprocess.run(
-            [sys.executable, "-m", "fastmdxplora", *analyze],
-            capture_output=True, text=True, timeout=900, cwd=study, env=env_run,
-            preexec_fn=under_the_limit)
-        assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+        rooms = []
+        for _ in range(ROOM_TRIES):
+            def under_the_limit(limit: int = limit) -> None:
+                resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+
+            done = subprocess.run(
+                [sys.executable, "-m", "fastmdxplora", *analyze],
+                capture_output=True, text=True, timeout=900, cwd=study, env=env_run,
+                preexec_fn=under_the_limit)
+            _, findings = _record(study, "cluster")
+            room = findings.get("memory", {}).get("bytes_address_space")
+            assert room is not None, done.stdout[-3000:] + done.stderr[-2000:]
+            rooms.append(room)
+            if abs(room - ROOM_AT_600000) <= ROOM_READ_WITHIN:
+                break
+            limit += ROOM_AT_600000 - room
+        rooms_said = (f"rooms read at the check {[round(r / 2**20, 2) for r in rooms]} MiB, "
+                      f"meant {ROOM_AT_600000 / 2**20:.2f}\n")
+        assert abs(rooms[-1] - ROOM_AT_600000) <= ROOM_READ_WITHIN, rooms_said
+        assert done.returncode == 0, rooms_said + done.stdout[-3000:] + done.stderr[-2000:]
         for name in ("rmsd", "cluster"):
             row, findings = _record(study, name)
             assert row["status"] == "ok", (name, row["message"])
