@@ -196,3 +196,24 @@ def test_the_overview_says_there_is_no_study_here(tmp_path, monkeypatch):
                     "Open one under All studies, or start one.")
     assert offered
     assert folder == [True, True, True, True]
+
+
+def test_python_source_is_no_study(tmp_path):
+    """A checkout's `src/fastmdxplora` has `simulation`, `analysis` and
+    `report` packages, and was listed among the studies as one not started."""
+    from fastmdxplora.gui.browse import is_study
+    from fastmdxplora.gui.workspace import studies_in
+
+    package = tmp_path / "src" / "fastmdxplora"
+    for name in ("simulation", "analysis", "report", "setup"):
+        (package / name).mkdir(parents=True)
+        (package / name / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    study = tmp_path / "trp-cage"
+    (study / "simulation").mkdir(parents=True)
+
+    assert not is_study(package)
+    assert holds_no_study(package)
+    assert is_study(study)
+    listed = {Path(s["path"]).name for s in studies_in(tmp_path)["studies"]}
+    assert "fastmdxplora" not in listed and "trp-cage" in listed
