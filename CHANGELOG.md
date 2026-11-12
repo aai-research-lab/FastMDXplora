@@ -690,6 +690,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   degrees of freedom, level and method as `delta_g_confidence_multiplier`,
   `delta_g_confidence_degrees_of_freedom`, `delta_g_confidence_level` and
   `delta_g_confidence_from`.
+- The console and the GUI's answer from the records say a binding free
+  energy's 95% interval (`95% interval:   -10.9 to -9.8 kJ/mol`), or why
+  there is none (`delta_g_no_interval`); they said only the number +/- its
+  standard error, and a bare number where there was none. A record from
+  before the interval was t's reads as it did.
 
 ### Fixed
 
@@ -2519,6 +2524,13 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   error of NaN (`null` in `pmf.json`) with no word why, and an interval of
   no width. A study with no bootstrap (`bootstrap_resamples: 0`) says so
   there too.
+- Equal 2.5th and 97.5th percentiles no longer count as no spread: the
+  rounding tolerance alone decides. 196 resamples at -10 and 4 at -9 tie
+  them with a standard error of about 0.14, and saved no interval, saying
+  every resample gave the same number. A `value` in `resampled=` that is
+  NaN or not a number gives no interval and says why; it gave [nan, nan] or
+  raised. The GUI no longer calls a missing error "a standard error", nor
+  gives an error of rounding to 16 decimal places, on older records.
 
 ### Added
 
