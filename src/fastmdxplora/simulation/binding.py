@@ -284,15 +284,18 @@ def _the_interval(value: float, error: "float | None",
     built on it, and held the exact answer about 95% of the time
     (docs/studies.md gives the counts).
 
-    Those studies' frames were independent. On correlated frames (not
-    umbrella studies: each one AR(1) series of 30000 frames at rho 0.9 on
-    a 12 kJ/mol well, a correlation time of about 19 frames, estimated at
-    about 15 to 16, and blocks of 26 to 48 frames, median 31) the same
-    interval held the exact answer in 527 of 574 studies (91.8% +/-
-    1.1%): the standard error ran about 10% low there (the number's spread
-    was 1.10 times it), likely from the block length rule
-    (`uncertainty.BLOCKS_PER_CORRELATION_TIME`), which t does not correct
-    and nothing in the record flags.
+    Those studies' frames were independent. On correlated frames (each one
+    AR(1) series of 30000 frames at rho 0.9 on a 12 kJ/mol well, a
+    correlation time of about 19 frames, estimated at about 15 to 16) the
+    same interval held the exact answer in 527 of 574 studies (91.8% +/-
+    1.1%) with blocks of 2g: the standard error ran about 10% low, the
+    block bootstrap's own shortfall on correlated series, which t does not
+    correct. With blocks of 3g and the spread widened for what blocks miss
+    (`uncertainty.spread_factor`) it held it in 550 of 574 (95.8% +/-
+    0.8%); on umbrella studies with correlated frames (16 windows of 3000
+    frames, each an AR(1) series at rho 0.9 on the broad well), 547 of 579
+    (94.5% +/- 0.9%), where blocks of 2g held it in 508 of 554 (91.7% +/-
+    1.2%).
 
     No interval where there is no standard error, as with fewer than two
     resamples that gave a number (`bootstrap_resamples: 1`): one resample

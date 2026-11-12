@@ -182,6 +182,7 @@ def weighted_uncertainty(
     resamples: int = 200,
     seed: int = 0,
     block_length: int | None = None,
+    inefficiency: float | None = None,
 ) -> "dict[str, object]":
     """A standard error on a reweighted average, and whether to trust it.
 
@@ -197,7 +198,9 @@ def weighted_uncertainty(
     reweighted average, and shuffling them apart would put one frame's
     value with another's weight. The block length is taken from the values
     unless ``block_length`` is given; a caller that knows the collective
-    variable decorrelates more slowly passes ``ceil(2 g)`` of it.
+    variable decorrelates more slowly passes its ``g`` as ``inefficiency``,
+    and the block and the widening of the spread
+    (:func:`fastmdxplora.uncertainty.spread_factor`) are read from it.
 
     **It is reported as a floor where the weights concentrate.** Against the
     spread of the estimator over 200 independent realisations it holds to
@@ -223,8 +226,8 @@ def weighted_uncertainty(
         return float(np.sum(a * b) / total) if total else float("nan")
 
     result = paired_block_bootstrap([v, w], _mean, resamples=resamples,
-                                    seed=seed,
-                                    block_length=block_length).as_dict()
+                                    seed=seed, block_length=block_length,
+                                    inefficiency=inefficiency).as_dict()
     ess = float(weights.effective_sample_size)
     fraction = ess / float(v.size) if v.size else 0.0
     result["effective_sample_size"] = ess
@@ -346,12 +349,12 @@ def reweighted_estimate(
         record["refusal"] = reason.refusal.code
         return record
 
-    # Blocks of 2g of the slower series, as `block_length_for` would choose
-    # from the values alone: the weights carry the collective variable's
-    # correlation, and blocks shorter than it break what is really there.
-    block = max(1, min(n, int(np.ceil(2.0 * g))))
+    # Blocks from g of the slower series, as `block_length_for` would
+    # choose from the values alone: the weights carry the collective
+    # variable's correlation, and blocks shorter than it break what is
+    # really there.
     bootstrap = weighted_uncertainty(array, weights, resamples=resamples,
-                                     seed=seed, block_length=block)
+                                     seed=seed, inefficiency=g)
     record["standard_error"] = float(bootstrap["standard_error"])
     record["is_a_floor"] = bool(bootstrap["is_a_floor"])
     if bootstrap.get("note"):
