@@ -941,7 +941,8 @@ def reweight_results(
             "shift_percent": (
                 100.0 * (corrected - raw) / raw if raw != 0 else float("nan")),
         }
-        for key in ("not_a_measurement", "refusal", "is_a_floor", "note"):
+        for key in ("not_a_measurement", "refusal", "is_a_floor", "note",
+                    "spread_factor"):
             if key in estimate:
                 item[key] = estimate[key]
         # Over every frame, as the reweighting weighs them all.
@@ -1080,8 +1081,10 @@ def reweight_results(
             "frames divided by the larger statistical inefficiency of the "
             "collective variable and the quantity; the standard error is a "
             "paired block bootstrap over values and weights, in blocks of "
-            "twice that inefficiency, and is withheld below 10 independent "
-            "samples or where the run is shorter than 25 inefficiencies."),
+            "three times that inefficiency, its spread widened for what "
+            "blocks miss (`spread_factor`), and is withheld below 10 "
+            "independent samples or where the run is shorter than 25 "
+            "inefficiencies."),
     }
 
     directory = Path(output_dir) / "reweighted"

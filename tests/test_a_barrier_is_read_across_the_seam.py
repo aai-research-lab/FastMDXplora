@@ -338,8 +338,9 @@ class TestTheBarrierIsSaidInOneLine:
 class TestAFlatTurnQuotesNoBarrierByItsNoise:
     """A flat turn at 300 frames a window (240 after the discard), 40
     resamples: one peak at a time, 7 of 20 seeds quoted a barrier of 2.5 to
-    2.9 kJ/mol; judged as a family, 0 of those 20 and 2 of 60 quoted one,
-    and a 20 kJ/mol hump on the seam is still given."""
+    2.9 kJ/mol; judged as a family, 0 of those 20 and 2 of 60 quoted one
+    (1 of 60 with the spread widened, `uncertainty.spread_factor`), and a
+    20 kJ/mol hump on the seam is still given."""
 
     def _study(self, profile, samples, seed):
         centres = -np.pi + np.arange(36) * (2.0 * np.pi / 36)

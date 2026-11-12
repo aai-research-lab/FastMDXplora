@@ -642,7 +642,8 @@ the quantity's own, per quantity), because consecutive frames are correlated:
 on a well-tempered run with a bias factor of 8, 2445 effective frames of 6000
 were about 27 independent samples at `g = 91`. Each reweighted mean carries a
 standard error (`reweighted_standard_error`) from a paired block bootstrap
-over values and weights in blocks of `2g`, withheld with its reason
+over values and weights in blocks of `3g`, its spread widened for what blocks
+miss (`spread_factor` in `uncertainty.py`), withheld with its reason
 (`not_a_measurement`, `refusal`) below 10 independent samples or where the run
 is shorter than 25 inefficiencies. The bootstrap resamples one run's frames, so
 it cannot see how the deposited bias, and so the weights, would differ in

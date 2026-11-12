@@ -257,6 +257,11 @@ DELTA_G_CONFIDENCE = 0.95
 #: same number. The corrections are constants the resamples never saw.
 NO_SPREAD = 1e-12
 
+#: Said after an interval whose error is a floor
+#: (`delta_g_uncertainty_is_a_floor`), in the console and the GUI: such an
+#: interval is at least that wide.
+FLOOR_SAID = "or wider (a window is too short for its correlation time)"
+
 
 def _finite(value: Any) -> "float | None":
     """`value` as a float, or None where it is missing, NaN or infinite."""
@@ -284,15 +289,18 @@ def _the_interval(value: float, error: "float | None",
     built on it, and held the exact answer about 95% of the time
     (docs/studies.md gives the counts).
 
-    Those studies' frames were independent. On correlated frames (not
-    umbrella studies: each one AR(1) series of 30000 frames at rho 0.9 on
-    a 12 kJ/mol well, a correlation time of about 19 frames, estimated at
-    about 15 to 16, and blocks of 26 to 48 frames, median 31) the same
-    interval held the exact answer in 527 of 574 studies (91.8% +/-
-    1.1%): the standard error ran about 10% low there (the number's spread
-    was 1.10 times it), likely from the block length rule
-    (`uncertainty.BLOCKS_PER_CORRELATION_TIME`), which t does not correct
-    and nothing in the record flags.
+    Those studies' frames were independent. On correlated frames (each one
+    AR(1) series of 30000 frames at rho 0.9 on a 12 kJ/mol well, a
+    correlation time of about 19 frames, estimated at about 15 to 16) the
+    same interval held the exact answer in 527 of 574 studies (91.8% +/-
+    1.1%) with blocks of 2g: the standard error ran about 10% low, the
+    block bootstrap's own shortfall on correlated series, which t does not
+    correct. With blocks of 3g and the spread widened for what blocks miss
+    (`uncertainty.spread_factor`) it held it in 550 of 574 (95.8% +/-
+    0.8%); on umbrella studies with correlated frames (16 windows of 3000
+    frames, each an AR(1) series at rho 0.9 on the broad well), 547 of 579
+    (94.5% +/- 0.9%), where blocks of 2g held it in 508 of 554 (91.7% +/-
+    1.2%).
 
     No interval where there is no standard error, as with fewer than two
     resamples that gave a number (`bootstrap_resamples: 1`): one resample
@@ -372,6 +380,7 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
             "delta_g_confidence_from": None,
             "delta_g_percentile_interval_kjmol": None,
             "delta_g_uncertainty_is_a_floor": None,
+            "delta_g_spread_factor": None,
         }
     error = _finite(resampled.get("standard_error"))
     low = _finite(resampled.get("confidence_low"))
@@ -417,6 +426,9 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
         "delta_g_uncertainty_is_a_floor": (
             None if resolved is None else not bool(resolved)),
         "delta_g_uncertainty_note": resampled.get("note") or None,
+        # What the resamples' spread was widened by
+        # (`uncertainty.spread_factor`); None from a record before it.
+        "delta_g_spread_factor": _finite(resampled.get("spread_factor")),
         # Only the resamples that gave a number make the interval, so only
         # they are counted in it; the rest are said beside it.
         "delta_g_resamples": (

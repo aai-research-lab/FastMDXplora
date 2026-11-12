@@ -468,7 +468,7 @@ on seventeen windows the curve took a twentieth of a second and its interval
 fourteen seconds. `bootstrap_resamples` sets the count, fewer for a quick look,
 more for a figure, 0 for the curve alone; the count used is in `pmf.json`.
 The curve is zeroed at its lowest bin, which noise puts low, so the curve and a
-barrier read off it sit about 0.8 of their error high. The interval has no
+barrier read off it sit about 0.7 of their error high. The interval has no
 width at that bin, recorded as `pmf.uncertainty.zeroed_at`; the offset is said
 in `pmf.uncertainty.zero` and `summary.barrier_zero`, not corrected, and
 `pmf.uncertainty.resamples_left_out` counts the resamples empty there and so
@@ -658,10 +658,12 @@ at 90 frames a window quoted a barrier on 20 seeds in 20, and at 300 frames
 on 7 in 20. The multiplier is the 95th percentile, over the bootstrap's
 resampled curves, of the largest departure of any rise from the curve's
 own over that rise's error, so a curve with no barrier quotes one about 5%
-of the time (`BARRIER_FALSE_RATE`): on those turns 10 in 100 at 90 frames,
-where 72 samples a window leave the bootstrap's errors a little small, and
-2 in 60 at 300. A rise's error is its own spread over the resamples where
-20 or more hold both bins, since a difference carries none of the zero's
+of the time (`BARRIER_FALSE_RATE`): on those turns 2 in 100 at 90 frames and
+1 in 60 at 300, with the spread widened (`spread_factor`); 10 in 100 and 2
+in 60 with blocks of 2g and no widening, as up to 2.6.0, where 72 samples a
+window left the bootstrap's errors a little small. A rise's error is its own
+spread over the resamples where 20 or more hold both bins, since a
+difference carries none of the zero's
 noise that each bin's error holds; else the two bins' standard errors
 together, with Sidak's multiplier over every pair of bins; with no
 bootstrap, the 2.5 kJ/mol alone, and a flat curve's noise can then pass
@@ -904,31 +906,51 @@ well and 619 of 648 on the broad), and in 169 of 180 (93.9% +/- 1.8%) where
 more than two resamples gave no number. With 200 resamples it held it in 107
 of 115 (93% +/- 2.4%, against 104 for the percentiles), too few studies to
 tell from 95%. Those studies' frames were independent, and MD's are not. On
-correlated frames the same interval held the exact answer in 527 of 574
-studies (91.8% +/- 1.1%), against 493 for the percentiles. These were not
-umbrella studies: each was one AR(1) series of 30000 frames at rho 0.9 on a
-12 kJ/mol well, 40 resamples, a correlation time of about 19 frames that the
-block rule estimated at about 15 to 16, and blocks of 26 to 48 frames (median
-31). The standard error ran about 10% low there (the number's spread from
-study to study was 1.10 times it), likely from the block length rule of two
-correlation times (`BLOCKS_PER_CORRELATION_TIME` in `uncertainty.py`). The t
-multiplier does not correct that, and nothing in the record flags it:
-`correlation_resolved` was true in every one of those studies. So on MD read
-the interval as nearer 92% than 95%. The percentiles are saved beside it as
+correlated frames a block bootstrap's error runs low: each block misses the
+correlation reaching past its ends, and the resamples are centred on the
+run's own mean. With blocks of two correlation times, as before, that put
+the standard error about 10% low and the interval held the exact answer in
+527 of 574 studies of one AR(1) series each (30000 frames at rho 0.9 on a
+12 kJ/mol well, 40 resamples, a correlation time of about 19 frames that
+the block rule estimated at about 15 to 16): 91.8% +/- 1.1%, with
+`correlation_resolved` true in every one. Blocks are now three correlation
+times (`BLOCKS_PER_CORRELATION_TIME` in `uncertainty.py`) and the resamples'
+spread is widened for both losses (`spread_factor`, saved beside the
+band as `pmf.uncertainty.spread_factor`, about 1.1). One factor serves every
+window, the largest that the windows long enough to resolve their correlation
+time need: a window too short for its blocks is widened at most about 1.2, and
+its error is a floor, said as such. On the same series the interval held the
+exact answer in 550 of 574 (95.8% +/- 0.8%), and in 232
+of 242 at rho 0.98 (95.9% +/- 1.3%; 225 before). On umbrella studies with
+correlated frames (the broad well above, each window's 3000 frames an AR(1)
+series at rho 0.9) it held it in 547 of 579 (94.5% +/- 0.9%; 508 of 554,
+91.7%, before), and the number's spread from study to study was 0.99 times
+the median standard error (1.14 before). The tail's check reads the
+resampled curves, now as wide as the error, and refused 20 of those 600
+studies where it refused 46, though their tails are flat. On independent
+frames nothing moved (575 of 599, 576 before). Two cases still read low:
+a run of only about 30 correlation times (92.6% to 93.5% on AR(1) series of
+a mean, the error read off about ten blocks), and a correlation with a slow
+tail beside a fast decay, which the widening, reckoned for one exponential
+decay, undoes only in part (92% on 3000 frames with half the correlation at 66
+frames, 94.6% on 10000). The percentiles, widened about the resamples' mean by
+`spread_factor` as the error is, are saved beside it as
 `delta_g_percentile_interval_kjmol`, for comparison, and are not a 95%
 interval. Where the resamples give no spread there is no interval:
 `delta_g_confidence_kjmol` and `delta_g_standard_error_kjmol` are `null` and
 `delta_g_no_interval` says why, as with `bootstrap_resamples: 1` (one resample
 has no spread, and its percentiles made an interval of no width) or where every
-resample gave the same number (a standard error of rounding counts as none:
-at most 1e-12 times the number before the cone and standard-state
-corrections, the number the bootstrap resampled, or 1e-12 kJ/mol where that
-is under 1). With no bootstrap (`bootstrap_resamples: 0`) there is none
-either, and `delta_g_no_interval` says so. `confidence_low` and
-`confidence_high` in `derived` are the resamples' own uncorrected
-percentiles, of no width with one resample. An interval whose block length
-is a lower bound is still a floor (`delta_g_uncertainty_is_a_floor`),
-whatever its multiplier.
+resample gave the same number (a standard error of rounding counts as none: at
+most 1e-12 times the number before the cone and standard-state corrections, the
+number the bootstrap resampled, or 1e-12 kJ/mol where that is under 1). With no
+bootstrap (`bootstrap_resamples: 0`) there is none either, and
+`delta_g_no_interval` says so. `confidence_low` and `confidence_high` in
+`derived` are the resamples' percentiles widened by `spread_factor`, before the
+cone and standard-state corrections and with no t multiplier, of no width with
+one resample; `delta_g_spread_factor` is the factor. An interval whose block
+length is a lower bound is still a floor (`delta_g_uncertainty_is_a_floor`),
+whatever its multiplier, and the console and the GUI say it as that interval
+"or wider (a window is too short for its correlation time)".
 
 **The check that comes with it.** The correction depends on the angle and the
 answer must not. Run two cone angles and compare: 20° and 45° differ by

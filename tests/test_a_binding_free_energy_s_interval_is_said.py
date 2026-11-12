@@ -131,3 +131,36 @@ def test_the_gui_calls_no_error_a_standard_error_where_there_is_none(
         "delta_g_confidence_kjmol": [-10.364, -10.364]}) == (
         "Its windows give a binding free energy of -10.36 kJ/mol "
         "(standard state, 1 M).")
+
+
+FLOOR = {**FORTY, "delta_g_uncertainty_is_a_floor": True}
+
+
+def test_the_console_says_a_floor_s_interval_is_at_least_that_wide():
+    """A window too short for its correlation time gives an error that is
+    a floor, and its interval was said as a plain 95% interval."""
+    assert _what_the_binding_says(FLOOR)[1] == (
+        "95% interval:   -10.9 to -9.8 kJ/mol or wider (a window is too short "
+        "for its correlation time)")
+
+
+def test_the_gui_says_a_floor_s_interval_is_at_least_that_wide(tmp_path):
+    assert gui(tmp_path, FLOOR) == (
+        "Its windows give a binding free energy of -10.36 ± 0.26 kJ/mol "
+        "(standard state, 1 M; the error a standard error), with a 95% "
+        "interval of -10.88 to -9.85 kJ/mol or wider (a window is too short "
+        "for its correlation time).")
+
+
+def test_the_console_says_no_bootstrap_once():
+    from fastmdxplora.simulation.binding import BULK_RESIDUAL_KJMOL
+
+    said = _what_the_binding_says({
+        **NONE, "bulk_judged_by": f"{BULK_RESIDUAL_KJMOL} kJ/mol alone",
+        "bulk_judged": "... since the study ran no bootstrap "
+                       "(`bootstrap_resamples: 0`)"})
+
+    assert sum("bootstrap" in line for line in said) == 1, said
+    assert said[-1] == (
+        f"Warning:        The tail was judged against {BULK_RESIDUAL_KJMOL} "
+        "kJ/mol alone and its tilt was not judged.")

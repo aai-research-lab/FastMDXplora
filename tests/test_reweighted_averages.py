@@ -922,6 +922,8 @@ class TestKishIsNotTheIndependentCount:
         sd = float(np.std(values))
         g = (1 + phi) / (1 - phi)
         assert error == pytest.approx(sd * np.sqrt(g / n), rel=0.25)
+        # How much the bootstrap's spread was widened, saved beside it.
+        assert 1.0 < item["spread_factor"] < 1.2
         table = (analysis / "reweighted" / "reweighted_averages.dat").read_text()
         assert "reweighted_standard_error" in table
         assert "independent samples" in table
@@ -952,3 +954,25 @@ class TestTheEstimateCountsTheSlowerSeries:
         slow[17] = np.nan
         _count, g = independent_samples(weights, slow)
         assert g > 20.0
+
+
+class TestTheRecordSaysHowTheErrorWasMade:
+    """The record's own `method` said blocks of twice the inefficiency and no
+    widening after the bootstrap moved to blocks of three and widened its
+    spread; a reader rebuilding the error from it got one about 10% small."""
+
+    def _record(self, tmp_path: Path, frames: int = 50):
+        analysis = _write_run(tmp_path)
+        rng = np.random.default_rng(4)
+        return reweight_results(
+            {"rmsd": _Result(0.2 + 0.01 * rng.normal(size=frames))},
+            {"rmsd": _Cls((None, "RMSD (nm)"))},
+            n_frames=frames, frame_times_ps=np.linspace(1.0, 200.0, frames),
+            output_dir=analysis)
+
+    def test_the_method_names_blocks_of_three_and_the_widening(
+            self, tmp_path: Path) -> None:
+        method = self._record(tmp_path)["method"]
+        assert "three times that inefficiency" in method
+        assert "`spread_factor`" in method
+        assert "twice" not in method

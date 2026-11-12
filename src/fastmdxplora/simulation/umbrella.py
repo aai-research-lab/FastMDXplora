@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import math
+import warnings
 from dataclasses import dataclass
 from collections.abc import Callable
 from typing import Any
@@ -2426,10 +2427,12 @@ WHAM_MAX_ITERATIONS = 100_000
 
 #: Said in the record beside a PMF's band and beside a barrier read off it.
 #: The figure is from `validation.pmf_coverage` on known profiles (a median
-#: over the bins between the window centres); see docs/validation.md.
+#: over the bins between the window centres, 0.68); see docs/validation.md.
+#: It was 0.8 (0.81) with blocks of 2g and no widening: the offset is the
+#: same, and the error it is read in is wider.
 THE_CURVE_SITS_HIGH = (
     "The curve is zeroed at its lowest bin, which noise puts low, so the "
-    "curve and a barrier read off it sit about 0.8 of their error high.")
+    "curve and a barrier read off it sit about 0.7 of their error high.")
 
 
 def _split_off_the_derived(
@@ -2940,9 +2943,19 @@ def compute_pmf(
             derived["resamples_without_a_number"] = int((~given).sum())
         # One row per resample, the real curve left out; None where a
         # resample had nothing in a bin, as the curve itself writes one.
+        # Widened about their mean by the factor the error was
+        # (`uncertainty.spread_factor`), so a rise judged against the rows
+        # is judged against the spread the error says.
+        rows = np.asarray(curves[1:], dtype=float).reshape(len(curves) - 1, -1)
+        widen = float(uncertainty.get("spread_factor") or 1.0)
+        if widen != 1.0 and rows.size:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                middle = np.nanmean(rows, axis=0)
+            rows = middle + widen * (rows - middle)
         uncertainty["resample_curves_kjmol"] = [
             [float(v) if np.isfinite(v) else None for v in row]
-            for row in curves[1:]]
+            for row in rows]
         if uncertainty["note"]:
             logger.info("Free-energy uncertainty: %s", uncertainty["note"])
         # Where the band is zero wide, and what the curve's own zero does.

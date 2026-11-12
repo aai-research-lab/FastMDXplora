@@ -207,7 +207,7 @@ class TestThePmfCarriesOne:
         assert band["standard_error"][anchor] == 0.0
         assert band["zeroed_at"] == result["pmf"]["coordinate"][anchor]
         assert band["zero"] == umbrella.THE_CURVE_SITS_HIGH
-        assert "about 0.8 of their error high" in band["zero"]
+        assert "about 0.7 of their error high" in band["zero"]
 
 
 class TestAReweightedAverageSaysWhenItsBarIsAFloor:

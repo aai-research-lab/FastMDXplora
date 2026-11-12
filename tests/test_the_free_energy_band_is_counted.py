@@ -150,18 +150,25 @@ def test_a_small_count_at_fixed_seeds_is_held(small_count):
     # (0.45581 and 0.57685): the band's middle came down onto the curve,
     # and the error, now of each bin against that one, changed. The mean
     # gauge's counts did not move: that zero is the same either way.
+    # Blocks of 3g, the spread widened (`uncertainty.spread_factor`), moved
+    # them again, since the resamples are others: 191, 178, 197, 187 and
+    # 199 at 2g, the offsets 0.40827 and 0.03484, and the mean gauge's
+    # band offset under 0.01 (now 0.020). Twenty resamples on four sets
+    # are the guard's, too few to read coverage from. The centring taken
+    # off the long-run variance (``A - b/n``) moved two: 184 and 171 with
+    # ``n / (n - b) / A``.
     row = small_count
     assert row["bins_with_a_band"] == 240
-    assert row["coverage"] == pytest.approx(191 / 240, abs=1e-12)
-    assert row["coverage_between_centres"] == pytest.approx(178 / 222, abs=1e-12)
-    assert row["coverage_1_96_se_between_centres"] == pytest.approx(197 / 222, abs=1e-12)
+    assert row["coverage"] == pytest.approx(187 / 240, abs=1e-12)
+    assert row["coverage_between_centres"] == pytest.approx(174 / 222, abs=1e-12)
+    assert row["coverage_1_96_se_between_centres"] == pytest.approx(196 / 222, abs=1e-12)
     assert row["mean_gauge"]["coverage_between_centres"] == pytest.approx(
-        187 / 222, abs=1e-12)
+        182 / 222, abs=1e-12)
     assert row["mean_gauge"]["coverage_1_96_se_between_centres"] == pytest.approx(
-        199 / 222, abs=1e-12)
-    assert row["curve_offset_between_centres"] == pytest.approx(0.40827, abs=1e-4)
-    assert row["band_offset_between_centres"] == pytest.approx(0.03484, abs=1e-4)
-    assert abs(row["mean_gauge"]["band_offset_between_centres"]) < 0.01
+        200 / 222, abs=1e-12)
+    assert row["curve_offset_between_centres"] == pytest.approx(0.37555, abs=1e-4)
+    assert row["band_offset_between_centres"] == pytest.approx(0.05500, abs=1e-4)
+    assert abs(row["mean_gauge"]["band_offset_between_centres"]) < 0.03
 
 
 def test_the_block_factor_is_put_back(capsys):
@@ -169,10 +176,10 @@ def test_the_block_factor_is_put_back(capsys):
 
     result = pmf_coverage.coverage(2, (4,), block_factor=4)
     assert result["block_factor"] == 4
-    assert uncertainty.BLOCKS_PER_CORRELATION_TIME == 2
+    assert uncertainty.BLOCKS_PER_CORRELATION_TIME == 3
     # It took effect: the same sets' blocks are longer than at the package's.
     package = pmf_coverage.coverage(2, (4,))
-    assert package["block_factor"] == 2
+    assert package["block_factor"] == 3
     assert (min(result["by_resamples"]["4"]["block_lengths"])
             > max(package["by_resamples"]["4"]["block_lengths"]))
     assert pmf_coverage.main(["--sets", "2", "--block-factor", "0"]) == 2
