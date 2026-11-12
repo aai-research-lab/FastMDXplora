@@ -697,25 +697,33 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   before the interval was t's reads as it did.
 - A block bootstrap's blocks are three correlation times (`ceil(3g)`), not
   two, and its resamples' spread is widened by `uncertainty.spread_factor`
-  (saved as `spread_factor`, about 1.1 on correlated frames): a block
+  (about 1.1 on correlated frames; saved as `spread_factor` beside a PMF's
+  band, `delta_g_spread_factor` in `binding`, and `spread_factor` beside a
+  reweighted mean's error): a block
   misses the correlation reaching past its ends, and the resamples are
   centred on the run's own mean, which at 2g put a correlated series'
   standard error 11% to 13% low. On AR(1) series (rho 0.5 to 0.98, 3000 to
-  30000 frames) the 95% interval on a mean held the answer 93.5% to 95.7%
+  30000 frames) the 95% interval on a mean held the answer 92.6% to 95.7%
   of the time, against 88.9% to 93.4%. A binding free energy's interval on
   correlated frames held the exact answer on 550 of 574 one-series studies
   (95.8% +/- 0.8%; 527 before) and 547 of 579 umbrella studies (94.5% +/-
   0.9%; 508 of 554 before); on independent frames, 575 of 599 (576
-  before). Every bootstrap moves: a PMF's band and its resampled curves, so
-  a barrier and the tail are judged against the wider spread (the tail's
-  check refused 20 of those 600 umbrella studies, 46 before), a binding free
-  energy's error and interval, and a reweighted mean's error, whose blocks
-  and widening follow the slower series' g
-  (`weighted_uncertainty(inefficiency=)`). The PMF band on
-  `validation.pmf_coverage`'s 100 sets held the truth in 91.2% of bins
-  (86.4% before), and 94.1% in the mean gauge (89.5%). `correlation_resolved`
-  and the floor are unchanged. A slow tail beside a fast decay still reads
-  low: 92% on 3000 frames with half the correlation at 66 frames.
+  before). Every bootstrap moves: a PMF's band and its resampled curves, a
+  binding free energy's error and interval, and a reweighted mean's error,
+  whose blocks and widening follow the slower series' g
+  (`weighted_uncertainty(inefficiency=)`, which refuses a g that is not a
+  finite positive number). A barrier and the tail are judged against the
+  wider spread, so a marginal barrier quoted before can now be withheld as
+  within its error, and a tail can be refused or passed where it was not:
+  flat turns quoted a barrier on 2 of 100 seeds at 90 frames (10 before)
+  and 1 of 60 at 300 (2 before), and the tail's check refused 20 of those
+  600 umbrella studies (46 before). The PMF band on
+  `validation.pmf_coverage`'s 100 sets held the truth in 91.3% of bins
+  (86.4% before), and 94.2% in the mean gauge (89.5%); a curve zeroed at its
+  lowest bin sits about 0.7 of its error high, said as 0.8 before.
+  `correlation_resolved` and the floor are unchanged. A slow tail beside a
+  fast decay still reads low: 92% on 3000 frames with half the correlation
+  at 66 frames.
 - The console and the GUI say an interval whose error is a floor
   (`delta_g_uncertainty_is_a_floor`) as that interval "or wider (a window
   is too short for its correlation time)"; it read as a plain 95% interval.
@@ -724,7 +732,6 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 - With no bootstrap the console says so once, on the `No interval:` line;
   the tail's warning said it again.
-
 - A study's GPU sampler ends with its run on macOS. macOS says EPERM to
   the zero signal for a process group whose members are all zombies, and
   the sampler read it as going, so it did not end with its run; the
