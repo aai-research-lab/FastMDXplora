@@ -2427,10 +2427,12 @@ WHAM_MAX_ITERATIONS = 100_000
 
 #: Said in the record beside a PMF's band and beside a barrier read off it.
 #: The figure is from `validation.pmf_coverage` on known profiles (a median
-#: over the bins between the window centres); see docs/validation.md.
+#: over the bins between the window centres, 0.68); see docs/validation.md.
+#: It was 0.8 (0.81) with blocks of 2g and no widening: the offset is the
+#: same, and the error it is read in is wider.
 THE_CURVE_SITS_HIGH = (
     "The curve is zeroed at its lowest bin, which noise puts low, so the "
-    "curve and a barrier read off it sit about 0.8 of their error high.")
+    "curve and a barrier read off it sit about 0.7 of their error high.")
 
 
 def _split_off_the_derived(
