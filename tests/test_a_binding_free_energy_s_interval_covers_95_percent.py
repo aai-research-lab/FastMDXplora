@@ -159,6 +159,10 @@ class TestTheIntervalIsTheNumberPlusOrMinusTTimesItsError:
         bare = _what_the_resamples_said(derived(), correction=0.0)
         coned = _what_the_resamples_said(derived(), correction=3.25)
 
+        width = 2.0 * float(student.ppf(0.975, 35)) * 1.0
+        for said in (bare, coned):
+            low, high = said["delta_g_confidence_kjmol"]
+            assert high - low == pytest.approx(width)
         for a, b in zip(bare["delta_g_confidence_kjmol"],
                         coned["delta_g_confidence_kjmol"]):
             assert b == pytest.approx(a + 3.25)
