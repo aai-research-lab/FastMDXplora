@@ -72,6 +72,13 @@ def _open(page, url: str, where: str) -> None:
     page.goto(url + "#" + where, wait_until="domcontentloaded")
     page.wait_for_function("() => window.FastMDXPlace && window.FastMDXDashboard")
     page.wait_for_timeout(1200)
+    if where in STUDY_PAGES:
+        # The place is drawn from the app's state, which a loaded machine
+        # (CI's Linux leg, the Viewer's WebGL starting) can answer after
+        # the wait above: the Viewer was read with no place yet.
+        page.wait_for_function(
+            "(where) => document.documentElement.dataset.page === where && document.querySelector("
+            "'.page:not([hidden]) .page-header .place:not([hidden]) .place-crumb')", arg=where)
 
 
 def test_each_page_of_a_study_of_runs_says_the_study_the_runs_and_the_page(sweep):
