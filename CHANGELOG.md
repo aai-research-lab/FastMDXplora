@@ -673,6 +673,28 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   equilibration in steps; it gave steps times the timestep, 4 ps for a run
   whose clock read 3.28 ps. `recorded_stage_lengths` gives such a summed
   production no steps beside it, the first piece's as `first_piece_steps`.
+- A binding free energy's 95% interval (`delta_g_confidence_kjmol`) is the
+  number +/- Student's t times its standard error, on one fewer degrees of
+  freedom than the resamples that gave a number (2.02 standard errors with
+  40). It was the resamples' 2.5th and 97.5th percentiles, about 1.77
+  standard errors either side with 40, which held the exact answer on 931
+  of 1023 umbrella studies of wells with an exact answer (91.0% +/- 0.9%);
+  the t interval held it on 976 (95.4% +/- 0.7%). Those frames were
+  independent: on correlated frames (not umbrella studies but AR(1)
+  series of 30000 frames, rho 0.9, on a 12 kJ/mol well; blocks of 26 to 48
+  frames, median 31) it held it on 527 of 574 (91.8% +/- 1.1%), the
+  standard error running about 10% low, likely from the block length rule
+  (`BLOCKS_PER_CORRELATION_TIME`), which t does not correct and nothing
+  flags. The percentiles are saved
+  beside it as `delta_g_percentile_interval_kjmol`, and the multiplier,
+  degrees of freedom, level and method as `delta_g_confidence_multiplier`,
+  `delta_g_confidence_degrees_of_freedom`, `delta_g_confidence_level` and
+  `delta_g_confidence_from`.
+- The console and the GUI's answer from the records say a binding free
+  energy's 95% interval (`95% interval:   -10.9 to -9.8 kJ/mol`), or why
+  there is none (`delta_g_no_interval`); they said only the number +/- its
+  standard error, and a bare number where there was none. A record from
+  before the interval was t's reads as it did.
 
 ### Fixed
 
@@ -2514,6 +2536,21 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Tests: the Agent's cut-thread tests wait for the page to read its study
   before Retry; the 1L2Y particle count is bounded at the 2.0 nm default
   solvent padding (7,067).
+- A binding free energy whose resamples give no spread (`bootstrap_resamples:
+  1`, or every resample the same number) has no interval and says so in
+  `delta_g_no_interval`, its standard error `null`. Before, with every
+  resample the same number, it saved a standard error of 0 (or of rounding,
+  about 1e-15) and an interval of no width; with one resample, a standard
+  error of NaN (`null` in `pmf.json`) with no word why, and an interval of
+  no width. A study with no bootstrap (`bootstrap_resamples: 0`) says so
+  there too.
+- Equal 2.5th and 97.5th percentiles no longer count as no spread: the
+  rounding tolerance alone decides. 196 resamples at -10 and 4 at -9 tie
+  them with a standard error of about 0.14, and saved no interval, saying
+  every resample gave the same number. A `value` in `resampled=` that is
+  NaN or not a number gives no interval and says why; it gave [nan, nan] or
+  raised. The GUI no longer calls a missing error "a standard error", nor
+  gives an error of rounding to 16 decimal places, on older records.
 
 ### Added
 

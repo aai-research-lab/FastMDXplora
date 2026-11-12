@@ -227,7 +227,10 @@ class TestWhatTheNumberSaysAboutItself:
              "note": "shorter than its own correlation time", "resamples": 200},
             correction=2.5)
         assert said["delta_g_uncertainty_is_a_floor"] is True
-        assert said["delta_g_confidence_kjmol"] == [-19.5, -15.5]
+        # -20 + 2.5 +/- t(0.975, 199) x 1.0; the percentiles shifted beside.
+        assert said["delta_g_confidence_kjmol"] == pytest.approx(
+            [-17.5 - 1.971957, -17.5 + 1.971957], abs=1e-6)
+        assert said["delta_g_percentile_interval_kjmol"] == [-19.5, -15.5]
         assert "correlation time" in said["delta_g_uncertainty_note"]
         assert said["delta_g_resamples"] == 200
 
