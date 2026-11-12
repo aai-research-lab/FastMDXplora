@@ -251,6 +251,10 @@ def _judge_the_bulk(radius: np.ndarray, energy: np.ndarray,
 #: The level of the binding free energy's interval.
 DELTA_G_CONFIDENCE = 0.95
 
+#: A standard error at or below this times the number's size (or 1 kJ/mol)
+#: is rounding: the resamples were all the same number.
+NO_SPREAD = 1e-12
+
 
 def _finite(value: Any) -> "float | None":
     """`value` as a float, or None where it is missing, NaN or infinite."""
@@ -262,7 +266,7 @@ def _finite(value: Any) -> "float | None":
 
 
 def _the_interval(value: float, error: "float | None",
-                  given: "int | None") -> dict[str, Any]:
+                  given: "int | None", alike: bool) -> dict[str, Any]:
     """The 95% interval on the binding free energy: ``value +/- t * error``.
 
     t is Student's two-sided quantile at 95% on ``given - 1`` degrees of
@@ -278,17 +282,21 @@ def _the_interval(value: float, error: "float | None",
     built on it, and held the exact answer about 95% of the time
     (docs/studies.md gives the counts).
 
-    Those studies' frames were independent. On correlated frames (an AR(1)
-    series at rho 0.9, a correlation time of about 19 frames, blocks of
-    31 to 39) the same interval held the exact answer in 527 of 574
-    studies (91.8% +/- 1.1%): the standard error ran about 10% low there
-    (the number's spread was 1.10 times it), from the block length rule
+    Those studies' frames were independent. On correlated frames (not
+    umbrella studies: each one AR(1) series of 30000 frames at rho 0.9 on
+    a 12 kJ/mol well, a correlation time of about 19 frames, estimated at
+    about 15 to 16, and blocks of 26 to 48 frames, median 31) the same
+    interval held the exact answer in 527 of 574 studies (91.8% +/-
+    1.1%): the standard error ran about 10% low there (the number's spread
+    was 1.10 times it), likely from the block length rule
     (`uncertainty.BLOCKS_PER_CORRELATION_TIME`), which t does not correct
     and nothing in the record flags.
 
     No interval where there is no standard error, as with fewer than two
     resamples that gave a number (`bootstrap_resamples: 1`): one resample
-    has no spread, and its percentiles made an interval of no width.
+    has no spread, and its percentiles made an interval of no width. None
+    either where the error is missing, not finite or negative, or where
+    the resamples have no spread (`alike`).
     """
     none = {"delta_g_confidence_kjmol": None,
             "delta_g_confidence_multiplier": None,
@@ -299,23 +307,20 @@ def _the_interval(value: float, error: "float | None",
             + ("" if given == 1 else "s")
             + " gave a binding free energy, and a standard error needs at "
             "least two (`bootstrap_resamples` sets how many are taken).")}
-    if error is None:
+    if error is None or error < 0.0:
         # Not from `block_bootstrap`, which gives a finite error with two or
         # more numbers; an older or edited record, or infinite resamples.
         return {**none, "delta_g_no_interval": (
             "There is no interval: the standard error could not be computed "
-            "(it is missing or not a finite number)"
+            "(it is missing, negative or not a finite number)"
             + ("" if given is None else
                f", though {given} resamples gave a binding free energy")
             + ".")}
-    if error == 0.0:
-        # Every resample gave the same number: a window shorter than its own
-        # block is resampled whole, so the resamples say nothing about the
-        # spread, and an interval of no width would claim it is none.
+    if alike:
+        # An interval of no width would claim there is no spread at all.
         return {**none, "delta_g_no_interval": (
             "There is no interval: every resample gave the same binding "
-            "free energy, so they say nothing about its spread (a window "
-            "shorter than its own block is resampled whole).")}
+            "free energy, so there is no spread.")}
     multiplier = _two_sided(1.0 - DELTA_G_CONFIDENCE, given)
     return {
         "delta_g_confidence_kjmol": [value - multiplier * error,
@@ -370,12 +375,20 @@ def _what_the_resamples_said(resampled: "dict[str, Any] | None",
              if resampled.get("resamples_with_a_number") is not None
              else resampled.get("resamples"))
     given = None if given is None else int(given)
-    interval = _the_interval(float(resampled["value"]) + correction, error,
-                             given)
+    value = float(resampled["value"])
+    # Resamples that are all the same number give an error of rounding
+    # (`np.nanstd` of equal values is about 1e-15, not 0), and equal
+    # percentiles; in `block_bootstrap` ties come only from that.
+    alike = error is not None and error >= 0.0 and (
+        error <= NO_SPREAD * max(1.0, abs(value))
+        or (low is not None and low == high))
+    interval = _the_interval(value + correction, error, given, alike)
     return {
-        # None where the resamples gave no spread (NaN, or 0 with every
-        # resample the same number), never NaN.
-        "delta_g_standard_error_kjmol": None if error == 0.0 else error,
+        # Saved only beside an interval: None with no spread, too few
+        # resamples or an error that is not a finite number, never NaN.
+        "delta_g_standard_error_kjmol": (
+            None if interval["delta_g_confidence_kjmol"] is None
+            else error),
         **interval,
         "delta_g_confidence_level": DELTA_G_CONFIDENCE,
         "delta_g_confidence_from": (

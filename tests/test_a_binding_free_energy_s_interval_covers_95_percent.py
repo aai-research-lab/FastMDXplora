@@ -235,6 +235,61 @@ class TestNoSpreadIsNoInterval:
         assert said["delta_g_standard_error_kjmol"] is None
         assert "the same binding free energy" in said["delta_g_no_interval"]
 
+    def test_resamples_all_the_same_through_the_bootstrap_give_none(self):
+        """`block_bootstrap` of resamples that are all one number gives an
+        error of rounding (about 1e-15), not 0, as umbrella carries the
+        binding free energy: appended to the curve."""
+        rng = np.random.default_rng(5)
+        frames = {0: np.random.default_rng(1).normal(size=50)}
+        for _ in range(20):
+            number = float(rng.normal(-10.0, 3.0))
+            got = block_bootstrap(
+                frames, lambda s, c=number: np.append(np.zeros(62), c),
+                resamples=40, seed=3).as_dict()
+            record = {key: got[key][-1] for key in (
+                "value", "standard_error", "confidence_low",
+                "confidence_high")}
+            said = _what_the_resamples_said(
+                derived(**record, resamples=40, resamples_with_a_number=40,
+                        resamples_without_a_number=0), correction=0.0)
+
+            assert said["delta_g_confidence_kjmol"] is None, number
+            assert said["delta_g_standard_error_kjmol"] is None, number
+            assert said["delta_g_no_interval"] == (
+                "There is no interval: every resample gave the same "
+                "binding free energy, so there is no spread.")
+
+    def test_a_small_real_spread_still_gives_an_interval(self):
+        """A guard, passing before this round too: the rounding tolerance
+        must not swallow a real error of 1e-6 kJ/mol."""
+        said = _what_the_resamples_said(
+            derived(standard_error=1e-6, confidence_low=-20.000002,
+                    confidence_high=-19.999998), correction=0.0)
+
+        assert said["delta_g_standard_error_kjmol"] == 1e-6
+        assert said["delta_g_confidence_kjmol"] is not None
+
+    def test_a_negative_error_gives_no_interval(self):
+        said = _what_the_resamples_said(
+            derived(standard_error=-1.0), correction=0.0)
+
+        assert said["delta_g_confidence_kjmol"] is None
+        assert said["delta_g_standard_error_kjmol"] is None
+        assert "could not be computed" in said["delta_g_no_interval"]
+
+    @pytest.mark.parametrize("given", [0, 1])
+    def test_an_error_beside_too_few_resamples_is_not_saved(self, given):
+        """The record must not save an error beside a reason that says
+        there cannot be one."""
+        said = _what_the_resamples_said(
+            derived(standard_error=1.0, resamples=given,
+                    resamples_with_a_number=given,
+                    resamples_without_a_number=0), correction=0.0)
+
+        assert said["delta_g_confidence_kjmol"] is None
+        assert said["delta_g_standard_error_kjmol"] is None
+        assert "needs at least two" in said["delta_g_no_interval"]
+
     @pytest.mark.parametrize("error", [None, float("nan"), float("inf")])
     def test_an_error_lost_beside_many_resamples_says_it_was_not_computed(
             self, error):
