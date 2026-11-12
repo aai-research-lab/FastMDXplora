@@ -734,6 +734,36 @@ def _several_runs(base: Path) -> str:
     return MARK + "\n\n" + "\n\n".join(parts)
 
 
+def _a_finite_number(value: Any) -> bool:
+    import math
+
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+def _the_binding_s_interval(binding: dict[str, Any], error: float | None) -> str:
+    """The interval on the binding free energy, with its level, to the
+    error's decimal place, or why there is none (`delta_g_no_interval`).
+    Empty for a record from before the interval was t's (no
+    `delta_g_confidence_level`), whose interval was the resamples'
+    percentiles and not 95%."""
+    import math
+
+    level = binding.get("delta_g_confidence_level")
+    if not _a_finite_number(level):
+        return ""
+    interval = binding.get("delta_g_confidence_kjmol")
+    if (error is not None and isinstance(interval, (list, tuple)) and len(interval) == 2
+            and all(_a_finite_number(bound) for bound in interval)):
+        places = max(0, 1 - math.floor(math.log10(error)))
+        return (f", with a {level:.0%} interval of {interval[0]:,.{places}f} to "
+                f"{interval[1]:,.{places}f} kJ/mol")
+    reason = str(binding.get("delta_g_no_interval") or "").strip().rstrip(".")
+    if not reason:
+        return ""
+    return ", with no interval: " + reason.removeprefix("There is no interval: ")
+
+
 def _free_energy(base: Path) -> str:
     """What an umbrella study's windows gave, as its record says: the binding
     free energy with its error and warnings, the profile alone, or why there
@@ -755,10 +785,17 @@ def _free_energy(base: Path) -> str:
     value = binding.get("delta_g_kjmol")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         error = binding.get("delta_g_standard_error_kjmol")
-        error = error if isinstance(error, (int, float)) and not isinstance(error, bool) \
-            else None
+        error = error if _a_finite_number(error) else None
+        if error is not None:
+            from fastmdxplora.simulation.binding import NO_SPREAD
+
+            # A record from before the tolerance saved an error of rounding
+            # (about 1e-15) where the resamples were all one number.
+            error = None if error <= NO_SPREAD * max(1.0, abs(value)) else error
         said = (f"Its windows give a binding free energy of {with_its_error(value, error)} "
-                "kJ/mol (standard state, 1 M; the error a standard error).")
+                "kJ/mol (standard state, 1 M"
+                + ("; the error a standard error)" if error is not None else ")")
+                + _the_binding_s_interval(binding, error) + ".")
         from fastmdxplora.simulation.binding import the_depth_s_verdict
 
         warnings = list((binding.get("reference") or {}).get("warnings") or [])

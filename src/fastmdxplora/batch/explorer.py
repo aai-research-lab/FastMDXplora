@@ -964,6 +964,34 @@ class _WindowsRanOtherwise(StudyError):
     default_code = "config.option.conflicting"
 
 
+def _a_finite_number(value: Any) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+def _the_binding_s_interval(binding: dict[str, Any]) -> list[str]:
+    """The binding free energy's interval as the console says it, with its
+    level, or why there is none (`delta_g_no_interval`).
+
+    A record from before the interval was t's (no `delta_g_confidence_level`)
+    says neither: its `delta_g_confidence_kjmol` was the resamples'
+    percentiles, which held the answer too seldom to be called 95%.
+    """
+    level = binding.get("delta_g_confidence_level")
+    if not _a_finite_number(level):
+        return []
+    interval = binding.get("delta_g_confidence_kjmol")
+    if (isinstance(interval, (list, tuple)) and len(interval) == 2
+            and all(_a_finite_number(bound) for bound in interval)):
+        label = f"{level:.0%} interval:"
+        return [f"{label:<16}{interval[0]:.1f} to {interval[1]:.1f} kJ/mol"]
+    reason = str(binding.get("delta_g_no_interval") or "").strip()
+    if not reason:
+        return []
+    reason = reason.removeprefix("There is no interval: ")
+    return [f"No interval:    {reason[:1].upper()}{reason[1:]}"]
+
+
 def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     """The binding free energy as the console says it, with its warnings.
 
@@ -976,9 +1004,10 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     value = binding.get("delta_g_kjmol")
     if value is not None:
         error = binding.get("delta_g_standard_error_kjmol")
-        spread = f" +/- {error:.1f}" if error is not None else ""
+        spread = f" +/- {error:.1f}" if _a_finite_number(error) else ""
         lines.append(f"Binding:        {value:.1f}{spread} kJ/mol "
                      "(standard state, 1 M)")
+        lines.extend(_the_binding_s_interval(binding))
     elif binding.get("refused"):
         from fastmdxplora.simulation.binding import the_kt_refusal
 

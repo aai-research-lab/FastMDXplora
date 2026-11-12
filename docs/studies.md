@@ -974,8 +974,16 @@ number for this box with water's dielectric constant, and how many ions there
 are to screen it. It is an estimate of size and sign, not a correction, and it
 shrinks with the box's volume.
 
-The console says the binding free energy, or why it was withheld, and each
-warning, below the line naming `pmf.json`.
+The console says the binding free energy, or why it was withheld, its 95%
+interval or why there is none, and each warning, below the line naming
+`pmf.json`:
+
+```
+Binding:        -10.4 +/- 0.3 kJ/mol (standard state, 1 M)
+95% interval:   -10.9 to -9.8 kJ/mol
+```
+
+The GUI's answer from the records says the same.
 
 ### Running windows again in place
 
