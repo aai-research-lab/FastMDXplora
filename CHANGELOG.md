@@ -733,6 +733,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Tests: a resume starting as the GUI tries the study's lock is checked
+  with the probe holding it until the resume has found it taken once, and
+  saying so before it lets go. The resume tries again once the probe has
+  let go, and is checked to hold the lock. The probe let go before saying
+  so, and a resume that took the lock in between failed the test (macOS
+  3.11 on CI).
 - The Viewer shows the frame asked for while the frames arrive in pieces.
   A piece appended while a frame was on its way showed its frame again
   over it, at the frame shown before: a seek then was undone, and the
