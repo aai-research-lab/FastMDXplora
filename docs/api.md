@@ -19,13 +19,13 @@ blocks, under the same names.
 
 ```python
 FastMDXplora(
-    system=None,          # str | PathLike | None — a PDB/CIF path or a 4-char PDB ID
+    system=None,          # str | PathLike | None: a PDB/CIF path or a 4-char PDB ID
     *,
-    config=None,          # str | PathLike | None — a Config file
-    config_data=None,     # dict | None — the same, already parsed
+    config=None,          # str | PathLike | None: a Config file
+    config_data=None,     # dict | None: the same, already parsed
     output_dir=None,      # str | PathLike | None
-    options=None,         # dict[str, dict] | None — settings, by phase
-    study_options=None,   # dict | None — top-level settings, checked with options
+    options=None,         # dict[str, dict] | None: settings, by phase
+    study_options=None,   # dict | None: top-level settings, checked with options
     verbose=False,
     include_phase=None,   # list[str] | None
     exclude_phase=None,   # list[str] | None
@@ -79,7 +79,7 @@ runs = fastmdx.FastMDXplora(config_data=study, output_dir="runs/study").explore(
 ```
 
 `config_data` takes the same shape as a Config on disk, so it **must carry a
-`systems` list** — a single system is a list of one. This is the route to take
+`systems` list**: a single system is a list of one. This is the route to take
 when a script is assembling studies, and it is what the CLI and the
 [Agent](agent.md) use internally.
 
@@ -111,13 +111,13 @@ sequence) and a selection that does not parse.
 study.explore(
     include_phase=None, # list[str] | None
     exclude_phase=None, # list[str] | None
-    options=None,       # dict[str, dict] | None — merged over the constructor's
+    options=None,       # dict[str, dict] | None: merged over the constructor's
     report=True,        # False drops the report phase
     dry_run=False,      # plan only; runs nothing
     force=False,        # run into an output directory that already holds results
     include=None,       # the earlier spelling of include_phase
     exclude=None,       # the earlier spelling of exclude_phase
-    rerun_windows=None, # list[int] | None — umbrella windows to run again, in place
+    rerun_windows=None, # list[int] | None: umbrella windows to run again, in place
     check=False,        # raise StudyFailed if any run failed (below)
     keep_previous=False,  # as force, saving what is replaced in previous/<phase>
 )  # -> list[RunResult]
@@ -152,7 +152,7 @@ Note the names: the methods are `simulate` and `analyze`, the phases are
 And, for a study of more than one run:
 
 ```python
-study.compare(output_dir=None)   # -> Path | None — rebuilds comparison/
+study.compare(output_dir=None)   # -> Path | None: rebuilds comparison/
 ```
 
 `compare` returns `None` where there are fewer than two successful runs or no
@@ -162,7 +162,7 @@ comparable analysis output.
 
 ## What comes back
 
-`explore()` returns **a list of `RunResult`, always** — a single study is a
+`explore()` returns **a list of `RunResult`, always**: a single study is a
 list of one with `run_id="s1"`; a sweep or an umbrella study is a list of many.
 
 ```python
@@ -237,7 +237,7 @@ except StudyError as exc:
     refusal.code        # 'setup.chemistry.protonation_undetermined'
     refusal.kind        # 'semantic'
     refusal.retryable   # False
-    refusal.permitted   # None — the software does not know the answer
+    refusal.permitted   # None: the software does not know the answer
 ```
 
 `refusal_of` is total: anything you hand it comes back as a `Refusal`, even an
@@ -403,7 +403,7 @@ from another terminal while the Python process runs:
 fastmdx gui --output runs/study
 ```
 
-That gives telemetry, the molecule in 3D and the results as they appear — the
+That gives telemetry, the molecule in 3D and the results as they appear: the
 same as for a run started from the command line.
 
 ---
@@ -492,7 +492,7 @@ the terminal and ends when the run does. The CLI calls it; nothing else should.
 | `fastmdxplora.config` | Schema, loader, template generation |
 | `fastmdxplora.setup` / `.simulation` / `.report` | Each phase's `run()` and its direct-use helpers |
 | `fastmdxplora.refusals`, `.statistics`, `.cost`, `.provenance`, `.explain`, `.advisories` | Public |
-| `fastmdxplora.validation` | Measurements of the software's own behaviour — see [How FastMDXplora is validated](validation.md) |
+| `fastmdxplora.validation` | Measurements of the software's own behaviour: see [How FastMDXplora is validated](validation.md) |
 | `fastmdxplora.agent` | [The Agent](agent.md), plus campaign machinery |
 | `fastmdxplora.remote.api` | [Running on another machine](#running-on-another-machine); the rest of `fastmdxplora.remote` is what it is built from |
 | `fastmdxplora.batch` | The execution layer underneath `FastMDXplora`. Usable, but `FastMDXplora(config=…)` is the supported path |
@@ -644,13 +644,13 @@ read before comparing a result against another tool.
    :no-index:
 ```
 
-The full per-analysis reference — every one of the 31 classes, its options and
-what each changes — is in [The FastMDXplora analyses](analyses.md).
+The full per-analysis reference (every one of the 31 classes, its options and
+what each changes) is in [The FastMDXplora analyses](analyses.md).
 
 ---
 
 ## See also
 
-- **[The FastMDXplora Config](config.md)** — every setting `options` accepts
-- **[The FastMDXplora Manifest](manifest.md)** — what a finished run records
-- **[Worked examples](examples.md)** — recipes, several with Python
+- **[The FastMDXplora Config](config.md)**, every setting `options` accepts
+- **[The FastMDXplora Manifest](manifest.md)**: what a finished run records
+- **[Worked examples](examples.md)**: recipes, several with Python

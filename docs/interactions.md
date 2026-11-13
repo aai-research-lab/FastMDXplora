@@ -73,7 +73,7 @@ thresholds are.
 ## The chemistry comes first
 
 Whether a nitrogen donates, whether a ring is aromatic, whether a group is
-charged — these are chemistry, not coordinates, and a trajectory carries only
+charged: these are chemistry, not coordinates, and a trajectory carries only
 coordinates. The chemistry is resolved before any geometry is computed, by the
 first of these that works:
 
@@ -115,7 +115,7 @@ writing a neutral group, so a nitro group or an N-oxide forms no salt bridge.
 charge inferred from coordinates is ambiguous more often than not: for
 guanidinium both +1 and −1 balance, and for a phenol both 0 and −2 do. Where
 the charge was not determined, those two are not reported and the reason is
-recorded. The rest of the analysis continues — a ligand whose charge is
+recorded. The rest of the analysis continues: a ligand whose charge is
 unknown still has hydrogen bonds.
 
 **A topology without bonds is refused outright.** Hydrogen bonds cannot be
@@ -139,15 +139,15 @@ per cent; only the second has an error bar worth printing.
 
 So each interaction is reported with:
 
-- **occupancy** — the fraction of frames it was present
-- **episodes** — how many separate times it formed
+- **occupancy**: the fraction of frames it was present
+- **episodes**: how many separate times it formed
 - **standard error**: `sqrt(p(1 − p) g / N)` for occupancy `p` over `N`
   frames, with `g` the statistical inefficiency of the present-or-absent
   series: consecutive frames are correlated, and using the frame count alone
   gives a number several times too small. Left empty where the contact formed
   fewer than twice, or where a correlated presence (`g` of 2 or more) holds
   fewer than 25 independent samples
-- **well sampled** — whether it rests on enough independent observation to
+- **well sampled**, whether it rests on enough independent observation to
   average
 
 The figure plots thinly observed contacts as hollow markers rather than footnoting them,
@@ -172,8 +172,8 @@ not the observation.
 
 T4 lysozyme L99A with benzene bound (PDB 181L) is the standard test case for a
 purely hydrophobic binding site. A short run of it finds hydrophobic contacts
-and nothing else — benzene has no donors, no acceptors, no charge and no
-halogens — with the highest occupancy on ALA99, which is the mutation that
+and nothing else (benzene has no donors, no acceptors, no charge and no
+halogens) with the highest occupancy on ALA99, which is the mutation that
 creates the cavity (columns abridged):
 
 ```
@@ -203,7 +203,7 @@ implementation: one supplied criteria, the other supplied results.
 **PLIP is where several of the criteria come from.** The 4.0 Å hydrophobic
 contact, π-stacking, π-cation, metal coordination and the water bridge are
 PLIP's published definitions, cited in the table above and in each rule's
-docstring. PLIP itself is not run — not as a dependency and not as a check.
+docstring. PLIP itself is not run, not as a dependency and not as a check.
 It re-protonates every frame with OpenBabel, which is not deterministic
 between runs and discards the protonation that setup determined at the simulated
 pH. A tool that re-decides the protonation per frame is answering a different

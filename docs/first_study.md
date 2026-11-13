@@ -33,8 +33,8 @@ partial install are in [Installing FastMDXplora](installation.md).
 fastmdx gui
 ```
 
-A tab opens. Type `1L2Y` as the structure — that is Trp-cage, a 20-residue
-protein that folds in microseconds and simulates in minutes — leave everything
+A tab opens. Type `1L2Y` as the structure (that is Trp-cage, a 20-residue
+protein that folds in microseconds and simulates in minutes) leave everything
 else alone, and press **Run**.
 
 You will watch the setup phase clean the structure up and solvate it, the
@@ -65,7 +65,7 @@ fastmdx explore --system 1L2Y --output runs/smoke \
   --simulate-trajectory-interval-steps 50
 ```
 
-That is 10 ps, which is far too short to mean anything — and the report will
+That is 10 ps, which is far too short to mean anything, and the report will
 tell you so, in as many words. It is for checking the machinery works.
 
 ---
@@ -99,14 +99,14 @@ runs/trpcage/
 
 Three things are worth opening first.
 
-**`report/report.pdf`** — the study written up, including a methods paragraph
+**`report/report.pdf`**: the study written up, including a methods paragraph
 you can paste into a manuscript and a convergence section saying what the run
 does and does not support.
 
-**`analysis/rmsd/rmsd.png`** — has the structure equilibrated, or is it still
+**`analysis/rmsd/rmsd.png`**: has the structure equilibrated, or is it still
 moving?
 
-**`setup/setup_parameters.json`** — what the setup phase decided about your
+**`setup/setup_parameters.json`**: what the setup phase decided about your
 structure, and why. Every non-standard residue, every protonation call.
 
 Or open the lot in the GUI:
@@ -142,7 +142,7 @@ Sixteen of them. On by default; `--no-explain` turns them off. See
 
 ## A protein with a ligand
 
-Nothing extra to do — hand it a structure that has one:
+Nothing extra to do: hand it a structure that has one:
 
 ```bash
 fastmdx explore --system 181L --setup-forcefield amber-openff --output runs/lysozyme
@@ -151,12 +151,12 @@ fastmdx explore --system 181L --setup-forcefield amber-openff --output runs/lyso
 181L is T4 lysozyme with benzene bound. The setup phase finds the benzene,
 looks its chemistry up, determines its protonation in the binding site,
 parameterises it with OpenFF, and discards the crystallisation additives that
-are not part of the question. The analysis phase then adds the protein–ligand
+are not part of the question. The analysis phase then adds the protein-ligand
 analyses, including what is holding the ligand there rather than just how much
 of the protein it touches.
 
-Where a structure is genuinely ambiguous — an unknown residue, a charge that
-cannot be determined — setup stops and says what it could not decide, rather than
+Where a structure is genuinely ambiguous (an unknown residue, a charge that
+cannot be determined) setup stops and says what it could not decide, rather than
 guessing.
 
 See [Protein-ligand interactions](interactions.md) for what the analyses mean.
@@ -188,7 +188,7 @@ print(runs[0].output_dir)
 
 ## When something goes wrong
 
-**The run stops during setup.** Read the message — the setup phase refuses
+**The run stops during setup.** Read the message: the setup phase refuses
 rather than guesses, and it says what it could not decide and what would decide
 it.
 
@@ -203,15 +203,15 @@ differ, and it gives the ones that apply.
 anything else. A short run has almost no independent information in it, and the
 report says how much.
 
-Every refusal carries an identifier as well as a sentence — see
+Every refusal carries an identifier as well as a sentence: see
 [FastMDXplora refusals](refusals.md).
 
 ---
 
 ## Where next
 
-- **[How FastMDXplora works](how_it_works.md)** — what each phase decides
-- **[The FastMDXplora Config](config.md)** — writing a study down
-- **[Worked examples](examples.md)** — recipes for common studies
-- **[Studies beyond a box of water](studies.md)** — restraints, membranes, enhanced sampling
-- **[Reading the results](results.md)** — what each number is worth
+- **[How FastMDXplora works](how_it_works.md)**: what each phase decides
+- **[The FastMDXplora Config](config.md)**: writing a study down
+- **[Worked examples](examples.md)**: recipes for common studies
+- **[Studies beyond a box of water](studies.md)**: restraints, membranes, enhanced sampling
+- **[Reading the results](results.md)**: what each number is worth

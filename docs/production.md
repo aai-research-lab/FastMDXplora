@@ -35,7 +35,7 @@ fastmdx explore --system your.pdb --output runs/smoke \
 ```
 
 Twelve picoseconds through every phase (ten of production). It proves the structure prepares, the
-system builds, the platform works and the report writes — which is everything
+system builds, the platform works and the report writes, which is everything
 except the length. A setup problem found after six hours of production is the
 same problem found in two minutes.
 
@@ -64,7 +64,7 @@ estimate_study(config, particles=62_000, platform_name="CUDA", precision="mixed"
 dynamics is dominated by the nonbonded calculation, whose cost is close to
 linear in particle count, so cost over a run is close to `k × particles ×
 steps`. `k` is a property of the hardware, the platform and the precision, not
-of the protein — which is why one calibration serves every study on a machine.
+of the protein, which is why one calibration serves every study on a machine.
 
 It is an approximation and says so. It ignores the PME mesh term's mild
 superlinearity, the constraint solver's iteration count, and the fixed per-step
@@ -73,7 +73,7 @@ which is what a scheduling decision needs and not what a paper would quote.
 
 `measure_this_machine()` runs argon in a periodic box with a cutoff and no
 water: the cheapest thing that exercises the nonbonded calculation the model is
-built on. It warms up before timing — the first steps pay for kernel
+built on. It warms up before timing: the first steps pay for kernel
 compilation and buffer allocation, and charging them to the constant would
 overstate every estimate afterwards, on a GPU by a great deal. And it records
 the platform it *actually ran on* rather than the one that was asked for, since
@@ -110,7 +110,7 @@ order of magnitude.
 ### The machine learns from what it has run
 
 Argon is a bootstrap. A machine that has run real studies knows more about
-itself than that — every finished run writes `simulation/cost.json` beside its
+itself than that, every finished run writes `simulation/cost.json` beside its
 output, holding particles, steps, seconds, platform and precision.
 
 ```python
@@ -118,13 +118,13 @@ from fastmdxplora.cost import calibrate_from_runs
 
 fit = calibrate_from_runs("runs", platform_name="CUDA", precision="mixed")
 fit.runs      # 4
-fit.spread    # 1.01 — the runs agree
+fit.spread    # 1.01: the runs agree
 ```
 
 The fit does something a single point cannot: it says whether the cost model's
 assumption holds **here at all**. Seconds are taken to go as particles times
-steps, and if that fails on some hardware — a mesh term dominating differently,
-occupancy changing sharply with system size — the per-run constants will not
+steps, and if that fails on some hardware (a mesh term dominating differently,
+occupancy changing sharply with system size) the per-run constants will not
 agree.
 
 ```
@@ -135,7 +135,7 @@ environment.calibration.inconsistent
 ```
 
 Refused rather than averaged, at a generous threshold of a factor of three,
-because refusing a usable fit sends somebody back to argon — which is worse
+because refusing a usable fit sends somebody back to argon, which is worse
 information.
 
 Runs from another platform or precision are excluded rather than averaged in: a
@@ -156,7 +156,7 @@ nohup fastmdx explore \
   > /scratch/$USER/runs/my_run.log 2>&1 &
 ```
 
-Under a scheduler, the same command goes in the job script — see
+Under a scheduler, the same command goes in the job script: see
 [Running FastMDXplora elsewhere](clusters.md#batch-schedulers).
 
 Put the output on fast local storage rather than a network filesystem: the
@@ -174,7 +174,7 @@ directory:
 fastmdx gui --output /scratch/$USER/runs/my_run
 ```
 
-That works while the run is in progress — telemetry, energies, and the molecule
+That works while the run is in progress: telemetry, energies, and the molecule
 moving as frames arrive.
 
 From your own machine against a cluster, keep the directory in sync:
@@ -192,14 +192,14 @@ Re-run the `rsync` as often as you like.
 
 The honest answer is that it depends on what you are asking, and the report
 will tell you whether you got there. Its convergence section reports how many
-**independent** observations the trajectory holds — far fewer than the frame
+**independent** observations the trajectory holds: far fewer than the frame
 count, because consecutive frames are nearly the same structure.
 
 A useful pattern: run something, read the convergence section, and extend if it
 says the observables have not equilibrated or rest on too little. That is more reliable
 than choosing a number in advance.
 
-`sampling_shortfall` turns that into a figure — see
+`sampling_shortfall` turns that into a figure: see
 [Reading the results](results.md#not-enough-data-is-a-refusal-too).
 
 ### Running until it is determined
@@ -473,11 +473,11 @@ execution:
 
 Each worker takes a share of the cores rather than all of them, so the runs
 divide the machine instead of fighting over it. Parallelism is process-based
-and mandatory — OpenMM contexts and the GIL do not share across threads.
+and mandatory: OpenMM contexts and the GIL do not share across threads.
 
 For most systems `workers` should not exceed the number of GPUs: two large runs
 sharing one device are slower than the same two in sequence. **Umbrella windows
-are the exception** — a window is a small system and rarely keeps a large GPU
+are the exception**: a window is a small system and rarely keeps a large GPU
 busy, so three or four on one card is usually worth doing. See
 [Umbrella sampling](studies.md#umbrella-sampling).
 
@@ -515,7 +515,7 @@ state, and for two methods that is the whole calculation.
 | Steered | **No** | The moving restraint is placed by absolute step number, so a resumed piece pulls from an anchor the protein is not at, and the work integral is taken along a path nothing walked |
 | A hand-written PLUMED script | **No** | What state it keeps is not something this software can read, and guessing permissively is the expensive way to be wrong |
 
-Submitting the same study in one piece is always allowed — the refusal is about
+Submitting the same study in one piece is always allowed: the refusal is about
 splitting, not about the method.
 
 ### Constant pressure is a qualification, not a refusal
@@ -544,7 +544,7 @@ segmentability({"simulation": {"duration_ns": 100}})
 
 Constant pressure means the ensemble production runs in, decided as the runner
 decides it: a study that names no `ensemble` is NPT and is qualified, and one
-with `ensemble: nvt` is not, even with a `pressure_bar` in its config — that
+with `ensemble: nvt` is not, even with a `pressure_bar` in its config: that
 pressure is the equilibration's.
 
 That is a **qualification**. The state the second piece starts from is
@@ -555,7 +555,7 @@ and the barostat's acceptance rate is off for a while at each join.
 Refusing would refuse constant pressure, which is most work anybody does.
 Saying nothing would leave a volume artefact for somebody to find. So the
 qualification travels into the run's own provenance, and volume or density
-averaged across a join should discard a window on either side —
+averaged across a join should discard a window on either side:
 `provenance["joins"]` records where they are.
 
 ### The checkpoint seal
@@ -578,7 +578,7 @@ frames a killed segment wrote after its last checkpoint, since the resume runs
 them again.
 
 Required for segments, where the predecessor was written by this software and
-its checkpoints are always sealed. Not required otherwise — refusing a
+its checkpoints are always sealed. Not required otherwise: refusing a
 hand-made checkpoint would be refusing a legitimate use over a convention
 nobody agreed to.
 
@@ -601,7 +601,7 @@ can see the state without committing to producing a file.
 
 Concatenation is four lines. The refusals are the module:
 
-- **A gap** is the failure that most looks like success — segments two and four
+- **A gap** is the failure that most looks like success: segments two and four
   concatenate perfectly with three missing, and what comes out is not a shorter
   trajectory but one with a jump in the middle. Equilibration detection would
   find a transient that is really a discontinuity, and a correlation time
@@ -611,8 +611,8 @@ Concatenation is four lines. The refusals are the module:
   file says so.
 - **Segments from two studies** look alike on disk and concatenate without
   complaint. Each segment's resolved Config says which study it was, and the
-  settings that vary between segments by design — production steps, minimize,
-  `resume_from` — are excluded before comparing.
+  settings that vary between segments by design (production steps, minimize,
+  `resume_from`) are excluded before comparing.
 
 **A joined run has to be read differently** from one that went through in a
 single piece. See
@@ -632,7 +632,7 @@ the first piece's `simulation/production.dcd`.
 
 ## Running a campaign with a budget
 
-For an unattended campaign — many candidates, one card, a fixed allowance —
+For an unattended campaign (many candidates, one card, a fixed allowance)
 `fastmdxplora.agent` carries a queue. It has nothing to do with an AI
 model; it lives there because
 [`--autonomous`](agent.md#ranger-autonomous-draft-it-and-run-it) needs something that
@@ -674,7 +674,7 @@ its allowance does not start, and the queue records
 `environment.budget.exhausted` on it so a caller reading tomorrow sees why the
 campaign stopped. A running job holds its estimate against the budget, so two
 jobs each fitting the remainder cannot both start. A campaign with no budget
-set has no ceiling — a default allowance would stop somebody's overnight run
+set has no ceiling: a default allowance would stop somebody's overnight run
 for a reason they never chose.
 
 ### Running the line
@@ -689,7 +689,7 @@ def watch(job, result):
 
 report = work(queue, study_runner("runs", queue=queue),
               campaign="tau-scaffolds", watch=watch)
-# 3 finished, 0 refused, 7 abandoned, 9.0 GPU-hours — the line is empty
+# 3 finished, 0 refused, 7 abandoned, 9.0 GPU-hours: the line is empty
 ```
 
 The worker claims, runs, records and looks again. Its only real decisions are
@@ -703,7 +703,7 @@ forty candidates into however many came before the first awkward structure.
 continuing is a question about the science rather than about queueing.
 
 `report.stopped_because` distinguishes an empty line from a spent budget from a
-job that would not fit — a campaign whose next job was estimated above its
+job that would not fit: a campaign whose next job was estimated above its
 allowance has an empty line *and* a full budget, and being told the line is
 empty sends somebody looking for a job they already submitted.
 
@@ -885,7 +885,7 @@ fastmdx explore --config study.yml --output runs/study --include analysis report
 ```
 
 Within the simulation phase, `simulation.resume_from` continues from a
-checkpoint — valid only for the exact system, platform and precision it was
+checkpoint: valid only for the exact system, platform and precision it was
 written from, and refusing rather than proceeding on a mismatch. That is the
 mechanism segments are built on, and the table above says which methods may use
 it.
@@ -904,13 +904,13 @@ FastMDXplora(config_data={"simulation": {"resume_from": "runs/study",
 ```
 
 If the run became unstable rather than being killed, the message says which
-atoms went wrong and what that points at — see
+atoms went wrong and what that points at: see
 [When a run fails](studies.md#when-a-run-fails). Nothing is retried
 automatically.
 
 **The log keeps what happened, including the attempts that failed.**
 `fastmdxplora.log` in the run directory is appended to rather than replaced, so
-a second attempt does not erase the first — which is usually the one saying why
+a second attempt does not erase the first, which is usually the one saying why
 the second was needed. Each invocation is separated by a banner naming the time
 and the version that made it, so a directory re-run over weeks reads as a
 sequence rather than a wall.
@@ -924,7 +924,7 @@ you which part of it is about the files you are looking at.
 
 ## See also
 
-- **[Running FastMDXplora elsewhere](clusters.md)** — clusters, containers, offline installs
-- **[Studies beyond a box of water](studies.md)** — what each method's output is and is not
-- **[Reading the results](results.md)** — including how to read a joined run
-- **[Worked examples](examples.md)** — campaigns and comparisons
+- **[Running FastMDXplora elsewhere](clusters.md)**: clusters, containers, offline installs
+- **[Studies beyond a box of water](studies.md)**: what each method's output is and is not
+- **[Reading the results](results.md)**: including how to read a joined run
+- **[Worked examples](examples.md)**: campaigns and comparisons

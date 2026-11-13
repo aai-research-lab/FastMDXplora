@@ -16,8 +16,8 @@ Three things are counted, each against a different kind of reference.
 Every refusal this software makes is a claim that a study should not proceed.
 That claim is worth measuring, so there are two corpora of cases:
 
-- **`DEFECTS`** — studies that *should* be stopped. How many are?
-- **`CLEAN`** — studies that should proceed untouched. How many do?
+- **`DEFECTS`**: studies that *should* be stopped. How many are?
+- **`CLEAN`**: studies that should proceed untouched. How many do?
 
 Both are needed, because **a checker that refused every study would score
 perfectly on sensitivity alone.** Measuring only defects rewards
@@ -41,8 +41,8 @@ Case(name=..., run=..., expect=..., because=..., mentioning=...)
 
 A qualification is not a refusal. Counting it as one would make the software
 look more obstructive than it is; counting it as a clean pass would make it
-look less careful. The constant-pressure segment case is the canonical example
-— see
+look less careful. The constant-pressure segment case is the canonical example:
+see
 [Long runs and segments](production.md#constant-pressure-is-a-qualification-not-a-refusal).
 
 The corpus runs no dynamics, completes in seconds, and runs every release.
@@ -66,12 +66,12 @@ python -m fastmdxplora.validation.cross_tool negative     runs/study
 
 | Subcommand | What it compares |
 |---|---|
-| `interactions` | Protein–ligand interactions against ProLIF |
+| `interactions` | Protein-ligand interactions against ProLIF |
 | `observables` | Geometric observables against MDAnalysis |
 | `negative` | That a system with no interactions reports none |
 | `probe` | Both tools' evidence for one residue, named with `--residue` (over `--frames` of them, 50 by default), for a row that escapes its tolerance |
 
-**The tolerances are pre-registered** — decided before any comparison was run:
+**The tolerances are pre-registered**: decided before any comparison was run:
 5.0 percentage points on a harmonised occupancy, 10⁻³ nm on an observable.
 Deciding a tolerance after seeing the disagreement is how a comparison becomes
 a formality.

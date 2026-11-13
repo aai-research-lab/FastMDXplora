@@ -16,7 +16,7 @@ written by hand. Adding a setting to the schema puts a control in the GUI;
 nothing has to be kept in step.
 
 Those three counts are checked against the software on every release, because a
-count in a document nobody recomputes is a claim that decays — and this one is
+count in a document nobody recomputes is a claim that decays, and this one is
 load-bearing: it is the sentence that says the GUI is not a cut-down command
 line.
 
@@ -356,7 +356,7 @@ a series both recorded that was not read is named as not plotted, and a
 run whose Manifest was not read is said in a state not known.
 
 **A study's folder** is named for what it holds:
-`fastmdxplora_<system>_study_<UTC timestamp>` — the first system in the
+`fastmdxplora_<system>_study_<UTC timestamp>`: the first system in the
 config, then `study`, then a timestamp, so two runs never collide and a
 folder says what it is. One rule, in `fastmdxplora/naming.py`, that the
 CLI, the API and the GUI all ask.
@@ -475,8 +475,8 @@ to prepare or run. Every path field has a **Browse** button, so there is no
 typing a path and finding out later that it was wrong.
 
 **What should happen?** Which phases, and which analyses. The analyses are
-grouped — shape and size, flexibility, conformations, folding, the ligand,
-protein and ligand together — and each explains what it computes, taken from
+grouped (shape and size, flexibility, conformations, folding, the ligand,
+protein and ligand together) and each explains what it computes, taken from
 the analysis itself rather than written out a second time.
 
 **Anything to change?** Every setting, at the value it will actually use.
@@ -493,8 +493,8 @@ simulation. `fastmdx explore --help` reads in the same sections, from the same
 declaration, so moving between the terminal and the GUI is not learning a
 second arrangement.
 
-A setting that is a **block** rather than a value — `umbrella`, `steered`,
-`metadynamics` — gets a box you write the block into, one setting per line,
+A setting that is a **block** rather than a value (`umbrella`, `steered`,
+`metadynamics`) gets a box you write the block into, one setting per line,
 exactly as it appears in a Config. An example of the right shape sits in the
 box until you type.
 
@@ -510,8 +510,8 @@ study has none, one button sweeps the seed over three values. See
 than a mapping of settings, and writing a working `.dat` file inside YAML
 block-scalar indentation is where a stray tab changes a PLUMED input. It gets a
 control of its own: the switch, a path with the same **Browse** button, and a
-place to write the PLUMED input directly. Text written there wins over a path —
-the rule is stated on the control the moment both are filled — and the first
+place to write the PLUMED input directly. Text written there wins over a path
+(the rule is stated on the control the moment both are filled) and the first
 content to arrive turns the switch on.
 
 **What setup will build** is said under the structure while the settings are
@@ -552,15 +552,15 @@ Four buttons at the bottom of the page:
   `fastmdxplora_config.yml`. Take it to a cluster and `fastmdx explore --config`
   runs the same study.
 - **Copy the command** puts the equivalent `fastmdx explore` invocation on the
-  clipboard — only the settings that differ from their defaults, so it stays
-  readable. A study the command line cannot express — more than one system, a
-  PLUMED script — is **refused by name rather than translated with pieces
+  clipboard, only the settings that differ from their defaults, so it stays
+  readable. A study the command line cannot express (more than one system, a
+  PLUMED script) is **refused by name rather than translated with pieces
   missing**, and the Config stays its language.
 - **Download a script** writes the same study as a runnable Python file, in the
   shape [the API page](api.md) documents.
 - **Run on this machine** starts it here.
 
-One study, three languages, all from the same declaration — and round-trip
+One study, three languages, all from the same declaration, and round-trip
 tests hold the command to reparsing into the same Config it came from.
 
 Each of the four puts the Config through the command line's validator first.
@@ -728,15 +728,15 @@ server sessions.
 
 Once a run starts, the page becomes a live view of it.
 
-**Progress** through the phases, showing the stages the run will actually reach
-— an analysis-only run shows one stage, not seven greyed-out ones.
+**Progress** through the phases, showing the stages the run will actually reach:
+an analysis-only run shows one stage, not seven greyed-out ones.
 
 **Telemetry**: temperature, energy, density and box volume as they are written,
 so a system going wrong is visible while it is going wrong rather than
 afterwards.
 
 **The molecule, in 3D.** The structure is rendered as it is simulated, and once
-frames exist the trajectory plays back. For a protein–ligand system the ligand
+frames exist the trajectory plays back. For a protein-ligand system the ligand
 and its binding pocket are picked out, so what the ligand is doing is visible
 without loading anything into another program.
 
@@ -772,7 +772,7 @@ for nothing. The page still asks every thirty seconds while the stream is open,
 and every three (the dashboard's refresh setting) where it cannot be opened, as
 behind a network that cuts long connections. The data comes
 from files the running simulation writes (`simulation/live_status.json`,
-`live_metrics.csv`, `live_events.log` and a capped history of live frames) —
+`live_metrics.csv`, `live_events.log` and a capped history of live frames):
 `simulation.live_telemetry` turns those on and off, and nothing leaves the
 machine.
 
@@ -910,9 +910,9 @@ than one release are said to be. See
 | `--memory-dir DIR` | With `--hosted`: the folder the Agent's memory of this person is saved in (or `FASTMDX_MEMORY_DIR`) | none; no memory |
 | `--memory-store NAME` | With `--hosted`: a memory store an installed package offers, in place of `--memory-dir` (or `FASTMDX_MEMORY_STORE`) | none |
 
-**That is the whole of it.** The dashboard flags — `--dashboard-host`,
+**That is the whole of it.** The dashboard flags (`--dashboard-host`,
 `--dashboard-port`, `--dashboard-refresh-seconds`,
-`--dashboard-max-playback-frames` and the rest — belong to `explore` and the
+`--dashboard-max-playback-frames` and the rest) belong to `explore` and the
 four phase commands, which can start the same server alongside a run:
 
 ```bash
@@ -1005,13 +1005,13 @@ it a loopback `Host`, unless it is started with `--hosted`.
 This is the case the gate above does not cover, and it is worth reading twice.
 
 On your own workstation, `127.0.0.1` means you. On a machine where other people
-hold shell accounts — a cluster login node, a shared server — it means *every
+hold shell accounts (a cluster login node, a shared server) it means *every
 logged-in user*. Any of them can `curl http://127.0.0.1:8765`, and nothing is
 disabled, because the bind address is loopback. The interface runs as you: it
 reads what you can read and submits under your account.
 
 So: **do not run the GUI on a login node.** Take an interactive job, run it on
-the compute node, and tunnel through the login node to reach it — the same
+the compute node, and tunnel through the login node to reach it: the same
 pattern as Jupyter on HPC:
 
 ```bash

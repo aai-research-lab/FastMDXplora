@@ -1,6 +1,6 @@
 # Worked examples
 
-Recipes for studies people actually run. Each is complete — copy it, change the
+Recipes for studies people actually run. Each is complete: copy it, change the
 structure, and it works.
 
 For every flag see [The FastMDXplora CLI](cli.md); for every setting,
@@ -35,7 +35,7 @@ fastmdx explore --system 181L \
 
 `amber-openff` is what parameterises the ligand. The setup phase finds it,
 looks its chemistry up, determines its protonation in the binding site, and
-discards crystallisation additives. The analysis phase adds the protein–ligand
+discards crystallisation additives. The analysis phase adds the protein-ligand
 analyses automatically.
 
 The ligand's charges are AM1-BCC, computed by AmberTools, which the conda-forge
@@ -44,7 +44,7 @@ touches the structure and names what to install.
 
 **That route needs the network**: the chemistry is looked up by identifier, and
 a local file carries no entry to look it up in. Where the lookup is not
-available — an offline machine, or a ligand the dictionary does not have —
+available (an offline machine, or a ligand the dictionary does not have)
 supply the chemistry as a file:
 
 ```bash
@@ -71,7 +71,7 @@ coordinates from.
 
 Getting this backwards is not a small error. An ideal benzene sat seventeen
 ångströms from the cavity it belonged in: setup succeeded, the clash check
-passed — seventeen ångströms is not a clash — and the run was of a benzene
+passed (seventeen ångströms is not a clash) and the run was of a benzene
 floating in solvent. Nothing looked wrong.
 
 ### The ligand is not in the structure
@@ -97,7 +97,7 @@ The choice can also be pinned, as `setup.ligand_pose`:
 |---|---|
 | `auto` | The rule above. The default |
 | `structure` | Refuse the fallback too: a complex whose ligand is somehow absent becomes an error rather than a benzene floating in solvent |
-| `file` | The supplied pose stands whether or not the structure holds one. This is how a deliberately unbound run — a negative control — differs from a bound study by a line of configuration rather than an accident of coordinates |
+| `file` | The supplied pose stands whether or not the structure holds one. This is how a deliberately unbound run (a negative control) differs from a bound study by a line of configuration rather than an accident of coordinates |
 
 Either way the run states which pose stood and why.
 
@@ -220,7 +220,7 @@ stitching to join them. The study reports every overlap and refuses below a
 threshold rather than returning a curve nobody should read.
 
 **A torsion is a circle.** Windows covering part of a turn sample one of the
-two paths between the states and say nothing about the other — which may be the
+two paths between the states and say nothing about the other, which may be the
 higher. The example above tiles the full turn, from −π to +2.618 radians at
 30-degree spacing, so the last window's neighbour is the first.
 
@@ -229,7 +229,7 @@ fastmdx explore --config psi.yml
 ```
 
 The free energy lands in `pmf.json` with the barrier, the minima, the range the
-windows covered, and — on a closed turn — how far the profile misses meeting
+windows covered, and (on a closed turn) how far the profile misses meeting
 itself, which is what that study's statistics are worth. The profile is zeroed
 at its lowest bin, which noise puts low, so the profile sits about 0.7 of its
 error high; a barrier read off it also carries the bins' width, which puts a
@@ -276,7 +276,7 @@ fastmdx explore --config pull.yml
 
 The work profile lands in the analysis directory. On a correct pull it starts
 at zero and increases; work that goes negative early is the anchor being in the
-wrong place. It is a pathway, **not a free energy** — see
+wrong place. It is a pathway, **not a free energy**: see
 [Steered molecular dynamics](studies.md#steered-molecular-dynamics).
 
 ---
@@ -314,7 +314,7 @@ fastmdx explore --system 1UBQ --output runs/focused \
   --analyze-analyses rmsd rmsf ss
 ```
 
-Or the other way round — everything except the slow ones:
+Or the other way round: everything except the slow ones:
 
 ```bash
 fastmdx explore --system 1UBQ --output runs/most \
@@ -369,11 +369,11 @@ fastmdx explore --config campaign.yml
 ```
 
 `continue_on_error` keeps the campaign going when one system fails, which is
-what you want overnight — the failures are in the
+what you want overnight: the failures are in the
 [Manifest](manifest.md).
 
 A study with more than one run writes a cross-run comparison as well as the
-individual reports — the same quantities overlaid, so a difference between
+individual reports: the same quantities overlaid, so a difference between
 systems is visible rather than inferred from reading two reports side by side.
 It is on by default; `report.comparison: false` turns it off. See
 [Comparing runs](results.md#comparing-runs).
@@ -412,7 +412,7 @@ Every run writes the Config it used as `resolved_config.yml`:
 fastmdx explore --config runs/original/resolved_config.yml --output runs/repeat
 ```
 
-For a trajectory that repeats, fix the seed — without one, velocities differ
+For a trajectory that repeats, fix the seed: without one, velocities differ
 between runs:
 
 ```bash
@@ -461,7 +461,7 @@ A Config file works here too:
 runs = fastmdx.FastMDXplora(config="study.yml").explore()
 ```
 
-As does a Config built in Python — note that it needs a `systems` list, even
+As does a Config built in Python: note that it needs a `systems` list, even
 for one system:
 
 ```python

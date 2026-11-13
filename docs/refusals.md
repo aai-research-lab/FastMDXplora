@@ -3,7 +3,7 @@
 FastMDXplora refuses a great deal, on purpose. A structure that does not
 determine what should be simulated, a ligand whose protonation at the study's
 pH is not resolved, a trajectory with too few independent samples to support
-the claim being asked of it — each of these stops the run and says why, rather
+the claim being asked of it, each of these stops the run and says why, rather
 than producing a number that looks like the others.
 
 **Every refusal carries two things: a sentence for a person, and an identifier
@@ -34,7 +34,7 @@ refusal.details     # {'option': 'box_shape', 'given': 'dodecahedran',
 str(exc)            # the sentence, unchanged
 ```
 
-`refusal_of` is **total**. Anything you hand it comes back as a `Refusal` — an
+`refusal_of` is **total**. Anything you hand it comes back as a `Refusal`: an
 exception from a dependency, or from a raise site that has not been classified
 yet, arrives as `unclassified` carrying its own message. So code written
 against refusals works today and gains resolution over time rather than
@@ -99,7 +99,7 @@ This is the rule the design turns on:
 A refusal because `box_shape` was misspelled can safely be answered with the
 list of shapes. The schema holds that set, it is complete, and there is no
 judgement in it. A refusal because a ligand's pKa sits inside the pH margin
-cannot be answered at all — the software does not know the answer, and a
+cannot be answered at all: the software does not know the answer, and a
 suggestion would be a guess wearing the package's authority.
 
 Each code declares which it is:
@@ -168,7 +168,7 @@ if why is not None:
     # 'analysis.sampling.correlation_unresolved'
 ```
 
-`why` is still a plain string and prints as it always did — it is a `str`
+`why` is still a plain string and prints as it always did: it is a `str`
 subclass carrying the code alongside.
 
 The companion question is how much further the run would have to go:
@@ -261,12 +261,12 @@ Two facts make an automated caller workable, and they are the same two the
 [Agent](agent.md) is built on.
 
 **Structural refusals are cheap and complete.** Validation runs before anything
-reaches a GPU, so a propose–validate–repair loop costs nothing but time, and
+reaches a GPU, so a propose-validate-repair loop costs nothing but time, and
 `permitted` plus `suggestion` is usually enough to repair in one pass.
 
 **Semantic refusals are not negotiable by retrying.** A caller that keeps
 mutating fields until something validates will eventually produce a Config that
-passes and is scientifically wrong — which is the failure this whole mechanism
+passes and is scientifically wrong, which is the failure this whole mechanism
 exists to prevent. Cap the repair attempts, and treat exhausting the cap as a
 refusal rather than falling through to whatever last validated.
 
@@ -299,14 +299,14 @@ A few you are likely to meet, and what each means.
 |---|---|
 | `config.option.unknown` | A setting name the schema does not have. The message names the nearest match |
 | `config.option.not_permitted` | A value outside a setting's choices. The full legal set is in the message |
-| `config.option.out_of_range` | A number the quantity cannot be — a pH of 25, salt at 150 M |
+| `config.option.out_of_range` | A number the quantity cannot be: a pH of 25, salt at 150 M |
 | `config.option.conflicting` | Two settings that cannot both be given: `include_phase` with `exclude_phase`, `forcefield` with `force_field`, `include` with an `include_phase` that says otherwise, a system's own value of a setting the study sweeps, a trajectory interval longer than production, `last` at or before `first`, two systems with one `id` |
 | `config.option.missing_companion` | A setting that needs another one. Most often: no `systems:` list |
 | `config.option.inapplicable` | A setting given where it means nothing. In `fastmdx-defaults.yml`, a setting of one study: a folder's defaults say how studies are run, never what is simulated or which study's files are read, so the study one continues or is prepared from (`resume_from`, `resume_unsealed`, `extra_ns`, `setup_from`, `prepared_from`), the files it analyses (`analysis.trajectory`, `analysis.topology`), its structure, ligand, mutations, chains and model (`setup.fixed_pdb`, `ligand`, `mutations`, `chains`, `model`), where its starting coordinates come from (`setup.ligand_pose`) and every setting that names one structure's parts (`setup.ligand_net_charge`, `ligand_name`, `ligand_resname`, `residue_states`, `mutation_chain`, `membrane_center_z_nm`, `membrane_orientation_checked`, `simulation.dashboard_ligand_resname`, `report.region_highlights`, a `restrain` block of kind distance, angle or torsion, and the biasing blocks `umbrella`, `steered`, `metadynamics` and `plumed`, which bias one study's system along variables chosen for it), one study's title (`report.title`) and the analyses' options of one structure (`analysis.options` with `pair_distance.selection_a`, `pair_distance.selection_b`, any analysis's `ligand_resname`, `pl_interactions.ligand_net_charge`, `pl_interactions.ligand_chemistry`, `order_parameters.reference`, `order_parameters.reference_exclude`, `bfactor_comparison.structure` or `thermodynamics.state_csv`) go in that study's config |
 | `batch.manifest.invalid` | A batch manifest that does not hold a JSON object |
 | `batch.sweep.invalid` | A sweep that does not describe a set of runs, such as an axis giving one value twice. The message names the axis |
 | `simulation.run.engine_failed` | A step stopped on an error that is not an unstable state, such as a reporter's setting. The error is quoted as OpenMM or Python gave it |
-| `setup.structure.undetermined` | The structure does not determine what to simulate. Usually a ligand whose chemistry could not be looked up — supply an SDF |
+| `setup.structure.undetermined` | The structure does not determine what to simulate. Usually a ligand whose chemistry could not be looked up: supply an SDF |
 | `setup.chemistry.protonation_undetermined` | A ligand's pKa sits inside the pH margin. A decision about the science |
 | `setup.ligand.atoms_unmatched` | The structure's residue is not the ligand file's molecule: its heavy atoms do not match the file's by element and bond (however far its bond lengths lie from the file's, which are recorded, not refused). The atoms of each that did not match are named; supply the file of the molecule the structure holds, or `ligand_pose: file` where the file's pose is meant. Also where its bond lengths and carbons' shapes show another molecule ("Its C3-O4 is 1.23 A, a C=O, where the file has C-OH, and its C3 is flat"; a C=C moved: "the double bond lies elsewhere"): check the deposit's geometry and validation report; the message says how to go on |
 | `setup.ligand.stereo_mismatch` | The structure holds another stereoisomer of the file's molecule (an enantiomer, a diastereomer, the other of E and Z) in every match its bond lengths allow. The stereocentres and double bonds that differ are named by the structure's atoms, and whether bond lengths took part, with the lengths that did; supply the file of the structure's isomer, or check the deposit, which may carry a chirality error at a named centre. Also where the structure holds a stated centre with no hydrogen or terminal neighbour to lay on the file's side, or a stated double bond, within noise on the other side: placed as deposited, the ligand relaxes to the other isomer |
@@ -344,7 +344,7 @@ A few you are likely to meet, and what each means.
 | `remote.job.unknown` | No job of that name was sent from this computer, or its record here is not one FastMDXplora wrote (damaged, or written by something else). `fastmdx remote` lists the jobs |
 | `remote.job.unusable_name` | A job takes the name of its results folder, and that name has more than letters, digits and `. _ -`, or starts with a dot or a dash. Set `output` in the Config, or give `--output` |
 | `remote.job.unfinished` | A job still waiting or running was to be fetched; fetch it once `fastmdx remote status` says it has ended |
-| `environment.calibration.absent` | This machine has not been measured — see [Production runs and GPUs](production.md#knowing-how-long-before-committing-the-card) |
+| `environment.calibration.absent` | This machine has not been measured: see [Production runs and GPUs](production.md#knowing-how-long-before-committing-the-card) |
 | `environment.budget.exhausted` | An [Agent](agent.md) study was priced above its `--budget-hours` |
 | `analysis.unknown` | An analysis name that does not exist. The message names the nearest match and the full list |
 | `analysis.option.inapplicable` | A per-analysis option that analysis does not take |

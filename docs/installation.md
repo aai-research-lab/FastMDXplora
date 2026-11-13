@@ -12,7 +12,7 @@ That gives you everything: the simulation engine, the ligand chemistry stack,
 the PDF report, enhanced sampling. `fastmdx info` confirms it.
 
 conda-forge is the recommendation and not a preference. Three of the packages
-FastMDXplora depends on — the OpenFF toolkit, AmberTools and openmm-plumed —
+FastMDXplora depends on (the OpenFF toolkit, AmberTools and openmm-plumed)
 **have no PyPI distribution at all**, so no pip command can reach them.
 
 AmberTools is where a ligand's charges come from. Every ligand is given AM1-BCC
@@ -91,8 +91,8 @@ two stacks means less when one environment holds both. Install them
 separately when you want to run that comparison.
 
 `tests/test_the_conda_file_installs_what_it_claims.py` holds this file to
-that paragraph — every requirement named, at a floor no lower than
-`pyproject.toml`'s — so a conda environment and a pip install are the same
+that paragraph (every requirement named, at a floor no lower than
+`pyproject.toml`'s) so a conda environment and a pip install are the same
 software rather than two stacks wearing one name.
 
 ---
@@ -129,24 +129,24 @@ fastmdx info
 
 It lists every backend grouped by what it is for, and for anything missing it
 gives the command that installs it. A backend that is present but will not
-load — WeasyPrint without Pango, say — is reported as broken rather than
+load (WeasyPrint without Pango, say) is reported as broken rather than
 missing, because reinstalling something already there fixes nothing.
 
 ---
 
 ## If something goes wrong
 
-**`fastmdx: command not found`** — the environment is not active. `conda
+**`fastmdx: command not found`**: the environment is not active. `conda
 activate fastmdxplora`.
 
-**A phase reports a backend missing** — `fastmdx info` names it and the
+**A phase reports a backend missing**: `fastmdx info` names it and the
 command to install it. This is the common case after a pip install.
 
-**`No template found for residue ...`** — the force field has no parameters
+**`No template found for residue ...`**: the force field has no parameters
 for something in your structure. The message names the residue and what to do:
 supply parameters, exclude it, or pass it as a ligand.
 
-**Solver conflicts on conda** — install into a fresh environment rather than
+**Solver conflicts on conda**: install into a fresh environment rather than
 an existing one. The chemistry stack pins a lot, and resolving it against
 whatever is already there is usually slower than starting clean.
 
@@ -156,5 +156,5 @@ whatever is already there is usually slower than starting clean.
 
 - [Your first FastMDXplora study](first_study.md)
 - [The FastMDXplora GUI](gui.md)
-- [Running FastMDXplora elsewhere](clusters.md) — clusters, containers, and machines
+- [Running FastMDXplora elsewhere](clusters.md): clusters, containers, and machines
   with no network

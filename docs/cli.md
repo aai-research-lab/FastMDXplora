@@ -25,7 +25,7 @@ and **`fastmdxplora`**. Everything below uses `fastmdx`.
 | `fastmdx simulate` | Run dynamics on a prepared system |
 | `fastmdx analyze` | Analyse a trajectory |
 | `fastmdx report` | Write up an existing run |
-| `fastmdx agent` | Write a Config from a sentence — [the Agent](agent.md) |
+| `fastmdx agent` | Write a Config from a sentence: [the Agent](agent.md) |
 | `fastmdx gui` | Serve [the GUI](gui.md) |
 | `fastmdx mcp` | Serve FastMDXplora to an AI app: [FastMDXplora from your AI app](mcp.md) |
 | `fastmdx config` | Write a commented Config template |
@@ -59,7 +59,7 @@ Every setting belongs to a phase, and its flag is the phase and the setting:
 
 So `setup.ph` is `--setup-ph` on `explore` and `--ph` on `fastmdx setup`.
 `simulation.timestep_fs` is `--simulate-timestep-fs` or `--timestep-fs`. The
-prefixes are `setup`, `simulate`, `analyze`, `report` and `execution` — note
+prefixes are `setup`, `simulate`, `analyze`, `report` and `execution`: note
 that they are the **command** names, while `--include`/`--exclude` take the
 **phase** names (`simulation`, `analysis`).
 
@@ -104,7 +104,7 @@ so a study moved or extended since runs on its own frames.
 
 | Flag | What it does |
 |---|---|
-| `-s`, `-system`, `--system` | A `.pdb`/`.cif` path, or a 4-character PDB ID. The form is detected — there is no separate flag for an identifier |
+| `-s`, `-system`, `--system` | A `.pdb`/`.cif` path, or a 4-character PDB ID. The form is detected: there is no separate flag for an identifier |
 | `-c`, `-config`, `--config` | A Config file. **Flags override what the file says** |
 | `--output DIR` | Where everything goes |
 | `--verbose` | Also stream debug logging to the terminal |
@@ -180,7 +180,7 @@ Only on `explore`/`xplore`.
 |---|---|---|
 | `--execution-mode` | `sequential` | `sequential` or `parallel` |
 | `--execution-workers N` | inferred | How many runs at once |
-| `--execution-devices …` | — | GPU indices; one run pinned per device |
+| `--execution-devices …` | none | GPU indices; one run pinned per device |
 | `--execution-continue-on-error` / `--execution-no-continue-on-error` | `true` | Carry on when one run fails |
 
 ---
@@ -353,7 +353,7 @@ Anything else goes under `analysis.options`, in a Config or as `--options YAML`
 ## `report`
 
 ```bash
---title "Trypsin–benzamidine, 100 ns"
+--title "Trypsin-benzamidine, 100 ns"
 --author "A. Researcher"
 --no-document --no-slides --no-pdf --no-bundle
 --no-methods --no-reproducibility
@@ -463,7 +463,7 @@ fastmdx explore --config study.yml --dashboard --dashboard-stop-on-complete
 | `--dashboard-port` | `8765` |
 | `--dashboard-stop-on-complete` | waits for Ctrl-C otherwise |
 | `--dashboard-refresh-seconds X` | `3.0` |
-| `--dashboard-frame-interval STEPS` | — |
+| `--dashboard-frame-interval STEPS` | none |
 | `--dashboard-ligand-resname NAME` | auto-detected |
 | `--dashboard-binding-pocket-cutoff-A X` | `5.0` |
 | `--dashboard-max-playback-frames N` | `2000`, fewer for a system over 5,000 atoms (ten million atoms times frames at most) |
@@ -519,15 +519,15 @@ fastmdx select "protein and name CA" -s prepared.pdb --atoms --limit 0
 
 | Argument | Required | Default |
 |---|---|---|
-| `expression` (positional) | yes | — |
-| `-s`, `--structure`, `--topology` | **yes** | — |
+| `expression` (positional) | yes | none |
+| `-s`, `--structure`, `--topology` | **yes** | none |
 | `--limit N` | no | `40`; `0` lists all |
 | `--atoms` | no | lists residues otherwise |
 
 Note `-s` means **structure** on this command, not system.
 
 Exits **0** on a match, **1** on an empty match (with a `resSeq` vs `resid`
-hint), **2** on a missing file or an invalid expression — so it can gate a
+hint), **2** on a missing file or an invalid expression, so it can gate a
 script. See [Selections in a Config](selections.md).
 
 ---
@@ -625,7 +625,7 @@ a ligand's charges, and names what will (AmberTools, or OpenEye where it is
 licensed). The OpenFF toolkit loads without either, so its own row being
 `installed` does not answer this.
 
-A backend that is present but will not load — WeasyPrint without Pango, say —
+A backend that is present but will not load (WeasyPrint without Pango, say)
 is reported as **broken** rather than missing, because reinstalling something
 already there fixes nothing.
 
@@ -653,7 +653,7 @@ fastmdx remote forget gpu-box                      # remove the record
 
 | `send` argument | Required | Default |
 |---|---|---|
-| `-c`, `--config FILE` | **yes** | — |
+| `-c`, `--config FILE` | **yes** | none |
 | `--machine NAME` | when more than one is inspected | the only one |
 | `--output DIR` | no | the Config's `output`, else a new study folder |
 | `--dry-run` | no | sends |
@@ -768,7 +768,7 @@ mapping: `'{label: helix, start: 3, end: 7}'`), `--report-comparison` and
 | **2** | A usage or Config error: an unknown setting, a bad value, `--include` with `--exclude`, no system given, a system setup cannot read or a selection that does not parse (refused before anything is written, a run and a dry run alike), a refusal to overwrite |
 | **130** | Interrupted with Ctrl-C; the study records where it stopped, and `fastmdx resume` carries it on |
 
-Failures print `fastmdx: <message>` on stderr **without a traceback** — the
+Failures print `fastmdx: <message>` on stderr **without a traceback**: the
 traceback is kept at debug level. What you see is the refusal, not the stack
 that produced it. [FastMDXplora refusals](refusals.md) explains the codes
 behind them.
@@ -847,7 +847,7 @@ fastmdx --version
 
 ## See also
 
-- **[The FastMDXplora Config](config.md)** — the same settings in a file
-- **[Config reference](config_reference.md)** — every setting, by phase
-- **[Worked examples](examples.md)** — complete recipes
-- **[The FastMDXplora Agent](agent.md)** — `fastmdx agent` in full
+- **[The FastMDXplora Config](config.md)**: the same settings in a file
+- **[Config reference](config_reference.md)**, every setting, by phase
+- **[Worked examples](examples.md)**: complete recipes
+- **[The FastMDXplora Agent](agent.md)**: `fastmdx agent` in full

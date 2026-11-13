@@ -6,7 +6,7 @@ Capture that and the four phases run themselves.
 
 It is written as YAML, which is the format rather than the thing. The same Config
 drives the [GUI](gui.md), the [CLI](cli.md) and the [API](api.md), and each of
-them can write one — as can the [Agent](agent.md).
+them can write one, as can the [Agent](agent.md).
 
 ```bash
 fastmdx config -f study.yml      # a commented template with every setting
@@ -72,10 +72,10 @@ nearest match.
 
 | Key | What it holds |
 |---|---|
-| `setup` | 48 settings — structure, ligand, membrane, solvent, force field, forces |
-| `simulation` | 45 settings — length, conditions, integrator, platform, enhanced sampling |
-| `analysis` | 14 settings — which analyses, over which atoms, over which frames |
-| `report` | 11 settings — title, formats, highlighted regions |
+| `setup` | 48 settings: structure, ligand, membrane, solvent, force field, forces |
+| `simulation` | 45 settings: length, conditions, integrator, platform, enhanced sampling |
+| `analysis` | 14 settings: which analyses, over which atoms, over which frames |
+| `report` | 11 settings: title, formats, highlighted regions |
 
 Every setting in each is in the [Config reference](config_reference.md).
 
@@ -92,9 +92,9 @@ Every setting in each is in the [Config reference](config_reference.md).
 |---|---|---|---|
 | `explain` | bool | `true` | Say why each step is happening, as it happens |
 | `verbose` | bool | `false` | Stream debug logging to the terminal |
-| `agent` | str | — | Records that the [Agent](agent.md) wrote this study: `assisted`, `autonomous` or `unvalidated` |
-| `agent_model` | str | — | Which AI model wrote it, as `provider/model` |
-| `budget_hours` | float | — | A ceiling on GPU hours for the whole study, every run of it. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
+| `agent` | str | none | Records that the [Agent](agent.md) wrote this study: `assisted`, `autonomous` or `unvalidated` |
+| `agent_model` | str | none | Which AI model wrote it, as `provider/model` |
+| `budget_hours` | float | none | A ceiling on GPU hours for the whole study, every run of it. Checked after setup, where the solvated particle count and so the cost are first known, and the study refuses rather than overrunning it. Required by `--autonomous` |
 | `decisions` | mapping | none | Why a setting has its value, keyed by the setting's dotted name: `why`, and optionally `source` and `alternatives` |
 
 `agent` and `agent_model` are provenance, not behaviour. They are described in
@@ -245,7 +245,7 @@ systems:
 identifier fetched from RCSB. The form is detected, so there is no separate
 setting for an identifier.
 
-`id` names the run — it becomes the run's directory under `runs/` and its label
+`id` names the run: it becomes the run's directory under `runs/` and its label
 in the comparison report. Without one the systems are `s1`, `s2` and so on,
 which is harder to read six months later. Two systems cannot share an `id`.
 
@@ -274,7 +274,7 @@ sweep:
   setup.ion_concentration_M: [0.15, 0.30]
 ```
 
-That is six runs — systems outermost, sweep axes inner. Settings merge lowest
+That is six runs: systems outermost, sweep axes inner. Settings merge lowest
 to highest: the top-level block, then the per-system block, then the sweep
 value.
 
@@ -310,7 +310,7 @@ Two defaults are inferred rather than written, and both are worth knowing:
 
 **Asking for `workers` or `devices` is asking for `parallel`.** Setting
 `workers: 3` and nothing else schedules three at a time. (`workers: 3` with an
-explicit `mode: sequential` still runs sequentially — the explicit setting
+explicit `mode: sequential` still runs sequentially: the explicit setting
 wins.)
 
 **`continue_on_error` defaults to `true` for a campaign and `false` for an
@@ -387,7 +387,7 @@ notes, and said by the Agent's plan.
 
 ## Validation
 
-Every Config is validated before anything reaches a GPU — whether it was
+Every Config is validated before anything reaches a GPU, whether it was
 written by hand, by the GUI, by the CLI, by the API or by the
 [Agent](agent.md). There is one validator and no way around it: there is no
 `--skip-validation`, no `--no-validate`, and no setting that turns it off.
@@ -398,8 +398,8 @@ Validation checks, in this order: that every top-level key is known; that
 setting is known, of the right type, one of its permitted values, and within
 its bounds.
 
-A refusal names the setting, what you gave, and — where the schema can say so
-without guessing at your chemistry — what it will accept:
+A refusal names the setting, what you gave, and (where the schema can say so
+without guessing at your chemistry) what it will accept:
 
 ```
 Unknown setup option 'pH' (did you mean 'ph'?). Valid options: agent, box_shape, …
@@ -426,7 +426,7 @@ timestep 10 fs    accepted  unstable, and not impossible
 
 The line is between a fact and a view. A pH of 25 is not a strict reading of
 pH, it is not a pH. A 10 fs timestep is unstable for almost every system and
-somebody's coarse-grained run may want it, so it has no ceiling here — and the
+somebody's coarse-grained run may want it, so it has no ceiling here, and the
 runner already refuses an integration that blows up, which is where a judgement
 about stability belongs.
 
@@ -463,7 +463,7 @@ A few settings have an older name that is still accepted:
 **They are resolved when the Config is read, not where it is used.** After
 loading, a block given either name carries both, with the same value, so no
 part of a run can disagree with another about what it says. Where both are
-given with different values, the winner is the one in the third column — the
+given with different values, the winner is the one in the third column: the
 longer-established spelling in each pair. Give one, not both.
 
 This is how compatibility is handled: there is no `version:` key in a Config,
@@ -508,7 +508,7 @@ you mean to.
 
 ## Reproducing a run
 
-Every run writes `resolved_config.yml` into its output directory — a valid
+Every run writes `resolved_config.yml` into its output directory: a valid
 Config that reproduces the study:
 
 ```bash
@@ -528,7 +528,7 @@ leaves a `resolved_config.yml` saying `ph: 6.0`, not the `7.0` the file said.
 **It carries every setting the run used, defaults included.** That is what the
 file is for: a study you can repeat from what the run left behind rather than
 from what somebody remembers typing. Every phase gets a block whether or not
-you touched it, and every option in that block is named — 118 settings for a
+you touched it, and every option in that block is named: 118 settings for a
 study that set two. The block is exactly the dictionary the phase was handed,
 not a reconstruction of it.
 
@@ -555,8 +555,8 @@ analysis:
 ```
 
 Both halves are saved, and they agree. Where a derived value and its source sit
-together, the derived one wins on replay — `production_steps` over the
-`duration_ns` it came from — so you get the same run either way. **That is only
+together, the derived one wins on replay (`production_steps` over the
+`duration_ns` it came from) so you get the same run either way. **That is only
 safe because the number written is the run's own answer.** A step count that was
 merely the schema default, written beside a duration you chose, would override
 that duration and silently shorten the study. So only a recorded resolution is
@@ -581,7 +581,7 @@ title decides what the first line says.
 ```
 
 The phases' own records go further than a config can, and are still worth
-reading for what a study actually *did* rather than what it set out to do —
+reading for what a study actually *did* rather than what it set out to do:
 the atom count after solvation, the platform, the frames written, the
 per-analysis findings: `setup/setup_parameters.json`,
 `simulation/simulation_parameters.json`, `analysis/analysis_manifest.json`,
@@ -623,8 +623,8 @@ simulation:
 
 ## See also
 
-- **[Config reference](config_reference.md)** — every setting, by phase
-- **[Selections in a Config](selections.md)** — the four places a Config names atoms
-- **[Studies beyond a box of water](studies.md)** — restraints, membranes, enhanced sampling
-- **[Worked examples](examples.md)** — complete Configs to copy
-- **[The FastMDXplora Manifest](manifest.md)** — what the run records back
+- **[Config reference](config_reference.md)**, every setting, by phase
+- **[Selections in a Config](selections.md)**: the four places a Config names atoms
+- **[Studies beyond a box of water](studies.md)**: restraints, membranes, enhanced sampling
+- **[Worked examples](examples.md)**: complete Configs to copy
+- **[The FastMDXplora Manifest](manifest.md)**: what the run records back

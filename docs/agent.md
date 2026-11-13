@@ -28,7 +28,7 @@ fastmdx explore --config study.yml
 
 The Agent stands where a human stands. It is a fourth way of producing a
 Config, alongside the [GUI](gui.md), the [CLI](cli.md) and the
-[API](api.md) — and it is reachable **through all three of them**.
+[API](api.md), and it is reachable **through all three of them**.
 
 ---
 
@@ -53,7 +53,7 @@ except ConfigError as exc:
 
 Three consequences:
 
-- **A proposal that did not validate carries no Config at all** — not the last
+- **A proposal that did not validate carries no Config at all**, not the last
   thing that nearly worked with a caveat attached. There is no partially-valid
   result and no best-effort fallback.
 - **The Agent cannot name a setting that does not exist**, because the schema
@@ -65,7 +65,7 @@ Three consequences:
 
 The one thing an Agent-written study carries that a hand-written one does not
 is the `agent:` setting, which is **provenance, not permission**. Including
-`agent: unvalidated` — see below — the Config itself is still validated.
+`agent: unvalidated` (see below) the Config itself is still validated.
 
 ---
 
@@ -107,7 +107,7 @@ provider and address it was stored for, never to another being looked at.
 
 Option 3 covers DeepSeek, vLLM, Ollama, OpenRouter and most local servers,
 because they speak the OpenAI chat shape. One entry rather than one per vendor:
-a list of vendors goes stale and a protocol does not. It takes a base URL —
+a list of vendors goes stale and a protocol does not. It takes a base URL:
 `https://api.deepseek.com`, `http://localhost:11434/v1`,
 `http://localhost:8000/v1`.
 
@@ -118,7 +118,7 @@ vendor client library anywhere in it.
 
 ### Where the key lives
 
-In one file outside any study, readable only by its owner — or in the
+In one file outside any study, readable only by its owner, or in the
 environment, **which is checked first**. That is how a cluster job or a CI run
 supplies one without anybody storing it.
 
@@ -253,7 +253,7 @@ analysis:
 
 Two levels rather than one, because a single value cannot say what is true of a
 real study. A simulation written by hand because the protocol matters, an
-analysis explored outside the schema, a setup an AI model drafted — that is one
+analysis explored outside the schema, a setup an AI model drafted: that is one
 study, and flattening it to a word loses the only thing a reader needs: which
 part to be suspicious of.
 
@@ -449,7 +449,7 @@ use.
 **Conversations belong to studies.** A conversation belongs to the study
 it is about, and sees that study's context. It lives inside the study
 folder, at `<study>/agent/conversations/`, so copying a
-study carries the conversations that made it — the record stays with the
+study carries the conversations that made it: the record stays with the
 data. A conversation about no study lives at the workspace level. Under the
 composer, at the right: the mode by its name and its two words (**Seeker:
 built-in, assisted** or **Ranger: built-in, autonomous**), which
@@ -575,7 +575,7 @@ does that, as it does for a Config written by hand.
 **The key is typed in the GUI, sent once, and stored server-side.** It is
 never sent back: the endpoint reports which provider and AI model are set and
 never the secret, so a page that never receives a key cannot leak one to a
-screenshot, an extension or a bug report. A browser cannot hold a secret —
+screenshot, an extension or a bug report. A browser cannot hold a secret:
 anything the page keeps is readable by anything else the page runs.
 
 Both Agent endpoints are refused off loopback, because one stores an API key
@@ -595,7 +595,7 @@ proposal = propose_config(
 )
 
 proposal.accepted   # True
-proposal.cycles     # 2 — it took one repair
+proposal.cycles     # 2: it took one repair
 proposal.config     # the validated study, as a dict
 proposal.refusal    # None here; the reason it stopped, otherwise
 proposal.usage      # what the calls cost, where the completion reports it
@@ -612,7 +612,7 @@ def my_model(prompt: str) -> str:
 proposal = propose_config("…", complete=my_model)
 ```
 
-No client object, no message array, no streaming — which is why swapping in a
+No client object, no message array, no streaming, which is why swapping in a
 local server, a mock, or an AI model this package has never heard of takes no
 integration work. `proposal.config` is `None` unless validation accepted it.
 
@@ -1115,15 +1115,15 @@ out:
 
 - **`unvalidated` is recorded and marked, not enforced.** The mode reaches the
   Config, the Manifest and every figure the marked phase plots. What it is
-  meant to unlock — the Agent writing code of its own, outside the schema — is
+  meant to unlock (the Agent writing code of its own, outside the schema) is
   not built, so there is currently nothing outside the schema for it to mark.
 
 ---
 
 ## See also
 
-- **[The FastMDXplora Config](config.md)** — what it is writing
-- **[FastMDXplora refusals](refusals.md)** — the vocabulary it is answering to
-- **[The FastMDXplora Manifest](manifest.md)** — where the provenance lands
-- **[Production runs and GPUs](production.md)** — budgets, calibration and campaigns
-- **[How FastMDXplora is validated](validation.md)** — how well an AI model actually does at this, evaluated rather than assumed
+- **[The FastMDXplora Config](config.md)**: what it is writing
+- **[FastMDXplora refusals](refusals.md)**: the vocabulary it is answering to
+- **[The FastMDXplora Manifest](manifest.md)**, where the provenance lands
+- **[Production runs and GPUs](production.md)**: budgets, calibration and campaigns
+- **[How FastMDXplora is validated](validation.md)**: how well an AI model actually does at this, evaluated rather than assumed

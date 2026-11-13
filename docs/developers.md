@@ -20,8 +20,8 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-`environment.yml` carries the conda-only packages — openmm-plumed above all,
-which has no PyPI distribution — so a clone set up this way has the whole
+`environment.yml` carries the conda-only packages (openmm-plumed above all,
+which has no PyPI distribution) so a clone set up this way has the whole
 stack: rdkit, propka, openff-toolkit and ambertools for ligand chemistry,
 charges and pKa assignment, openmm-plumed for enhanced sampling, weasyprint and markdown for
 the PDF report, umap-learn for the dimensionality reduction that offers it, and
@@ -30,11 +30,11 @@ scipy, pillow and netcdf4.
 **What it does not carry is MDAnalysis and ProLIF**, the `validation` extra.
 That is deliberate: they exist here to compare against, and a comparison
 between two stacks means less when one environment holds both. Install them
-separately when you want to run that comparison —
+separately when you want to run that comparison:
 [How FastMDXplora is validated](validation.md).
 
-A test holds `environment.yml` to that paragraph — every requirement named, at
-a floor no lower than `pyproject.toml`'s — so a conda environment and a pip
+A test holds `environment.yml` to that paragraph (every requirement named, at
+a floor no lower than `pyproject.toml`'s) so a conda environment and a pip
 install are the same software rather than two stacks wearing one name.
 
 **Do not `pip install -U fastmdxplora` into the same environment.** It replaces
@@ -58,7 +58,7 @@ here reaches the Agent with no other change.
 
 **The schema is the declaration, and everything reads it.**
 
-`src/fastmdxplora/config/schema.py` declares every setting once — its name,
+`src/fastmdxplora/config/schema.py` declares every setting once: its name,
 type, default, choices, bounds and help text. Four things are generated from
 it, and none of them is maintained by hand:
 
@@ -108,7 +108,7 @@ If you add a setting, wire it, or add it to that list with a reason.
 
 ## Raising a refusal
 
-Prefer the specific exception class where one exists — `LigandError`,
+Prefer the specific exception class where one exists: `LigandError`,
 `ProtonationError`, `TrajectoryLoadError` and the rest each say something a
 generic class does not.
 
@@ -133,7 +133,7 @@ reader that is not a person.
 
 Three rules for a new code:
 
-1. **Pick the kind by who can fix it** — `STRUCTURAL`, `SEMANTIC`,
+1. **Pick the kind by who can fix it**: `STRUCTURAL`, `SEMANTIC`,
    `ENVIRONMENTAL` or `INSUFFICIENT`. See
    [FastMDXplora refusals](refusals.md#the-four-kinds).
 2. **Declare the disclosure in the registry, not at the raise site.**
@@ -169,7 +169,7 @@ from fastmdxplora.analysis.orchestrator import register_analysis
 
 
 class EndToEndish(Analysis):
-    """One sentence saying what this computes — and what it does not."""
+    """One sentence saying what this computes, and what it does not."""
 
     name = "end_to_endish"
     description = "Distance between the first and last alpha carbon"
@@ -203,11 +203,11 @@ variant, and `options.json`.
 |---|---|
 | `name` | The identifier used in `analysis.include`, the output directory and the manifest |
 | `description` | Used in figure titles |
-| `time_series` | `compute` returns one value per frame — **declared, not inferred**, because a per-atom result on a trajectory with as many frames as atoms would otherwise be summarised as a time series and look right |
-| `honours_selection` | Whether `selection` means anything here. A protein–ligand analysis works both sides out from the residue name, so offering a control that does nothing is worse than not offering one |
+| `time_series` | `compute` returns one value per frame: **declared, not inferred**, because a per-atom result on a trajectory with as many frames as atoms would otherwise be summarised as a time series and look right |
+| `honours_selection` | Whether `selection` means anything here. A protein-ligand analysis works both sides out from the residue name, so offering a control that does nothing is worse than not offering one |
 | `default_selection` | What it analyses when nothing narrower is given |
 | `min_atoms_to_align` | The floor below which a superposition is undefined. Alanine dipeptide has one CA, and MDTraj responded with "UNCONVERGED ROTATION MATRIX. RETURNING IDENTITY" once per frame and a column of numbers that looked like results |
-| `reweightable` | `(column, label)` — the per-frame scalar whose mean can be corrected on a biased run |
+| `reweightable` | `(column, label)`: the per-frame scalar whose mean can be corrected on a biased run |
 | `reweightable_populations` | `compute` returns per-frame categorical labels, so populations reweight as means do |
 
 ### The gates
@@ -221,7 +221,7 @@ when named in `include`**.
 | `requires_ligand` | A ligand residue name is known |
 | `requires_water` | The trajectory carries water residues |
 | `requires_periodic_box` | The trajectory carries unit-cell vectors |
-| `requires_amide_hydrogens` | The topology has backbone N–H pairs |
+| `requires_amide_hydrogens` | The topology has backbone N-H pairs |
 | `requires_crystallographic_bfactors` | The input PDB carries real B-factors |
 | `requires_state_record` | `simulation/energy.csv` exists |
 | `requires_tertiary_structure` + `min_seq_separation` | The solute has more residues than the separation |
@@ -237,7 +237,7 @@ ligand RMSD had aligned the frames, and 10 when run alone. The 10 was right.
 
 **Put every option in `self.options`.** It is what `options.json` records and
 what makes two disagreeing analyses of the same trajectory resolvable. Also
-note that unknown options are refused rather than ignored — every analysis ends
+note that unknown options are refused rather than ignored, every analysis ends
 in `**kwargs`, so `n_clusteres` used to cluster at the default and report
 success.
 
@@ -252,7 +252,7 @@ else's handlers.
 That is right for the command line, which owns the terminal and ends when the
 run does. It was wrong everywhere else: importing the package and running one
 study left the caller's own logging permanently unable to see anything from
-FastMDXplora, silently, for the rest of the session — and `caplog` stopped
+FastMDXplora, silently, for the rest of the session, and `caplog` stopped
 working in their tests.
 
 The decision now has a name and one caller:
@@ -289,7 +289,7 @@ Each is `run(orchestrator, output_dir, **kwargs)`, lazily imported, and the
 canonical phase order is declared exactly once, at
 `fastmdxplora.orchestrator.PHASES`.
 
-Each phase takes its defaults from the schema — `DEFAULTS = SETUP.defaults()` —
+Each phase takes its defaults from the schema, `DEFAULTS = SETUP.defaults()`,
 rather than from a second copy. The pH default was 7.4 in the schema and 7.0 in
 the pipeline once.
 
@@ -348,7 +348,7 @@ AI model reads the config language rather than how well it follows a fix.
 asks, the remedy given and the request kept. The looks harnesses below ask
 the same registered way, since their registrations fix the prompt.
 
-Fourteen requests across three tiers, reported apart — one number over three
+Fourteen requests across three tiers, reported apart: one number over three
 difficulties hides where an AI model stops rather than whether it succeeds.
 **Easy** states the value outright. **Medium** makes the AI model supply what the
 sentence did not: the number behind "physiological", a microsecond in
@@ -367,7 +367,7 @@ Two numbers, and the second matters more:
   every AI model perfectly and evaluate the thing nobody cares about.
 
 Each request asserts only what its sentence specified. A request saying "at
-pH 6.5" checks the pH and leaves the box shape alone — marking an AI model wrong
+pH 6.5" checks the pH and leaves the box shape alone: marking an AI model wrong
 for choosing something it was never asked about would test obedience rather
 than comprehension.
 
@@ -384,7 +384,7 @@ Counted with `claude-sonnet-4-6` on the original eight:
 
 Both reached 8/8. **The help does not change whether the AI model succeeds; it
 changes how much work that takes.** And an AI model working from bare field names
-still got every study right — the validator is carrying the weight, which is
+still got every study right: the validator is carrying the weight, which is
 the architecture's claim and now a result rather than an argument.
 `--attempts` defaults to 3 on that evidence.
 
@@ -475,6 +475,6 @@ start replicas share, is counted the same way on a second held-out set.
 
 ## See also
 
-- **[How FastMDXplora is validated](validation.md)** — corpus, cross-tool and environment checks
-- **[Protein-ligand interactions: implementation](interactions_design.md)** — why that analysis is implemented here rather than depended on
-- **[The FastMDXplora API](api.md)** — what is public and what is not
+- **[How FastMDXplora is validated](validation.md)**: corpus, cross-tool and environment checks
+- **[Protein-ligand interactions: implementation](interactions_design.md)**: why that analysis is implemented here rather than depended on
+- **[The FastMDXplora API](api.md)**: what is public and what is not

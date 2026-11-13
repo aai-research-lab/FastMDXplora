@@ -2,7 +2,7 @@
 
 > **F**ully **A**utomated **Sy**s**T**em for **M**olecular **D**ynamics e**Xplora**tion
 
-Give FastMDXplora a structure — or just a PDB identifier — and it prepares the
+Give FastMDXplora a structure (or just a PDB identifier) and it prepares the
 system, runs the dynamics, analyses the trajectory and writes the study up. The
 steps that usually need an expert are done for you, and refused where the
 structure does not say enough to do them.
@@ -23,7 +23,7 @@ This is the whole shape of the software, and everything else follows from it.
 
 **A complete study is specified in a FastMDXplora Config.** One file describes
 the system, how it is prepared, how it is simulated, how it is analysed and how
-it is reported. Nothing about a study lives anywhere else — not in a flag you
+it is reported. Nothing about a study lives anywhere else, not in a flag you
 typed once, not in a form you filled in, not in your memory of what you did in
 March.
 
@@ -56,14 +56,14 @@ And in place of a human at any of those three, the
 fastmdx agent "simulate trypsin with benzamidine bound at pH 6.5 for 100 ns"
 ```
 
-The Agent is reachable through all three channels — it is a `fastmdx agent`
+The Agent is reachable through all three channels: it is a `fastmdx agent`
 subcommand, a panel in the GUI, and a function in the API.
 
 **The Agent gets no special treatment.** What it produces goes through exactly
 the same validator, by the same code, with the same refusals, as a Config you
 typed by hand. It has no privileges and no private path into the software. The
 one thing that distinguishes an Agent-written study is the `agent:` setting,
-whose `unvalidated` value records that a phase went outside the schema — and
+whose `unvalidated` value records that a phase went outside the schema, and
 even then, the Config itself is still validated. See
 [The FastMDXplora Agent](agent.md).
 
@@ -87,7 +87,7 @@ to think; run it where the compute is.
 [Your first FastMDXplora study](first_study.md). Ten minutes, most of it the
 install.
 
-**Want to know what it does?** [How FastMDXplora works](how_it_works.md) —
+**Want to know what it does?** [How FastMDXplora works](how_it_works.md):
 the four phases, and what each one decides.
 
 **Writing a study?** [The FastMDXplora Config](config.md) for the shape of

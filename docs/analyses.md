@@ -33,7 +33,7 @@ analysis:
 | | |
 |---|---|
 | `rmsd` | How far the structure has moved from a reference frame |
-| `rg` | Radius of gyration — how compact it is |
+| `rg` | Radius of gyration: how compact it is |
 | `sasa` | Solvent-accessible surface area: total and its hydrophobic and polar parts, per residue, or each residue's mean and relative SASA |
 | `ss` | Secondary structure per residue per frame, by DSSP |
 
@@ -42,7 +42,7 @@ analysis:
 | | |
 |---|---|
 | `rmsf` | Per-atom or per-residue fluctuation about the mean |
-| `order_parameters` | Backbone N–H order parameters, the quantity NMR relaxation measures experimentally |
+| `order_parameters` | Backbone N-H order parameters, the quantity NMR relaxation measures experimentally |
 | `bfactor_comparison` | Per-residue fluctuation against the deposited structure's B-factors |
 | `thermodynamics` | Density, energies and temperature, from the state record the run wrote |
 | `rdf` | The radial distribution between two selections, stopped at half the box |
@@ -50,7 +50,7 @@ analysis:
 | `dihedrals` | Backbone phi, psi and omega, with the Ramachandran plot |
 
 `coordination_number`'s cutoff is asked for, or read from this run's own first
-minimum in g(r) — never assumed, because the radius decides the number.
+minimum in g(r): never assumed, because the radius decides the number.
 
 ### Geometry
 
@@ -315,7 +315,7 @@ biased ensemble, and the record says that too.
 | `water_sites` | Positions a water holds through the run, and whether one molecule stays or many pass through |
 
 `water_sites` finds the waters that are part of a binding site rather than
-passing through — a water wedged between a ligand and a backbone carbonyl,
+passing through: a water wedged between a ligand and a backbone carbonyl,
 bridging a hydrogen bond neither could make alone. It reports how often a
 position is occupied **and by how many distinct molecules**, because a site
 held by one water throughout and a position a hundred waters pass through can
@@ -329,12 +329,12 @@ sites are given in the first frame's coordinates. A protein turns in its box
 over a run, and a water held on it traced an arc in the box, which was
 rejected as a surface or split at part of its occupancy.
 
-It needs an explicitly solvated trajectory — set
+It needs an explicitly solvated trajectory: set
 `simulation.save_selection: all`.
 
 **Point it at a site, not at a whole protein.** Clustering links neighbours
 through neighbours, so a whole-protein scope chains the entire first hydration
-shell into one object — on ubiquitin that is tens of thousands of positions and
+shell into one object: on ubiquitin that is tens of thousands of positions and
 hundreds of distinct waters, which is a surface rather than a site.
 FastMDXplora rejects such a cluster and says so, but the fix is a narrower
 `site_selection`: a ligand, a pocket, or a handful of residues. That is a limit
@@ -362,7 +362,7 @@ computes and why some of it is refused.
 ### Enhanced sampling
 
 These three do not analyse the trajectory. They read what a biased run itself
-produced, and each runs only where such a run produced it — so none appears
+produced, and each runs only where such a run produced it, so none appears
 after an ordinary simulation, and none needs a ligand.
 
 | | |
@@ -373,7 +373,7 @@ after an ordinary simulation, and none needs a ligand.
 
 `steered_work` gives the curve rather than the total, because a pull that
 accumulated work smoothly met resistance all the way and one that accumulated
-it in a step snapped past something — and the total is the same either way. A
+it in a step snapped past something, and the total is the same either way. A
 pathway, not a free energy.
 
 What each method is for, and what its output is and is not, is in
@@ -392,7 +392,7 @@ question rather than analysing it.
 | A ligand | `pl_contacts`, `pl_hbonds`, `pl_interactions`, `ligand_rmsd`, `ligand_rmsf` | A ligand residue name is known |
 | Water | `water_sites`, `rdf`, `coordination_number` | The trajectory carries water residues |
 | A periodic box | `rdf`, `coordination_number` | The trajectory carries unit-cell vectors |
-| Amide hydrogens | `order_parameters` | The topology has backbone N–H pairs |
+| Amide hydrogens | `order_parameters` | The topology has backbone N-H pairs |
 | Crystallographic B-factors | `bfactor_comparison` | The input PDB carries real B-factors |
 | A state record | `thermodynamics` | `simulation/energy.csv` exists |
 | A bilayer | `area_per_lipid`, `bilayer_thickness`, `lipid_order` | The trajectory holds at least 20 lipids and a periodic box |
@@ -435,7 +435,7 @@ against another tool.
   so with the default selection and `ref` its simulated column is the RMSF's;
   `ligand_rmsf` starts after the later of the receptor's equilibration and the
   ligand's, the ligand's found on its heavy-atom, symmetry-corrected RMSD in
-  the receptor frame (over every frame, a ligand settling 0.4 nm over the
+  the receptor frame (over every frame, a ligand moving 0.4 nm over the
   first fifth of a run read 1.7 times its fluctuation over the equilibrated
   frames). Where that start leaves out more than a third of the run, which a
   change of pose or an unbinding also causes, it is said, and the value over
@@ -449,8 +449,8 @@ against another tool.
   `options.json` records `mass_weighted: false` with the reason. `by_chain`
   writes a table with a `total` column and one `chain <ID>` column per chain.
 
-- **Hydrogen bonds** use Baker–Hubbard at 0.25 nm and 120° by default. Both are
-  settings, because published criteria disagree — PLIP allows 4.1 Å and 100°.
+- **Hydrogen bonds** use Baker-Hubbard at 0.25 nm and 120° by default. Both are
+  settings, because published criteria disagree: PLIP allows 4.1 Å and 100°.
   `pl_hbonds` uses Wernet-Nilsson and `pl_interactions` a 3.5 Å donor to
   acceptor distance, so the three count different bonds; each records its
   criterion in `options.json` and names it on its axis.
@@ -472,7 +472,7 @@ against another tool.
   exposed. Its contact set is over *pairs of heavy atoms*, which is the
   published definition; `scheme: residue-closest-heavy` gives the coarser
   reading that takes one distance per residue pair instead, and the two are not
-  comparable — on a peeling hairpin they stand 0.26 apart on a scale running
+  comparable: on a peeling hairpin they stand 0.26 apart on a scale running
   zero to one. The `selection` narrows it further: `protein` is the all-atom
   quantity, `backbone` reports the fold's topology and ignores side-chain
   repacking, and `name CA` is the coarse-grained quantity from Gō-model work,
@@ -567,11 +567,11 @@ against another tool.
   show what holds the ligand in the frame shown, and when each contact formed
   and broke.
 
-- **Order parameters** are the Lipari–Szabo S² of each backbone N–H, taken as
+- **Order parameters** are the Lipari-Szabo S² of each backbone N-H, taken as
   the closed form of the correlation plateau after superposition. The alignment
   set is a choice that changes the answer and is recorded. A trajectory too
   short reports S² *too high* rather than too noisy, because motion it never
-  saw is indistinguishable from rigidity — so the two halves are compared and
+  saw is indistinguishable from rigidity, so the two halves are compared and
   the values are called an upper bound where they disagree. Proline and every
   N-terminal residue are left out: the first residue of each chain, a residue
   whose nitrogen carries the terminal hydrogens H2 and H3, and one with no
@@ -607,7 +607,7 @@ against another tool.
 - **g(r)** stops at half the cell's shortest lattice vector (for the boxes
   setup builds, half the smallest box dimension). Past that the
   minimum-image convention supplies only part of each shell, so the curve falls
-  away for a reason belonging to the box rather than the liquid — and it falls
+  away for a reason belonging to the box rather than the liquid, and it falls
   smoothly enough to read as structure.
 
 ---
@@ -621,8 +621,8 @@ system.
 
 Where the bias is known it can be undone. Each frame is weighted by
 `exp((V − c(t))/RT)`, with `V` the bias **that frame was actually sampled
-under** — the hills laid down before it, not the fully deposited surface — and
-`c(t)` the Tiwary–Parrinello offset. Both details matter. Weighting by the
+under** (the hills laid down before it, not the fully deposited surface) and
+`c(t)` the Tiwary-Parrinello offset. Both details matter. Weighting by the
 final surface inflates early frames, which were sampled under almost no bias at
 all. And without `c(t)` the weights rank frames by *when they were written*
 rather than by where the system was, because the bias grows as hills
@@ -653,10 +653,10 @@ another run; where the weights concentrate it is marked a floor, and
 independent replicas are the check on it. The `s.d.` beside the mean is the
 width of the reweighted distribution, not an error.
 
-**What is corrected:** the analyses reporting one value per frame — RMSD,
+**What is corrected:** the analyses reporting one value per frame (RMSD,
 radius of gyration, hydrogen bonds, SASA, the fraction of native contacts,
 ligand RMSD, the coordination number, the end-to-end distance, the distance
-between two selections, the area per lipid and the bilayer thickness — along
+between two selections, the area per lipid and the bilayer thickness) along
 with cluster populations, which are weighted counts. Where clustering took
 every k-th frame (past `max_frames`, or a `stride` or `start` of its own),
 each frame clustered carries its own weight, read from the frames its record
@@ -675,13 +675,13 @@ a projection is not an average.
 methods rather than a gap.** An umbrella window is a system held where it was
 put; its averages describe it there, they are not comparable between windows,
 and what combines the windows is the potential of mean force. A steered pull is
-not an equilibrium ensemble at all. For both, the averages are still reported —
-they describe what the run did — and are labelled as being of a biased ensemble
+not an equilibrium ensemble at all. For both, the averages are still reported
+(they describe what the run did) and are labelled as being of a biased ensemble
 wherever they appear, including in the GUI's metrics table.
 
 Results land in `analysis/reweighted/`: `reweighted_averages.json` always, and
 a `.dat` table and a figure where there were averages to correct. It carries no
-`options.json`, because it is not an analysis with options — it is a pass over
+`options.json`, because it is not an analysis with options: it is a pass over
 the ones that already ran.
 
 ---
@@ -821,6 +821,6 @@ read before comparing a result against another tool.
 
 ## See also
 
-- **[Reading the results](results.md)** — how an analysis says whether its number is determined
-- **[Selections in a Config](selections.md)** — which atoms an analysis reads
-- **[Protein-ligand interactions](interactions.md)** — the analysis with the most criteria
+- **[Reading the results](results.md)**: how an analysis says whether its number is determined
+- **[Selections in a Config](selections.md)**, which atoms an analysis reads
+- **[Protein-ligand interactions](interactions.md)**: the analysis with the most criteria

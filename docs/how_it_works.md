@@ -20,14 +20,14 @@ Config, `include_phase:` and `exclude_phase:` choose which.
 
 **Turns a structure into something that can be simulated.**
 
-It fetches by PDB identifier or reads a file, then repairs what is missing —
-absent atoms, absent hydrogens, chain breaks — using PDBFixer at the pH you
+It fetches by PDB identifier or reads a file, then repairs what is missing
+(absent atoms, absent hydrogens, chain breaks) using PDBFixer at the pH you
 give. It decides what each non-standard residue is for: a bound ligand is
 parameterised, a crystallisation additive discarded, a coordinated metal kept.
 Then it solvates, adds ions, and writes a serialised system.
 
 **Where the structure does not say enough, it stops.** An unknown residue, a
-ligand whose charge cannot be determined, a clash that means the pose is wrong —
+ligand whose charge cannot be determined, a clash that means the pose is wrong,
 each produces a refusal naming what could not be decided and what would decide
 it, rather than a guess that runs.
 
@@ -58,9 +58,9 @@ setup:
 ```
 
 The original residue is checked against the structure and setup stops where it
-does not match. Numbering travels badly — the same protein appears in the
+does not match. Numbering travels badly (the same protein appears in the
 literature with the construct's numbering, the deposition's, and the mature
-sequence's — so a mutation written against the wrong one would otherwise
+sequence's) so a mutation written against the wrong one would otherwise
 replace whatever sits at that position, and every result afterwards would
 describe a protein nobody chose.
 
@@ -117,8 +117,8 @@ the phase says when a run fails.
 `energy.csv`, `state_minimized.xml`, `state_final.xml`, `checkpoint.chk`,
 `simulation.log`, `simulation_parameters.json`.
 
-A biased run also writes the PLUMED input it generated —
-`metadynamics.plumed`, `steered.plumed` or `umbrella.plumed` — and `plumed.dat`,
+A biased run also writes the PLUMED input it generated
+(`metadynamics.plumed`, `steered.plumed` or `umbrella.plumed`) and `plumed.dat`,
 the resolved script actually attached to the run. Beside those go PLUMED's own
 `COLVAR`, and for metadynamics `HILLS`; and the result the method exists to
 produce, as `metadynamics_surface.json`, `steered_work.json`, or `pmf.json` at
@@ -133,8 +133,8 @@ the study root for umbrella sampling. Those three are what the
 that read what a biased run itself produced.
 
 Each writes its data, its figure, and the settings it actually used. The full
-catalogue — what each one computes, what changes the number, and when each runs
-automatically — is [The FastMDXplora analyses](analyses.md).
+catalogue (what each one computes, what changes the number, and when each runs
+automatically) is [The FastMDXplora analyses](analyses.md).
 
 Two behaviours are worth knowing before you read any result:
 
@@ -160,9 +160,9 @@ it also writes `analysis/reweighted/`.
 
 The report opens with a **methods paragraph** rather than a list of settings. A
 methods section for a molecular dynamics study has to state a particular list
-of things — coordinates and their source, protonation, force field version,
+of things (coordinates and their source, protonation, force field version,
 water model, box, ions, ensembles, integrator, thermostat, barostat, cutoffs,
-constraints, durations — and that list is published, in JCIM's reporting
+constraints, durations) and that list is published, in JCIM's reporting
 guidelines and Communications Biology's reproducibility checklist. Every value
 is already recorded, so the paragraph is assembled from them. Nothing is
 invented, and anything the run did not record is named as missing rather than
@@ -183,7 +183,7 @@ observations depends on how quickly an observable forgets where it was, not on h
 often frames were written. On a five-thousand-frame trajectory of Trp-cage the
 RMSD holds about twenty independent observations, so its uncertainty is some
 sixteen times what counting frames would give. Where a run is too short to say
-— and a short one usually is — the section says what it cannot support.
+(and a short one usually is) the section says what it cannot support.
 
 ### Highlighting regions you care about
 
@@ -203,7 +203,7 @@ report:
       end: 131
 ```
 
-`label` and `color` are optional — an unlabelled region becomes "Region 1", an
+`label` and `color` are optional: an unlabelled region becomes "Region 1", an
 uncoloured one takes the next of six palette colours.
 
 This produces `analysis/rmsf/rmsf_region_highlights.png` and, where PyMOL is
@@ -212,8 +212,8 @@ installed (`conda install -c conda-forge pymol-open-source`),
 rendering can be adjusted by hand. Without PyMOL the RMSF figure is still
 written and the report records that the structure rendering was skipped and why.
 
-Regions attach to **RMSF** and nothing else, because RMSF is indexed by residue
-— RMSD is indexed by frame, so a residue range has no meaning on it. The RMSF
+Regions attach to **RMSF** and nothing else, because RMSF is indexed by residue:
+RMSD is indexed by frame, so a residue range has no meaning on it. The RMSF
 analysis therefore has to have run.
 
 A range outside the residues RMSF was computed over is refused, with both ranges named:
@@ -257,8 +257,8 @@ there is one worth following:
 
 ```
 ▸ Minimizing energy
-  The starting structure has strain in it — atoms slightly too close,
-  bonds slightly too long — from the experiment, from adding hydrogens,
+  The starting structure has strain in it (atoms slightly too close,
+  bonds slightly too long) from the experiment, from adding hydrogens,
   and from dropping the protein into water. At the temperature of a
   simulation that strain becomes violent motion. Minimisation walks the
   structure downhill to a nearby arrangement with no such forces in it,

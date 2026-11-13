@@ -24,8 +24,8 @@ apart:
 
 | | |
 |---|---|
-| `resolved_config.yml` | **What was asked for.** A valid Config carrying every setting the run used, defaults included. Give it back to `fastmdx explore --config` to run the study again — see [Reproducing a run](config.md#reproducing-a-run) |
-| `manifest.json` | **What happened.** Every phase, artifact and refusal, plus the exact software stack the run used — [The FastMDXplora Manifest](manifest.md) |
+| `resolved_config.yml` | **What was asked for.** A valid Config carrying every setting the run used, defaults included. Give it back to `fastmdx explore --config` to run the study again: see [Reproducing a run](config.md#reproducing-a-run) |
+| `manifest.json` | **What happened.** Every phase, artifact and refusal, plus the exact software stack the run used: [The FastMDXplora Manifest](manifest.md) |
 | `analysis/<name>/options.json` | **What one analysis did.** Its selection, every option including the defaults, the findings, and the format of the file beside it |
 
 **The trajectory holds the solute, not the box.** `simulation.save_selection`
@@ -33,22 +33,22 @@ defaults to `not water`, because water is nine tenths of a solvated system and
 nine tenths of the file: a 20 ns run of a small protein is about 740 MB with it
 and under 80 without. What is saved comes with `trajectory_topology.pdb`, the
 topology that matches it, and the whole system stays in `setup/`. Set it to
-`all` where the solvent is the subject — the water-site analysis needs it and
+`all` where the solvent is the subject: the water-site analysis needs it and
 says so rather than reporting an empty result.
 
 ---
 
 ## Open these first
 
-**`report/report.pdf`** — the study written up: a methods paragraph you can
+**`report/report.pdf`**: the study written up: a methods paragraph you can
 paste into a manuscript, the figures, and a section saying what the run does
 and does not support, with the checks it was held to each marked passed,
 failed or not judged (and why).
 
-**`analysis/rmsd/rmsd.png`** — the first question about any trajectory: has the
+**`analysis/rmsd/rmsd.png`**: the first question about any trajectory: has the
 structure equilibrated, or is it still moving?
 
-**`setup/setup_parameters.json`** — what was decided about your structure
+**`setup/setup_parameters.json`**: what was decided about your structure
 before any dynamics ran. Every non-standard residue, every protonation call. If
 a result surprises you, the explanation is usually here.
 
@@ -120,7 +120,7 @@ A mean over a trajectory is not determined until two things are known about
 it: whether the system had stopped changing by the time averaging started, and
 how many independent observations the average rests on. Where either is
 unresolved, the mean is withheld and the withholding says which condition it
-was — `analysis.sampling.correlation_unresolved`,
+was: `analysis.sampling.correlation_unresolved`,
 `analysis.sampling.too_few_frames`, `analysis.sampling.drifting`.
 
 The companion question is how much further the run would have to go, and it has
@@ -172,7 +172,7 @@ curve is read against the error the package records. Fewer than ten finite
 values give a reason and no numbers.
 
 Averages taken on a biased run are corrected back to equilibrium where the bias
-allows, and labelled as biased where it does not —
+allows, and labelled as biased where it does not:
 [Averages on a biased run](analyses.md#averages-on-a-biased-run).
 
 ---
@@ -182,10 +182,10 @@ allows, and labelled as biased where it does not —
 The detail that changes a number lives with the analysis rather than here, so
 there is one place to correct when it changes:
 
-- **What each analysis computes**, and the choices that move it — cutoffs,
+- **What each analysis computes**, and the choices that move it: cutoffs,
   switching functions, alignment sets, atom typing:
   [The FastMDXplora analyses](analyses.md).
-- **Protein–ligand interactions**, which carry the most criteria and the most
+- **Protein-ligand interactions**, which carry the most criteria and the most
   ways to disagree with another tool:
   [Protein-ligand interactions](interactions.md).
 - **Free energy** from umbrella sampling, metadynamics or steered pulling, and
@@ -218,8 +218,8 @@ runs/campaign/
     └── trend_rmsd.png       only where a numeric sweep axis other than the seed exists
 ```
 
-Four per-frame quantities are overlaid — RMSD, radius of gyration, the fraction
-of native contacts Q, and total SASA — and only where at least two runs
+Four per-frame quantities are overlaid (RMSD, radius of gyration, the fraction
+of native contacts Q, and total SASA) and only where at least two runs
 produced them.
 
 Runs are compared on the means their own analyses recorded: over the frames
@@ -290,7 +290,7 @@ piece, so nothing has to branch on whether a run was segmented.
 **Drift and scatter are not the same thing.** Segment means that disagree *in
 no order* say the per-segment errors are too small; the mean stands and its
 error should be read as a lower bound. Segment means that *climb or fall* say
-the system had not equilibrated at the scale of the whole run — that is a refusal,
+the system had not equilibrated at the scale of the whole run: that is a refusal,
 `analysis.sampling.drifting`, and the remedy is a longer run rather than more
 pooling.
 
@@ -353,6 +353,6 @@ Segmenting a run in the first place is in
 
 ## See also
 
-- **[The FastMDXplora Manifest](manifest.md)** — the record of what happened
-- **[The FastMDXplora analyses](analyses.md)** — every analysis, and what changes it
-- **[FastMDXplora refusals](refusals.md)** — reading a refusal, by hand or from a program
+- **[The FastMDXplora Manifest](manifest.md)**: the record of what happened
+- **[The FastMDXplora analyses](analyses.md)**, every analysis, and what changes it
+- **[FastMDXplora refusals](refusals.md)**: reading a refusal, by hand or from a program

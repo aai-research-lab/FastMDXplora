@@ -6,7 +6,7 @@ happened.
 `manifest.json`, at the root of every run directory, records every phase that
 ran, every artifact it produced, every setting it used, and the exact software
 stack it ran on. It is what makes a finished run readable by somebody who was
-not there — including you, a year later.
+not there: including you, a year later.
 
 ```bash
 cat runs/study/manifest.json
@@ -46,12 +46,12 @@ The two records are complements, not duplicates:
 |---|---|
 | `tool` | Always `"FastMDXplora"` |
 | `version` | The version of the session that wrote the file |
-| `source` | Commit, dirty flag and branch — **only for a run from a source checkout**; `null` for an installed copy |
+| `source` | Commit, dirty flag and branch, **only for a run from a source checkout**; `null` for an installed copy |
 | `environment` | The result-bearing packages that were loaded while the run happened |
 | `doi`, `citation` | How to cite the software |
 | `system` | The system input, as it was given |
 | `output_dir` | Absolute path of the run directory, on the machine it ran on |
-| `phases` | One record per phase — see below |
+| `phases` | One record per phase: see below |
 | `options` | The merged per-phase settings the run used |
 | `agent` | The [Agent](agent.md) modes, where any were set |
 | `versions_seen`, `version_note` | Present only where phases were produced by more than one version |
@@ -74,7 +74,7 @@ The two records are complements, not duplicates:
 ```
 
 `status` is `ok`, `skipped` or `error`. An errored phase also carries a
-`refusal` object — the same structured record an in-process caller would have
+`refusal` object: the same structured record an in-process caller would have
 received:
 
 ```json
@@ -137,7 +137,7 @@ have been explained.
 
 `source` exists for the same reason at a finer grain. The version string is
 written when the package is installed, so an editable install carries whatever
-it was at that moment — a study of ours came back stamped `2.3.0` for a run that
+it was at that moment: a study of ours came back stamped `2.3.0` for a run that
 used a feature `2.3.0` did not have. A checkout records its commit and whether
 the tree was dirty. An installed copy records nothing under `source`, because
 the distribution was built from a tag and the version is the whole answer.
@@ -169,7 +169,7 @@ version that wrote the Manifest it was in, which produced it or came after the
 one that did.
 
 The Manifest is written at the end of a session. A session that crashes partway
-through a phase leaves no Manifest for that session — but the phase's own
+through a phase leaves no Manifest for that session, but the phase's own
 record (`setup_parameters.json`, `simulation_parameters.json`) *is* written
 before the failure is re-raised, deliberately, so the parameters that produced
 the failure are not lost with it.
@@ -181,7 +181,7 @@ the failure are not lost with it.
 `manifest.json` is the index. Four other files record what one phase or one
 analysis actually did. They answer a different question from
 [`resolved_config.yml`](config.md#reproducing-a-run): that file says what the
-study **was**, down to every setting; these say what running it **produced** —
+study **was**, down to every setting; these say what running it **produced**:
 the solvated atom count, the platform it landed on, the frames written, the
 length actually reached.
 
@@ -194,7 +194,7 @@ length actually reached.
 
 ### `resolved`: the settings a phase worked out
 
-The first three carry a `resolved` block — the settings that phase decided for
+The first three carry a `resolved` block: the settings that phase decided for
 itself, under the names a Config uses. It is what
 [`resolved_config.yml`](config.md#reproducing-a-run) reads to write down a step
 count derived from a duration, or the force field `auto` chose.
@@ -223,7 +223,7 @@ being interrupted reproduces the interruption.
 
 It is also kept separate from `parameters` deliberately. `parameters` is what
 the phase was handed, and setup's copy carries private keys and a `ligand_name`
-that becomes a list where several ligands were found — neither of which is a
+that becomes a list where several ligands were found: neither of which is a
 Config setting. `resolved` is built from named values rather than by copying and
 filtering, so nothing that would break a replay can reach it.
 
@@ -345,8 +345,8 @@ under `input.structure`, not in `manifest.json`:
 A report saying "PDB 3PTB" is checkable against the exact bytes that entered
 the run.
 
-`options.json` separates **what was set** from **what was worked out** — the
-`options` block and the `findings` block — so a cutoff you chose and a cutoff
+`options.json` separates **what was set** from **what was worked out** (the
+`options` block and the `findings` block) so a cutoff you chose and a cutoff
 read from this run's own first minimum in g(r) are not confusable. Read the
 `data_format` field rather than guessing from the `.dat` extension.
 
@@ -402,7 +402,7 @@ have, which is what you want after an `rsync` home. Reading `output_dir`
 literally is what fails.
 
 In-process, the same information comes back from `explore()` as
-`RunResult`/`PhaseResult` objects — see
+`RunResult`/`PhaseResult` objects: see
 [The FastMDXplora API](api.md#what-comes-back).
 
 ---
@@ -410,7 +410,7 @@ In-process, the same information comes back from `explore()` as
 ## What a Manifest is not
 
 **It is not a resume point.** Nothing in FastMDXplora reads a Manifest to
-continue a run. What resumes is a phase boundary — a finished `setup/` or
+continue a run. What resumes is a phase boundary: a finished `setup/` or
 `simulation/` in a directory is reused rather than redone, and `--include`
 picks up from the phase that stopped. Within the simulation phase,
 `simulation.resume_from` takes an OpenMM checkpoint, not a Manifest. See
@@ -446,6 +446,6 @@ FastMDXplora find things:
 
 ## See also
 
-- **[Reading the results](results.md)** — the run directory, and what each number is worth
-- **[The FastMDXplora Config](config.md)** — the other half of the pair
-- **[FastMDXplora refusals](refusals.md)** — what a `refusal` block means
+- **[Reading the results](results.md)**: the run directory, and what each number is worth
+- **[The FastMDXplora Config](config.md)**: the other half of the pair
+- **[FastMDXplora refusals](refusals.md)**: what a `refusal` block means

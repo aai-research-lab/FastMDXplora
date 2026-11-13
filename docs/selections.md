@@ -25,7 +25,7 @@ There are two ways to name a residue and they are not the same:
 | `resSeq 189` | the residue **numbered 189** in the file |
 
 For a structure numbered from 1 with no gaps they coincide. For a PDB entry
-they usually do not. Trypsin (3PTB) is numbered 16–245 with gaps, so:
+they usually do not. Trypsin (3PTB) is numbered 16 to 245 with gaps, so:
 
 ```
 resid  189 to 195  ->  Ile212 Val213 Ser214 Trp215 Gly216 Ser217 Gly219
@@ -76,7 +76,7 @@ analysis:
 | --- | --- |
 | `solute` *(default)* | `protein or resname <ligand>`, or `protein` if there is no ligand |
 | `protein` | `protein` |
-| `ligand` | `resname <ligand>` — fails if no ligand is known |
+| `ligand` | `resname <ligand>`: fails if no ligand is known |
 | `all` | no selection; every atom |
 
 The default is `solute` rather than everything because a radius of gyration
@@ -103,7 +103,7 @@ Water is ten times the file for questions most runs are not asking, so it is
 left out by default and the matching topology is written beside the
 trajectory. Two consequences worth knowing:
 
-- An analysis that needs solvent — `water_sites`, `rdf` — needs
+- An analysis that needs solvent (`water_sites`, `rdf`) needs
   `save_selection: all`.
 - **A frame can only be used as a starting structure if it holds every
   atom.** A study that seeds umbrella windows from a pull sets
@@ -141,8 +141,8 @@ method biases it.
 | `q` | `select_atoms` |
 
 `select_atoms` names the selection wherever a variable takes exactly one.
-Where it takes two, `select_atoms_a` and `select_atoms_b` say which is which
-— a bare `select_atoms` on a `distance` is refused rather than assigned to a
+Where it takes two, `select_atoms_a` and `select_atoms_b` say which is which:
+a bare `select_atoms` on a `distance` is refused rather than assigned to a
 group and hoped over.
 
 The role-specific names all still work and say more where they apply:
@@ -168,7 +168,7 @@ simulation:
     # ...force_constant, centres
 ```
 
-Left out entirely, the ligand is detected from the topology — which works
+Left out entirely, the ligand is detected from the topology, which works
 when there is exactly one candidate residue and refuses when there are
 several, because that is a question the topology cannot answer.
 
@@ -178,7 +178,7 @@ Twice, and the first time is a guard.
 
 A biasing block's selections are resolved **against the prepared system
 before any window is launched**. `resid 3 and name CA` on a tripeptide is
-empty — MDTraj counts residues from zero — and finding that out when the
+empty (MDTraj counts residues from zero) and finding that out when the
 first window starts costs a full preparation and a failed run, or in a
 parallel study three failed windows at once. The topology is on disk and the
 selections are in the config, so nothing about it needs a simulation to

@@ -34,13 +34,13 @@ one analysis and another elsewhere.
 
 **PLIP re-protonates every frame with OpenBabel.** That is not deterministic
 between runs, and it discards the protonation FastMDXplora's setup phase
-determined at the simulated pH — which is the protonation the trajectory was
+determined at the simulated pH, which is the protonation the trajectory was
 actually generated under. A tool that re-decides it per frame is answering a
 different question from the one the simulation asked.
 
 That is also why PLIP does not appear in the checking below. Its published
-criteria are adopted and cited throughout — the hydrophobic threshold, the
-π-stacking and π-cation geometry, metal coordination, the water bridge — but a
+criteria are adopted and cited throughout (the hydrophobic threshold, the
+π-stacking and π-cation geometry, metal coordination, the water bridge) but a
 non-deterministic re-protonation cannot serve as a reference for a
 trajectory whose protonation was fixed at setup. Citing a tool's criteria and
 running it are different claims, and only the first is made here.
@@ -49,7 +49,7 @@ running it are different claims, and only the first is made here.
 
 ## What FastMDXplora knows that a general tool has to infer
 
-The advantage is not the geometry — the criteria are published and anyone can
+The advantage is not the geometry: the criteria are published and anyone can
 implement them. It is that FastMDXplora ran the simulation, so it knows things
 a tool handed a trajectory has to guess:
 
@@ -85,8 +85,8 @@ Route 3 is the general tool's only route. It is available and it is labelled.
 **Charge is refused rather than guessed.** Perceiving a formal charge from
 coordinates is ambiguous more often than not: for guanidinium both +1 and −1
 balance, and for a phenol both 0 and −2 do. Where the charge was not
-determined, salt bridges and π-cation interactions — which are claims about
-charge — are not reported, and the reason is recorded. The rest continues: a
+determined, salt bridges and π-cation interactions (which are claims about
+charge) are not reported, and the reason is recorded. The rest continues: a
 ligand whose charge is unknown still has hydrogen bonds.
 
 **A topology without bonds is refused outright**, for the reason and with the
@@ -111,7 +111,7 @@ interaction the result named would rest on a guess the caller could not see.
 | π-cation | charge to ring centre < 6.0 Å, offset < 2.0 Å | PLIP |
 | Halogen bond | X···A < 3.5 Å, C-X···A 130 to 180°, X···A-R 80 to 140° | ProLIF |
 | Metal coordination | metal to donor < 3.0 Å | PLIP |
-| Water bridge | one water 2.5–4.1 Å from each side, angle at the water 71–140° | PLIP |
+| Water bridge | one water 2.5 to 4.1 Å from each side, angle at the water 71 to 140° | PLIP |
 
 Every threshold is a parameter of its rule in
 `fastmdxplora.analysis.interactions`, because the published values disagree and
@@ -155,7 +155,7 @@ downstream would be worse than reading it.
 three atoms of a puckered ring give a normal that swings with which three were
 chosen. FastMDXplora fits the plane by SVD.
 
-**Torsional wrap.** π-stacking angles are folded into 0–90°, because a normal
+**Torsional wrap.** π-stacking angles are folded into 0 to 90°, because a normal
 has no preferred direction and 170° between normals is the same arrangement as
 10°.
 
@@ -186,12 +186,12 @@ arithmetic, not kinetics.
 
 ## What checking against the other tools found
 
-**ProLIF initially returned nothing**, because the Universe carried no bonds —
+**ProLIF initially returned nothing**, because the Universe carried no bonds:
 the same defect FastMDXplora had just been taught to refuse. After
 `guess_bonds()`, the partners were identical: TRP6, LEU7, SER13, SER14.
 
 **Counts agree once the settings are matched.** ProLIF's defaults differ from
-FastMDXplora's in two ways — 130° against 120°, and counting per residue pair
+FastMDXplora's in two ways: 130° against 120°, and counting per residue pair
 rather than per atom pair. At matched settings the counts agree. Neither
 difference is a defect; both are choices, and FastMDXplora counts unreduced
 because reduction is a decision the reader should make.
@@ -204,15 +204,15 @@ which is the expected result since the `hbonds` analysis uses the same criterion
 ## References
 
 - Baker, E. N.; Hubbard, R. E. *Hydrogen bonding in globular proteins.* Prog.
-  Biophys. Mol. Biol. **1984**, 44, 97–179.
+  Biophys. Mol. Biol. **1984**, 44, 97-179.
 - McDonald, I. K.; Thornton, J. M. *Satisfying hydrogen bonding potential in
-  proteins.* J. Mol. Biol. **1994**, 238, 777–793.
+  proteins.* J. Mol. Biol. **1994**, 238, 777-793.
 - Adasme, M. F. et al. *PLIP 2021: expanding the scope of the protein-ligand
-  interaction profiler.* Nucleic Acids Res. **2021**, 49, W530–W534.
+  interaction profiler.* Nucleic Acids Res. **2021**, 49, W530-W534.
 - Bouysset, C.; Fiorucci, S. *ProLIF: a library to encode molecular
   interactions as fingerprints.* J. Cheminform. **2021**, 13, 72.
 - Politzer, P.; Murray, J. S.; Clark, T. *Halogen bonding: an electrostatically
   driven highly directional noncovalent interaction.* Phys. Chem. Chem. Phys.
-  **2010**, 12, 7748–7757.
+  **2010**, 12, 7748-7757.
 - McGibbon, R. T. et al. *MDTraj: a modern open library for the analysis of
-  molecular dynamics trajectories.* Biophys. J. **2015**, 109, 1528–1532.
+  molecular dynamics trajectories.* Biophys. J. **2015**, 109, 1528-1532.

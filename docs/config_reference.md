@@ -1,7 +1,7 @@
 # FastMDXplora Config reference
 
 Every setting a Config accepts, by phase, grouped the way the
-[GUI](gui.md) form and `fastmdx explore --help` present them — all three read
+[GUI](gui.md) form and `fastmdx explore --help` present them: all three read
 from the same declaration, so moving between them is not learning a second
 arrangement.
 
@@ -29,7 +29,7 @@ For the flag spelling of any setting below, see
 | `exclude_phase` | list | none | Phases to skip. Mutually exclusive with `include_phase`; written earlier as `exclude`, still read |
 | `explain` | bool | `true` | Say why each step is happening, as it happens |
 | `verbose` | bool | `false` | Stream debug logging to the terminal |
-| `agent` | str | none | `assisted`, `autonomous`, `unvalidated` — see [the Agent](agent.md) |
+| `agent` | str | none | `assisted`, `autonomous`, `unvalidated`: see [the Agent](agent.md) |
 | `agent_model` | str | none | Which AI model wrote it, as `provider/model` |
 | `budget_hours` | float | none | A ceiling on GPU hours for the whole study, checked after setup; required for `agent: autonomous` |
 | `decisions` | mapping | none | Why a setting has its value, by its dotted name: `why`, and optionally `source` and `alternatives`. A record; no run reads it |
@@ -69,7 +69,7 @@ What is kept, what is repaired, and how it is protonated.
 | `mutation_chain` | str | first chain | Which chain the mutations apply to |
 
 A deposited entry is what the experiment produced, not what anyone means to
-simulate — hence `chains`. `build_missing_termini` is off because a gap is
+simulate: hence `chains`. `build_missing_termini` is off because a gap is
 pinned at both ends and a terminus is not: what gets built there is a guess
 with one end free.
 
@@ -92,7 +92,7 @@ holds the residue and its atoms cannot be matched to the file's, it refuses
 rather than start the ligand away from the site. That is usually right, and [Worked examples](examples.md#a-protein-with-a-ligand) covers the
 two cases and how to pin either.
 
-`ligand_pose` accepts any string — the three values above are the ones it acts
+`ligand_pose` accepts any string: the three values above are the ones it acts
 on.
 
 ### The membrane
@@ -138,7 +138,7 @@ cube's volume, so about a third of the water a cube would need is saved.
 Only a ligand-capable force field accepts `setup.ligand`; `amber-openff` is the
 one to reach for.
 
-`constraints` accepts any string — the four values above are the ones OpenMM
+`constraints` accepts any string: the four values above are the ones OpenMM
 acts on, so check the spelling.
 
 ### How forces are computed
@@ -172,7 +172,7 @@ them, and what you set stands, even where it equals the force field's own. See
 ### How long it runs
 
 Production length, and the equilibration before it. **Equilibration is
-independent of production length** — a 500 ns production run gets the same
+independent of production length**: a 500 ns production run gets the same
 1.5 ns of equilibration as a 2 ns one unless you say otherwise. Each default
 is a time, so the number of steps follows the timestep: at 4 fs, 1.5 ns is
 375,000 steps, where it is 750,000 at 2 fs.
@@ -220,7 +220,7 @@ By default the runs must be replicas and must agree with each other. See
 | `minimize_tolerance_kjmol_per_nm` | int or float | `10.0` | Minimisation force tolerance |
 | `minimize_max_iterations` | int | `0` | `0` means until convergence |
 
-`setup_from` accepts the study directory — `runs/reference` — and finds the
+`setup_from` accepts the study directory (`runs/reference`) and finds the
 `setup/` inside. **Naming one turns preparation off**, because a second
 preparation is the same system only with the same settings and
 `setup.random_seed`: otherwise it is a second set of atoms, and anything taken
@@ -228,7 +228,7 @@ from the named one then belongs to a different molecule.
 
 `resume_from` is only valid for the exact system, platform and precision the
 checkpoint was written from; loading refuses rather than proceeding on a
-mismatch. Metadynamics and steered runs cannot be split at all — see
+mismatch. Metadynamics and steered runs cannot be split at all: see
 [Long runs and segments](production.md#long-runs-and-segments).
 
 Every checkpoint FastMDXplora writes has a sidecar beside it,
@@ -238,7 +238,7 @@ temperature, the timestep, the study, and the state's time at the step
 next piece's checkpoints every `checkpoint_interval_steps` where the
 extension's config sets it beside `extra_ns`, else at the study's interval;
 `fastmdx resume` carries a stopped piece on at the interval it asked for. A run resuming from a production
-checkpoint must continue it — `minimize: false`, `nvt_steps: 0`,
+checkpoint must continue it: `minimize: false`, `nvt_steps: 0`,
 `npt_steps: 0`, the same timestep. A plan that would minimise or
 equilibrate the checkpoint again is refused, with the reason: it throws the
 velocities away and makes the continuation a new run from a snapshot rather
@@ -246,7 +246,7 @@ than the same trajectory. A checkpoint with no sidecar, made by hand or
 before the sidecar existed, loads as it always did, with a warning.
 Checkpoints are written during production only; a run stopped in
 equilibration has none to resume from. The Agent's *continue* writes all of
-this for you — see [Continuing a study that stopped](agent.md#continuing-a-study-that-stopped).
+this for you: see [Continuing a study that stopped](agent.md#continuing-a-study-that-stopped).
 
 ### Conditions
 
@@ -278,7 +278,7 @@ and `--umbrella` on `simulate`); a Config is the readable place for one.
 | `umbrella` | mapping | A free energy along a coordinate, from equilibrium sampling at a series of positions |
 | `steered` | mapping | Pull along a coordinate at constant velocity and record the work |
 | `metadynamics` | mapping | Fill the free energy landscape along a named coordinate |
-| `plumed` | mapping | `enabled` and `script` — raw PLUMED input, as text or a path |
+| `plumed` | mapping | `enabled` and `script`: raw PLUMED input, as text or a path |
 
 `plumed` is reached by a path instead: `--simulate-plumed-script PATH` on
 `explore`, or `--plumed-script PATH` on `simulate`, sets
@@ -309,7 +309,7 @@ results.
 | `device_index` | str | none | GPU index on a multi-GPU machine, e.g. `"0"` or `"0,1"` |
 
 `auto` takes the fastest available and says which it chose. Ask for a platform
-by name when you are checking whether the hardware is reachable at all — an
+by name when you are checking whether the hardware is reachable at all: an
 explicit request fails loudly where `auto` falls back.
 
 ### What gets written
@@ -326,8 +326,8 @@ run of a small protein is about 740 MB with it and under 80 without. What is
 saved comes with `trajectory_topology.pdb` beside it, and the whole system
 stays in `setup/`.
 
-Set `save_selection: all` where the solvent is the subject — `water_sites`,
-`rdf` and `coordination_number` need it — and for any run whose frames will
+Set `save_selection: all` where the solvent is the subject (`water_sites`,
+`rdf` and `coordination_number` need it) and for any run whose frames will
 seed another study, because a seed is a complete set of positions and a subset
 cannot become one.
 
@@ -372,7 +372,7 @@ end_to_end  moments_of_inertia  pair_distance  pmf  metad_surface  steered_work
 area_per_lipid  bilayer_thickness  lipid_order  image_check
 ```
 
-Several do not run by default and are gated on what the run contains — a
+Several do not run by default and are gated on what the run contains: a
 ligand, water, a periodic box, a bilayer, a biased run. Naming one in `include` runs it
 anyway. [The FastMDXplora analyses](analyses.md) has what each computes and
 what gates it.
@@ -387,7 +387,7 @@ what gates it.
 | `selection` | str | none | The earlier name for `select_atoms`. `selection` wins if both |
 | `scope` | str | `solute` | `solute`, `protein`, `ligand`, `all` |
 
-`scope` is shorthand that resolves to a real selection — see
+`scope` is shorthand that resolves to a real selection: see
 [Selections in a Config](selections.md#what-an-analysis-reads).
 
 ### Which frames
@@ -438,7 +438,7 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 | `comparison` | bool | `true` | The cross-run comparison, for a study of more than one run |
 
 `region_highlights` entries take `label`, `start`, `end` and an optional
-`color` — see
+`color`: see
 [How FastMDXplora works](how_it_works.md#highlighting-regions-you-care-about).
 
 ### What comes out
@@ -450,7 +450,7 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 | `slides` | bool | `true` | `slides.pptx`, with `slides_outline.md` as a fallback |
 | `bundle` | bool | `true` | `project_bundle.zip` |
 
-`dashboard.html` is written whichever of these are off — it has no setting.
+`dashboard.html` is written whichever of these are off: it has no setting.
 
 ---
 
@@ -463,5 +463,5 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 | `devices` | list | none | GPU indices; runs are pinned round-robin |
 | `continue_on_error` | bool | `true` (`false` for umbrella) | Carry on when one run fails |
 
-Setting `workers` or `devices` implies `mode: parallel` — see
+Setting `workers` or `devices` implies `mode: parallel`: see
 [The FastMDXplora Config](config.md#execution).

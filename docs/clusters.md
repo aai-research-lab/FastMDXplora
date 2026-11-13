@@ -40,8 +40,8 @@ results back. What it runs there is the same `fastmdx explore --config`.
 ## Installing where there is no network
 
 Many clusters have no route to PyPI or conda-forge. FastMDXplora is pure
-Python; what is awkward to install is the layer underneath it — OpenMM, PLUMED,
-MDTraj, PDBFixer — and that layer is often already there, because it is what
+Python; what is awkward to install is the layer underneath it (OpenMM, PLUMED,
+MDTraj, PDBFixer) and that layer is often already there, because it is what
 everybody else on the machine needs too.
 
 **Look before building anything.**
@@ -67,7 +67,7 @@ for m in ('openmm','mdtraj','pdbfixer','sklearn','pandas','matplotlib',
 python --version
 ```
 
-**Fetch only those**, on a machine with a network, built for the target — not
+**Fetch only those**, on a machine with a network, built for the target, not
 for your laptop, which is very likely a different architecture:
 
 ```bash
@@ -81,7 +81,7 @@ tar czf wheels.tgz wheels
 written without the dot), and the list is what it reported missing.
 
 `--no-deps` matters. Without it pip re-resolves the whole tree and fails on
-packages that have no wheel — MDTraj among them — even where the requirement is
+packages that have no wheel (MDTraj among them) even where the requirement is
 already satisfied on the target.
 
 **Install on top of the site environment**, so OpenMM and PLUMED are taken from
@@ -144,7 +144,7 @@ target's platform and Python version. That is the brittle part, and it is why
 the second way exists.
 
 **Take an image.** One is attached to each release, built from
-`container/fastmdx.def` and carrying the whole stack — OpenMM with CUDA and
+`container/fastmdx.def` and carrying the whole stack: OpenMM with CUDA and
 PLUMED, MDTraj, PDBFixer, the OpenFF toolkit, AmberTools, and FastMDXplora
 itself, all resolved by one solver so the versions are the ones the packaging
 chose. It is about 1.3 GB:
@@ -155,7 +155,7 @@ apptainer test fastmdx-2.5.6.sif
 ```
 
 (Substitute the version you mean.) `apptainer test` runs the check built into
-the image — the version, the simulation stack, the ligand path — so a truncated
+the image (the version, the simulation stack, the ligand path) so a truncated
 copy announces itself before a queue does. Copy the one file across, and:
 
 ```bash
@@ -163,7 +163,7 @@ apptainer exec --nv fastmdx.sif fastmdx explore --config study.yml
 ```
 
 `--nv` passes the GPU through. Without it the run falls back to the CPU
-platform — which it will say, and which is worth reading rather than
+platform, which it will say, and which is worth reading rather than
 discovering from the timing.
 
 The image carries its own OpenMM, so `OPENMM_PLUGIN_DIR` is set inside it and
@@ -172,7 +172,7 @@ whatever the host has does not apply.
 Building it yourself needs a machine that is x86-64 Linux **and** has a
 network, which a laptop usually is not and a cluster usually does not. The
 image installs FastMDXplora from conda-forge, so the release has to have
-reached the feedstock — an hour or so after a tag, sometimes longer:
+reached the feedstock: an hour or so after a tag, sometimes longer:
 
 ```bash
 apptainer build --fakeroot fastmdx.sif container/fastmdx.def
@@ -202,7 +202,7 @@ The path is read from where `fastmdx` was run, not from the Config that names
 it.
 
 A ligand needs the same treatment. With a local structure there is no entry to
-look its chemistry up in, so the run is refused — with the exact fetch to run
+look its chemistry up in, so the run is refused, with the exact fetch to run
 elsewhere in the message:
 
 ```bash
@@ -225,7 +225,7 @@ Platform         CUDA (mixed precision)
 ```
 
 `CPU` there on a machine with a GPU means something is wrong, and so does
-`Reference` anywhere — that is OpenMM's correctness implementation, perhaps a
+`Reference` anywhere: that is OpenMM's correctness implementation, perhaps a
 hundred times slower than the others. A run on it finishes and is correct, so
 nothing else will tell you.
 
@@ -242,12 +242,12 @@ whether the hardware is reachable at all.
 The run lists the platforms OpenMM found, and where one is missing says what is
 known about why. Three answers come up often:
 
-- **A library that would not load**, quoted from OpenMM — commonly
+- **A library that would not load**, quoted from OpenMM: commonly
   `libcuda.so.1: cannot open shared object file`, which means the NVIDIA driver
   is not present. Correct on a head node with no GPU, and the reason to be on a
   compute node.
-- **The other vendor's plugins declining to load** — HIP libraries on an NVIDIA
-  machine, CUDA on an AMD one — reported at INFO and harmless: the build carries
+- **The other vendor's plugins declining to load** (HIP libraries on an NVIDIA
+  machine, CUDA on an AMD one) reported at INFO and harmless: the build carries
   both backends, and the one your hardware cannot use says so.
 - **Nothing found and nothing failed**, which means nothing was tried. OpenMM
   loads its platforms from a directory fixed when it was built, and a relocated
@@ -283,7 +283,7 @@ Write to a filesystem the compute nodes can see. Scratch is usually faster than
 a home directory and usually not backed up, which matters for a trajectory you
 cannot cheaply reproduce.
 
-**A study of many runs schedules itself — on one node.** Umbrella sampling
+**A study of many runs schedules itself: on one node.** Umbrella sampling
 expands into one run per window, and a sweep across systems into one run each;
 both go through the same machinery:
 
@@ -324,7 +324,7 @@ Then open `http://localhost:8765` at home. Check your site's policy first; some
 clusters forbid listening sockets on compute nodes and expect this from a login
 node instead.
 
-**Do not run the GUI on a shared login node** — on a machine where other people
+**Do not run the GUI on a shared login node**: on a machine where other people
 hold shell accounts, `127.0.0.1` means every logged-in user, and there is no
 authentication. Take an interactive job and tunnel through the login node:
 
@@ -351,7 +351,7 @@ fastmdx gui --output ~/runs/study
 
 Everything needed to repeat a study is in its output directory:
 `resolved_config.yml`, the prepared and solvated structures, the serialised
-system and state, the trajectory, the analyses and the report — with
+system and state, the trajectory, the analyses and the report, with
 `manifest.json` recording what happened and on what.
 
 `report/project_bundle.zip` gathers the parts worth sending to somebody else,
