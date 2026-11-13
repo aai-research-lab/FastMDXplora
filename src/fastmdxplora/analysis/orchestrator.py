@@ -912,7 +912,7 @@ class AnalysisOrchestrator:
                 and _alignable(n) and _solute_ok(n)
             ]
 
-        self._say_what_a_bilayer_goes_without()
+        _say_what_a_bilayer_goes_without(getattr(self, "traj", None))
         # Default plan: everything except ligand-only analyses when there is
         # no ligand. With a ligand, the ligand analyses run automatically.
         return [n for n in all_names
@@ -921,26 +921,6 @@ class AnalysisOrchestrator:
                 and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
                 and _metadynamics_ok(n) and _steered_ok(n)
                 and _fold_ok(n) and _alignable(n) and _solute_ok(n)]
-
-    def _say_what_a_bilayer_goes_without(self) -> None:
-        """Where the frames hold a bilayer and its analyses' package is not
-        installed, say so: left out of a default plan in silence, a membrane
-        study's report would lack its area, thickness and chain order with
-        nothing to say why."""
-        absent = [name for name in _OF_A_BILAYER if name not in _REGISTRY]
-        traj = getattr(self, "traj", None)
-        if not absent or traj is None:
-            return
-        from fastmdxplora.lipids import is_bilayer
-
-        if (getattr(traj, "unitcell_lengths", None) is None
-                or not is_bilayer(r.name for r in traj.topology.residues)):
-            return
-        why = not_installed(absent[0])
-        logger.warning(
-            "These frames hold a bilayer, and %s %s not among the analyses "
-            "run.%s", ", ".join(absent), "is" if len(absent) == 1 else "are",
-            f" {why.message}" if why is not None else "")
 
     def _merge_options(
         self,
@@ -1122,6 +1102,26 @@ class AnalysisOrchestrator:
         with path.open("w", encoding="utf-8") as fh:
             json.dump(manifest, fh, indent=2)
         logger.debug("Wrote analysis manifest: %s", path)
+
+
+def _say_what_a_bilayer_goes_without(traj: Any) -> None:
+    """Where the frames hold a bilayer and its analyses' package is not
+    installed, say so: left out of a default plan in silence, a membrane
+    study's report would lack its area, thickness and chain order with
+    nothing to say why."""
+    absent = [name for name in _OF_A_BILAYER if name not in _REGISTRY]
+    if not absent or traj is None:
+        return
+    from fastmdxplora.lipids import is_bilayer
+
+    if (getattr(traj, "unitcell_lengths", None) is None
+            or not is_bilayer(r.name for r in traj.topology.residues)):
+        return
+    why = not_installed(absent[0])
+    logger.warning(
+        "These frames hold a bilayer, and %s %s not among the analyses "
+        "run.%s", ", ".join(absent), "is" if len(absent) == 1 else "are",
+        f" {why.message}" if why is not None else "")
 
 
 def _separation_for(cls: type, asked: dict[str, Any]) -> int:

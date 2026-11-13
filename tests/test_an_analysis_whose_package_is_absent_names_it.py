@@ -112,19 +112,14 @@ class TestABilayerWithoutItsAnalyses:
         traj.unitcell_angles = np.full((1, 3), 90.0, dtype="float32")
         return traj
 
-    def _planner(self, traj):
-        planner = orchestrator.AnalysisOrchestrator.__new__(orchestrator.AnalysisOrchestrator)
-        planner.traj = traj
-        return planner
-
     def test_a_default_plan_says_what_it_goes_without(self, absent, caplog):
         with caplog.at_level(logging.WARNING, logger="fastmdxplora"):
-            self._planner(self._bilayer())._say_what_a_bilayer_goes_without()
+            orchestrator._say_what_a_bilayer_goes_without(self._bilayer())
         assert "area_per_lipid, bilayer_thickness, lipid_order are not among" in caplog.text
         assert "pip install fastmdxplora-membrane" in caplog.text
 
     def test_nothing_is_said_where_they_are_installed(self, caplog):
         pytest.importorskip("fastmdxplora_membrane")
         with caplog.at_level(logging.WARNING, logger="fastmdxplora"):
-            self._planner(self._bilayer())._say_what_a_bilayer_goes_without()
+            orchestrator._say_what_a_bilayer_goes_without(self._bilayer())
         assert caplog.text == ""
