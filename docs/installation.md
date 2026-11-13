@@ -63,6 +63,12 @@ sudo apt install libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0
 Where they are missing, the run says so and writes the other formats rather
 than failing.
 
+**The bilayer analyses** (`area_per_lipid`, `bilayer_thickness`,
+`lipid_order`) are a package of their own, `fastmdxplora-membrane`. Every
+install above brings it, because `fastmdxplora` requires it, so there is
+nothing to do. Installed some other way (`--no-deps`, say), `pip install
+fastmdxplora-membrane` adds it.
+
 ---
 
 ## Working on FastMDXplora itself
@@ -72,7 +78,7 @@ git clone https://github.com/aai-research-lab/FastMDXplora.git
 cd FastMDXplora
 conda env create -f environment.yml
 conda activate fastmdxplora
-pip install -e ".[dev]"
+pip install -e ".[dev]" -e packages/fastmdxplora-membrane
 pytest -q
 ```
 
@@ -131,6 +137,11 @@ It lists every backend grouped by what it is for, and for anything missing it
 gives the command that installs it. A backend that is present but will not
 load — WeasyPrint without Pango, say — is reported as broken rather than
 missing, because reinstalling something already there fixes nothing.
+
+Below the backends it lists the plug-ins: the packages that add to
+FastMDXplora through its entry points, `fastmdxplora-membrane` among them,
+with what each offers. One that would not load is listed as broken with the
+reason, and FastMDXplora starts without it.
 
 ---
 

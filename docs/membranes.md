@@ -163,6 +163,12 @@ there is one. Each has an experimental value and each moves when a force
 field, a temperature or a barostat is wrong, so they are what a membrane run
 is checked against before anything about the protein in it is believed.
 
+They come with FastMDXplora as a package of their own,
+`fastmdxplora-membrane`, which `pip install fastmdxplora` and the conda
+package both install. If `fastmdx info` lists it as missing, `pip install
+fastmdxplora-membrane` brings it; a study that asks for one of the three
+without it is refused with that command, not run without them.
+
 | Analysis | What it computes |
 |---|---|
 | `area_per_lipid` | The box's area in xy, less the protein's cross section in the hydrophobic core, per lipid of one leaflet, and each leaflet's own beside it. nm², per frame |

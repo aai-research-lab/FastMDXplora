@@ -16,7 +16,7 @@ git clone https://github.com/aai-research-lab/FastMDXplora.git
 cd FastMDXplora
 conda env create -f environment.yml
 conda activate fastmdxplora
-pip install -e ".[dev]"
+pip install -e ".[dev]" -e packages/fastmdxplora-membrane
 pytest -q
 ```
 
@@ -155,8 +155,10 @@ for code in codes_under("analysis.sampling"):
 ## Writing an analysis
 
 An analysis is one class and one registration. The registry is populated by
-import order in `analysis/__init__.py`, and **that order is the default
-execution order**.
+import order in `analysis/__init__.py`, then put in
+`orchestrator.ANALYSIS_ORDER`, and **that order is the default execution
+order**. An analysis can also live in a package of its own: see
+[An analysis in a package of its own](#an-analysis-in-a-package-of-its-own).
 
 ```python
 from typing import Any
@@ -240,6 +242,57 @@ what makes two disagreeing analyses of the same trajectory resolvable. Also
 note that unknown options are refused rather than ignored — every analysis ends
 in `**kwargs`, so `n_clusteres` used to cluster at the default and report
 success.
+
+### An analysis in a package of its own
+
+The core never imports a package that extends it. Such a package names what
+it offers as entry points, `fastmdxplora/plugins.py` reads them, and the core
+does the registering, at one place: the foot of `analysis/__init__.py`, after
+its own analyses. The bilayer analyses are the first to live this way, in
+`packages/fastmdxplora-membrane/`.
+
+```toml
+[project.entry-points."fastmdxplora.analyses"]
+lipid_order = "fastmdxplora_membrane.lipid_order:LipidOrder"
+```
+
+The entry point's name is the analysis's name, as `analysis.include` gives
+it, and it loads to a subclass of `Analysis`. Four rules:
+
+- **The module registers nothing.** No `register_analysis` call: importing a
+  plug-in has no effect on the registry.
+- **The package's `__init__.py` imports `fastmdxplora.analysis` first.** The
+  core reads the entry points as that package is imported, and the plug-in's
+  modules import from it. A script that imports a plug-in before anything of
+  the core's is still right without this (the analysis waits and registers at
+  the first read of the registry), but with it nothing waits.
+- **Order.** One of this project's own has its place in `ANALYSIS_ORDER`, so
+  a study's results, manifest and report are in the order they always were.
+  An analysis from anywhere else runs after those, by name.
+- **A module that moved keeps its old path.** List it under
+  `fastmdxplora.moved_modules` (`"fastmdxplora.analysis.lipid_order" =
+  "fastmdxplora_membrane.lipid_order"`) and an `import` of the old path gives
+  the new module.
+
+A plug-in that fails to load is left out, with a warning naming it and why,
+and the core starts without it; `fastmdx info` lists each plug-in and how it
+stands. A study that asks for an analysis whose package is absent is refused
+with the package to install (`environment.plugin.missing`), or told to
+reinstall one that would not load (`environment.plugin.broken`). For one of
+this project's own to be named when it is absent, add it to
+`plugins.FIRST_PARTY`: an absent package cannot say what it would have
+offered.
+
+In a clone, install the core and its plug-ins in one command, since each
+requires the other:
+
+```bash
+pip install -e ".[dev]" -e packages/fastmdxplora-membrane
+```
+
+A clone installed before a module moved still runs: a package in `packages/`
+that is not installed is read from where it sits, and `fastmdx info` says so
+(`checkout`).
 
 ---
 
