@@ -70,7 +70,7 @@ def sweep(tmp_path_factory) -> Path:
 
 def _open(page, url: str, where: str) -> None:
     page.goto(url + "#" + where, wait_until="domcontentloaded")
-    # Each `goto` loads the page again. The place is drawn from the app
+    # Each `goto` loads the page again. The place is made from the app
     # state and the status (place.js), and is empty until a poll has read
     # and applied them: on a loaded runner, after the 1.2 s alone.
     page.wait_for_function("() => window.FastMDXPlace && window.FastMDXDashboard"
