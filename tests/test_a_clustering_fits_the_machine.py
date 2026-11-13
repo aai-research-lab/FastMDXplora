@@ -1913,10 +1913,14 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
 
         monkeypatch.setattr(module, "save_figure", save)
 
-    @pytest.mark.parametrize("figure", ["cluster_kmeans.png", "cluster_kmeans_counts.png",
-                                        "cluster_hierarchical_dendrogram.png"])
+    @pytest.mark.parametrize("figure,room", [
+        ("cluster_kmeans.png", "21.8 MB"), ("cluster_kmeans_counts.png", "17.1 MB"),
+        ("cluster_hierarchical_dendrogram.png", "19.9 MB")])
     def test_a_figure_whose_canvas_is_the_same_is_told_the_room(
-            self, tmp_path, monkeypatch, figure):
+            self, tmp_path, monkeypatch, figure, room):
+        """The room is what plotting the figure maps (``figure_needed``): 40
+        MB was said for every figure, where the dendrogram of 500 frames
+        needed 17.75 MiB."""
         self._run_out_on(monkeypatch, clustering, figure)
         monkeypatch.setattr(clustering, "memory_available", lambda: (10**12, _RLIMIT))
         result = Cluster(output_dir=tmp_path).run(_chain(80))
@@ -1926,7 +1930,7 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
                 or json.loads((result.output_dir
                                / "cluster_hierarchical_dendrogram_skipped.json").read_text())["reason"])
         assert "Set `" not in said and "stride does not help" in said, said
-        assert "where `ulimit -v` allows about 40.0 MB more" in said, said
+        assert f"where `ulimit -v` allows about {room} more." in said, said
 
     def test_the_map_of_few_frames_is_told_the_stride_that_makes_it_smaller(
             self, tmp_path, monkeypatch):
@@ -1947,6 +1951,8 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
         found = json.loads((result.output_dir / "options.json").read_text())["findings"]
         said = found["figures_not_plotted"]["cluster_rmsd_matrix.png"]
         assert "Set `" not in said and "stride does not help" in said, said
+        # Its mesh of 1,000 cells across as well: 122.25 MiB counted, 40 MB said.
+        assert "allows about 133.5 MB more." in said or "about 133.5 MB more memory" in said, said
 
     @pytest.mark.parametrize("figure", ["dimred_pca.png", "dimred_pca_landscape.png"])
     def test_a_projection_s_figure_is_told_the_room(self, tmp_path, monkeypatch, figure):
@@ -1959,6 +1965,103 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
         found = json.loads((result.output_dir / "options.json").read_text())["findings"]
         said = found["figures_not_plotted"][figure]
         assert "stride: 2" not in said and "stride does not help" in said, said
+
+
+#: One of clustering's figures of 500 frames plotted, closed and collected,
+#: then plotted again under ``RLIMIT_AS`` set at what the process holds and
+#: what :func:`figure_needed` says it needs. Exits 3 where it runs out.
+_FIGURE_IN_ITS_ROOM_SCRIPT = r"""
+import resource, sys
+sys.path.insert(0, sys.argv[1])
+import numpy as np
+from scipy.cluster.hierarchy import linkage
+from fastmdxplora.analysis import cluster as C
+from fastmdxplora.analysis.plotting import close_figures_opened_since, figures_open
+figure, out = sys.argv[2], sys.argv[3]
+n = 500
+rng = np.random.default_rng(0)
+labels = rng.integers(0, 5, n)
+tree = linkage(rng.normal(size=(n, 3)), "average")
+distances = np.abs(rng.normal(size=(n, n)))
+C.libraries_mapped()
+
+def made():
+    if figure == "timeline":
+        fig, ax = C.new_figure(title="Frames (hierarchical)")
+        C._plot_cluster_timeline(ax, labels, "hierarchical", frames=np.arange(n))
+    elif figure == "counts":
+        fig, ax = C.new_figure(title="Cluster populations (hierarchical)", figsize=(5.8, 3.6))
+        C._plot_cluster_counts(ax, labels)
+    elif figure == "dendrogram":
+        fig, ax = C.new_figure(title="Hierarchical clustering dendrogram", figsize=(6.5, 3.8))
+        C._plot_hierarchical_dendrogram_from_linkage(ax, tree)
+    else:
+        fig, ax = C.new_figure(title="RMSD between frames", figsize=(5.6, 4.8))
+        C._plot_distance_matrix(ax, distances, np.arange(n), np.arange(n) * 0.01)
+    return fig
+
+before = figures_open()
+made()
+needed = C.figure_needed(figures_open() - before, cells=n if figure == "map" else 0)
+close_figures_opened_since(before)
+C.save_figure(made(), out + "/warm.png")
+C.give_back_freed()
+for line in open("/proc/self/status"):
+    if line.startswith("VmSize:"):
+        held = int(line.split()[1]) * 1024
+resource.setrlimit(resource.RLIMIT_AS, (held + needed, resource.RLIM_INFINITY))
+try:
+    C.save_figure(made(), out + "/" + figure + ".png")
+except MemoryError as error:
+    print("RAN OUT", needed, error, flush=True)
+    sys.exit(3)
+print("PLOTTED", needed, flush=True)
+"""
+
+
+class TestEachFigureIsPlottedAfterTheOnesBefore:
+    """A figure saved and closed held its canvas until Python's garbage
+    collector next ran, and on Python 3.10 it had not when the next was
+    plotted: under ``ulimit -v`` 600000, tri-alanine's 500 frames, whose
+    plan fitted, ran out plotting the dendrogram (``std::bad_alloc``) with
+    four figures' canvases still held, 56.3 MiB past the check where 3.13
+    held 29.8."""
+
+    def test_no_figure_before_is_held_as_the_next_is_plotted(self, tmp_path, monkeypatch):
+        import weakref
+
+        real = clustering.new_figure
+        made, held = [], []
+
+        def counted(*args, **kwargs):
+            held.append(sum(1 for figure in made if figure() is not None))
+            fig, ax = real(*args, **kwargs)
+            made.append(weakref.ref(fig))
+            return fig, ax
+
+        monkeypatch.setattr(clustering, "new_figure", counted)
+        result = Cluster(output_dir=tmp_path).run(_chain(120))
+        assert result.status == "ok", result.message
+        # The timeline and counts of each method, the dendrogram, the map.
+        assert len(held) == 6, held
+        assert held == [0] * 6, held
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
+    @pytest.mark.parametrize("figure", ["timeline", "counts", "dendrogram", "map"])
+    def test_the_room_a_figure_is_said_to_need_plots_it(self, tmp_path, figure):
+        """Under ``RLIMIT_AS`` set at what the process holds, collected, and
+        what the figure is said to need (``figure_needed``), past a figure
+        of its kind plotted before: it plots. Counted so, the most was the
+        timeline on Python 3.10, 19.50 MiB, said as 20.75."""
+        import subprocess
+        from pathlib import Path
+
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        done = subprocess.run(
+            [sys.executable, "-c", _FIGURE_IN_ITS_ROOM_SCRIPT, src, figure, str(tmp_path)],
+            capture_output=True, text=True, timeout=600, env=_cli_env())
+        assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-3000:]
+        assert "PLOTTED" in done.stdout, done.stdout[-2000:]
 
 
 class TestTheRefusalSaysWhatToSet:

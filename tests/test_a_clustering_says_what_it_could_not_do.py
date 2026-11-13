@@ -524,11 +524,11 @@ def test_the_line_says_the_room_a_figure_needs():
     said = ("cluster_hierarchical_dendrogram.png was not plotted: the memory ran out "
             "plotting it (std::bad_alloc). Its data is saved. Its canvas is the same at "
             "any stride, so a stride does not help: run it where `ulimit -v` allows "
-            "about 40.0 MB more.")
+            "about 19.9 MB more.")
     picked = _node(_function("dashboard.js", "whatToSet") + "\n"
                    f"console.log(JSON.stringify(whatToSet({json.dumps(said)})));")
     assert picked == ("Its canvas is the same at any stride, so a stride does not help: "
-                      "run it where `ulimit -v` allows about 40.0 MB more."), picked
+                      "run it where `ulimit -v` allows about 19.9 MB more."), picked
 
 
 def test_a_section_whose_analysis_was_refused_before_it_ran_counts_it_so(tmp_path):

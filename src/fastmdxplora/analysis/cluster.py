@@ -422,29 +422,63 @@ def address_margin_said(n: int, methods: Sequence[str], features: str,
 ADDRESS_SHARE = 1.0
 
 
-#: What a figure not plotted for memory is said to need more of, in
-#: bytes, where its canvas is the same at any stride (every figure but the
-#: map of at most :data:`MOST_MAP_CELLS` frames). Measured in
-#: ``fastmdx analyze`` under ``ulimit -v``, clustering run first with
-#: k-means, hierarchical and DBSCAN on every second of tri-alanine's 500
-#: frames: the dendrogram and DBSCAN's figure were not plotted at the least
-#: limit the check allowed, and every figure was 40 MB above it. Setting
-#: the stride said there left the same figures not plotted at any stride.
-FIGURE_MORE_BYTES = 40 * 10**6
+#: What plotting a figure maps past what the process held, in canvases of
+#: its pixels at the dpi it is saved at (4 bytes a pixel), and once, in
+#: bytes: what a figure not plotted for memory is said to need more of
+#: (:func:`figure_needed`), where its canvas is the same at any stride.
+#: Counted as the least room past a collected start, the libraries mapped
+#: and one figure of its kind plotted before, in which each of
+#: clustering's figures of 500 frames plots (bisected in new processes,
+#: one malloc arena): the timeline 19.50 MiB on Python 3.10, 9.50 on 3.11
+#: and 18.50 on 3.13 (canvas 9.37), the counts 15.00, 7.00 and 7.00
+#: (canvas 7.17), the dendrogram 17.75, 8.25 and 8.25 (canvas 8.48): at
+#: most two canvases and 0.78 MiB; planned with 2 MiB once, 1.22 to 1.34
+#: MiB over each. The same 40 MB had been said for every figure, counted
+#: for DBSCAN's figure and the dendrogram under one limit; the dendrogram
+#: of tri-alanine's 500 frames needed 17.75 MiB of room.
+FIGURE_CANVASES = 2
+FIGURE_ONCE_BYTES = 2 * 2**20
+
+#: What the map's mesh maps besides its canvases, a cell of it squared, in
+#: bytes (:func:`figure_needed`): counted as the figures above, the map of
+#: 500 frames plotted in 46.75 MiB on Python 3.10 and 39.25 on 3.13, of
+#: 1,000 in 122.25 on both, its canvases and once 20.46 MiB: 110 and 107
+#: bytes a cell. Planned on 112, 47.2 and 127.3 MiB. Said as 40 MB, where
+#: the map of 1,000 cells needed 122.25 MiB.
+FIGURE_MESH_BYTES_PER_CELL = 112
 
 
-def figure_more_said(memory: dict[str, Any]) -> str:
+def figure_needed(numbers: Any, dpi: int = 300, cells: int = 0) -> int:
+    """What plotting the figures ``numbers`` (Matplotlib's figure numbers,
+    open) maps, in bytes: :data:`FIGURE_CANVASES` canvases of each one's
+    pixels at ``dpi`` and :data:`FIGURE_ONCE_BYTES`, and a map's mesh of
+    ``cells`` across (:data:`FIGURE_MESH_BYTES_PER_CELL`). None open (the
+    memory ran out making the figure), the canvas of the house's figure."""
+    from fastmdxplora.analysis.plotting import PAPER_FIGSIZE, scaled_figsize
+
+    sizes = [plt.figure(number).get_size_inches() for number in sorted(numbers)
+             if plt.fignum_exists(number)]
+    if not sizes:
+        sizes = [np.asarray(scaled_figsize(PAPER_FIGSIZE), dtype=float)]
+    canvases = sum(4 * round(float(width) * dpi) * round(float(height) * dpi)
+                   for width, height in sizes)
+    return int(FIGURE_CANVASES * canvases + FIGURE_ONCE_BYTES
+               + FIGURE_MESH_BYTES_PER_CELL * float(cells) * float(cells))
+
+
+def figure_more_said(memory: dict[str, Any], needed: int | None = None) -> str:
     """What helps a figure not plotted for memory whose canvas is the same
     at any stride, said by the room the check read (``memory``, the
     record's ``findings.memory``): a ``ulimit -v`` or a container allowing
-    :data:`FIGURE_MORE_BYTES` more, or as much more memory free."""
-    more = _gigabytes(FIGURE_MORE_BYTES)
+    ``needed`` more (:func:`figure_needed`), or as much more memory free.
+    ``needed`` None (not a figure: the map's data, saved), no number."""
+    more = "" if needed is None else f"about {_gigabytes(needed)} "
     if memory.get("bytes_address_space") is not None:
-        where = f"where `ulimit -v` allows about {more} more"
+        where = f"where `ulimit -v` allows {more}more"
     elif str(memory.get("available_read_from", "")).startswith("the cgroup"):
-        where = f"where the container allows about {more} more"
+        where = f"where the container allows {more}more"
     else:
-        where = f"where about {more} more memory is free"
+        where = f"where {more}more memory is free"
     return (f"Its canvas is the same at any stride, so a stride does not help: run it "
             f"{where}.")
 
@@ -1512,18 +1546,26 @@ class Cluster(Analysis):
                     dendro_path = self.output_dir / "cluster_hierarchical_dendrogram.png"
                     skip_path = self.output_dir / "cluster_hierarchical_dendrogram_skipped.json"
                     before_the_dendrogram = figures_open()
-                    try:
-                        linkage_matrix = self._hierarchy
-                        linkage_path = self.output_dir / "hierarchical_linkage.npy"
-                        np.save(linkage_path, linkage_matrix)
-                        artifacts.append(linkage_path)
+
+                    def dendrogram(path: Path = dendro_path) -> None:
+                        # In a function of its own, so nothing holds the
+                        # figure once it is saved and closed: a local of
+                        # this method held it until the clustering ended.
                         fig_den, ax_den = new_figure(
                             title="Hierarchical clustering dendrogram",
                             figsize=(6.5, 3.8),
                         )
-                        _plot_hierarchical_dendrogram_from_linkage(ax_den, linkage_matrix)
+                        _plot_hierarchical_dendrogram_from_linkage(ax_den, self._hierarchy)
                         self._noted(fig_den)
-                        save_figure(fig_den, dendro_path)
+                        save_figure(fig_den, path)
+
+                    try:
+                        linkage_path = self.output_dir / "hierarchical_linkage.npy"
+                        np.save(linkage_path, self._hierarchy)
+                        artifacts.append(linkage_path)
+                        # What the figures before it held, freed (`_plotted`).
+                        give_back_freed()
+                        dendrogram()
                         artifacts.append(dendro_path)
                         dendro_svg_path = dendro_path.with_suffix(".svg")
                         if dendro_svg_path.is_file():
@@ -1531,8 +1573,9 @@ class Cluster(Analysis):
                         if skip_path.exists():
                             skip_path.unlink()
                     except Exception as dendro_exc:  # noqa: BLE001
+                        needed = figure_needed(figures_open() - before_the_dendrogram)
                         close_figures_opened_since(before_the_dendrogram)
-                        reason = (self._not_plotted(dendro_path, dendro_exc)
+                        reason = (self._not_plotted(dendro_path, dendro_exc, needed=needed)
                                   if ran_out(dendro_exc) else str(dendro_exc))
                         skip_path.write_text(
                             json.dumps(
@@ -1732,37 +1775,50 @@ class Cluster(Analysis):
         (``figures_not_plotted``, :meth:`_not_plotted`), and the other
         figures and files are still saved. Under ``ulimit -v`` a figure
         clustering planned for ended the analysis with ``std::bad_alloc``,
-        and the files after it were lost."""
+        and the files after it were lost.
+
+        Plotted once what the figures before it held is freed
+        (:func:`give_back_freed`): a figure saved and closed held its
+        canvas until Python's garbage collector next ran, and on Python
+        3.10 four were held as the dendrogram was plotted, 56.3 MiB past
+        the check under ``ulimit -v`` 600000, where it ran out in a run the
+        plan fitted."""
+        give_back_freed()
         opened = figures_open()
         try:
             plot()
         except (MemoryError, OSError) as error:
             if not ran_out(error):
                 raise
+            needed = figure_needed(figures_open() - opened, cells=(
+                int(self.findings.get("matrix", {}).get("cells") or 0)
+                if path.name.startswith("cluster_rmsd_matrix") else 0))
             close_figures_opened_since(opened)
             for leftover in (path, path.with_suffix(".svg")):
                 leftover.unlink(missing_ok=True)
-            self._not_plotted(path, error)
+            self._not_plotted(path, error, needed=needed)
             return []
         return [path] + ([path.with_suffix(".svg")]
                          if path.with_suffix(".svg").is_file() else [])
 
-    def _not_plotted(self, path: Path, error: BaseException, saving: bool = False) -> str:
+    def _not_plotted(self, path: Path, error: BaseException, saving: bool = False,
+                     needed: int | None = None) -> str:
         """What a figure the memory ran out plotting says, or the map's data
         it ran out saving (``saving``), recorded and logged: the rest saved,
         and what helps. A stride, only for the map of at most
         :data:`MOST_MAP_CELLS` frames, whose cells halving the frames makes
         fewer (past it, the map's blocks keep it as many cells across); for
         any other figure, whose canvas is the same at any stride,
-        the room to add (:func:`figure_more_said`): "Set `stride: 4`" was
-        said for the dendrogram, and followed, it was not plotted again."""
+        the room to add (:func:`figure_more_said`), what plotting it maps
+        (``needed``, :func:`figure_needed`): "Set `stride: 4`" was said for
+        the dendrogram, and followed, it was not plotted again."""
         n = int(self.findings.get("matrix", {}).get("frames") or 0)
         halved = path.name.startswith("cluster_rmsd_matrix") and n > 1 and (
             map_needed(-(-n // 2)) < map_needed(n))
         helps = (f"Set `stride: {2 * self._stride}` under the analysis's "
                  "`options: {cluster: ...}` to "
                  + ("save" if saving else "plot") + " the map of half as many frames."
-                 if halved else figure_more_said(self.findings.get("memory", {})))
+                 if halved else figure_more_said(self.findings.get("memory", {}), needed))
         if saving:
             said = (f"{path.name} was not saved: the memory ran out saving it "
                     f"({error}). The labels and the other figures are saved. {helps}")

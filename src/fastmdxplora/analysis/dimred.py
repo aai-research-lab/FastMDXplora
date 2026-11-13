@@ -536,15 +536,19 @@ class DimRed(Analysis):
         """The figure ``plot`` saves at ``path``, and its SVG; where the
         memory runs out plotting it, none, said in the record
         (``figures_not_plotted``) with what to set, and the other figures and
-        files still saved, as clustering's are."""
-        from fastmdxplora.analysis.cluster import figure_more_said, ran_out
+        files still saved, as clustering's are, each plotted once what the
+        figures before it held is freed (:func:`give_back_freed`)."""
+        from fastmdxplora.analysis.cluster import (
+            figure_more_said, figure_needed, give_back_freed, ran_out)
 
+        give_back_freed()
         opened = figures_open()
         try:
             plot()
         except (MemoryError, OSError) as error:
             if not ran_out(error):
                 raise
+            needed = figure_needed(figures_open() - opened)
             close_figures_opened_since(opened)
             for leftover in (path, path.with_suffix(".svg")):
                 leftover.unlink(missing_ok=True)
@@ -552,7 +556,7 @@ class DimRed(Analysis):
             # stride: "Set `analysis: {stride: 2}`" was said, and did not help.
             said = (f"{path.name} was not plotted: the memory ran out plotting it "
                     f"({error}). Its data is saved. "
-                    + figure_more_said(self.findings.get("memory", {})))
+                    + figure_more_said(self.findings.get("memory", {}), needed))
             self.findings.setdefault("figures_not_plotted", {})[path.name] = said
             logger.warning(said)
             return []
