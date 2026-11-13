@@ -905,6 +905,18 @@ def save_figure(
                 logger.debug("Saved SVG companion: %s", svg_out)
             except Exception as exc:  # noqa: BLE001 - PNG remains the primary artifact
                 logger.warning("Could not save SVG companion %s: %s", svg_out, exc)
+    except (MemoryError, OSError) as error:
+        # The figure's size and dpi, carried on the error: it is closed
+        # below, and what plotting it needs is told from them
+        # (`cluster.figure_needed`). Told from the figures still open, every
+        # figure that ran out here was told the house figure's room.
+        try:
+            error.figure_inches = tuple(float(v) for v in fig.get_size_inches())
+            error.figure_dpi = int(dpi)
+            error.figure_number = fig.number
+        except Exception:  # noqa: BLE001 - the error itself is what is raised
+            pass
+        raise
     finally:
         if close:
             plt.close(fig)

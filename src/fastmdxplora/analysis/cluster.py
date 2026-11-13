@@ -426,59 +426,77 @@ ADDRESS_SHARE = 1.0
 #: its pixels at the dpi it is saved at (4 bytes a pixel), and once, in
 #: bytes: what a figure not plotted for memory is said to need more of
 #: (:func:`figure_needed`), where its canvas is the same at any stride.
-#: Counted as the least room past a collected start, the libraries mapped
-#: and one figure of its kind plotted before, in which each of
-#: clustering's figures of 500 frames plots (bisected in new processes,
-#: one malloc arena): the timeline 19.50 MiB on Python 3.10, 9.50 on 3.11
-#: and 18.50 on 3.13 (canvas 9.37), the counts 15.00, 7.00 and 7.00
-#: (canvas 7.17), the dendrogram 17.75, 8.25 and 8.25 (canvas 8.48): at
-#: most two canvases and 0.78 MiB; planned with 2 MiB once, 1.22 to 1.34
-#: MiB over each. The same 40 MB had been said for every figure, counted
-#: for DBSCAN's figure and the dendrogram under one limit; the dendrogram
-#: of tri-alanine's 500 frames needed 17.75 MiB of room.
+#: Counted as the least room past a collected start in which each of
+#: clustering's figures plots, in a clustering of 500 frames with k-means
+#: or average linkage, the limit set as :meth:`Cluster._plotted` begins
+#: (bisected at 0.5 MiB in new processes, one malloc arena, as CI runs):
+#: the first figure, the k-means timeline (canvas 9.37 MiB), 23.50 MiB on
+#: Python 3.10, 23.00 on 3.11 and 23.50 on 3.13, and at 10 x 6 inches
+#: 45.00 and 13 x 8.4 79.00 on 3.10; a timeline after it 20.00, 9.50 and
+#: 9.50; the counts 15.00, 7.00 and 7.00; the dendrogram 18.00, 8.50 and
+#: 8.50. The first figure a process plots maps 2.75 to 3.5 MiB more than
+#: one after it, at any size. Planned on 6 MiB once: the first timeline is
+#: said as 24.75 MiB, 1.25 over the most counted, and 2.2 at 10 x 6 and
+#: 2.0 at 13 x 8.4; a figure after it more. With glibc's default arenas
+#: each plotted in less. 40 MB had been said for every figure, and then
+#: the house figure's 20.75 MiB, told from the figures still open where
+#: the one that ran out saving was closed already.
 FIGURE_CANVASES = 2
-FIGURE_ONCE_BYTES = 2 * 2**20
+FIGURE_ONCE_BYTES = 6 * 2**20
 
-#: What the map's mesh maps besides its canvases, a cell of it squared, in
-#: bytes (:func:`figure_needed`): counted as the figures above, the map of
-#: 500 frames plotted in 46.75 MiB on Python 3.10 and 39.25 on 3.13, of
-#: 1,000 in 122.25 on both, its canvases and once 20.46 MiB: 110 and 107
-#: bytes a cell. Planned on 112, 47.2 and 127.3 MiB. Said as 40 MB, where
-#: the map of 1,000 cells needed 122.25 MiB.
-FIGURE_MESH_BYTES_PER_CELL = 112
+#: What a mesh maps besides its canvases, a cell of it squared, in bytes
+#: (:func:`figure_needed`): the map's, and the projections' landscape's.
+#: Counted as the figures above, the map of 2,000 frames, 1,000 cells
+#: across, needed 130.0 MiB on Python 3.10, 3.11 and 3.13 (its canvases
+#: and once 24.46 MiB: 111 bytes a cell), and the map of 1,000 random
+#: distances alone, plotted first, 130.0 on 3.10 and 3.11 and 124.5 on
+#: 3.13. Planned on 116, 135.1 MiB, 5.1 over; at 112 it was said as 127.3
+#: MiB in the run, told the house figure's canvas, 2.7 under. The map of at
+#: most 1,000 frames is told the stride that makes it smaller instead.
+FIGURE_MESH_BYTES_PER_CELL = 116
 
 
-def figure_needed(numbers: Any, dpi: int = 300, cells: int = 0) -> int:
-    """What plotting the figures ``numbers`` (Matplotlib's figure numbers,
-    open) maps, in bytes: :data:`FIGURE_CANVASES` canvases of each one's
-    pixels at ``dpi`` and :data:`FIGURE_ONCE_BYTES`, and a map's mesh of
-    ``cells`` across (:data:`FIGURE_MESH_BYTES_PER_CELL`). None open (the
-    memory ran out making the figure), the canvas of the house's figure."""
+def figure_needed(numbers: Any, dpi: int = 300, cells: int = 0,
+                  error: BaseException | None = None) -> int:
+    """What plotting a figure maps, in bytes: :data:`FIGURE_CANVASES`
+    canvases of its pixels at ``dpi`` and :data:`FIGURE_ONCE_BYTES`, and a
+    mesh of ``cells`` across (:data:`FIGURE_MESH_BYTES_PER_CELL`). The
+    figure is the one ``error`` was raised saving (its size and dpi carried
+    on it by :func:`~fastmdxplora.analysis.plotting.save_figure`, which
+    closes it), and those of ``numbers`` (Matplotlib's figure numbers) still
+    open, where the memory ran out before saving. Told from the figures
+    still open alone, a figure that ran out saving was closed, and every one
+    was told the house figure's room: a timeline of 13 x 8.4 inches 21.8
+    MB, where it needed 82.8 MB (79.0 MiB). Neither (the memory ran out
+    making the figure), the house figure's canvas."""
     from fastmdxplora.analysis.plotting import PAPER_FIGSIZE, scaled_figsize
 
-    sizes = [plt.figure(number).get_size_inches() for number in sorted(numbers)
-             if plt.fignum_exists(number)]
+    said = getattr(error, "figure_inches", None)
+    saved_number = getattr(error, "figure_number", None)
+    sizes = [(plt.figure(number).get_size_inches(), dpi) for number in sorted(numbers)
+             if plt.fignum_exists(number) and number != saved_number]
+    if said is not None:
+        sizes.append((said, int(getattr(error, "figure_dpi", dpi))))
     if not sizes:
-        sizes = [np.asarray(scaled_figsize(PAPER_FIGSIZE), dtype=float)]
-    canvases = sum(4 * round(float(width) * dpi) * round(float(height) * dpi)
-                   for width, height in sizes)
+        sizes = [(scaled_figsize(PAPER_FIGSIZE), dpi)]
+    canvases = sum(4 * round(float(width) * at) * round(float(height) * at)
+                   for (width, height), at in sizes)
     return int(FIGURE_CANVASES * canvases + FIGURE_ONCE_BYTES
                + FIGURE_MESH_BYTES_PER_CELL * float(cells) * float(cells))
 
 
-def figure_more_said(memory: dict[str, Any], needed: int | None = None) -> str:
+def figure_more_said(memory: dict[str, Any], needed: int) -> str:
     """What helps a figure not plotted for memory whose canvas is the same
     at any stride, said by the room the check read (``memory``, the
     record's ``findings.memory``): a ``ulimit -v`` or a container allowing
-    ``needed`` more (:func:`figure_needed`), or as much more memory free.
-    ``needed`` None (not a figure: the map's data, saved), no number."""
-    more = "" if needed is None else f"about {_gigabytes(needed)} "
+    ``needed`` more (:func:`figure_needed`), or as much more memory free."""
+    more = _gigabytes(needed)
     if memory.get("bytes_address_space") is not None:
-        where = f"where `ulimit -v` allows {more}more"
+        where = f"where `ulimit -v` allows about {more} more"
     elif str(memory.get("available_read_from", "")).startswith("the cgroup"):
-        where = f"where the container allows {more}more"
+        where = f"where the container allows about {more} more"
     else:
-        where = f"where {more}more memory is free"
+        where = f"where about {more} more memory is free"
     return (f"Its canvas is the same at any stride, so a stride does not help: run it "
             f"{where}.")
 
@@ -582,21 +600,40 @@ def give_back_freed() -> None:
     neighbours are many small arrays from glibc's heap, about 58 MiB at
     2,000 frames, and a medoid's block of rows of one cluster of every
     frame 30 MiB: still resident when the map was plotted after them."""
-    import ctypes
-    import ctypes.util
     import gc
-    import sys
 
     gc.collect()
-    if not sys.platform.startswith("linux"):
-        return
-    try:
-        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
-        trim = libc.malloc_trim
-    except (OSError, AttributeError):  # musl, or no C library found
-        return
-    trim.argtypes = [ctypes.c_size_t]
-    trim(0)
+    trim = _malloc_trim()
+    if trim is not None:
+        trim(0)
+
+
+#: glibc's ``malloc_trim``, found once (:func:`_malloc_trim`): ``None`` not
+#: looked for yet, ``False`` where there is none.
+_MALLOC_TRIM: Any = None
+
+
+def _malloc_trim() -> Any:
+    """glibc's ``malloc_trim``, or None (not Linux, musl, no C library
+    found). Found once: ``find_library`` runs ``ldconfig -p``, about 8 ms,
+    and :func:`give_back_freed` runs before each figure."""
+    global _MALLOC_TRIM
+    if _MALLOC_TRIM is None:
+        import ctypes
+        import ctypes.util
+        import sys
+
+        _MALLOC_TRIM = False
+        if sys.platform.startswith("linux"):
+            try:
+                libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+                trim = libc.malloc_trim
+            except (OSError, AttributeError):  # musl, or no C library found
+                trim = None
+            if trim is not None:
+                trim.argtypes = [ctypes.c_size_t]
+                _MALLOC_TRIM = trim
+    return _MALLOC_TRIM or None
 
 
 def _machine_available() -> tuple[int | None, str]:
@@ -1573,7 +1610,8 @@ class Cluster(Analysis):
                         if skip_path.exists():
                             skip_path.unlink()
                     except Exception as dendro_exc:  # noqa: BLE001
-                        needed = figure_needed(figures_open() - before_the_dendrogram)
+                        needed = figure_needed(figures_open() - before_the_dendrogram,
+                                               error=dendro_exc)
                         close_figures_opened_since(before_the_dendrogram)
                         reason = (self._not_plotted(dendro_path, dendro_exc, needed=needed)
                                   if ran_out(dendro_exc) else str(dendro_exc))
@@ -1790,7 +1828,7 @@ class Cluster(Analysis):
         except (MemoryError, OSError) as error:
             if not ran_out(error):
                 raise
-            needed = figure_needed(figures_open() - opened, cells=(
+            needed = figure_needed(figures_open() - opened, error=error, cells=(
                 int(self.findings.get("matrix", {}).get("cells") or 0)
                 if path.name.startswith("cluster_rmsd_matrix") else 0))
             close_figures_opened_since(opened)
@@ -1815,18 +1853,27 @@ class Cluster(Analysis):
         n = int(self.findings.get("matrix", {}).get("frames") or 0)
         halved = path.name.startswith("cluster_rmsd_matrix") and n > 1 and (
             map_needed(-(-n // 2)) < map_needed(n))
-        helps = (f"Set `stride: {2 * self._stride}` under the analysis's "
-                 "`options: {cluster: ...}` to "
-                 + ("save" if saving else "plot") + " the map of half as many frames."
-                 if halved else figure_more_said(self.findings.get("memory", {}), needed))
+        if halved:
+            helps = (f" Set `stride: {2 * self._stride}` under the analysis's "
+                     "`options: {cluster: ...}` to "
+                     + ("save" if saving else "plot") + " the map of half as many frames.")
+        elif saving:
+            # The map's data past MOST_MAP_CELLS frames: no room was counted
+            # for its zip's buffer, so none is said ("Its canvas ... allows
+            # more" was said of a file, with no number).
+            helps = ""
+        else:
+            helps = " " + figure_more_said(
+                self.findings.get("memory", {}),
+                needed if needed is not None else figure_needed(set()))
         if saving:
             said = (f"{path.name} was not saved: the memory ran out saving it "
-                    f"({error}). The labels and the other figures are saved. {helps}")
+                    f"({error}). The labels and the other figures are saved.{helps}")
             self.findings.setdefault("not_saved", {})[path.name] = said
             logger.warning(said)
             return said
         said = (f"{path.name} was not plotted: the memory ran out plotting it "
-                f"({error}). Its data is saved. {helps}")
+                f"({error}). Its data is saved.{helps}")
         self.findings.setdefault("figures_not_plotted", {})[path.name] = said
         logger.warning(said)
         return said

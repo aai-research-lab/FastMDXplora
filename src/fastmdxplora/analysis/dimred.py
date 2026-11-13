@@ -530,14 +530,16 @@ class DimRed(Analysis):
             _plot_landscape(ax, landscape, self._explained_variance)
             save_figure(fig, figure_path)
 
-        return [data_path, *self._plotted(figure_path, plotted)]
+        # A mesh of `landscape_bins` across, counted as the map's.
+        return [data_path, *self._plotted(figure_path, plotted, cells=self.landscape_bins)]
 
-    def _plotted(self, path: Path, plot: Any) -> list[Path]:
+    def _plotted(self, path: Path, plot: Any, cells: int = 0) -> list[Path]:
         """The figure ``plot`` saves at ``path``, and its SVG; where the
         memory runs out plotting it, none, said in the record
         (``figures_not_plotted``) with what to set, and the other figures and
         files still saved, as clustering's are, each plotted once what the
-        figures before it held is freed (:func:`give_back_freed`)."""
+        figures before it held is freed (:func:`give_back_freed`). ``cells``,
+        the landscape's mesh across (:func:`figure_needed`)."""
         from fastmdxplora.analysis.cluster import (
             figure_more_said, figure_needed, give_back_freed, ran_out)
 
@@ -548,7 +550,7 @@ class DimRed(Analysis):
         except (MemoryError, OSError) as error:
             if not ran_out(error):
                 raise
-            needed = figure_needed(figures_open() - opened)
+            needed = figure_needed(figures_open() - opened, cells=cells, error=error)
             close_figures_opened_since(opened)
             for leftover in (path, path.with_suffix(".svg")):
                 leftover.unlink(missing_ok=True)

@@ -14,6 +14,7 @@ import math
 import sys
 import tracemalloc
 
+import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 import pytest
@@ -1903,27 +1904,37 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
     frames."""
 
     @staticmethod
-    def _run_out_on(monkeypatch, module, ending):
-        real = module.save_figure
+    def _run_out_on(monkeypatch, ending):
+        """``std::bad_alloc`` raised where Agg raises it, in the figure's own
+        ``savefig``, so the real ``save_figure`` closes the figure before the
+        room is told: a stand-in ``save_figure`` raising before it left the
+        figure open, and the room told from it was right only there."""
+        import matplotlib.figure
 
-        def save(fig, path, *args, **kwargs):
-            if str(path).endswith(ending):
+        real = matplotlib.figure.Figure.savefig
+
+        def savefig(fig, fname, *args, **kwargs):
+            if str(fname).endswith(ending):
                 raise MemoryError("std::bad_alloc")
-            return real(fig, path, *args, **kwargs)
+            return real(fig, fname, *args, **kwargs)
 
-        monkeypatch.setattr(module, "save_figure", save)
+        monkeypatch.setattr(matplotlib.figure.Figure, "savefig", savefig)
 
-    @pytest.mark.parametrize("figure,room", [
-        ("cluster_kmeans.png", "21.8 MB"), ("cluster_kmeans_counts.png", "17.1 MB"),
-        ("cluster_hierarchical_dendrogram.png", "19.9 MB")])
+    @pytest.mark.parametrize("figure,figsize,room", [
+        ("cluster_kmeans.png", None, "25.9 MB"),
+        ("cluster_kmeans.png", (10, 6), "49.5 MB"),
+        ("cluster_kmeans_counts.png", None, "21.3 MB"),
+        ("cluster_hierarchical_dendrogram.png", None, "24.1 MB")])
     def test_a_figure_whose_canvas_is_the_same_is_told_the_room(
-            self, tmp_path, monkeypatch, figure, room):
-        """The room is what plotting the figure maps (``figure_needed``): 40
-        MB was said for every figure, where the dendrogram of 500 frames
-        needed 17.75 MiB."""
-        self._run_out_on(monkeypatch, clustering, figure)
+            self, tmp_path, monkeypatch, figure, figsize, room):
+        """The room is what plotting the figure maps (``figure_needed``),
+        from its own size: told from the figures still open, the figure
+        that ran out saving was closed already, and every figure was told
+        the house figure's 21.8 MB, a timeline of 10 x 6 inches too, where
+        it needed 47.2 MB."""
+        self._run_out_on(monkeypatch, figure)
         monkeypatch.setattr(clustering, "memory_available", lambda: (10**12, _RLIMIT))
-        result = Cluster(output_dir=tmp_path).run(_chain(80))
+        result = Cluster(output_dir=tmp_path, figsize=figsize).run(_chain(80))
         assert result.status == "ok", result.message
         found = json.loads((result.output_dir / "options.json").read_text())["findings"]
         said = (found.get("figures_not_plotted", {}).get(figure)
@@ -1931,10 +1942,11 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
                                / "cluster_hierarchical_dendrogram_skipped.json").read_text())["reason"])
         assert "Set `" not in said and "stride does not help" in said, said
         assert f"where `ulimit -v` allows about {room} more." in said, said
+        assert not plt.get_fignums()
 
     def test_the_map_of_few_frames_is_told_the_stride_that_makes_it_smaller(
             self, tmp_path, monkeypatch):
-        self._run_out_on(monkeypatch, clustering, "cluster_rmsd_matrix.png")
+        self._run_out_on(monkeypatch, "cluster_rmsd_matrix.png")
         result = Cluster(output_dir=tmp_path).run(_chain(80))
         found = json.loads((result.output_dir / "options.json").read_text())["findings"]
         said = found["figures_not_plotted"]["cluster_rmsd_matrix.png"]
@@ -1946,39 +1958,51 @@ class TestAFigureNotPlottedIsToldWhatHelpsIt:
         """Past 1,000 frames the map's blocks keep it as many cells across:
         2,000 frames and 1,000 make the same map."""
         assert clustering.map_needed(1000) == clustering.map_needed(2000)
-        self._run_out_on(monkeypatch, clustering, "cluster_rmsd_matrix.png")
+        self._run_out_on(monkeypatch, "cluster_rmsd_matrix.png")
         result = Cluster(output_dir=tmp_path, methods=["kmeans"]).run(_chain(2000))
         found = json.loads((result.output_dir / "options.json").read_text())["findings"]
         said = found["figures_not_plotted"]["cluster_rmsd_matrix.png"]
         assert "Set `" not in said and "stride does not help" in said, said
-        # Its mesh of 1,000 cells across as well: 122.25 MiB counted, 40 MB said.
-        assert "allows about 133.5 MB more." in said or "about 133.5 MB more memory" in said, said
+        # Its mesh of 1,000 cells across as well: 40 MB was said, where it
+        # needed 128 MB (TestEachFigureIsPlottedInTheRoomItIsSaidToNeed).
+        assert "allows about 141.6 MB more." in said or "about 141.6 MB more memory" in said, said
 
     @pytest.mark.parametrize("figure", ["dimred_pca.png", "dimred_pca_landscape.png"])
     def test_a_projection_s_figure_is_told_the_room(self, tmp_path, monkeypatch, figure):
-        from fastmdxplora.analysis import dimred as module
+        """Told from its own size, a user's ``figsize`` (the house figure's
+        was told for every one), and the landscape's mesh."""
         from fastmdxplora.analysis.dimred import DimRed
 
-        self._run_out_on(monkeypatch, module, figure)
-        result = DimRed(output_dir=tmp_path).run(_chain(120))
+        self._run_out_on(monkeypatch, figure)
+        result = DimRed(output_dir=tmp_path, figsize=(10, 6)).run(_chain(120))
         assert result.status == "ok", result.message
         found = json.loads((result.output_dir / "options.json").read_text())["findings"]
         said = found["figures_not_plotted"][figure]
         assert "stride: 2" not in said and "stride does not help" in said, said
+        # Two canvases of 3,000 x 1,800 pixels, once, and the landscape's
+        # mesh of 40 bins across.
+        cells = 40 if "landscape" in figure else 0
+        room = (2 * 4 * 3000 * 1800 + clustering.FIGURE_ONCE_BYTES
+                + clustering.FIGURE_MESH_BYTES_PER_CELL * cells ** 2)
+        assert f"about {room / 1e6:.1f} MB more" in said, said
+        assert not plt.get_fignums()
 
 
-#: One of clustering's figures of 500 frames plotted, closed and collected,
-#: then plotted again under ``RLIMIT_AS`` set at what the process holds and
-#: what :func:`figure_needed` says it needs. Exits 3 where it runs out.
+#: One of clustering's figures, the first the process plots past the
+#: libraries mapped, made and run out of memory saving it (in the real
+#: ``save_figure``, which closes it), then plotted under ``RLIMIT_AS`` set
+#: at what the process holds, collected, and what :func:`figure_needed`
+#: said from the error. Exits 3 where it runs out.
 _FIGURE_IN_ITS_ROOM_SCRIPT = r"""
 import resource, sys
 sys.path.insert(0, sys.argv[1])
+import matplotlib.figure
 import numpy as np
 from scipy.cluster.hierarchy import linkage
 from fastmdxplora.analysis import cluster as C
 from fastmdxplora.analysis.plotting import close_figures_opened_since, figures_open
 figure, out = sys.argv[2], sys.argv[3]
-n = 500
+n = 1000 if figure == "map of 1,000" else 500
 rng = np.random.default_rng(0)
 labels = rng.integers(0, 5, n)
 tree = linkage(rng.normal(size=(n, 3)), "average")
@@ -2000,22 +2024,84 @@ def made():
         C._plot_distance_matrix(ax, distances, np.arange(n), np.arange(n) * 0.01)
     return fig
 
+# Run out where nothing is rendered yet, so the figure plotted below is
+# still the process's first.
+tight = matplotlib.figure.Figure.tight_layout
+matplotlib.figure.Figure.tight_layout = lambda *a, **k: (_ for _ in ()).throw(
+    MemoryError("std::bad_alloc"))
 before = figures_open()
-made()
-needed = C.figure_needed(figures_open() - before, cells=n if figure == "map" else 0)
+try:
+    C.save_figure(made(), out + "/ran_out.png")
+except MemoryError as error:
+    assert not figures_open() - before, "save_figure left the figure open"
+    needed = C.figure_needed(figures_open() - before, error=error,
+                             cells=n if figure.startswith("map") else 0)
+matplotlib.figure.Figure.tight_layout = tight
 close_figures_opened_since(before)
-C.save_figure(made(), out + "/warm.png")
 C.give_back_freed()
 for line in open("/proc/self/status"):
     if line.startswith("VmSize:"):
         held = int(line.split()[1]) * 1024
 resource.setrlimit(resource.RLIMIT_AS, (held + needed, resource.RLIM_INFINITY))
 try:
-    C.save_figure(made(), out + "/" + figure + ".png")
+    C.save_figure(made(), out + "/plotted.png")
 except MemoryError as error:
     print("RAN OUT", needed, error, flush=True)
     sys.exit(3)
 print("PLOTTED", needed, flush=True)
+"""
+
+#: A clustering with k-means of the frames given (:func:`_chain`), one of
+#: its figures run out of memory in the real ``save_figure``
+#: (:meth:`Cluster._plotted`), and then plotted under ``RLIMIT_AS`` set at
+#: what the process holds, collected, and the room it was told. Exits 3
+#: where it runs out.
+_A_FIGURE_IN_A_RUN_SCRIPT = r"""
+import resource, sys
+sys.path.insert(0, sys.argv[1])
+import matplotlib.figure
+import mdtraj as md
+import numpy as np
+from fastmdxplora.analysis import cluster as C
+out, target, n = sys.argv[2], sys.argv[3], int(sys.argv[4])
+figsize = None if sys.argv[5] == "house" else tuple(float(v) for v in sys.argv[5].split("x"))
+rng = np.random.default_rng(0)
+top = md.Topology()
+chain = top.add_chain()
+for i in range(4):
+    top.add_atom("CA", md.element.carbon, top.add_residue("ALA", chain, resSeq=i + 1))
+xyz = rng.normal(0.0, 0.4, (4, 3))[None] + np.cumsum(rng.normal(0.0, 0.01, (n, 4, 3)), 0)
+traj = md.Trajectory(xyz.astype(np.float32), top)
+traj.time = np.arange(n) * 10.0
+real, told, said = C.Cluster._plotted, C.figure_needed, []
+C.figure_needed = lambda *a, **k: said.append(told(*a, **k)) or said[-1]
+done = []
+
+def plotted(self, path, plot):
+    if path.name != target:
+        return real(self, path, plot)
+    tight = matplotlib.figure.Figure.tight_layout
+    matplotlib.figure.Figure.tight_layout = lambda *a, **k: (_ for _ in ()).throw(
+        MemoryError("std::bad_alloc"))
+    try:
+        assert real(self, path, plot) == []
+    finally:
+        matplotlib.figure.Figure.tight_layout = tight
+    self.findings["figures_not_plotted"].pop(path.name)
+    C.give_back_freed()
+    held = C._process_status()["VmSize"]
+    resource.setrlimit(resource.RLIMIT_AS, (held + said[-1], resource.RLIM_INFINITY))
+    try:
+        written = real(self, path, plot)
+    finally:
+        resource.setrlimit(resource.RLIMIT_AS, (resource.RLIM_INFINITY,) * 2)
+    done.append(bool(written))
+    return written
+
+C.Cluster._plotted = plotted
+C.Cluster(output_dir=out, methods=["kmeans"], figsize=figsize).run(traj)
+print(("PLOTTED" if done == [True] else "RAN OUT"), said, done, flush=True)
+sys.exit(0 if done == [True] else 3)
 """
 
 
@@ -2024,8 +2110,8 @@ class TestEachFigureIsPlottedAfterTheOnesBefore:
     collector next ran, and on Python 3.10 it had not when the next was
     plotted: under ``ulimit -v`` 600000, tri-alanine's 500 frames, whose
     plan fitted, ran out plotting the dendrogram (``std::bad_alloc``) with
-    four figures' canvases still held, 56.3 MiB past the check where 3.13
-    held 29.8."""
+    four figures' canvases still held, 56.3 MiB past the check (the run's
+    peak there; 3.13's run peaked at 43.6, as the map was plotted)."""
 
     def test_no_figure_before_is_held_as_the_next_is_plotted(self, tmp_path, monkeypatch):
         import weakref
@@ -2047,18 +2133,47 @@ class TestEachFigureIsPlottedAfterTheOnesBefore:
         assert held == [0] * 6, held
 
     @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
-    @pytest.mark.parametrize("figure", ["timeline", "counts", "dendrogram", "map"])
+    @pytest.mark.parametrize("figure", ["timeline", "counts", "dendrogram", "map",
+                                        "map of 1,000"])
     def test_the_room_a_figure_is_said_to_need_plots_it(self, tmp_path, figure):
-        """Under ``RLIMIT_AS`` set at what the process holds, collected, and
-        what the figure is said to need (``figure_needed``), past a figure
-        of its kind plotted before: it plots. Counted so, the most was the
-        timeline on Python 3.10, 19.50 MiB, said as 20.75."""
+        """Run out of memory saving it, the figure closed, and told the room
+        (``figure_needed``): under ``RLIMIT_AS`` set at what the process
+        holds, collected, and that room, it plots. The map of 1,000 cells
+        binds the mesh's 116 bytes a cell: counted so, it plotted in 130.0
+        MiB on Python 3.10 and 3.11 and 124.5 on 3.13, and is said as 135.1;
+        90 a cell said 110.3."""
         import subprocess
         from pathlib import Path
 
         src = str(Path(clustering.__file__).resolve().parents[2])
         done = subprocess.run(
             [sys.executable, "-c", _FIGURE_IN_ITS_ROOM_SCRIPT, src, figure, str(tmp_path)],
+            capture_output=True, text=True, timeout=600, env=_cli_env())
+        assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-3000:]
+        assert "PLOTTED" in done.stdout, done.stdout[-2000:]
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
+    @pytest.mark.parametrize("target,frames,figsize", [
+        ("cluster_kmeans.png", 500, "house"), ("cluster_kmeans.png", 500, "10x6"),
+        ("cluster_rmsd_matrix.png", 2000, "house")])
+    def test_a_figure_of_a_run_plots_in_the_room_it_is_told(
+            self, tmp_path, target, frames, figsize):
+        """Run out of memory in the real ``save_figure`` and told the room,
+        then plotted under ``RLIMIT_AS`` set at what the process holds,
+        collected, and that room: it plots. The first figure a clustering
+        plots maps more than one after it: the k-means timeline of 500
+        frames, told 21.8 MB with :data:`FIGURE_ONCE_BYTES` at 2 MiB, ran
+        out there, and needed 23.0 to 23.5 MiB on Python 3.10, 3.11 and
+        3.13, where later timelines needed 9.5 to 20.0. The map of 2,000
+        frames, 1,000 cells across, needed 130.0 MiB on 3.10 and 3.13,
+        told 127.3 with the mesh at 112 bytes a cell and 2 MiB once."""
+        import subprocess
+        from pathlib import Path
+
+        src = str(Path(clustering.__file__).resolve().parents[2])
+        done = subprocess.run(
+            [sys.executable, "-c", _A_FIGURE_IN_A_RUN_SCRIPT, src, str(tmp_path), target,
+             str(frames), figsize],
             capture_output=True, text=True, timeout=600, env=_cli_env())
         assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-3000:]
         assert "PLOTTED" in done.stdout, done.stdout[-2000:]
@@ -2158,6 +2273,27 @@ class TestTheRefusalSaysWhatToSet:
         assert "Set `stride: 2`" in said, said
         assert (result.output_dir / "cluster_rmsd_matrix.png").is_file()
         assert "not saved, the memory ran out: cluster_rmsd_matrix.npz" in result.message
+
+    def test_the_matrix_s_file_of_many_frames_is_said_with_no_canvas(
+            self, tmp_path, monkeypatch):
+        """Past 1,000 frames no stride makes the map's data smaller, and its
+        file was told "Its canvas is the same at any stride ... allows
+        more", of a file, with no number: no room was counted for it, so
+        none is said."""
+        real = np.savez_compressed
+
+        def out(path, *args, **kwargs):
+            if str(path).endswith("cluster_rmsd_matrix.npz"):
+                raise MemoryError("Unable to allocate output buffer.")
+            return real(path, *args, **kwargs)
+
+        monkeypatch.setattr(clustering.np, "savez_compressed", out)
+        result = Cluster(output_dir=tmp_path, methods=["kmeans"]).run(_chain(2000))
+        assert result.status == "ok", result.message
+        found = json.loads((result.output_dir / "options.json").read_text())["findings"]
+        said = found["not_saved"]["cluster_rmsd_matrix.npz"]
+        assert said.endswith("The labels and the other figures are saved."), said
+        assert "canvas" not in said and "Set `" not in said, said
 
     def test_one_refused_before_it_ran_is_recorded_so(self, tmp_path, monkeypatch):
         monkeypatch.setattr(clustering, "memory_available", lambda: (
