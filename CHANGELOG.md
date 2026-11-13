@@ -733,6 +733,30 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Docs: the counts, flags and settings say what the code has: 31 analyses
+  (28 of the system and 3 readers of a biased run), 364 of the 381 analysis
+  options shown in the GUI, `--sweep`, `--analyze-options`,
+  `--report-region-highlights`, `--report-comparison` and the YAML block
+  flags, `--config` the same on every command, `include_phase`, the
+  builder's systems, sweeps and button names, `fastmdx gui`'s logo and
+  memory flags, `setup.temperature_K` unset as the run's temperature, and
+  the API's signatures and `__all__`.
+- Docs: behaviour and science as the code has it: no direction claimed for
+  a barrier (the curve sits high), `run_corpus(DEFECTS, CLEAN)`, the steered
+  `from` computed with `pair_distance`, the interaction thresholds as the
+  rule functions' parameters, histidine's charge from setup, the contact
+  error from the statistical inefficiency, a study of several runs shared
+  whole, a POST with no `Origin` answered, Python 3.10 to 3.13 for a
+  cluster's wheels with `markdown` and `threadpoolctl`, and the cost
+  estimate's arithmetic.
+- Docs: no em or en dashes on any page but the six section headings and the
+  six `agent` flag rows that tests read, and "saved", "computed" and
+  "decided" where they are meant.
+- The record's `summary.barrier_zero` claims no direction for a barrier,
+  `Shortfall` says a length under 1 ns in ps, the share refusal's summary
+  no longer says a study of several runs is refused, the Ctrl-C line says
+  a broken pool's killed run has ended already, and the Agent's stop card
+  says what it wrote is saved.
 - Tests: a resume starting as the GUI tries the study's lock is checked
   with the probe holding it until the resume has found it taken once, and
   saying so before it lets go. The resume tries again once the probe has
