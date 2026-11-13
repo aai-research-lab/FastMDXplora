@@ -129,6 +129,7 @@
     // The frames asked for and not yet shown (`setPlaybackFrame`): a piece
     // of the frames arriving waits for them before it shows its frame again.
     playbackFramesOnTheirWay: new Set(),
+    playbackFrameAskedFor: null,
     playbackLoaded: false,
     // The frames are in the engine (playbackLoaded: and shown, ready).
     framesRendered: false,
@@ -2318,11 +2319,15 @@
         return true;
       } catch (error) {
         console.warn("trajectory playback load failed", error);
-        announce("Trajectory playback could not be loaded. Live molecular updates still work.");
-        STATE.playbackLoaded = false;
-        STATE.framesRendered = false;
-        // The rest of its frames are not appended to a load that failed.
-        STATE.framesArriving = null;
+        // A load of a study no longer shown says nothing of the frames now
+        // loading, and leaves them as they are.
+        if (isViewerGenerationCurrent(generation)) {
+          announce("Trajectory playback could not be loaded. Live molecular updates still work.");
+          STATE.playbackLoaded = false;
+          STATE.framesRendered = false;
+          // The rest of its frames are not appended to a load that failed.
+          STATE.framesArriving = null;
+        }
         return false;
       } finally {
         if (STATE.playbackLoadPromise === loadPromise) STATE.playbackLoadPromise = null;
@@ -2379,14 +2384,10 @@
           if (!ours()) return;
           parts.push(bytes);
           STATE.framesPieces.baseParts = parts;
+          const askedBefore = STATE.playbackFrameAsked;
           const count = await engine.appendFrames(joinedBytes(parts));
           // Given whole meanwhile (the frames superposed), or loaded again.
           if (!count || !STATE.framesPieces || !ours()) return;
-          // A frame asked for meanwhile (the first frame of the load, or a
-          // seek) is shown first: the frame shown again below is the one it
-          // showed, where asking over it showed the frame before it.
-          await untilNoFrameIsOnItsWay();
-          if (!STATE.framesPieces || !ours()) return;
           STATE.framesPieces.loaded = count;
           STATE.framesPieces.baseLoaded = Math.min(sourceIndices.length,
             (pieces.pieces.slice(0, parts.length).reduce((sum, one) => sum + one.frames, 0)));
@@ -2414,9 +2415,23 @@
             STATE.playbackEngineIndices = STATE.playbackFrameIndices.map((_, index) => index);
             STATE.playbackPlayedIndices = STATE.playbackFrameIndices.map((_, index) => index);
           }
-          const wanted = wasExactShown && STATE.exactFrame
-            ? STATE.playbackFrameIndices.indexOf(STATE.exactFrame.frame)
-            : Number(slider?.value || 0);
+          // A frame asked for meanwhile (the first frame of the load, or a
+          // seek) is shown first, and the piece then shows that frame again
+          // where asking over it showed the frame before it.
+          await untilNoFrameIsOnItsWay();
+          if (!STATE.framesPieces || !ours()) return;
+          // The frames given whole meanwhile (superposed), or an exact frame
+          // read: that set the frames and their count, and showed its frame.
+          if (engine.framesWhole || engine.frameCount() !== count
+              || STATE.playbackFrames !== count) {
+            continue;
+          }
+          const askedFor = STATE.playbackFrameAsked !== askedBefore
+            ? STATE.playbackFrameIndices.indexOf(STATE.playbackFrameAskedFor) : -1;
+          const wanted = askedFor >= 0 ? askedFor
+            : wasExactShown && STATE.exactFrame
+              ? STATE.playbackFrameIndices.indexOf(STATE.exactFrame.frame)
+              : Number(slider?.value || 0);
           await setPlaybackFrame(wanted);
           if (STATE.model && STATE.model.of === "frames") STATE.model.frames = count;
           sayFramesLoaded();
@@ -3215,6 +3230,9 @@
       && STATE.framesRendered && asked === STATE.playbackFrameAsked;
     const trajectoryFrame = Number.isInteger(STATE.playbackFrameIndices[index])
       ? STATE.playbackFrameIndices[index] : index;
+    // The frame the newest ask is for, by its frame of the trajectory: a
+    // piece appended meanwhile shows it again at its place among them.
+    STATE.playbackFrameAskedFor = trajectoryFrame;
     const slider = document.getElementById("traj-slider");
     const engineIndex = Number.isInteger(STATE.playbackEngineIndices[index])
       ? STATE.playbackEngineIndices[index] : index;

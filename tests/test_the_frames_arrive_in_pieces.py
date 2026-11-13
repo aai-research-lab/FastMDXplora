@@ -163,12 +163,51 @@ _HELD_PIECES = """(() => {
     };
 })();"""
 
+#: Each piece appended, in the engine's turn, only once a frame has been
+#: asked for after it began: that frame is then on its way, queued behind
+#: the piece, as the piece ends. `window.appending` counts the pieces begun.
+_APPENDED_ONCE_A_FRAME_IS_ASKED = """() => {
+    const state = window.FastMDXMoleculeViewer.STATE;
+    const engine = state.engine;
+    const real = Object.getPrototypeOf(engine).appendFrames;
+    window.appending = 0;
+    engine.appendFrames = async function (bytes) {
+        window.appending += 1;
+        const asked = state.playbackFrameAsked;
+        const until = Date.now() + 60000;
+        while (state.playbackFrameAsked === asked && Date.now() < until) {
+            await new Promise((done) => setTimeout(done, 20));
+        }
+        return real.call(this, bytes);
+    };
+}"""
+
+
+def _a_page(pw, session):
+    browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
+    page.add_init_script(_HELD_PIECES)
+    page.set_default_timeout(120000)
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto(session.url + "#viewer", wait_until="domcontentloaded")
+    if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
+        pytest.skip("this browser has no WebGL, so the viewer cannot render")
+    page.wait_for_function("() => window.FastMDXMoleculeViewer.STATE.model"
+                           " && window.FastMDXMoleculeViewer.STATE.engine")
+    return browser, page, errors
+
+
+_PLAY = ("async () => window.FastMDXMoleculeViewer.loadPlayback("
+         "await (await fetch('/api/frames-info')).json())")
+
 
 def test_a_frame_asked_for_while_a_piece_arrives_is_the_frame_shown(study, small_pieces):
     """A frame asked for while a piece of the frames was appended: the piece
     then showed the frame again, and asked for the one before the frame
     asked for over it, as the frame asked for was not yet shown. The frame
-    asked for stayed unshown; at the load's first frame, the load failed."""
+    asked for stayed unshown."""
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 
@@ -178,39 +217,21 @@ def test_a_frame_asked_for_while_a_piece_arrives_is_the_frame_shown(study, small
     session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
-            page = browser.new_page(viewport={"width": 1440, "height": 900})
-            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
-            page.add_init_script(_HELD_PIECES)
-            page.set_default_timeout(120000)
-            errors: list[str] = []
-            page.on("pageerror", lambda error: errors.append(str(error)))
-            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
-            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-                pytest.skip("this browser has no WebGL, so the viewer cannot render")
-            page.wait_for_function(f"() => {state}.model")
-            played = page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
-                                   "await (await fetch('/api/frames-info')).json())")
+            browser, page, errors = _a_page(pw, session)
+            played = page.evaluate(_PLAY)
             first = page.evaluate(f"() => [{state}.engine.frameCount(), {state}.engine.frame()]")
-            # The second piece appended slowly, so a frame is asked for meanwhile.
-            page.evaluate(f"""() => {{
-                const engine = {state}.engine;
-                const real = Object.getPrototypeOf(engine).appendFrames;
-                window.appending = 0;
-                engine.appendFrames = async function (bytes) {{
-                    window.appending += 1;
-                    await new Promise((done) => setTimeout(done, 1500));
-                    return real.call(this, bytes);
-                }};
-            }}""")
+            page.evaluate(_APPENDED_ONCE_A_FRAME_IS_ASKED)
             page.evaluate("() => window.letThePieceCome(1)")
             page.wait_for_function("() => window.appending === 1")
+            # Its frame queued behind the piece being appended.
             page.evaluate("() => window.dispatchEvent(new CustomEvent("
                           "'dashboard:trajectory-seek', {detail: {frame: 1}}))")
             # Said once the piece has shown its frame again.
             page.wait_for_selector('#trajectory-row[data-frames-loaded="4"]', state="attached")
             shown = page.evaluate(f"() => [{state}.engine.frameCount(), {state}.engine.frame(),"
                                   " document.getElementById('traj-slider').value]")
+            # The last piece appended as it comes.
+            page.evaluate(f"() => {{ delete {state}.engine.appendFrames; }}")
             page.evaluate("() => window.letThePieceCome(2)")
             page.wait_for_selector('#trajectory-row[data-frames-loaded="6"]', state="attached")
             last = page.evaluate(f"() => [{state}.engine.frameCount(), {state}.engine.frame()]")
@@ -226,7 +247,8 @@ def test_a_frame_asked_for_while_a_piece_arrives_is_the_frame_shown(study, small
 
 def test_the_first_frame_is_shown_while_a_piece_arrives(study, small_pieces):
     """The load's first frame asked for while the second piece was appended:
-    the piece asked over it, and the load said it could not show it."""
+    the piece asked over it, and the load said it could not show it (CI's
+    120 s wait for frames that had all arrived)."""
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 
@@ -236,37 +258,94 @@ def test_the_first_frame_is_shown_while_a_piece_arrives(study, small_pieces):
     session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
-            page = browser.new_page(viewport={"width": 1440, "height": 900})
-            page.add_init_script("try { localStorage.setItem('fmx.viewerPlaybackOpen', '1'); } catch (e) {}")
-            page.set_default_timeout(120000)
-            errors: list[str] = []
-            page.on("pageerror", lambda error: errors.append(str(error)))
-            page.goto(session.url + "#viewer", wait_until="domcontentloaded")
-            if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl')"):
-                pytest.skip("this browser has no WebGL, so the viewer cannot render")
-            page.wait_for_function(f"() => {state}.model && {state}.engine")
-            # Each piece after the first appended slowly: the first frame is
-            # asked for while one is.
+            browser, page, errors = _a_page(pw, session)
+            page.evaluate(_APPENDED_ONCE_A_FRAME_IS_ASKED)
+            # The load's last call to the engine before its first frame is
+            # the frames' cartoon: there the second piece is let come, and
+            # the cartoon given once its append is queued. The load then
+            # asks for its first frame while that piece is appended.
             page.evaluate(f"""() => {{
-                const engine = {state}.engine;
-                const real = Object.getPrototypeOf(engine).appendFrames;
-                engine.appendFrames = async function (bytes) {{
-                    await new Promise((done) => setTimeout(done, 1500));
-                    return real.call(this, bytes);
+                const s = {state};
+                const engine = s.engine;
+                const real = Object.getPrototypeOf(engine).setSecondaryStructure;
+                window.cartoons = 0;
+                engine.setSecondaryStructure = async function (...given) {{
+                    if (s.framesPieces && !window.cartoons++) {{
+                        window.letThePieceCome(1);
+                        const until = Date.now() + 60000;
+                        while (s.framesPieces.baseParts.length < 2 && Date.now() < until) {{
+                            await new Promise((done) => setTimeout(done, 20));
+                        }}
+                    }}
+                    return real.apply(this, given);
                 }};
             }}""")
-            played = page.evaluate("async () => window.FastMDXMoleculeViewer.loadPlayback("
-                                   "await (await fetch('/api/frames-info')).json())")
+            played = page.evaluate(_PLAY)
+            page.wait_for_selector('#trajectory-row[data-frames-loaded="4"]', state="attached")
+            # The last piece appended as it comes.
+            page.evaluate(f"() => {{ delete {state}.engine.appendFrames; }}")
+            page.evaluate("() => window.letThePieceCome(2)")
             page.wait_for_selector('#trajectory-row[data-frames-loaded="6"]', state="attached")
             after = page.evaluate(f"() => [{state}.playbackLoaded, {state}.engine.frameCount(),"
-                                  f" {state}.engine.frame()]")
+                                  f" {state}.engine.frame(), window.cartoons > 0]")
             browser.close()
     finally:
         session.server.shutdown()
     assert errors == []
     assert played is True
-    assert after == [True, 6, 0]
+    assert after == [True, 6, 0, True]
+
+
+def test_frames_superposed_while_a_piece_waits_keep_their_count(study, small_pieces):
+    """The frames superposed (given whole) while a piece waited for a frame
+    asked for: the piece then wrote its own count, 4, over the 6 frames
+    now there, and the last two could not be reached until a reload."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    state = "window.FastMDXMoleculeViewer.STATE"
+    session = start_dashboard_session(output=str(study), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser, page, errors = _a_page(pw, session)
+            played = page.evaluate(_PLAY)
+            page.evaluate(_APPENDED_ONCE_A_FRAME_IS_ASKED)
+            # Said once the superposed frames are queued for the engine.
+            page.evaluate(f"""() => {{
+                const engine = {state}.engine;
+                const real = Object.getPrototypeOf(engine).setFramesCoordinates;
+                window.superposing = 0;
+                Object.defineProperty(engine, "setFramesCoordinates", {{
+                    configurable: true,
+                    get() {{
+                        window.superposing += 1;
+                        return real;
+                    }},
+                }});
+            }}""")
+            page.evaluate("() => window.letThePieceCome(1)")
+            page.wait_for_function("() => window.appending === 1")
+            page.select_option("#traj-superpose", "backbone")
+            page.wait_for_function("() => window.superposing === 1")
+            # Queued behind them: the piece waits for it once appended.
+            page.evaluate("() => window.dispatchEvent(new CustomEvent("
+                          "'dashboard:trajectory-seek', {detail: {frame: 1}}))")
+            page.wait_for_function(f"() => {state}.superposedUrl")
+            page.evaluate(f"() => {{ delete {state}.engine.appendFrames; }}")
+            page.evaluate("() => window.letThePieceCome(2)")
+            page.wait_for_function(f"() => {state}.framesArriving === null")
+            after = page.evaluate(f"""() => [{state}.engine.frameCount(), {state}.playbackFrames,
+                {state}.framesPieces.loaded,
+                document.getElementById('trajectory-row').dataset.framesLoaded,
+                document.getElementById('traj-slider').max, {state}.engine.frame()]""")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert errors == []
+    assert played is True
+    assert after == [6, 6, 6, "6", "5", 1]
 
 
 def test_frames_asked_for_before_the_structure_arrives_keep_the_canvas(study):
