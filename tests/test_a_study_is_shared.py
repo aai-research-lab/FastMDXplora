@@ -194,6 +194,16 @@ def test_a_study_that_did_not_finish_is_not_shared(tmp_path, how):
                                           else "environment.share.not_finished")
 
 
+def test_the_refusal_does_not_say_a_study_of_several_runs_is_refused():
+    """A study of several runs is packed whole; the summary said it was
+    refused, and the docs told a reader to share one run's folder."""
+    from fastmdxplora.refusals import CODES
+
+    summary = next(c.summary for c in CODES if c.id == "environment.share.not_finished")
+    assert "is a study of several runs" not in summary
+    assert "a run of it did not finish" in summary
+
+
 def test_a_study_named_from_its_own_folder_keeps_its_words(tmp_path, monkeypatch):
     """`--output 1ABC` from the folder above: "1ABC" is the study's name in
     its records too, and was replaced wherever it stood."""

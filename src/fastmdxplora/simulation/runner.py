@@ -1053,8 +1053,9 @@ def _a_stop_asked_here() -> None:
 #: Said where a Ctrl-C is the stop under way (`_a_stop_heard`'s "again"
 #: for a Ctrl-C), by the study's process and a run's production: nothing
 #: said, a person pressed again, and that meant now.
-CTRL_C_UNDER_WAY = ("Ctrl+C received: the stop asked already is under way (a run in "
-                    "production ends at its next frame). Press Ctrl+C again to stop now.")
+CTRL_C_UNDER_WAY = ("Ctrl+C received: the stop asked already is under way (a run still in "
+                    "production ends at its next frame; after a broken pool, the run whose "
+                    "worker was killed has ended already). Press Ctrl+C again to stop now.")
 
 
 #: Set in a worker of a parallel study's pool: its parent says the stop

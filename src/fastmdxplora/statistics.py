@@ -766,6 +766,15 @@ def _summary(
     return equilibrated, None
 
 
+def _length(ns: float) -> str:
+    """Picoseconds under one nanosecond ("65.6 ps"), nanoseconds to three
+    figures from there, as the pages give a length."""
+    if abs(ns) < 1.0:
+        from fastmdxplora.simulation.sampling_ask import length_said
+        return length_said(ns)
+    return f"{ns:.3g} ns"
+
+
 @dataclass(frozen=True)
 class Shortfall:
     """How much more of a run a claim would need.
@@ -824,7 +833,7 @@ class Shortfall:
             return (f"{self.have:.1f} independent samples, which meets the "
                     f"{self.target:g} asked for.")
         duration = ("" if self.more_ns is None
-                    else f", about {self.more_ns:.3g} ns more")
+                    else f", about {_length(self.more_ns)} more")
         if not self.resolved:
             return (
                 f"The run is too short to resolve its own correlation time, so "

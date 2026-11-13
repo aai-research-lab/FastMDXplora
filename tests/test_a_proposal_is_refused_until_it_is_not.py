@@ -774,6 +774,7 @@ class TestThePersonsInstructionIsTheClick(unittest.TestCase):
         self.assertIn('confirmCard(box, stopQuestion(where), STOP_FACTS, "Stop it", "Keep running");',
                       script)
         self.assertIn("function confirmStop(typed, box)", script)
+        self.assertIn('var STOP_FACTS = "What it has written so far is saved.";', script)
         self.assertIn('fetch("/api/explore/stop", { method: "POST" })', script)
         # Run goes through the button's own handler, so the mode's gates
         # apply to a word in the thread as they do to a press.

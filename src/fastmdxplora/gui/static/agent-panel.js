@@ -3185,7 +3185,7 @@
   /* Asked before 10-07 as text to answer with yes; a conversation kept
    * then is still read so. */
   var RUN_QUESTION = "Run the study above? Say yes.";
-  var STOP_FACTS = "What it has written so far is kept.";
+  var STOP_FACTS = "What it has written so far is saved.";
 
   function newest() { return versions[versions.length - 1] || null; }
 

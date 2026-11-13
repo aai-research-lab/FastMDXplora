@@ -414,10 +414,10 @@ def test_an_undetermined_mean_shows_the_sampling_its_record_asks_for(tmp_path):
 @pytest.mark.parametrize("lower_bound, said", [
     (True, "The run is too short to resolve its own correlation time, so its 0.5 "
            "independent samples are an upper bound. At least 1640 further frames, about "
-           "0.0656 ns more (as long again, or to 25 samples at one every 67 frames if "
+           "65.6 ps more (as long again, or to 25 samples at one every 67 frames if "
            "that is longer), then estimate again."),
     (False, "0.5 independent samples of the 25 needed. At one every 67 frames, that is "
-            "1640 further frames, about 0.0656 ns more."),
+            "1640 further frames, about 65.6 ps more."),
 ])
 def test_a_shortfall_is_said_in_its_records_own_words(tmp_path, lower_bound, said):
     # Radius of gyration in a real 4 ps run of tri-alanine: a floor asks for

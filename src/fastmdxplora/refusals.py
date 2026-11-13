@@ -314,8 +314,11 @@ CODES: tuple[Code, ...] = (
          "What was fetched as the demo study is not the one this release expects.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("environment.share.not_finished",
-         "A study asked to be shared is running, stopped short, or is a study of "
-         "several runs.",
+         "A study asked to be shared is running or stopped short, a run of it "
+         "did not finish, its prepared system is not found, a file of it is a "
+         "link or cannot be read, something a reader needs is missing (an "
+         "author, a topology, its resolved Config), or it is being shared "
+         "already.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.share.unscrubbed",
          "A file of a study being shared still names its folder, a home folder or "

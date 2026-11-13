@@ -207,7 +207,20 @@ class TestThePmfCarriesOne:
         assert band["standard_error"][anchor] == 0.0
         assert band["zeroed_at"] == result["pmf"]["coordinate"][anchor]
         assert band["zero"] == umbrella.THE_CURVE_SITS_HIGH
-        assert "about 0.7 of their error high" in band["zero"]
+        assert "about 0.7 of its error high" in band["zero"]
+        # The curve's offset is claimed; a barrier's direction is not.
+        assert "barrier" not in band["zero"]
+        if result["summary"].get("barrier_kjmol") is not None:
+            assert result["summary"]["barrier_zero"] == umbrella.A_BARRIER_CLAIMS_NO_DIRECTION
+
+    def test_a_barrier_is_claimed_no_direction(self) -> None:
+        # A 20 kJ/mol escape barrier came out 19.43 to 19.87: the bins'
+        # width put it low, against the zero's lift.
+        from fastmdxplora.simulation import umbrella
+
+        said = umbrella.A_BARRIER_CLAIMS_NO_DIRECTION
+        assert "no direction is claimed for a barrier" in said
+        assert "barrier read off it sit" not in said
 
 
 class TestAReweightedAverageSaysWhenItsBarIsAFloor:

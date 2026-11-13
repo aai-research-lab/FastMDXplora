@@ -2432,7 +2432,18 @@ WHAM_MAX_ITERATIONS = 100_000
 #: same, and the error it is read in is wider.
 THE_CURVE_SITS_HIGH = (
     "The curve is zeroed at its lowest bin, which noise puts low, so the "
-    "curve and a barrier read off it sit about 0.7 of their error high.")
+    "curve sits about 0.7 of its error high.")
+
+#: Said in the record beside a barrier. The curve's zero puts a barrier
+#: high and a bin's width puts a narrow one low: a 20 kJ/mol escape
+#: barrier came out 19.43 to 19.87, each +/- 0.15 to 0.23, so no direction
+#: is claimed. `validation.pmf_coverage` reads the curve, not barriers.
+A_BARRIER_CLAIMS_NO_DIRECTION = (
+    "The curve is zeroed at its lowest bin, which noise puts low, so the "
+    "curve sits about 0.7 of its error high; a barrier read off it also "
+    "carries the bins' width, which puts a narrow one low, so no direction "
+    "is claimed for a barrier: its error is from sampling only, and the "
+    "zero and the bins' width can each move it by about that much.")
 
 
 def _split_off_the_derived(
@@ -2986,7 +2997,7 @@ def compute_pmf(
     # Which curve the resamples judging the rises were moved onto.
     summary["resamples_on"] = summary["read_off"]
     if uncertainty is not None and summary.get("barrier_kjmol") is not None:
-        summary["barrier_zero"] = THE_CURVE_SITS_HIGH
+        summary["barrier_zero"] = A_BARRIER_CLAIMS_NO_DIRECTION
 
     return {
         "pmf": {"coordinate": centres.tolist(), "free_energy_kjmol": free_energy,

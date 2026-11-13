@@ -623,9 +623,10 @@ class TestTheBarrierLineSaysWhatItRestsOn:
         # The curve's zero puts a barrier high and the bins' width a narrow
         # one low (19.43 +/- 0.15 for a 20 kJ/mol escape barrier), so the
         # line says the error is the sampling's and claims neither.
-        from fastmdxplora.simulation.umbrella import THE_CURVE_SITS_HIGH
+        from fastmdxplora.simulation.umbrella import A_BARRIER_CLAIMS_NO_DIRECTION
 
-        line = self._line(barrier_error_kjmol=1.0, barrier_zero=THE_CURVE_SITS_HIGH)
+        line = self._line(barrier_error_kjmol=1.0,
+                          barrier_zero=A_BARRIER_CLAIMS_NO_DIRECTION)
         assert line == ("6.3 +/- 1.0 kJ/mol at 0.0524 rad, on the free energy, its "
                         "error from sampling only (the zero and the bins' width can "
                         "each move it by about that much).")

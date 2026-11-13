@@ -148,6 +148,15 @@ def failed(tmp_path_factory):
             "root": root}
 
 
+def test_a_ctrl_c_under_way_says_a_killed_worker_s_run_has_ended():
+    """After a broken pool the killed worker's run has ended already; the
+    line said every run would save at its next frame."""
+    from fastmdxplora.simulation.runner import CTRL_C_UNDER_WAY
+
+    assert "a run still in production ends at its next frame" in CTRL_C_UNDER_WAY
+    assert "the run whose worker was killed has ended already" in CTRL_C_UNDER_WAY
+
+
 def test_the_round_failed_as_recorded(failed):
     record = json.loads((failed["study"] / "stopping.json").read_text())
     assert record["outcome"] == "stopped"

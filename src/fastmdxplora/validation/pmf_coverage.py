@@ -30,8 +30,9 @@ together, so the coverage carries a 95% interval from its spread over sets
 Two gauges are read. The reported one sets the curve to zero at its lowest
 bin, and each resample to zero at that same bin, as `compute_pmf` does.
 Noise puts a curve's lowest bin low, so this lifts the curve above the
-truth everywhere away from its minimum (barriers read high); the band's
-middle sits on the curve. The second gauge sets the curve, each resample
+truth everywhere away from its minimum (a barrier also carries the bins'
+width, which puts a narrow one low, so no direction is claimed for one);
+the band's middle sits on the curve. The second gauge sets the curve, each resample
 and the truth to zero at their mean over the bins between the window
 centres, where no single bin's noise sets the zero; it is read from the
 same resamples, so both gauges come from one bootstrap at the same seeds.
