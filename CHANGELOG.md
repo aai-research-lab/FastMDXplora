@@ -847,6 +847,24 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   thread at the interpreter's start passes, and a plan 3 MiB larger
   still fails. The record is removed before the run, and a missing
   reading or record fails with the run's exit status and output.
+- Clustering plots each figure once what the figures before it held is
+  freed, and so do the projections. A figure saved and closed held its
+  canvas until Python's garbage collector next ran: on Python 3.10, four
+  were held as the dendrogram was plotted, and under `ulimit -v` 600000
+  tri-alanine's 500 frames, planned at 61.0 MiB in 62.4 of room, ran out
+  plotting it (`std::bad_alloc`) at 56.3 MiB past the check, on CI's 3.10
+  leg and here, from a fresh bytecode cache. The dendrogram's figure was
+  also held by a local of the run until the clustering ended. That run
+  now peaks 26.5 MiB past the check on 3.10, 15.0 on 3.11 and 32.5 on
+  3.13, where it peaked at 56.3, 55.7 and 43.6; the plan is unchanged.
+- A figure not plotted for memory is said to need what plotting it maps:
+  two canvases of its pixels at 300 dpi and 2 MiB, and the map's mesh at
+  112 bytes a cell. 40 MB was said for every figure, where the dendrogram
+  of 500 frames needed 17.75 MiB of room (19.9 MB said now) and the map
+  of 1,000 cells 122.25 MiB (133.5 MB said now). Counted for each figure
+  of 500 frames on Python 3.10, 3.11 and 3.13, the said room is 1.22 to
+  1.34 MiB over the most counted, and the map's 0.4 MiB at 500 cells and
+  5.0 at 1,000.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
