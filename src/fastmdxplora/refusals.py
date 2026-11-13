@@ -282,6 +282,16 @@ CODES: tuple[Code, ...] = (
          "the analysis cannot be run on this platform.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,
          detail_keys=("backend", "attempts")),
+    Code("environment.plugin.missing",
+         "A setting or analysis that comes with a separately installed "
+         "package, which is not installed.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.7",
+         detail_keys=("feature", "package", "install_command")),
+    Code("environment.plugin.broken",
+         "A setting or analysis that comes with a separately installed "
+         "package, which is installed and could not be loaded.",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.7",
+         detail_keys=("feature", "package", "install_command", "reason")),
     Code("environment.service.unreachable",
          "An external service did not answer.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,

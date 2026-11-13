@@ -757,13 +757,13 @@ read before comparing a result against another tool.
 .. automodule:: fastmdxplora.analysis.image_check
    :members:
 
-.. automodule:: fastmdxplora.analysis.area_per_lipid
+.. automodule:: fastmdxplora_membrane.area_per_lipid
    :members:
 
-.. automodule:: fastmdxplora.analysis.bilayer_thickness
+.. automodule:: fastmdxplora_membrane.bilayer_thickness
    :members:
 
-.. automodule:: fastmdxplora.analysis.lipid_order
+.. automodule:: fastmdxplora_membrane.lipid_order
    :members:
 
 .. automodule:: fastmdxplora.analysis.cluster

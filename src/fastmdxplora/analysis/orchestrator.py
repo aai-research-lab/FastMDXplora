@@ -41,6 +41,7 @@ from fastmdxplora.analysis.loading import (
     TrajectoryInput,
     load_trajectory,
 )
+from fastmdxplora import plugins
 from fastmdxplora.utils.logging import get_logger
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import CodedKeyError
@@ -139,14 +140,91 @@ def register_analysis(name: str, cls: type[Analysis]) -> None:
     _REGISTRY[name] = cls
 
 
+#: The order the analyses run in, and so the order of a study's results,
+#: its manifest and its report: the order they registered in while every
+#: one of them was imported by this package. Some now come from separately
+#: installed packages (:mod:`fastmdxplora.plugins`), which register after
+#: the core's own, so the order is held here and the registry put in it.
+ANALYSIS_ORDER = (
+    "image_check", "pmf", "metad_surface", "steered_work", "rmsd", "rmsf",
+    "rg", "hbonds", "ss", "sasa", "dihedrals", "qvalue", "order_parameters",
+    "bfactor_comparison", "thermodynamics", "rdf", "coordination_number",
+    "end_to_end", "moments_of_inertia", "pair_distance", "area_per_lipid",
+    "bilayer_thickness", "lipid_order", "cluster", "dimred", "water_sites",
+    "ligand_rmsd", "ligand_rmsf", "pl_contacts", "pl_hbonds",
+    "pl_interactions",
+)
+
+
+#: The analyses of a bilayer, which a default plan says it goes without
+#: where their package is not installed.
+_OF_A_BILAYER = ("area_per_lipid", "bilayer_thickness", "lipid_order")
+
+
+def register_plugged_in() -> None:
+    """Register the analyses installed packages offer
+    (``fastmdxplora.analyses``), then put the registry in
+    :data:`ANALYSIS_ORDER`, an analysis that is not in it after those that
+    are, by name.
+
+    Called at the foot of :mod:`fastmdxplora.analysis`, after the core's
+    own analyses have registered. One that is not an :class:`Analysis`, or
+    whose name another analysis has, is left out and said
+    (:func:`fastmdxplora.plugins.failures`).
+
+    Called again, by the functions below that read the registry, only where
+    a plug-in's module was being imported when this first ran (a script
+    that imports the plug-in before anything of the core's): its analysis
+    registers then. Registering twice changes nothing.
+    """
+    offered = plugins.offered(plugins.ANALYSES)
+    for name, cls in plugins.load(plugins.ANALYSES).items():
+        package = offered.get(name, "an installed package")
+        where = f"{getattr(cls, '__module__', '?')}:{getattr(cls, '__qualname__', cls)}"
+        if not (isinstance(cls, type) and issubclass(cls, Analysis)):
+            plugins.refuse(plugins.ANALYSES, name, package, where,
+                           "it is not a subclass of fastmdxplora.analysis.base.Analysis")
+            continue
+        try:
+            register_analysis(name, cls)
+        except StudyError as exc:
+            plugins.refuse(plugins.ANALYSES, name, package, where, str(exc))
+    place = {name: index for index, name in enumerate(ANALYSIS_ORDER)}
+    ordered = sorted(_REGISTRY.items(),
+                     key=lambda item: (place.get(item[0], len(place)),
+                                       item[0] if item[0] not in place else ""))
+    _REGISTRY.clear()
+    _REGISTRY.update(ordered)
+
+
+def _register_what_waited() -> None:
+    if plugins.waiting(plugins.ANALYSES):
+        register_plugged_in()
+
+
+def not_installed(name: str) -> plugins.Unavailable | None:
+    """Why the analysis ``name`` is not registered, where the reason is a
+    package that is not installed or would not load; ``None`` where no
+    analysis has that name at all."""
+    _register_what_waited()
+    if name in _REGISTRY:
+        return None
+    return plugins.unavailable(plugins.ANALYSES, str(name), what="analysis")
+
+
 def available_analyses() -> tuple[str, ...]:
-    """Return the names of all registered analyses, in registration order."""
+    """Return the names of all registered analyses, in the order they run."""
+    _register_what_waited()
     return tuple(_REGISTRY.keys())
 
 
 def get_analysis_class(name: str) -> type[Analysis]:
     """Look up a registered analysis class by name."""
+    _register_what_waited()
     if name not in _REGISTRY:
+        absent = not_installed(name)
+        if absent is not None:
+            raise CodedKeyError(absent.message, code=absent.code, **absent.details)
         raise CodedKeyError(
             f"Unknown analysis: {name!r}. Available: {list(_REGISTRY)}",
             code="analysis.unknown",
@@ -495,6 +573,7 @@ class AnalysisOrchestrator:
         exclude: list[str] | None,
         options: dict[str, dict[str, Any]] | None = None,
     ) -> list[str]:
+        _register_what_waited()
         all_names = list(_REGISTRY.keys())
         has_ligand = bool(self.ligand_resname)
 
@@ -784,6 +863,15 @@ class AnalysisOrchestrator:
         if include is not None and exclude is not None:
             raise StudyError("Specify either `include` or `exclude`, not both.", code="analysis.option.inapplicable")
 
+        for name in include or ():
+            absent = not_installed(name)
+            if absent is not None:
+                raise StudyError(absent.message, code=absent.code, **absent.details)
+        if exclude is not None:
+            # An analysis whose package is not installed is left out already:
+            # naming it in `exclude` asks for what is so, not for the package.
+            exclude = [name for name in exclude if not_installed(name) is None]
+
         if include is not None:
             unknown = [n for n in include if n not in _REGISTRY]
             if unknown:
@@ -824,6 +912,7 @@ class AnalysisOrchestrator:
                 and _alignable(n) and _solute_ok(n)
             ]
 
+        self._say_what_a_bilayer_goes_without()
         # Default plan: everything except ligand-only analyses when there is
         # no ligand. With a ligand, the ligand analyses run automatically.
         return [n for n in all_names
@@ -832,6 +921,26 @@ class AnalysisOrchestrator:
                 and _named_ok(n) and _bilayer_ok(n) and _umbrella_ok(n)
                 and _metadynamics_ok(n) and _steered_ok(n)
                 and _fold_ok(n) and _alignable(n) and _solute_ok(n)]
+
+    def _say_what_a_bilayer_goes_without(self) -> None:
+        """Where the frames hold a bilayer and its analyses' package is not
+        installed, say so: left out of a default plan in silence, a membrane
+        study's report would lack its area, thickness and chain order with
+        nothing to say why."""
+        absent = [name for name in _OF_A_BILAYER if name not in _REGISTRY]
+        traj = getattr(self, "traj", None)
+        if not absent or traj is None:
+            return
+        from fastmdxplora.lipids import is_bilayer
+
+        if (getattr(traj, "unitcell_lengths", None) is None
+                or not is_bilayer(r.name for r in traj.topology.residues)):
+            return
+        why = not_installed(absent[0])
+        logger.warning(
+            "These frames hold a bilayer, and %s %s not among the analyses "
+            "run.%s", ", ".join(absent), "is" if len(absent) == 1 else "are",
+            f" {why.message}" if why is not None else "")
 
     def _merge_options(
         self,

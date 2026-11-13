@@ -3013,6 +3013,11 @@ def _info_record() -> dict[str, Any]:
                 "name": display_name, "needed": group, "state": state,
                 "detail": detail, "install": install_hint,
             }
+    # After the phases above, which import the analyses and so read what
+    # the installed plug-ins offer: a plug-in that would not load is known
+    # by now.
+    from fastmdxplora import plugins
+
     return {
         "version": __version__,
         "source": source_provenance(),
@@ -3020,6 +3025,7 @@ def _info_record() -> dict[str, Any]:
         "platform": _platform_record(),
         "phases": phases,
         "backends": backends,
+        "plugins": plugins.report(),
     }
 
 
@@ -3074,6 +3080,23 @@ def _cmd_info(args: argparse.Namespace | None = None) -> int:
                 "broken": f"installed but will not load ({entry['detail']})",
             }.get(entry["state"], entry["detail"])
             print(f"    {display_name:<22} {entry['state']:<10} {remedy}".rstrip())
+    print()
+    # The packages that add to this one through its entry points, and any of
+    # them that would not load: the core starts without it, and this is
+    # where it says so.
+    print("Plug-ins:")
+    for package, entry in record["plugins"].items():
+        offers = ", ".join(name for group, names in entry["offers"].items()
+                           if group != "fastmdxplora.moved_modules" for name in names)
+        remedy = {
+            "missing": entry["install"],
+            "broken": f"will not load: {entry['detail']} "
+                      f"Reinstall with: {entry['install']}",
+            "checkout": f"{entry['detail']}  {offers}",
+        }.get(entry["state"], f"{entry['version']}  {offers}".strip())
+        print(f"    {package:<22} {entry['state']:<10} {remedy}".rstrip())
+    if not record["plugins"]:
+        print("    none")
     print()
     print(f"Citation: {__citation__}")
     return 0

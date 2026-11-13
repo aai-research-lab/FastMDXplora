@@ -22,10 +22,10 @@ from fastmdxplora.refusals import StudyError
 md = pytest.importorskip("mdtraj")
 app = pytest.importorskip("openmm.app")
 
-from fastmdxplora.analysis.area_per_lipid import AreaPerLipid  # noqa: E402
-from fastmdxplora.analysis.bilayer import cross_section  # noqa: E402
-from fastmdxplora.analysis.bilayer_thickness import BilayerThickness  # noqa: E402
-from fastmdxplora.analysis.lipid_order import LipidOrder  # noqa: E402
+from fastmdxplora_membrane.area_per_lipid import AreaPerLipid  # noqa: E402
+from fastmdxplora_membrane.bilayer import cross_section  # noqa: E402
+from fastmdxplora_membrane.bilayer_thickness import BilayerThickness  # noqa: E402
+from fastmdxplora_membrane.lipid_order import LipidOrder  # noqa: E402
 
 
 def _patch(lipid: str):

@@ -23,7 +23,9 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
-from fastmdxplora.analysis.bilayer import (
+from fastmdxplora.lipids import is_sterol, lipid_count
+from fastmdxplora.refusals import StudyError
+from fastmdxplora_membrane.bilayer import (
     CROSS_SECTION_PLANES_NM,
     LIPID_PROBE_NM,
     BilayerSeries,
@@ -35,9 +37,6 @@ from fastmdxplora.analysis.bilayer import (
     find_bilayer,
     leaflets,
 )
-from fastmdxplora.analysis.orchestrator import register_analysis
-from fastmdxplora.lipids import is_sterol, lipid_count
-from fastmdxplora.refusals import StudyError
 
 __all__ = ["AreaPerLipid"]
 
@@ -204,5 +203,3 @@ class AreaPerLipid(BilayerSeries):
     def default_ylabel(self) -> str | None:
         return "Area per lipid (nm2)"
 
-
-register_analysis(AreaPerLipid.name, AreaPerLipid)

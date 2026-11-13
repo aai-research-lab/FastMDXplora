@@ -86,6 +86,13 @@ dependencies = [
     # was in the [pdf] extra, so a pip install without it showed the report
     # in the GUI as plain Markdown, with no figure in it. Pure Python, small.
     "markdown>=3.4",
+    # The lipid bilayer analyses (area per lipid, thickness, chain order).
+    # They were modules of this package until they moved to one of their own
+    # (packages/fastmdxplora-membrane), which this package finds by its entry
+    # points and never imports. Required, not an extra, so that a plain
+    # `pip install fastmdxplora` analyses a bilayer as it always has. Pure
+    # Python, and it adds no dependency this list does not already hold.
+    "fastmdxplora-membrane",
 ]
 
 [project.optional-dependencies]
@@ -162,13 +169,19 @@ validation = [
     "MDAnalysis>=2.7",
     "prolif>=2.0",
 ]
+# The bilayer analyses by name. Already required above; the extra is here so
+# that `fastmdxplora[membrane]` keeps meaning what it says if they ever stop
+# being required.
+membrane = [
+    "fastmdxplora-membrane",
+]
 all = [
     # No `plumed` here. The comment fifteen lines up says there is
     # deliberately no `plumed` extra; naming it anyway made pip print
     # "does not provide the extra 'plumed'" and carry on, so `[all]`
     # resolved without it and installed silently with no PLUMED support.
     # A warning nobody reads is the same as no warning.
-    "fastmdxplora[md,ligand,amber,umap]",
+    "fastmdxplora[md,ligand,amber,umap,membrane]",
 ]
 test = [
     # A test asserts the lint gate is clean, so the linter is part of
