@@ -742,7 +742,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   one, and the pieces of a load that failed or was loaded again are no
   longer appended.
 - Tests: each page's place is read once a poll has applied the app state
-  and the status, which it is drawn from. Read 1.2 s after the page's
+  and the status, which it is made from. Read 1.2 s after the page's
   scripts alone, a loaded runner found it empty (6 of 10 under load here,
   none of 20 now).
 - Tests: in the test that a broken pool's other workers are ended, the
