@@ -329,6 +329,8 @@ ANTHROPIC_API_KEY=... python scripts/measure_nli.py
 ANTHROPIC_API_KEY=... python scripts/measure_nli.py --terse   # no help text
 ```
 
+Its output, from the original eight requests:
+
 ```
 6/8 correct, 8/8 valid, 5 first time, 1.4 cycles on average
   ok    plain          1 cycle(s)
@@ -373,7 +375,7 @@ than comprehension.
 is not an AI model being careless. It is the schema description failing to say
 something, and it says where to look.
 
-Measured with `claude-sonnet-4-6` on the original eight:
+Counted with `claude-sonnet-4-6` on the original eight:
 
 | | first time | mean cycles | refusals |
 |---|---|---|---|

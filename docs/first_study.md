@@ -127,8 +127,8 @@ following:
 
 ```
 ▸ Minimizing energy
-  The starting structure has strain in it — atoms slightly too close,
-  bonds slightly too long — from the experiment, from adding hydrogens,
+  The starting structure has strain in it -- atoms slightly too close,
+  bonds slightly too long -- from the experiment, from adding hydrogens,
   and from dropping the protein into water. At the temperature of a
   simulation that strain becomes violent motion. Minimisation walks the
   structure downhill to a nearby arrangement with no such forces in it,
@@ -189,7 +189,7 @@ print(runs[0].output_dir)
 ## When something goes wrong
 
 **The run stops during setup.** Read the message — the setup phase refuses
-rather than guesses, and it says what it could not decide and what would settle
+rather than guesses, and it says what it could not decide and what would decide
 it.
 
 **The simulation becomes unstable.** The message names which atoms went wrong

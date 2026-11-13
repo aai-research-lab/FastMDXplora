@@ -247,7 +247,7 @@ Prepare a system and stop. Flag names here drop the `--setup-` prefix.
 ```
 
 Every other `setup` setting has a flag too, spelled from its name. See
-[Config reference](config_reference.md#setup--47-settings) and
+[Config reference](config_reference.md#setup--48-settings) and
 `fastmdx setup --help`.
 
 ---
@@ -307,12 +307,13 @@ Every other `setup` setting has a flag too, spelled from its name. See
 --restrain "protein and not element H"
 --restraint-release 1000 500 100 0
 --restrain-production
---plumed-script bias.dat          # explore only; see below
+--plumed-script bias.dat          # --simulate-plumed-script on explore
 ```
 
-**Enhanced sampling blocks** — `umbrella`, `steered` and `metadynamics` are
-mappings, not values. Flags exist for them but cannot carry a mapping; write
-them in a [Config](studies.md) instead.
+**Enhanced sampling blocks**: `umbrella`, `steered` and `metadynamics` take a
+YAML mapping (`--umbrella '{collective_variable: distance, ...}'`, and
+`--simulate-umbrella` on `explore`); a [Config](studies.md) is the readable
+place for one.
 
 ---
 
@@ -344,7 +345,8 @@ Six per-analysis settings have convenience flags of their own:
 --dimred-components 3
 ```
 
-Anything else goes under `analysis.options` in a Config.
+Anything else goes under `analysis.options`, in a Config or as `--options YAML`
+(`--analyze-options` on `explore`): `--options '{cluster: {methods: [kmeans], n_clusters: 5}}'`.
 
 ---
 
@@ -402,7 +404,7 @@ fastmdx agent                                            # opens the GUI Agent p
 | `-f`, `-file`, `--file FILE` | — | Read the request from a file |
 | `-o`, `--output FILE` | — | Also write the Config here; it prints either way |
 | `--phases PHASES` | `setup,simulation` | Which phases to write, comma-separated |
-| `--attempts N` | `3` | Self-correction cycles before giving up |
+| `--attempts N` | `3` | Attempts in all, the first included, before giving up |
 | `--assisted` | *(default)* | Seeker (built-in, assisted): draft it and stop |
 | `--autonomous` | — | Ranger (built-in, autonomous): draft it and run it. **Requires `--budget-hours`** |
 | `--unvalidated` | — | Outside the schema, not one of the modes: marks the output as having gone outside the schema |
@@ -431,7 +433,7 @@ fastmdx gui --output runs/study    # open a run, live or finished
 | `--host` | `127.0.0.1` | What to bind to |
 | `--port` | `8765` | Which port. If busy, the next free one is used and reported |
 | `--no-browser` | opens a tab | Print the URL instead |
-| `--demo [DIR]` | off | Copy the demo study (3PTB, finished) into DIR and open it; fetched the first time (about 11 MB) and kept in the cache, once it is published (not yet for 2.6.0) |
+| `--demo [DIR]` | off | Copy the demo study (3PTB, finished) into DIR and open it; fetched the first time (about 11 MB) and saved in the cache, once it is published (not yet) |
 | `--open SOURCE` | off | Open a shared study from its DOI, its Zenodo address or its zip, every file checked against its SHA-256 first ([Sharing a study](sharing.md)) |
 | `--open-into DIR` | current directory | Where `--open` unpacks it |
 | `--open-most-gb GB` | `2` | The largest archive `--open` downloads and opens |
@@ -614,7 +616,7 @@ then `playwright install chromium`), or Chrome or Edge where installed. Exits
 Prints the version, authors and DOI; the platform, saying plainly on Windows
 that it is not supported; a readiness line per phase; a grouped backend table
 marking each of OpenMM, PDBFixer, the OpenFF toolkit, `openmmforcefields`,
-RDKit, PROPKA, WeasyPrint, Markdown, UMAP and `openmmplumed` as `installed`,
+RDKit, PROPKA, WeasyPrint, ffmpeg, UMAP and `openmmplumed` as `installed`,
 `missing` or `broken`, with the conda command for anything missing; and the
 citation.
 
@@ -739,21 +741,21 @@ fastmdx explore --config study.yml --setup-ph 6.0
 runs at pH 6.0 even if `study.yml` says `7.0`, and `resolved_config.yml`
 records `6.0`.
 
-**`--config` behaves differently on the phase commands.** On `explore` and
-`xplore` the whole file is applied. On `setup`, `simulate`, `analyze` and
-`report`, the file is read only for the system to work on — that command's own
-flags are what drive the run. If you want a Config's `setup:` block applied,
-use:
+**`--config` means the same on every command.** A phase command is
+`explore --include-phase <phase>`: the whole file applies, and that command's
+own flags override it. These two run the same:
 
 ```bash
-fastmdx explore --config study.yml --include setup
+fastmdx setup --config study.yml
+fastmdx explore --config study.yml --include-phase setup
 ```
 
-not `fastmdx setup --config study.yml`.
-
-**Some things are Config-only**, because a flag cannot carry them: `sweep`,
-`analysis.options`, `report.region_highlights`, `report.comparison`, and the
-`umbrella` / `steered` / `metadynamics` blocks.
+**Some things read best in a Config**, though each has a flag:
+`--sweep AXIS=VALUES` (once per axis: `--sweep simulation.temperature_K=300,310,320`),
+`--analyze-options YAML`, `--report-region-highlights` (each item a YAML
+mapping: `'{label: helix, start: 3, end: 7}'`), `--report-comparison` and
+`--report-no-comparison`, and `--simulate-umbrella`, `--simulate-steered` and
+`--simulate-metadynamics`, each a YAML mapping.
 
 ---
 

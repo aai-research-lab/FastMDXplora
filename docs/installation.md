@@ -76,8 +76,8 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-The environment file carries the conda-only packages -- openmm-plumed above
-all, which has no PyPI distribution -- so a clone set up this way has the whole
+The environment file carries the conda-only packages (openmm-plumed above
+all, which has no PyPI distribution), so a clone set up this way has the whole
 stack.
 
 It carries rdkit, propka, openff-toolkit and ambertools for ligand chemistry,

@@ -44,7 +44,7 @@ fastmdx select "resSeq 189 to 195 and name CA" -s trypsin.pdb
 
 ```
 'resSeq 189 to 195 and name CA' against trypsin.pdb
-  7 of 3220 atoms
+  7 of 1701 atoms
   7 residues: ASP189, SER190, CYS191, GLN192, GLY193, ASP194, SER195
 ```
 
@@ -138,6 +138,7 @@ method biases it.
 | `torsion` | `select_atoms` matching **exactly four** atoms |
 | `radius_of_gyration` | `select_atoms` *(default `protein and name CA`)* |
 | `membrane_depth` | `select_atoms` for the molecule, `bilayer_selection` for the membrane |
+| `q` | `select_atoms` |
 
 `select_atoms` names the selection wherever a variable takes exactly one.
 Where it takes two, `select_atoms_a` and `select_atoms_b` say which is which
@@ -148,7 +149,7 @@ The role-specific names all still work and say more where they apply:
 `site_selection`, `bilayer_selection`, `axis_selection`, `selection`,
 `selection_a`, `selection_b`. Given both, the role name wins.
 
-**The two spellings are settled when the config is read, not where it is
+**The two spellings are resolved when the config is read, not where it is
 used.** After loading, a block that was given either name carries both, with
 the same value. Nothing downstream has to know which word you wrote, so no
 part of a run can disagree with another about what the block says.
@@ -164,6 +165,7 @@ simulation:
     collective_variable: ligand_distance
     ligand_name: BEN                              # the same word as above
     select_atoms: "resSeq 189 to 195 and name CA"
+    # ...force_constant, centres
 ```
 
 Left out entirely, the ligand is detected from the topology — which works

@@ -12,7 +12,7 @@ records what actually happened.
 
 Every phase can be run on its own. `fastmdx explore` runs all four;
 `fastmdx setup`, `simulate`, `analyze` and `report` run one each. In the
-Config, `include:` and `exclude:` choose which.
+Config, `include_phase:` and `exclude_phase:` choose which.
 
 ---
 
@@ -28,7 +28,7 @@ Then it solvates, adds ions, and writes a serialised system.
 
 **Where the structure does not say enough, it stops.** An unknown residue, a
 ligand whose charge cannot be determined, a clash that means the pose is wrong —
-each produces a refusal naming what could not be decided and what would settle
+each produces a refusal naming what could not be decided and what would decide
 it, rather than a guess that runs.
 
 ### What it decides about a ligand
@@ -129,7 +129,7 @@ the study root for umbrella sampling. Those three are what the
 
 ## analysis
 
-**Analyses the trajectory.** Twenty-four analyses of the system, plus three
+**Analyses the trajectory.** Twenty-eight analyses of the system, plus three
 that read what a biased run itself produced.
 
 Each writes its data, its figure, and the settings it actually used. The full
@@ -149,7 +149,7 @@ in `**kwargs`, so a misspelled `n_clusteres` used to cluster at the default and
 report success.
 
 **Writes** `analysis/<name>/` per analysis, each with `<name>.dat`,
-`<name>.png` and `options.json`, plus `analysis_manifest.json`. On a biased run
+`<name>.png`, `<name>.svg` and `options.json`, plus `analysis_manifest.json`. On a biased run
 it also writes `analysis/reweighted/`.
 
 ---

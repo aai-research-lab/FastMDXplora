@@ -231,9 +231,10 @@ fastmdx explore --config psi.yml
 The free energy lands in `pmf.json` with the barrier, the minima, the range the
 windows covered, and — on a closed turn — how far the profile misses meeting
 itself, which is what that study's statistics are worth. The profile is zeroed
-at its lowest bin, which noise puts low, so the profile and its barrier sit
-about 0.7 of their error high: said, not corrected, in `summary.barrier_zero`
-and `pmf.uncertainty.zero`, with that bin in `pmf.uncertainty.zeroed_at` and
+at its lowest bin, which noise puts low, so the profile sits about 0.7 of its
+error high; a barrier read off it also carries the bins' width, which puts a
+narrow one low, so no direction is claimed for the barrier. Both are said, not
+corrected, in `pmf.uncertainty.zero` and `summary.barrier_zero`, with that bin in `pmf.uncertainty.zeroed_at` and
 the resamples left out of the band there in `pmf.uncertainty.resamples_left_out`.
 
 Sizing a real study, and what to do when one force constant will not hold every
@@ -328,8 +329,8 @@ fastmdx explore --system 1UBQ --output runs/tuned \
   --analyze-cluster-methods kmeans
 ```
 
-Anything else goes in a Config, where an analysis's settings are a block under
-its name:
+Anything else goes in a Config (or as YAML to `--analyze-options`), where an
+analysis's settings are a block under its name:
 
 ```yaml
 analysis:
@@ -398,7 +399,8 @@ execution:
 Four runs, one per device. A numeric sweep axis also gets `trend_<analysis>.png`
 in `comparison/`, which the campaign above does not.
 
-`sweep` is Config-only — there is no flag for it.
+From the command line it is `--sweep simulation.temperature_K=290,300,310,320`
+(once per axis).
 
 ---
 

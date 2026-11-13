@@ -26,13 +26,13 @@ For the flag spelling of any setting below, see
 |---|---|---|---|
 | `output` | str | `./fastmdxplora_<system>_study_<UTC timestamp>` | Where everything goes |
 | `include_phase` | list | all four | Phases to run: `setup`, `simulation`, `analysis`, `report`. Written earlier as `include`, still read |
-| `exclude_phase` | list | — | Phases to skip. Mutually exclusive with `include_phase`; written earlier as `exclude`, still read |
+| `exclude_phase` | list | none | Phases to skip. Mutually exclusive with `include_phase`; written earlier as `exclude`, still read |
 | `explain` | bool | `true` | Say why each step is happening, as it happens |
 | `verbose` | bool | `false` | Stream debug logging to the terminal |
-| `agent` | str | — | `assisted`, `autonomous`, `unvalidated` — see [the Agent](agent.md) |
-| `agent_model` | str | — | Which AI model wrote it, as `provider/model` |
-| `budget_hours` | float | — | A ceiling on GPU hours for the whole study, checked after setup; required for `agent: autonomous` |
-| `decisions` | mapping | — | Why a setting has its value, by its dotted name: `why`, and optionally `source` and `alternatives`. A record; no run reads it |
+| `agent` | str | none | `assisted`, `autonomous`, `unvalidated` — see [the Agent](agent.md) |
+| `agent_model` | str | none | Which AI model wrote it, as `provider/model` |
+| `budget_hours` | float | none | A ceiling on GPU hours for the whole study, checked after setup; required for `agent: autonomous` |
+| `decisions` | mapping | none | Why a setting has its value, by its dotted name: `why`, and optionally `source` and `alternatives`. A record; no run reads it |
 
 `systems`, `sweep` and `execution` are also top-level; they are described in
 [The FastMDXplora Config](config.md).
@@ -45,7 +45,7 @@ For the flag spelling of any setting below, see
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `agent` | str | — | This phase's [Agent](agent.md) mode, where it differs from the study's |
+| `agent` | str | none | This phase's [Agent](agent.md) mode, where it differs from the study's |
 
 ### The structure
 
@@ -53,7 +53,7 @@ What is kept, what is repaired, and how it is protonated.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0–14. A protein residue's charge state comes from its residue type's model pKa (PDBFixer), not shifted by its surroundings, and a histidine's tautomer from its hydrogen bonds (set either with `residue_states`); a ligand's from PROPKA, run on the complex |
+| `ph` | float | `7.4` | pH for hydrogen placement, which sets protonation states. Bounds 0 to 14. A protein residue's charge state comes from its residue type's model pKa (PDBFixer), not shifted by its surroundings, and a histidine's tautomer from its hydrogen bonds (set either with `residue_states`); a ligand's from PROPKA, run on the complex |
 | `residue_states` | map | none | Protonation states in place of setup's own, by chain and number: `{A:57: HIP}`. HIS takes HID, HIE or HIP; ASP ASH or ASP; GLU GLH or GLU; LYS LYN or LYS |
 | `model` | int | none | Which model of a file holding several (an NMR ensemble) to prepare, as the file numbers them; unset, the first. Swept, replicas that start from different structures, which a stopping rule counts as independent starts |
 | `protonation_margin` | float | `1.0` | How close a ligand's pKa may come to the pH before setup stops rather than pick a charge state |
@@ -63,9 +63,9 @@ What is kept, what is repaired, and how it is protonated.
 | `replace_nonstandard_residues` | bool | `true` | Substitute selenomethionine, oxidised cysteine and the like with their standard equivalents |
 | `chains` | list | the declared assembly | Chains to simulate, by deposited ID, as `[A, B]`. Unset, the biological assembly the file declares, or every chain where it declares none |
 | `build_missing_termini` | bool | `false` | Build unresolved residues past the ends of a chain, not only the gaps between resolved ones |
-| `fixed_pdb` | str | — | An already-fixed PDB to use directly, skipping PDBFixer |
-| `preparation_audit` | bool | `false` | Keep a record of each step of the preparation in `setup/preparation_audit.json`: the structure's SHA-256 and counts after each, and a copy within 16 MB a file and 64 MB in all. It only observes: the system prepared is the same with it and without it |
-| `mutations` | list | — | Point substitutions, as `L99A` or `LEU-99-ALA` |
+| `fixed_pdb` | str | none | An already-fixed PDB to use directly, skipping PDBFixer |
+| `preparation_audit` | bool | `false` | Save a record of each step of the preparation in `setup/preparation_audit.json`: the structure's SHA-256 and counts after each, and a copy within 16 MB a file and 64 MB in all. It only observes: the system prepared is the same with it and without it |
+| `mutations` | list | none | Point substitutions, as `L99A` or `LEU-99-ALA` |
 | `mutation_chain` | str | first chain | Which chain the mutations apply to |
 
 A deposited entry is what the experiment produced, not what anyone means to
@@ -77,9 +77,9 @@ with one end free.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `ligand` | str or list | — | SDF or MOL2 file(s); a file holding several molecules is several ligands. Requires `forcefield: amber-openff` |
+| `ligand` | str or list | none | SDF or MOL2 file(s); a file holding several molecules is several ligands. Needs a ligand-capable force field: `auto`, the default, is `amber-openff` |
 | `ligand_name` | str | `LIG` | Residue name assigned to the ligand |
-| `ligand_resname` | str | — | The same setting under the spelling the biasing blocks use. `ligand_name` wins if both |
+| `ligand_resname` | str | none | The same setting under the spelling the biasing blocks use. `ligand_name` wins if both |
 | `ligand_forcefield` | str | per force field | OpenFF small-molecule force field, e.g. `openff-2.2.1` |
 | `ligand_net_charge` | int | from the file | Formal net charge. **Checked against the file, never overriding it** |
 | `ligand_pose` | str | `auto` | Where the starting coordinates come from: `auto`, `structure` or `file` |
@@ -99,10 +99,10 @@ on.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `membrane` | str | — | `POPC`, `POPE`, `DLPC`, `DLPE`, `DMPC`, `DOPC` or `DPPC`. The bilayer is built in the xy plane at z = 0 around the placed protein |
+| `membrane` | str | none | `POPC`, `POPE`, `DLPC`, `DLPE`, `DMPC`, `DOPC` or `DPPC`. The bilayer is built in the xy plane at z = 0 around the placed protein |
 | `membrane_orient` | bool | `false` | Rotate the structure onto its fitted membrane normal and centre it on the fitted bilayer |
 | `membrane_orientation_checked` | bool | `false` | Keep the structure's orientation; its centre along z is fitted |
-| `membrane_center_z_nm` | float | — | The bilayer centre along z in the structure's frame, in nm. Needs `membrane_orientation_checked` |
+| `membrane_center_z_nm` | float | none | The bilayer centre along z in the structure's frame, in nm. Needs `membrane_orientation_checked` |
 
 An OPM file is recognised and keeps its own frame, with none of these set.
 See [Membrane proteins](membranes.md) for how the protein is placed, what is
@@ -118,7 +118,7 @@ refused, and the barostat that is chosen for you.
 | `neutralize` | bool | `true` | Add ions to neutralise the net solute charge |
 | `ion_positive` | str | `Na+` | Counter-ion cation |
 | `ion_negative` | str | `Cl-` | Counter-ion anion |
-| `ion_concentration_M` | float | `0.15` | Ionic strength in molar. Bounds 0–20 |
+| `ion_concentration_M` | float | `0.15` | Ionic strength in molar. Bounds 0 to 20 |
 | `random_seed` | int | drawn and recorded | Seeds where hydrogens and ions are placed, so the same seed prepares the same system. Unset, one is drawn and written to the resolved config |
 
 A dodecahedron holds the same clearance around the solute in roughly 71% of a
@@ -129,11 +129,11 @@ cube's volume, so about a third of the water a cube would need is saved.
 | Setting | Type | Default | What it does |
 |---|---|---|---|
 | `forcefield` | str | `auto` | `auto`, `amber-fb15`, `amber-openff`, `amber14`, `charmm36` |
-| `force_field` | list | — | Raw OpenMM XML file(s), in place of `forcefield`: give one or the other, or the list the name resolves to beside it (as `resolved_config.yml` records them) |
+| `force_field` | list | none | Raw OpenMM XML file(s), in place of `forcefield`: give one or the other, or the list the name resolves to beside it (as `resolved_config.yml` records them) |
 | `constraints` | str | `HBonds` | `None`, `HBonds`, `AllBonds` or `HAngles` |
 | `rigid_water` | bool | `true` | Constrain water bond lengths and angles |
 | `hydrogen_mass_amu` | int or float | off | Hydrogen-mass repartitioning, which allows a longer timestep: more than 1.008 and at most 4.032 amu (four times hydrogen's) |
-| `temperature_K` | int or float | `300.0` | Temperature for **initial velocity assignment** — not the production temperature, which is `simulation.temperature_K` |
+| `temperature_K` | int or float | the run's `simulation.temperature_K` | Temperature for **initial velocity assignment**; unset, the production temperature (`simulation.temperature_K`) |
 
 Only a ligand-capable force field accepts `setup.ligand`; `amber-openff` is the
 one to reach for.
@@ -156,7 +156,7 @@ Defaults suit a solvated protein. Changing one changes the physics.
 | `remove_cm_motion` | bool | `true` | Add a centre-of-mass motion remover |
 
 The cutoff and the switch are taken from the force field when you do not set
-them, and what you set is kept, even where it equals the force field's own. See
+them, and what you set stands, even where it equals the force field's own. See
 [How FastMDXplora works](how_it_works.md#the-nonbonded-cutoff-comes-from-the-force-field).
 
 ---
@@ -167,7 +167,7 @@ them, and what you set is kept, even where it equals the force field's own. See
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `agent` | str | — | This phase's [Agent](agent.md) mode |
+| `agent` | str | none | This phase's [Agent](agent.md) mode |
 
 ### How long it runs
 
@@ -186,7 +186,7 @@ is a time, so the number of steps follows the timestep: at 4 fs, 1.5 ns is
 | `nvt_steps` | int | what 500 ps is at the timestep | In place of `nvt_duration_ns`; both are refused unless they say the same length |
 | `npt_steps` | int | what 1 ns is at the timestep | In place of `npt_duration_ns`; both are refused unless they say the same length |
 | `ensemble` | str | from `npt_steps` | `npt` or `nvt` production. Set `nvt` to equilibrate at constant pressure and then produce at constant volume, in the box NPT equilibration ended with (its last box, not its mean) |
-| `stop_when` | map | — | Run until what the study is for is known, rather than for a fixed length. See below |
+| `stop_when` | map | none | Run until what the study is for is known, rather than for a fixed length. See below |
 
 `stop_when` states the quantities the study is for, how well each must be determined,
 and a ceiling; `duration_ns` is then the first piece:
@@ -211,10 +211,10 @@ By default the runs must be replicas and must agree with each other. See
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `setup_from` | str | — | A finished study or setup directory to simulate from instead of running setup again |
-| `prepared_from` | str | — | The earlier name for `setup_from`, still accepted |
-| `resume_from` | str | — | A checkpoint this run continues from, or a study directory to extend in place |
-| `extra_ns` | float | — | With `resume_from` naming a study: production to add to what it has |
+| `setup_from` | str | none | A finished study or setup directory to simulate from instead of running setup again |
+| `prepared_from` | str | none | The earlier name for `setup_from`, still accepted |
+| `resume_from` | str | none | A checkpoint this run continues from, or a study directory to extend in place |
+| `extra_ns` | float | none | With `resume_from` naming a study: production to add to what it has |
 | `resume_unsealed` | bool | `false` | Accept a checkpoint with no seal beside it |
 | `minimize` | bool | `true` | Run energy minimisation before equilibration |
 | `minimize_tolerance_kjmol_per_nm` | int or float | `10.0` | Minimisation force tolerance |
@@ -254,7 +254,7 @@ this for you — see [Continuing a study that stopped](agent.md#continuing-a-stu
 |---|---|---|---|
 | `temperature_K` | int or float | `300.0` | Production temperature |
 | `pressure_bar` | int or float | `1.0` | Monte Carlo barostat pressure (OpenMM-native) |
-| `pressure_atm` | int or float | — | The same in atm. `pressure_bar` wins if both |
+| `pressure_atm` | int or float | none | The same in atm. `pressure_bar` wins if both |
 | `friction_per_ps` | int or float | `1.0` | Langevin thermostat friction |
 | `barostat_frequency` | int | `25` | Volume-move attempt interval in steps |
 
@@ -265,13 +265,13 @@ this for you — see [Continuing a study that stopped](agent.md#continuing-a-stu
 | `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `variable_langevin`. `brownian` needs a friction of about 100 per ps at 2 fs and 300 K. `verlet` and `variable_verlet` (no thermostat) are not offered; an older record naming one reads |
 | `timestep_fs` | int or float | `2.0` | Integrator timestep |
 | `integrator_error_tolerance` | float | `0.001` | The variable-timestep integrator (`variable_langevin`) only |
-| `random_seed` | int | unset | Integrator seed. Fixes the dynamics, not the solvation |
+| `random_seed` | int | none | Integrator seed. Fixes the dynamics, not the solvation |
 
 ### Enhanced sampling
 
-Each is a **block of settings**, not a value. All four are Config-only in
-practice — the command line has a flag for each, but a flag cannot carry a
-mapping.
+Each is a **block of settings**, not a value. Each flag takes the block as a
+YAML mapping (`--simulate-umbrella '{collective_variable: distance, ...}'`,
+and `--umbrella` on `simulate`); a Config is the readable place for one.
 
 | Setting | Type | What it does |
 |---|---|---|
@@ -280,8 +280,9 @@ mapping.
 | `metadynamics` | mapping | Fill the free energy landscape along a named coordinate |
 | `plumed` | mapping | `enabled` and `script` — raw PLUMED input, as text or a path |
 
-`--simulate-plumed-script PATH` is the exception: it sets
-`plumed: {enabled: true, script: …}` on the `explore` command.
+`plumed` is reached by a path instead: `--simulate-plumed-script PATH` on
+`explore`, or `--plumed-script PATH` on `simulate`, sets
+`plumed: {enabled: true, script: …}`.
 
 Every key each block takes is in
 [Studies beyond a box of water](studies.md).
@@ -290,7 +291,7 @@ Every key each block takes is in
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `restrain` | str or list | — | What to hold still during equilibration. A selection, or a list of restraint blocks. Each selection is parsed with MDTraj before a run |
+| `restrain` | str or list | none | What to hold still during equilibration. A selection, or a list of restraint blocks. Each selection is parsed with MDTraj before a run |
 | `restraint_release` | list | `[1000, 500, 100, 0]` | Force constants stepped through during equilibration, in kJ/mol/nm² |
 | `restrain_production` | bool | `false` | Keep restraints on during production |
 
@@ -305,7 +306,7 @@ results.
 |---|---|---|---|
 | `platform` | str | `auto` | `auto`, `CUDA`, `OpenCL`, `CPU`, `HIP` |
 | `precision` | str | `mixed` | `single`, `mixed`, `double` |
-| `device_index` | str | — | GPU index on a multi-GPU machine, e.g. `"0"` or `"0,1"` |
+| `device_index` | str | none | GPU index on a multi-GPU machine, e.g. `"0"` or `"0,1"` |
 
 `auto` takes the fastest available and says which it chose. Ask for a platform
 by name when you are checking whether the hardware is reachable at all — an
@@ -351,15 +352,15 @@ Nothing leaves the machine: these are files in the run directory that the
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `agent` | str | — | This phase's [Agent](agent.md) mode |
+| `agent` | str | none | This phase's [Agent](agent.md) mode |
 
 ### What to analyse
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
 | `include` | list | the default plan | Only these analyses |
-| `exclude` | list | — | Everything but these. Mutually exclusive with `include` |
-| `options` | mapping | — | Per-analysis settings, keyed by analysis name |
+| `exclude` | list | none | Everything but these. Mutually exclusive with `include` |
+| `options` | mapping | none | Per-analysis settings, keyed by analysis name |
 
 The 31 names `include` and `exclude` accept:
 
@@ -382,8 +383,8 @@ what gates it.
 |---|---|---|---|
 | `trajectory` | str | `simulation/production.dcd` | The trajectory to analyse |
 | `topology` | str | `simulation/trajectory_topology.pdb`, else `simulation/topology.pdb` | The topology that matches it |
-| `select_atoms` | str | — | Which atoms. Overrides `scope` |
-| `selection` | str | — | The earlier name for `select_atoms`. `selection` wins if both |
+| `select_atoms` | str | none | Which atoms. Overrides `scope` |
+| `selection` | str | none | The earlier name for `select_atoms`. `selection` wins if both |
 | `scope` | str | `solute` | `solute`, `protein`, `ligand`, `all` |
 
 `scope` is shorthand that resolves to a real selection — see
@@ -423,17 +424,17 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `agent` | str | — | This phase's [Agent](agent.md) mode |
+| `agent` | str | none | This phase's [Agent](agent.md) mode |
 
 ### What it says
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
 | `title` | str | from the system name | The study's title |
-| `author` | str | — | Who it is by |
+| `author` | str | none | Who it is by |
 | `include_methods` | bool | `true` | The methods paragraph |
 | `include_reproducibility` | bool | `true` | The reproducibility section |
-| `region_highlights` | list | — | Residue ranges to shade on the RMSF trace and colour on the structure |
+| `region_highlights` | list | none | Residue ranges to shade on the RMSF trace and colour on the structure |
 | `comparison` | bool | `true` | The cross-run comparison, for a study of more than one run |
 
 `region_highlights` entries take `label`, `start`, `end` and an optional
@@ -459,7 +460,7 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 |---|---|---|---|
 | `mode` | str | `sequential` | `sequential` or `parallel` |
 | `workers` | int | one per device, else CPU count capped at the run count | How many runs at once |
-| `devices` | list | — | GPU indices; runs are pinned round-robin |
+| `devices` | list | none | GPU indices; runs are pinned round-robin |
 | `continue_on_error` | bool | `true` (`false` for umbrella) | Carry on when one run fails |
 
 Setting `workers` or `devices` implies `mode: parallel` — see

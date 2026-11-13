@@ -24,7 +24,7 @@ systems:                          # one or more; always a list
   - system: 1UBQ
     id: wild_type                 # optional; s1, s2… if omitted
 
-include: [setup, simulation, analysis, report]   # which phases
+include_phase: [setup, simulation, analysis, report]   # which phases
 
 setup:
   ph: 7.4
@@ -65,8 +65,8 @@ nearest match.
 |---|---|---|
 | `systems` | list | **Required.** One entry per system. See below |
 | `output` | str | Where everything goes. Defaults to `./fastmdxplora_<system>_study_<UTC timestamp>` |
-| `include` | list | Which phases to run: `setup`, `simulation`, `analysis`, `report`. Also accepted as `include_phase`, which is the spelling `resolved_config.yml` writes |
-| `exclude` | list | Which phases to skip. Mutually exclusive with `include`. Also accepted as `exclude_phase` |
+| `include_phase` | list | Which phases to run: `setup`, `simulation`, `analysis`, `report`. Written earlier as `include`, still read; `resolved_config.yml` writes `include_phase` |
+| `exclude_phase` | list | Which phases to skip. Mutually exclusive with `include_phase`. Written earlier as `exclude`, still read |
 
 ### The phases
 
@@ -127,7 +127,7 @@ with the same mapping as YAML or JSON.
 FastMDXplora's own defaults (300 K, a 2 fs timestep, pH 7.4) are written in
 the schema. A lab has its usual choices too: its assays run at 310 K, it
 prepares at pH 7.0, it always uses one force field. Written once in a file
-called `fastmdx-defaults.yml` in the folder your studies are kept in, they
+called `fastmdx-defaults.yml` in the folder your studies are saved in, they
 fill what a new study leaves unset:
 
 ```yaml
@@ -145,7 +145,7 @@ The starting velocities follow: `setup.temperature_K` left unset is each
 run's `simulation.temperature_K`, whether that comes from the study, these
 defaults, a system entry or a sweep value, and the run's
 `resolved_config.yml` says which. A `setup.temperature_K` the study sets
-is kept.
+stands.
 
 The file holds the blocks that say how a study is simulated (`setup`,
 `simulation`, `analysis`, `report`, `execution`), each setting checked as
@@ -290,8 +290,9 @@ refused where a run would not read it:
 
 For repeated runs of one setting, sweep `simulation.random_seed`.
 
-**`sweep` is Config-only.** There is no command-line flag for it, which is one
-of the reasons a real campaign lives in a file.
+**From the command line**, `--sweep AXIS=VALUES` gives one axis (once per
+axis: `--sweep simulation.temperature_K=300,310,320`); a real campaign still
+reads best in a file.
 
 ---
 
@@ -459,7 +460,7 @@ A few settings have an older name that is still accepted:
 | `umbrella.centres` | `centers` | `centres` |
 | `umbrella.selection_a` / `_b` | `select_atoms_a` / `_b` | `selection_a` / `_b` |
 
-**They are settled when the Config is read, not where it is used.** After
+**They are resolved when the Config is read, not where it is used.** After
 loading, a block given either name carries both, with the same value, so no
 part of a run can disagree with another about what it says. Where both are
 given with different values, the winner is the one in the third column — the
@@ -516,7 +517,7 @@ fastmdx explore --config runs/original/resolved_config.yml --output runs/repeat
 
 It is the Config file you gave, **plus any command-line flags or API arguments
 folded in**, with `systems` canonicalised to a list and the alias spellings
-settled. So a run started as
+resolved. So a run started as
 
 ```bash
 fastmdx explore --config study.yml --setup-ph 6.0
@@ -550,10 +551,10 @@ setup:
   nonbonded_cutoff_nm: 1.0  # the force field's own, as nothing was stated
   use_switching_function: false   # AMBER is not switched
 analysis:
-  include: [rmsd, rmsf, rg, cluster]   # the default set, named
+  include: [rmsd, rmsf, rg, cluster]   # the plan the run resolved, every name written (abridged here)
 ```
 
-Both halves are kept, and they agree. Where a derived value and its source sit
+Both halves are saved, and they agree. Where a derived value and its source sit
 together, the derived one wins on replay — `production_steps` over the
 `duration_ns` it came from — so you get the same run either way. **That is only
 safe because the number written is the run's own answer.** A step count that was
@@ -568,7 +569,7 @@ is one you did not ask for: no membrane, no ligand, no mutation, no particular
 chain. `null` is the value, not a question the file failed to answer.
 
 The one setting the run derives without recording is `report.title`, which falls
-back to `FastMDXplora Study — <system>`. That is a heading on the report, not a
+back to `FastMDXplora Study: <system>`. That is a heading on the report, not a
 property of the study: replay it on any version and you get the same
 trajectory, the same analyses and the same numbers, under a title that may
 be worded differently. It is in the first group, not a gap in the second.

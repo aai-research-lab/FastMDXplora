@@ -9,6 +9,7 @@ Each writes its data, its figure, and the settings it actually used:
 analysis/<name>/
 ├── <name>.dat            the numbers
 ├── <name>.png            the figure, at figure_width (the page unless set)
+├── <name>.svg            the same figure, as SVG
 ├── <name>_greyscale.png  only with figure_colours: both
 └── options.json          selection, every option, findings, and the .dat format
 ```
@@ -72,7 +73,7 @@ the closest approach of any heavy atom of the solute to any heavy atom of its
 images, every image the
 solute could reach searched (the shifts enumerated from the closest approach
 plus the solute's diameter, however many cells that is), in a cell of any
-shape, found with a k-d tree; kept as a series
+shape, found with a k-d tree; saved as a series
 (`image_check.dat`), with the frames under the cutoff and under 0.5 nm
 counted, and the closest
 approach with its frame, its time and its two atoms (`findings.solute_image`).
@@ -167,8 +168,7 @@ check is not said while the run goes; a ligand's approach
 to an image of the protein is not recorded apart from the complex's; the
 note is not graded by thresholds (above); the GUI's map of time against time
 plots its last block a full block wide where the figure plots it its own
-width; several workers clustering at once each plan on the same memory; and
-no frame cap is set by default (a cap is the person's choice); and fetching a
+width; several workers clustering at once each plan on the same memory; and fetching a
 study from another machine does not yet give its sizes by kind.
 
 ### The bilayer
@@ -247,7 +247,7 @@ counted as used, as the kernel takes it back before it kills anything in the
 group), and its address-space or data limit (`ulimit -v`) less what it
 holds, the record saying which was least and the refusal saying it in words
 ("the container allows", "this machine has", "the process may use"). The
-peak is counted as resident memory measured it, compiled code's copies
+peak is counted in resident memory, compiled code's copies
 included (17 n^2 bytes beside the matrix for an average or complete
 linkage). The map is plotted from the averaged matrix after the full one is
 freed, and the figures before it collected; the dendrogram is the
@@ -274,10 +274,12 @@ MB (106 MiB) at the least. On `features: coordinates`,
 k-means, Ward and DBSCAN make no matrix at all. `dimred`'s MDS makes the same
 matrix and is checked the same way (16 n^2 bytes, the matrix and its centred
 square), checked before any of its methods runs and refused past it with the
-stride that fits under `analysis: {stride: k}` ("every 2nd frame"); PCA,
-t-SNE and UMAP make none, and asked for beside a refused MDS they still run
-and their projections are saved, the refusal recorded (`findings.mds_refused`)
-and said in the report, on each projection's figure (PNG and SVG) and below
+stride that fits under `analysis: {stride: k}` ("every 2nd frame"); PCA and
+UMAP make none, and t-SNE's neighbour lists, which grow with the frames, are
+planned on their own. A method that does not fit is refused alone, recorded
+under `findings.methods_refused` (MDS's also as `findings.mds_refused`), and
+the others still run and their projections are saved (where every method
+asked for is refused, so is the analysis), the refusal said in the report, on each projection's figure (PNG and SVG) and below
 it in the GUI.
 
 `rmsd`, `cluster` and `dimred` superpose the frames on their selection, which
@@ -405,7 +407,7 @@ contain which two. Running them anyway would mean picking a pair, which is
 answering the question rather than analysing it.
 
 **Naming an analysis in `include` runs it regardless of its gate**, which is
-how you get `rdf` out of a run whose trajectory does carry solvent, or a
+how you get `rdf` out of a run its gates leave it out of, or a
 coordination number between the two groups you meant.
 
 ---
@@ -434,7 +436,7 @@ against another tool.
   `ligand_rmsf` starts after the later of the receptor's equilibration and the
   ligand's, the ligand's found on its heavy-atom, symmetry-corrected RMSD in
   the receptor frame (over every frame, a ligand settling 0.4 nm over the
-  first fifth of a run read 1.7 times its fluctuation over the settled
+  first fifth of a run read 1.7 times its fluctuation over the equilibrated
   frames). Where that start leaves out more than a third of the run, which a
   change of pose or an unbinding also causes, it is said, and the value over
   every frame is recorded beside it.
@@ -541,7 +543,7 @@ against another tool.
 
 - **Molecules are made whole when a trajectory is loaded**, and put in one
   periodic copy; an analysis given a trajectory some other way (straight from
-  `md.load`, or edited after loading) measures its bonds and makes a split
+  `md.load`, or edited after loading) checks its bonds and makes a split
   one whole on a copy first, and says so. The protein and nucleic chains are kept together, and every
   other solute molecule (a ligand, an ion) is moved to the copy whose centre
   is nearest theirs, searched exactly for any box shape. So a radius of

@@ -25,9 +25,12 @@ FastMDXplora(
     config_data=None,     # dict | None — the same, already parsed
     output_dir=None,      # str | PathLike | None
     options=None,         # dict[str, dict] | None — settings, by phase
+    study_options=None,   # dict | None — top-level settings, checked with options
     verbose=False,
     include_phase=None,   # list[str] | None
     exclude_phase=None,   # list[str] | None
+    include=None,         # the earlier spelling of include_phase
+    exclude=None,         # the earlier spelling of exclude_phase
 )
 ```
 
@@ -110,8 +113,13 @@ study.explore(
     exclude_phase=None, # list[str] | None
     options=None,       # dict[str, dict] | None — merged over the constructor's
     report=True,        # False drops the report phase
-    dry_run=False,      # plan only; writes nothing
+    dry_run=False,      # plan only; runs nothing
     force=False,        # run into an output directory that already holds results
+    include=None,       # the earlier spelling of include_phase
+    exclude=None,       # the earlier spelling of exclude_phase
+    rerun_windows=None, # list[int] | None — umbrella windows to run again, in place
+    check=False,        # raise StudyFailed if any run failed (below)
+    keep_previous=False,  # as force, saving what is replaced in previous/<phase>
 )  # -> list[RunResult]
 ```
 
@@ -126,7 +134,7 @@ the command line (`--include-phase`) and the GUI use, so one spelling
 serves all four. `include=` and `exclude=` are still accepted for
 existing scripts; giving both spellings with different values is refused
 rather than guessed at. `study.analyze(include=...)` is a different list
--- the analyses to run -- and keeps its name.
+(the analyses to run) and keeps its name.
 
 Or one phase at a time. Each takes the same settings as its Config block and
 returns a `PhaseResult`:
@@ -194,6 +202,7 @@ class PhaseResult:
     artifacts: list[str]         # relative to output_dir
     refusal: dict                # Refusal.as_dict(), on an errored phase
     produced_by: dict            # {version, host, environment}
+    taken_from: str              # where a phase that did not run here took its output from
     def to_dict(self) -> dict
 ```
 
@@ -295,7 +304,7 @@ The registry is open:
 ```python
 from fastmdxplora.analysis import available_analyses, get_analysis_class, register_analysis
 
-available_analyses()              # the 27 names, in execution order
+available_analyses()              # the 31 names, in execution order
 get_analysis_class("rmsd")
 register_analysis("my_analysis", MyAnalysis)
 ```
@@ -339,16 +348,16 @@ schema_as_json()                                  # the same, structured
 
 The same study is an afternoon on one GPU and a fortnight on another, and that
 difference is larger than any difference between two studies. So the machine is
-measured once, and estimates come from the measurement.
+timed once, and estimates are computed from that.
 
 ```python
 from fastmdxplora.cost import measure_this_machine, estimate_study, calibrate_from_runs
 
 measure_this_machine()
-# k = 5.0e-07 s per particle-step, from 2000 steps on 3000 particles in 3.0s
+# Calibration(seconds_per_particle_step=5e-07, particles=3000, steps=2000, seconds=3.0, ...)
 
-estimate_study(study, particles=62_000, platform_name="CUDA", precision="mixed")
-# about 5.0 days for 25,000,000 steps on 62,000 particles
+estimate_study(config, particles=62_000, platform_name="CUDA", precision="mixed")  # config: a Config, as a dict
+# about 9.0 days for 25,000,000 steps on 62,000 particles
 ```
 
 This is covered, with what it does and does not account for, in
@@ -374,7 +383,7 @@ else:
 ```python
 print(sampling_shortfall(rmsd_series, target_independent=10, frame_interval_ns=0.01))
 # 8.7 independent samples of the 10 needed. At one every 54 frames,
-# that is 72 further frames, about 0.72 ns more.
+# that is 72 further frames, about 720 ps more.
 ```
 
 Both numbers come from the same statistical inefficiency estimated from *this*
@@ -418,7 +427,7 @@ print("\n".join(describe_sending(sending)))   # what travels, sizes, job.sh
 job = api.send_planned(sending)
 
 api.status(job.name)               # asked of the machine at most every 30 s
-sizes = api.fetch_sizes(job.name, max_age_s=30)  # bytes, kept 30 s once ended
+sizes = api.fetch_sizes(job.name, max_age_s=30)  # bytes, cached 30 s once ended
 job, warnings = api.fetch(job.name, with_trajectory=False,
                           most_bytes=sizes.bringing(False))  # caps any one file
 job = api.cancel(job.name)         # "abandoned" once stopped; an ended job as it ended
@@ -497,7 +506,7 @@ The top-level `__all__`:
 ```python
 FastMDXplora, AnalysisOrchestrator, Refusal, StudyFailed, refusal_of,
 MIN_PYTHON, MAX_PYTHON, python_range_string,
-__version__, __author__, __license__, __expansion__, __citation__, __doi__
+__version__, __author__, __license__, __copyright__, __expansion__, __citation__, __doi__
 ```
 
 `AnalysisOrchestrator` resolves lazily, so `import fastmdxplora` does not pull
@@ -635,7 +644,7 @@ read before comparing a result against another tool.
    :no-index:
 ```
 
-The full per-analysis reference — every one of the 27 classes, its options and
+The full per-analysis reference — every one of the 31 classes, its options and
 what each changes — is in [The FastMDXplora analyses](analyses.md).
 
 ---
