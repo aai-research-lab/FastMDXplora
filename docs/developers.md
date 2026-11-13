@@ -248,12 +248,12 @@ success.
 The core never imports a package that extends it. Such a package names what
 it offers as entry points, `fastmdxplora/plugins.py` reads them, and the core
 does the registering, at one place: the foot of `analysis/__init__.py`, after
-its own analyses. The bilayer analyses are the first to live this way, in
-`packages/fastmdxplora-membrane/`.
+its own analyses. The first package of this project's own built this way is in
+`packages/`.
 
 ```toml
 [project.entry-points."fastmdxplora.analyses"]
-lipid_order = "fastmdxplora_membrane.lipid_order:LipidOrder"
+my_analysis = "my_package.analysis:MyAnalysis"
 ```
 
 The entry point's name is the analysis's name, as `analysis.include` gives
@@ -270,9 +270,8 @@ it, and it loads to a subclass of `Analysis`. Four rules:
   a study's results, manifest and report are in the order they always were.
   An analysis from anywhere else runs after those, by name.
 - **A module that moved keeps its old path.** List it under
-  `fastmdxplora.moved_modules` (`"fastmdxplora.analysis.lipid_order" =
-  "fastmdxplora_membrane.lipid_order"`) and an `import` of the old path gives
-  the new module.
+  `fastmdxplora.moved_modules` (`"fastmdxplora.analysis.my_analysis" =
+  "my_package.analysis"`) and an `import` of the old path gives the new module.
 
 A plug-in that fails to load is left out, with a warning naming it and why,
 and the core starts without it; `fastmdx info` lists each plug-in and how it
@@ -283,15 +282,10 @@ this project's own to be named when it is absent, add it to
 `plugins.FIRST_PARTY`: an absent package cannot say what it would have
 offered.
 
-In a clone, install the core and its plug-ins in one command, since each
-requires the other:
-
-```bash
-pip install -e ".[dev]" -e packages/fastmdxplora-membrane
-```
-
-A clone installed before a module moved still runs: a package in `packages/`
-that is not installed is read from where it sits, and `fastmdx info` says so
+In a clone, install the core and the packages in `packages/` in one command,
+since each requires the other (the development install above). A clone
+installed before a module moved still runs: a package in `packages/` that is
+not installed is read from where it sits, and `fastmdx info` says so
 (`checkout`).
 
 ---
