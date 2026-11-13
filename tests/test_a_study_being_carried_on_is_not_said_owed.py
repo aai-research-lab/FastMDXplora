@@ -255,35 +255,65 @@ def test_a_resume_on_another_machine_of_a_shared_file_system_is_seen(tmp_path: P
 
 
 @pytest.mark.skipif(os.name == "nt", reason="a lock is tried by flock")
-def test_a_resume_starting_as_the_gui_tries_the_lock_is_not_refused(tmp_path: Path) -> None:
+def test_a_resume_starting_as_the_gui_tries_the_lock_is_not_refused(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import fcntl
     import threading
 
+    from fastmdxplora import runs_here
     from fastmdxplora.simulation.resume import CARRYING_ON_FILE, _carrying_on
 
     root = _study(tmp_path, marker=True)
     lock = root / CARRYING_ON_FILE
     lock.write_text("{}", encoding="utf-8")
-    taken, done = threading.Event(), threading.Event()
+    taken, refused = threading.Event(), threading.Event()
+    letting_go, let_go = threading.Event(), threading.Event()
+    tried = runs_here._lock
+
+    def trying(path: Path) -> int | None:
+        try:
+            return tried(path)
+        except runs_here.StartRefused:
+            refused.set()
+            # The next try comes once the probe has let go, however slow
+            # this host is to run it.
+            let_go.wait(10)
+            raise
+
+    monkeypatch.setattr(runs_here, "_lock", trying)
 
     def probe() -> None:
-        # As `_lock_held` does: the lock taken shared for an instant.
+        # As `_lock_held` does: the lock taken shared for an instant, here
+        # until the resume has found it taken once.
         handle = os.open(lock, os.O_RDONLY)
         try:
             fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
             taken.set()
-            time.sleep(0.02)
+            refused.wait(10)
         finally:
+            # Set before the lock is let go: once the resume holds it, this
+            # is set, whenever this thread runs again.
+            letting_go.set()
             os.close(handle)
-            done.set()
+            let_go.set()
 
     thread = threading.Thread(target=probe)
     thread.start()
     try:
         assert taken.wait(10)
-        # Refused, "A run of this study is still going", in that instant.
+        # Refused once in that instant ("A run of this study is still
+        # going" before it was tried again), then taken once the probe let go.
         with _carrying_on(root):
-            assert done.is_set()
+            assert refused.is_set()
+            assert letting_go.is_set()
+            assert let_go.is_set()
+            # Held by the resume now: the GUI's probe finds it taken.
+            other = os.open(lock, os.O_RDONLY)
+            try:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(other, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            finally:
+                os.close(other)
     finally:
         thread.join()
 
