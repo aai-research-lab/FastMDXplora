@@ -1,0 +1,6 @@
+# What Read the Docs installs to build these pages (.readthedocs.yaml):
+# FastMDXplora with its `docs` extra, and the package of its own that it
+# requires, both from this checkout. Paths are from the repository's root,
+# where the build runs `pip install -r` on this file.
+./packages/fastmdxplora-membrane
+.[docs]
