@@ -43,7 +43,8 @@ OpenMM builds a bilayer of one of seven lipids.
 | `DLPE` | 12:0 / 12:0 | 303 K (30 °C) | Thin, ethanolamine head group |
 | `DPPC` | 16:0 / 16:0 | 314 K (41 °C) | The classic model bilayer; fluid only above about 320 K |
 
-Transition temperatures are those of Koynova and Caffrey (1998). **Below its
+Transition temperatures are those of Koynova and Caffrey (1998) for the
+phosphatidylcholines and Silvius (1982) for the ethanolamines. **Below its
 main transition a bilayer's equilibrium is the gel phase**, which a simulation
 reaches, if at all, over far longer than a run, and which force fields
 reproduce less well than the fluid. The area per lipid and thickness then
@@ -255,6 +256,9 @@ and not the same quantity.
   *J. Comput. Chem.* 31, 2169 (2010). The method `addMembrane` follows.
 - Koynova and Caffrey. Phases and phase transitions of the
   phosphatidylcholines. *Biochim. Biophys. Acta* 1376, 91 (1998).
+- Silvius. Thermotropic phase transitions of pure lipids in model membranes
+  and their modifications by membrane proteins. In *Lipid-Protein
+  Interactions*, vol. 2, ed. Jost and Griffith, 239 (Wiley, 1982).
 - Kučerka, Nieh and Katsaras. Fluid phase lipid areas and bilayer thicknesses
   of commonly used phosphatidylcholines as a function of temperature.
   *Biochim. Biophys. Acta* 1808, 2761 (2011).

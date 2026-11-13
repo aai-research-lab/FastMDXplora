@@ -80,11 +80,14 @@ $ fastmdx agent model
   AI model:
     [1] Anthropic
     [2] OpenAI
-    [3] Other (any OpenAI-compatible URL)
+    [3] Other (any OpenAI-compatible server)
   > 1
-  AI model [claude-sonnet-5-5]:
+  AI model [claude-sonnet-4-6]:
   API key (leave blank to read ANTHROPIC_API_KEY from the environment instead):
   > sk-ant-...
+  Keep the instructions in Anthropic's cache for [auto]: auto (an hour on the
+  Agent page, five minutes here), 1h or 5m. ...
+  >
 
   ✓ Saved to ~/.config/fastmdxplora/model.json
   ✓ Key stored there, readable only by you. It is never written into a study.
@@ -189,7 +192,7 @@ inventing the water.
 So the run goes in two parts:
 
 ```
-setup                 cheap, minutes, and it settles the count
+setup                 cheap, minutes, and it fixes the count
 estimate              from that count, on this machine
 simulation onwards    the expensive part, if it fits
 ```
@@ -204,7 +207,7 @@ study prepares the one system its windows share and is priced on every window,
 each with its own equilibration, and on the pull that seeds them where it asks
 for one.
 
-**When it refuses, setup's output is kept.** It cost minutes and it is worth
+**When it refuses, setup's output is saved.** It cost minutes and it is worth
 having: a shorter study reuses it through `simulation.setup_from`, and the
 particle count is what made the refusal possible. The message names the
 estimate and the budget, because "too expensive" is usually answered by a
@@ -518,12 +521,12 @@ would fix it" for one that stopped.
 
 **Useful or Wrong** under each reply marks it: a thumb up and a thumb down,
 each named on hover and to a screen reader, filled while pressed (a second
-press takes it back). The mark is kept with the conversation (in the study's
+press takes it back). The mark is saved with the conversation (in the study's
 `agent/conversations/`, or the workspace's
 `.fastmdxplora_agent_conversations/` for a chat of no study) for evaluating
-the Agent; it is sent nowhere, and nothing reads the marks yet. Beside them,
-what the reply took in tokens ("17,899 tokens in (17,806 from the cache) ·
-498 out").
+the Agent; it is sent nowhere, and nothing reads the marks yet. Beside them, a
+button (*Tokens this reply took*): pressed, it shows what the reply took in tokens ("17,899 tokens in
+(17,806 from the cache) · 498 out"), hidden again by a second press.
 
 **On a phone** the bar across the top carries FastMDXplora's mark, the study
 and the pages; the conversations are behind its chat icon.
@@ -628,7 +631,7 @@ Each request goes to the AI model with three things beside the schema:
 
 - **The conversation so far**, the last twelve turns whole, and up to 48
   before them kept as what was decided and what is still open (below), so a
-  request that refers to one can be read and what was settled early in a
+  request that refers to one can be read and what was decided early in a
   long thread is not lost.
 - **The current Config**, the last one the Agent wrote. A request is a change
   to it unless it plainly describes a different study: the whole Config comes
@@ -782,11 +785,11 @@ AlphaFold DB is said as a prediction, with its confidence, and its file is
 yours to download into the workspace. Where the PDB cannot be reached, or
 answers with an error, nothing is guessed in its place: the Agent asks for
 the identifier or a structure file. A search takes at most a minute in all,
-and an answer is kept for a week, so a conversation does not ask twice.
+and an answer is saved for a week, so a conversation does not ask twice.
 
 What it looked at is folded under its reply, each look in words ("Looked up
 "trp-cage" in the PDB, checked the config"), with what it found in a line and
-what the software said in full under that, and kept with the thread. From the
+what the software said in full under that, and saved with the thread. From the
 command line, `fastmdx agent` prints a line for each, in the same words.
 
 Under it, **What I read for this reply**: each step the Agent took for
@@ -794,7 +797,7 @@ this reply (each time its AI model was asked), what it was given, as it
 went. Replying by tool calls, its instructions (the same each step, shown
 once), the tools it could use and the messages it had not been given
 before, a look's result among them; in text, each prompt. The page and the
-terminal speak as the Agent: its AI model is named only in its settings. It is kept beside the conversation, as
+terminal speak as the Agent: its AI model is named only in its settings. It is saved beside the conversation, as
 `agent/conversations/receipts/<sha256>.json` (the newest 100, the system
 prompt once in `receipts/systems/`), each text bounded to 64,000 characters
 with the cut marked, read only when the fold is opened and checked against
@@ -844,7 +847,7 @@ the Agent.
 The reply is shown as the AI model writes it, and each look as it is taken; a
 config appears line by line. While it is written the send button is a stop:
 pressing it ends the reply, the request to the AI model is closed with it, and
-nothing it had written is kept. The next message goes on from yours. Both
+nothing it had written is saved. The next message goes on from yours. Both
 stream shapes the providers use are read, content-block events and the OpenAI
 chat shape, so a local or compatible server streams too.
 
@@ -855,7 +858,7 @@ residues that move or hold the ligand, a colouring by one of its results) may
 end with a proposed scene. It is shown under the answer in words ("A scene to
 show this: frame 40, coloured by rmsf, resSeq 20 to 25 highlighted"), with a
 name you can change and a **Write this scene** button. Nothing is written until
-you press it: the scene is then kept with the study (`scenes/<name>.mvsx`,
+you press it: the scene is then saved with the study (`scenes/<name>.mvsx`,
 MolViewSpec) and shown in the Viewer, and a thread opened again says it was
 written. The Agent writes the proposal as one line, `SHOW: frame 40; colour
 result:rmsf; highlight resSeq 20 to 25`, read by a strict pattern: a part it
@@ -902,7 +905,7 @@ naming where the run is:
 
 ```
 Stop the run at production step 16,000?
-What it has written so far is kept.
+What it has written so far is saved.
 ```
 
 with **Stop it** and **Keep running**. Anything that is not *yes* is *Not
@@ -921,8 +924,8 @@ production the study should end with (or `extra_ns` for an amount more), the
 same meanings the command line gives them. What is done is read from the
 record: the parent's resolved config has the equilibration lengths, the
 checkpoint's sidecar has the step. Stopped at whole-run step 321,000 with
-100,000 of equilibration, 0.442 ns of production is done; 0.5 ns in all
-leaves 0.058. The study is extended in place from its last checkpoint, with
+100,000 of equilibration, 442 ps of production is done; 500 ps in all
+leaves 58 ps. The study is extended in place from its last checkpoint, with
 the same prepared system and no minimisation or equilibration, which is what
 makes it the same trajectory rather than a new run from a snapshot; every
 segment is then joined and the analyses rerun, and the GUI watches the study
@@ -955,7 +958,7 @@ replies `rerun windows 3 at 6000`. The software reads the windows and the
 numbers from that line, checks them against the study, builds the command
 from the study's own record (`--rerun-window` with `--rerun-force-constant`
 or a length) and asks you, with the spring in its unit and the price at the
-study's speed. Every other window is kept. The Agent uses the values you gave;
+study's speed. Every other window is left as it is. The Agent uses the values you gave;
 asked for a stiffer spring or a longer run without a number, it asks for one.
 
 Ask it to analyse the study open again, or to add an analysis to it (*add
@@ -964,7 +967,7 @@ with the analyses by their names in the software (`analyze again rmsd rg
 sasa hbonds`), or alone for those the study ran last; ask for its report
 again and it replies `write the report again`. The software checks the
 names against its own, says what will be written again and that what it
-replaces is kept in the study's `previous/` folder, and runs the phase
+replaces is saved in the study's `previous/` folder, and runs the phase
 command with `--rerun` on the study when you say yes (`fastmdx analyze
 --output <study> --rerun`, or `fastmdx report` for the report). Nothing is simulated. Setup and simulation
 are not run again on a study that has them; the Agent writes a new study
@@ -1013,7 +1016,7 @@ short one without saying so each time.
   stays open; after that the line is changed or forgotten in Settings. One message
   changes at most five lines of each kind. A message of a few words
   (*yes*, *run it*) is not read. It costs one short call to your AI model
-  per message read, not counted in the reply's *Used*; turn it off and the
+  per message read, not counted in the tokens said for the reply; turn it off and the
   memory changes only when you change it.
 - **It shapes answers; it sets no value.** A setting you want in every
   study (310 K, TIP3P water) belongs in your
@@ -1027,11 +1030,12 @@ short one without saying so each time.
   wording varies, so a line may get through; the Agent is told that no line
   loosens its rules, and every Config is still checked and every run and
   stop still asked, whatever the memory says. A line about how you work
-  ("You never run without checking the equilibration.") is kept, and so is
+  ("You never run without checking the equilibration.") is saved, and so is
   a wish for more care ("You want to be asked before a trajectory is
   deleted."), which the Agent keeps to.
 - **It is a file you can open.** `agent_memory.md` in your settings folder
-  (`~/.config/fastmdxplora/`, or `FASTMDXPLORA_CONFIG_DIR`), readable by
+  (`FASTMDXPLORA_CONFIG_DIR`, or `%APPDATA%\fastmdxplora\` on Windows, or
+  `$XDG_CONFIG_HOME/fastmdxplora/`, by default `~/.config/fastmdxplora/`), readable by
   you alone: the two switches, then one line to a bullet under
   *Remembered*, each with a note after it saying where it came from. The
   Agent is told the bullets under *Remembered* and nothing else. Change it
@@ -1047,7 +1051,7 @@ short one without saying so each time.
   one line added, reworded or removed, and its Undo), and every other byte
   stays as you left it: each line's own ending (`\n`, `\r\n`), a last line
   without one, the encoding (UTF-8 with or without its mark, UTF-16,
-  Windows' cp1252), and a link to the file kept elsewhere. A line the memory does not keep (a key, an instruction past the
+  Windows' cp1252), and a link to the file saved elsewhere. A line the memory does not keep (a key, an instruction past the
   checks, a value for every study, a line written twice, one past the 60 it holds, a switch written
   under *Remembered*) stays where it is, not told, and Settings and
   `fastmdx agent memory` say why. A switch is read by its first word, yes
@@ -1069,7 +1073,7 @@ short one without saying so each time.
   is, and nothing is changed until it can be.
 - **It stays with you.** Never in a Config, a shared study or a deposit.
   The AI model is told it with each message, as it is told your defaults,
-  so the receipt of what a reply was sent, kept with the study's
+  so the receipt of what a reply was sent, saved with the study's
   conversation in its `agent/` folder, holds it too; a shared study and the
   study's zip leave `agent/` out, a copy of the folder by hand does not.
 
@@ -1086,7 +1090,7 @@ what you typed as the GUI's Agent does, saying each change. From Python,
 serves it.
 
 **Served by a service** (`fastmdx gui --hosted`), the GUI serves one person,
-and their memory is kept where the service says, a folder or its own
+and their memory is saved where the service says, a folder or its own
 database ([Serving the GUI to other people](hosting.md#the-agents-memory-of-each-person)).
 There the Agent learns from your chats only once you turn that on. A
 service that keeps none gives the Agent none.

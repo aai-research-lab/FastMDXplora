@@ -109,12 +109,14 @@ interaction the result named would rest on a guess the caller could not see.
 | Salt bridge | charged group centres < 4.5 Å | ProLIF (Bouysset & Fiorucci 2021) |
 | π-stacking | ring centres < 5.5 Å, planes within 30° of parallel or perpendicular, offset < 2.0 Å | PLIP |
 | π-cation | charge to ring centre < 6.0 Å, offset < 2.0 Å | PLIP |
-| Halogen bond | X···A < 3.5 Å, C-X···A 130–180° | ProLIF |
+| Halogen bond | X···A < 3.5 Å, C-X···A 130 to 180°, X···A-R 80 to 140° | ProLIF |
 | Metal coordination | metal to donor < 3.0 Å | PLIP |
 | Water bridge | one water 2.5–4.1 Å from each side, angle at the water 71–140° | PLIP |
 
-Every threshold is a setting, because the published values disagree and the
-disagreement is real rather than a rounding difference.
+Every threshold is a parameter of its rule in
+`fastmdxplora.analysis.interactions`, because the published values disagree and
+the disagreement is real rather than a rounding difference; the analysis runs
+them at these defaults.
 
 **Where the tools disagree, the literature decides and the disagreement is
 recorded.** Two cases:
@@ -122,14 +124,16 @@ recorded.** Two cases:
 *Hydrogen bond geometry.* PLIP allows 4.1 Å and 100°; the literature standard
 is 3.5 Å and 120°. FastMDXplora defaults to the stricter pair, because a force
 field positions its hydrogens and a criterion written for structures with
-inferred hydrogens does not need to be as forgiving. PLIP's values remain
-reachable.
+inferred hydrogens does not need to be as forgiving. PLIP's values are
+reached by calling the rule functions directly; they are not options of
+`pl_interactions`, which refuses them as `analysis.option.inapplicable`.
 
 *Fluorine as a halogen-bond donor.* PLIP counts it; ProLIF does not.
 Politzer and co-workers attribute fluorine's failure to halogen bond to its
 electronegativity and sp hybridisation neutralising the σ-hole, and organic
 fluorine bound to carbon is unlikely to participate. FastMDXplora excludes it
-by default; `include_fluorine` matches PLIP.
+by default; the halogen rule's `include_fluorine` matches PLIP, called directly
+as the thresholds are.
 
 ---
 
@@ -140,9 +144,12 @@ oxygens and a guanidinium's across all three nitrogens, so the centre is the
 group's, not any one atom's. An early version included the carboxylate carbon
 and put the centre in the wrong place.
 
-**Histidine is excluded from protein charges.** It titrates near physiological
-pH, and its protonation was decided in the setup phase; contradicting that
-decision downstream is worse than leaving it out.
+**Histidine's charge is the one setup decided.** It titrates near
+physiological pH, and its protonation was decided in the setup phase, so it is
+read from the hydrogens the prepared system gives it: a cation only with both
+HD1 and HE2 (where it carries no hydrogens, a name that states it: HIP, HSP,
+HISH or HSH). Contradicting that decision
+downstream would be worse than reading it.
 
 **Ring planes are fitted, not taken from three atoms.** A ring puckers, and
 three atoms of a puckered ring give a normal that swings with which three were
@@ -166,9 +173,10 @@ stayed; one present in 450 alternating frames formed and broke 450 times. Both
 are fifty per cent, and only the second has an error bar worth printing.
 
 So each interaction is reported with its occupancy, the number of separate
-times it formed, and a standard error computed from **episodes rather than
-frames** — using the frame count gives a number several times too small,
-because consecutive frames are correlated.
+times it formed, and a standard error that counts the **correlation between
+frames**, `sqrt(p(1 - p) g / N)` with `g` the statistical inefficiency of the
+present-or-absent series: using the frame count alone gives a number several
+times too small, because consecutive frames are correlated.
 
 Transitions between binding modes are counted always and given as
 probabilities only where enough were observed. A matrix from three switches is
@@ -189,7 +197,7 @@ difference is a defect; both are choices, and FastMDXplora counts unreduced
 because reduction is a decision the reader should make.
 
 **MDTraj's `baker_hubbard` agrees** on the protein-internal hydrogen bonds,
-which is the expected result since FastMDXplora uses the same criterion.
+which is the expected result since the `hbonds` analysis uses the same criterion.
 
 ---
 

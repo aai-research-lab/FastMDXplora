@@ -108,7 +108,7 @@ Each code declares which it is:
 |---|---|
 | `permitted_values` | The complete legal set |
 | `field_only` | The name of the offending or missing setting, not a value for it |
-| `action` | An exact remedy that is not a scientific judgement — an install command, a path, a `curl` |
+| `action` | An exact remedy that is not a scientific judgement: an install command, a path |
 | `nothing` | Nothing. The software does not know |
 
 The gate is enforced by the registry rather than by the raise site.
@@ -176,7 +176,7 @@ The companion question is how much further the run would have to go:
 ```python
 print(sampling_shortfall(rmsd_series, target_independent=10, frame_interval_ns=0.01))
 # 8.7 independent samples of the 10 needed. At one every 54 frames,
-# that is 72 further frames, about 0.72 ns more.
+# that is 72 further frames, about 720 ps more.
 ```
 
 Both numbers come from the same statistical inefficiency the refusal used,
@@ -211,7 +211,7 @@ for remedy in remedies_of("runs/umbrella"):
 # each, which should record the 200 values a histogram needs, keeping every
 # other window. Run: `fastmdx explore -c study.yml --output runs/umbrella
 # --simulate-duration-ns 4 --rerun-window 1 3`. Costs 8 ns of production and
-# 0.4 ns of equilibration across 2 runs; at this study's own speed on CUDA,
+# 400 ps of equilibration across 2 runs; at this study's own speed on CUDA,
 # about 7 h one after another.
 ```
 
@@ -238,7 +238,7 @@ The price is production and equilibration in nanoseconds, and the wall time
 at the speed recorded in the study's own `cost.json`, or in another run of
 the same study where the one that stopped recorded no speed. That speed
 includes minimisation and equilibration, so the time errs long. Where no
-speed was ever measured, no time is given.
+speed was ever recorded, no time is given.
 
 ---
 
@@ -313,10 +313,10 @@ A few you are likely to meet, and what each means.
 | `setup.ligand.hydrogens_overlap` | A hydrogen from the ligand file, built on the structure's pose from internal coordinates (the file's X-H length and H-X-Y angles, its rotor turned to its clearest torsion, a planar one only flipped within its plane), still comes within 1.0 Å of an atom three or more bonds away. The atoms are named; supply a file with hydrogens placed on the structure's pose. Bond lengths and angles are recorded, never refused |
 | `environment.path.exists` | The output directory already holds results: `--force-overwrite` if you mean to, or another output. Sending to a machine, `--force-overwrite` is itself refused while the job of that name is still waiting or running (here, on another machine, or in a cluster's queue), or while a process works in its folder: wait for it or cancel it, or give another `--output`. See [Remote machines](remote.md#sending-a-study) |
 | `environment.demo.absent` | The demo study has not been published for this release, or the folder named holds none |
-| `environment.demo.unverified` | What was fetched as the demo study does not hash to the SHA-256 this release records, or is not a demo study; nothing is kept |
-| `environment.share.not_finished` | A study asked to be shared is running, stopped short, or is a study of several runs (share one run's folder). See [Sharing a study](sharing.md) |
+| `environment.demo.unverified` | What was fetched as the demo study does not hash to the SHA-256 this release records, or is not a demo study; nothing is saved |
+| `environment.share.not_finished` | A study asked to be shared is running or stopped short, a run of a study of several did not finish, its prepared system is not found, a file of it is a link or cannot be read, something a reader needs is missing (an author, a topology, its resolved Config), or it is being shared already. A study of several runs is shared whole. See [Sharing a study](sharing.md) |
 | `environment.share.unscrubbed` | A packed text file still names the study's folder, a home folder or the computer after they were replaced; nothing is written |
-| `environment.share.not_a_study` | What was given to open is not a shared FastMDXplora study, or keeps a profile version this release does not read |
+| `environment.share.not_a_study` | What was given to open is not a shared FastMDXplora study, or is of a profile version this release does not read |
 | `environment.share.unsafe` | A shared study's archive names a path outside itself, a link or a device, or unpacks to more than the limit; nothing is opened |
 | `environment.share.too_large` | A shared study's archive is over the download limit; `--open-most-gb` allows more |
 | `environment.share.unverified` | A file of a shared study is missing, not listed, or not the size or SHA-256 its packing list gives, or the archive is not the one Zenodo recorded; nothing is opened |
@@ -329,7 +329,7 @@ A few you are likely to meet, and what each means.
 | `environment.path.not_found` | A named file is not where the run was started from |
 | `environment.path.not_saved` | A record of the study could not be saved: its writer failed, as MDTraj's does on a full disk. The record named is left as it was; make room and ask again |
 | `analysis.memory.matrix_too_large` | Clustering's frame-by-frame RMSD matrix, or MDS's in `dimred`, and the copies made of it, would not fit in the memory this process can take: the least of the machine's available memory, its control group's limit less its usage (a SLURM job's, a container's) and its `ulimit -v` or data limit less what it holds (three quarters of it is planned on; under `ulimit -v`, all of the address space left once the libraries are mapped, with what a run maps past them, and each `dimred` method planned on its own, the others still run where one is refused). The frames, the bytes needed and available, and the stride that fits are named: set `stride: k` under `analysis.options.cluster` to cluster every k-th frame, never under the stride `max_frames` chose (for MDS, `analysis: {stride: k}`, or PCA, which makes no matrix). Where the room is under the least a clustering takes, no stride is named. The other analyses still run on every frame |
-| `environment.service.unreachable` | RCSB did not answer. The message carries the exact `curl` to run elsewhere |
+| `environment.service.unreachable` | An external service did not answer: RCSB, Zenodo, the AI model's provider and others. Where RCSB could not be reached, the message carries the `curl` to run elsewhere; an entry RCSB holds in neither format does not |
 | `environment.service.busy` | The GUI was preparing other exact frames and this one waited too long. Retryable: open it again |
 | `environment.service.machine_unreachable` | `ssh` could not reach a machine. The message quotes `ssh`'s own reason; try `ssh <name>` in the same terminal |
 | `remote.machine.unknown` | A machine that has not been inspected here. `fastmdx remote --machine <name>` first |

@@ -45,8 +45,10 @@ Gln NE2, Trp NE1, the arginine nitrogens and amide, aniline and pyrrole
 nitrogens are not acceptors. The halogen bond takes its acceptors from the
 same rule.
 
-Every threshold is a setting, because the published values disagree and the
-disagreement is a real one rather than a rounding difference. PLIP allows a
+Every threshold is a parameter of its rule in
+`fastmdxplora.analysis.interactions`, because the published values disagree
+and the disagreement is a real one rather than a rounding difference; the
+analysis runs them at these defaults. PLIP allows a
 hydrogen bond at 4.1 Å and 100°; the literature standard is 3.5 Å and 120°.
 This is not the criterion of the `hbonds` analysis, which is Baker and
 Hubbard's 2.5 Å from the hydrogen to the acceptor, nor of `pl_hbonds`, which is
@@ -56,13 +58,17 @@ same bonds: an O-H···O 3.3 Å apart at 180° is a hydrogen bond here and not 
 (`hydrogen_bond_criterion` here, `criterion` in the other two) and on its axis.
 The stricter values are the default here, because a force field positions its
 hydrogens and a criterion written for structures with inferred hydrogens does
-not need to be as forgiving. PLIP's values remain reachable.
+not need to be as forgiving. PLIP's values are reached by calling the rule
+functions directly (`hydrogen_bonds(..., distance_nm=0.41, angle_deg=100.0)`):
+they are not options of `pl_interactions`, which refuses them as
+`analysis.option.inapplicable`.
 
 Where the tools disagree about chemistry rather than geometry, the literature
 decides and the disagreement is recorded. PLIP counts fluorine as a halogen
 bond donor; ProLIF does not. Organic fluorine bound to carbon has a negative
-σ-hole and does not halogen bond, so it is excluded by default and
-`include_fluorine` matches PLIP for anyone comparing.
+σ-hole and does not halogen bond, so it is excluded by default; the halogen rule's
+`include_fluorine` matches PLIP for anyone comparing, called directly as the
+thresholds are.
 
 ## The chemistry comes first
 
@@ -139,7 +145,8 @@ So each interaction is reported with:
   frames, with `g` the statistical inefficiency of the present-or-absent
   series: consecutive frames are correlated, and using the frame count alone
   gives a number several times too small. Left empty where the contact formed
-  fewer than twice
+  fewer than twice, or where a correlated presence (`g` of 2 or more) holds
+  fewer than 25 independent samples
 - **well sampled** — whether it rests on enough independent observation to
   average
 
@@ -167,7 +174,7 @@ T4 lysozyme L99A with benzene bound (PDB 181L) is the standard test case for a
 purely hydrophobic binding site. A short run of it finds hydrophobic contacts
 and nothing else — benzene has no donors, no acceptors, no charge and no
 halogens — with the highest occupancy on ALA99, which is the mutation that
-creates the cavity:
+creates the cavity (columns abridged):
 
 ```
 kind,ligand_atom,protein_atom,occupancy,episodes,well_sampled,residue

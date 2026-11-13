@@ -9,8 +9,9 @@ Each is a setting on the `setup` or `simulation` block of a
 [Config](config.md), so each is available from the [GUI](gui.md), the
 [CLI](cli.md) and the [API](api.md) without anything further. The three biasing
 methods take a **block** of settings rather than one value, so they are
-Config-only in practice — the GUI gives them a box you write the block into,
-one setting per line, exactly as it appears in a file.
+written as a block: in a file, in the GUI's box (one setting per line, exactly
+as it appears in a file), or as YAML to `--simulate-umbrella`,
+`--simulate-steered` and `--simulate-metadynamics`.
 
 ---
 
@@ -67,7 +68,7 @@ A distance, angle or torsion with **no `target`** is held where it is in the
 prepared structure, the one position restraints hold to (minimisation runs
 with the restraints on), and the value it was held at is recorded with the
 run. In a periodic box every separation is the nearest image, as the forces
-measure it. A target is in nm or radians; one outside what the coordinate can
+compute it. A target is in nm or radians; one outside what the coordinate can
 be (an angle of 109.5, meant in degrees) is refused.
 
 A `restraint_release` other than the default cannot be given with
@@ -224,7 +225,7 @@ energy.
 
 **The bias is kept on a grid wherever the variable has a real bound.** Without
 one, PLUMED adds up every hill deposited so far at every step, and a long run
-slows without end: on one torsion run, the slowing measured over its first
+slows without end: on one torsion run, the slowing timed over its first
 8,000 hills puts 100 ns at about 19 hours, against about 7 on a grid.
 A grid only works if the variable can never leave it, since PLUMED stops the
 run when it does, so the bound has to be one the variable cannot cross:
@@ -378,10 +379,14 @@ energy from a steered run.
 `from` has to be the value the coordinate **actually has** at the start. It is
 refused rather than guessed, because a pull that begins somewhere the molecule
 is not spends its first half hauling the system to the anchor and reports work
-that means nothing. Compute it before writing the Config:
+that means nothing. Compute it before writing the Config: the distance
+between the centres of mass of the ligand and of `site_selection`, on the
+equilibrated frame, is the first value of `pair_distance` over the same two
+groups (`LIG` is `ligand_name`'s default):
 
 ```bash
-fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses rg
+fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses pair_distance \
+  --options '{pair_distance: {selection_a: "resname LIG", selection_b: "resid 84 to 121 and name CA"}}'
 ```
 
 On a correct pull the work profile starts at zero and increases; work that goes
@@ -467,8 +472,10 @@ interval to a few per cent and is the part of recombination that takes time:
 on seventeen windows the curve took a twentieth of a second and its interval
 fourteen seconds. `bootstrap_resamples` sets the count, fewer for a quick look,
 more for a figure, 0 for the curve alone; the count used is in `pmf.json`.
-The curve is zeroed at its lowest bin, which noise puts low, so the curve and a
-barrier read off it sit about 0.7 of their error high. The interval has no
+The curve is zeroed at its lowest bin, which noise puts low, so the curve sits
+about 0.7 of its error high; a barrier read off it also carries the bins'
+width, which puts a narrow one low, so no direction is claimed for a barrier
+(below). The interval has no
 width at that bin, recorded as `pmf.uncertainty.zeroed_at`; the offset is said
 in `pmf.uncertainty.zero` and `summary.barrier_zero`, not corrected, and
 `pmf.uncertainty.resamples_left_out` counts the resamples empty there and so
@@ -1019,7 +1026,7 @@ fastmdx explore --config study.yml --rerun-window 9
 ```
 
 Window 9 runs again in `runs/window-09`, from the same prepared system and the
-same starting structure; every other window is kept as it is, and the free energy is
+same starting structure; every other window is left as it is, and the free energy is
 recombined from the whole set. The earlier run of window 9 is moved to
 `superseded/`, not deleted. From Python, `explore(rerun_windows=[9])`.
 

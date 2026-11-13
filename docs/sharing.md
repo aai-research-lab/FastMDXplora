@@ -60,7 +60,7 @@ followed to the file it came from, and its Config run again.
 | What the run recorded | energies, the live record the Overview plots, the cost, how the run ended | the final and minimised states, the checkpoint, the logs |
 | The analyses | every analysis's numbers, options and figures (PNG) | the figures as SVG, the clusters' medoids as structures |
 | The report | `report.md` and the pictures it shows | the PDF, the slides and the standalone page |
-| Kept from the Viewer | saved views, named selections, scenes | movies |
+| Saved from the Viewer | saved views, named selections, scenes | movies |
 
 ### A study of several runs
 
@@ -223,7 +223,7 @@ included. A request that makes a draft or a new version is asked again
 only after a 429, which Zenodo gives before doing anything. A new draft is
 asked for under a title of its own (`FastMDXplora: sharing <study>
 (<eight letters and digits>)`, the study's folder name in plain letters,
-replaced by the study's title once it is filled in), kept in `shared_to.json` first. Where the answer to making it is lost
+replaced by the study's title once it is filled in), saved in `shared_to.json` first. Where the answer to making it is lost
 once the request had gone (a 5xx, a connection cut while waiting for the
 answer, or an answer naming another draft or record), your drafts are
 looked through for that title for up to about two

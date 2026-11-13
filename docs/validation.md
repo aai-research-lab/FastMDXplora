@@ -1,11 +1,11 @@
 # How FastMDXplora is validated
 
-Distinct from the test suite, which **asserts**. This **measures**: rates,
+Distinct from the test suite, which **asserts**. This **counts**: rates,
 comparisons against independent implementations, and the numbers a paper would
 quote. Nothing here decides whether a build is good; it says what the build
 does.
 
-Three things are measured, each against a different kind of reference.
+Three things are counted, each against a different kind of reference.
 
 ---
 
@@ -24,8 +24,8 @@ perfectly on sensitivity alone.** Measuring only defects rewards
 obstructiveness; measuring only clean cases rewards permissiveness.
 
 ```python
-from fastmdxplora.validation.corpus import run_corpus
-report = run_corpus()
+from fastmdxplora.validation.corpus import run_corpus, DEFECTS, CLEAN
+report = run_corpus(DEFECTS, CLEAN)
 ```
 
 Each case carries what it is, what it expects, **why** it expects that, and
@@ -69,6 +69,7 @@ python -m fastmdxplora.validation.cross_tool negative     runs/study
 | `interactions` | Protein–ligand interactions against ProLIF |
 | `observables` | Geometric observables against MDAnalysis |
 | `negative` | That a system with no interactions reports none |
+| `probe` | Both tools' evidence for one residue, named with `--residue` (over `--frames` of them, 50 by default), for a row that escapes its tolerance |
 
 **The tolerances are pre-registered** — decided before any comparison was run:
 5.0 percentage points on a harmonised occupancy, 10⁻³ nm on an observable.
@@ -220,7 +221,7 @@ FastMDXplora and, where it runs from a checkout, the commit it was asked
 from: an editable install reports the version it had when installed,
 whatever is checked out since.
 
-**The run kept in the suite.** The first run with an AI model
+**The run saved in the suite.** The first run with an AI model
 (`tests/data/agent_eval/run_2026-10-13.json.gz`, version 1, which replays
 under version 2) is replayed in the suite, with no AI model and no network,
 in a few seconds: a change to the loop, the validator or the judging that
@@ -284,7 +285,7 @@ registration.
 
 **What the Agent's context adds.** The `context` kind was asked twice the
 same day, by the same AI model against the same 1L2Y study, with the
-Agent's context and without it. Both runs are kept in the suite
+Agent's context and without it. Both runs are saved in the suite
 (`tests/data/agent_eval/context_2026-10-13.json.gz` and
 `context_without_2026-10-13.json.gz`) and replay to every verdict:
 
@@ -310,11 +311,11 @@ against, are under **Results** in version 2's registration.
 **The docs set without an AI model.** `--docs-only` searches the docs for
 each docs question as `read_docs` does and says where among the four
 passages it returns the first from the right section comes. On `6b6cc69f`,
-as registered: first for 15 of 31, among the four for 24. That measures the
+as registered: first for 15 of 31, among the four for 24. That counts the
 search alone, and is the number a change to it should move.
 
 **The marks people give.** `--marks FOLDER` reads the Useful and Wrong
-marks on the Agent's replies in the conversations kept there, and lists
+marks on the Agent's replies in the conversations saved there, and lists
 each reply marked Wrong with what was asked. They are read, not scored: a
 Wrong is a candidate case for the set's next version, registered before it
 is asked.
@@ -396,7 +397,10 @@ curve's zero.
 
 The curve is set to zero at its lowest bin, which noise puts low: between
 the window centres it sits about 0.7 of its error above the truth (a median
-0.68), so barriers read high. The band's middle sits on the curve (+0.01
+0.68). A barrier read off it also carries the bins' width, which puts a narrow
+one low (a 20 kJ/mol escape barrier came out 19.43 to 19.87, each +/- 0.15 to
+0.23), so no direction is claimed for a barrier; this check reads the curve,
+not barriers. The band's middle sits on the curve (+0.01
 of its error), so the band carries the curve's offset and adds none. Over
 the bins between the window centres the band held the truth in 91.4% of
 them; with the curve, each resample and the truth zeroed instead at their
@@ -407,7 +411,8 @@ the band holds the truth only where the truth's own lowest bin is the same
 one. The offset is said in `pmf.json` beside the band
 (`pmf.uncertainty.zero`) and beside a barrier (`summary.barrier_zero`), and
 not corrected: the curve is zeroed at its lowest bin, which noise puts low,
-so the curve and a barrier read off it sit about 0.7 of their error high.
+so the curve sits about 0.7 of its error high, and no direction is claimed
+for a barrier.
 
 The bootstrap error is the curve's spread from set to set within a few per
 cent, read with the mean zeroing: 1.02 on these sets, 0.97 on seeds 1000
@@ -634,8 +639,8 @@ atoms lean to. A rotor whose hydrogens come within 1.5 Å of an atom three or
 more bonds away is turned: an sp3 one (OH, NH3+, CH3) to its clearest torsion,
 a planar one (an amide's NH2, a vinyl's =CH2, an amidinium's) only to the
 other of its two in-plane positions; an imine's =N-H, whose two are its E and
-Z, keeps the file's and is recorded crowded (`kept_crowded`). Setup keeps a
-copy of each ligand file in `setup/ligands/`, and the setup record keeps the
+Z, keeps the file's and is recorded crowded (`kept_crowded`). Setup saves a
+copy of each ligand file in `setup/ligands/`, and the setup record holds the
 copy's path and SHA-256, where it came from, the mapping of its heavy atoms to
 the structure's, and the stereochemistry checked (`ligand_poses`).
 
@@ -649,7 +654,7 @@ for ligand in check_ligand_mappings("studies/3ptb"):
 ```
 
 The check holds the prepared system's own ligand atoms (`setup/topology.pdb`)
-to the copy of the file setup kept, never to a pose it has just placed. The
+to the copy of the file setup saved, never to a pose it has just placed. The
 prepared ligand must be the same molecule, in the file's order and bonded as
 the file's, every heavy atom within 0.002 nm of the structure atom the mapping
 puts it on, with the file's stereochemistry wherever it is judged, no hydrogen

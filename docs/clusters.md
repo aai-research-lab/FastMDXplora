@@ -59,7 +59,7 @@ build into a five-minute install.
 ```bash
 python -c "
 for m in ('openmm','mdtraj','pdbfixer','sklearn','pandas','matplotlib',
-          'scipy','yaml','pptx','PIL','numpy'):
+          'scipy','yaml','pptx','PIL','numpy','markdown','threadpoolctl'):
     try:
         __import__(m); print(f'  {m:12} present')
     except ImportError:
@@ -71,11 +71,14 @@ python --version
 for your laptop, which is very likely a different architecture:
 
 ```bash
-pip download fastmdxplora python-pptx --no-deps \
-  --platform manylinux2014_x86_64 --python-version 39 \
+pip download fastmdxplora python-pptx markdown threadpoolctl --no-deps \
+  --platform manylinux2014_x86_64 --python-version 311 \
   --only-binary=:all: -d wheels
 tar czf wheels.tgz wheels
 ```
+
+`--python-version` is the target's (`python --version` above, 3.10 to 3.13,
+written without the dot), and the list is what it reported missing.
 
 `--no-deps` matters. Without it pip re-resolves the whole tree and fails on
 packages that have no wheel — MDTraj among them — even where the requirement is
@@ -86,7 +89,7 @@ it rather than replaced:
 
 ```bash
 tar xzf wheels.tgz
-pip install --user --no-index --find-links=wheels fastmdxplora python-pptx
+pip install --user --no-index --find-links=wheels fastmdxplora python-pptx markdown threadpoolctl
 ```
 
 Where `--user` is not allowed, a virtual environment layered over the site one
@@ -357,4 +360,6 @@ thing to bring home if the trajectory is too large to move.**
 
 A [Manifest](manifest.md) written on a cluster records that machine's absolute
 paths. Reading `output_dir` literally after an `rsync` is what fails; use
-`find_artifact`, which re-roots them under the directory you actually have.
+`find_artifact` from `fastmdxplora.validation.cross_tool` (see
+[the Manifest](manifest.md)), which re-roots them under the directory you
+actually have.

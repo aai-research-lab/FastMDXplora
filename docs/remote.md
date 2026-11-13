@@ -380,7 +380,7 @@ room has gone.
 
 What a run needs is learned from the runs on that machine. Each job's script
 reads its processes' GPU memory every 15 s, and once a job that ran one run at
-a time on the GPU chosen for it has ended done, the most it held is kept with
+a time on the GPU chosen for it has ended done, the most it held is saved with
 the particles its runs on the GPU (CUDA or OpenCL; nothing is learned where one
 was shorter than three readings, read perhaps before it held its memory) had
 and their precision (`gpu_memory/<machine>.json` in the settings folder; only
@@ -665,7 +665,7 @@ A study's Config never names a machine. `gpu-box` is an alias in your own
 `~/.ssh/config` and means nothing in anyone else's, so a Config that named it
 would stop being something that runs anywhere.
 
-The records are kept with your other settings, one file per machine:
+The records are saved with your other settings, one file per machine:
 `~/.config/fastmdxplora/machines/<name>.json` (`%APPDATA%\fastmdxplora` on
 Windows), or under `FASTMDXPLORA_CONFIG_DIR` where that is set. Beside them,
 `gpu_memory/<name>.json` keeps the GPU memory the last 20 runs there held,

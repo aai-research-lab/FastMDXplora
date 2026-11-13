@@ -38,9 +38,11 @@ starts do not inherit it.
    sent. A request without the right secret is answered with an empty 403,
    before the server looks at it.
 3. **Pass the public name through** as `Host`, or one of the names given with
-   `--allowed-host`. A POST must carry an `Origin` that is one of them, over
-   `http` or `https`, which a browser tab on the page the GUI served does by
-   itself.
+   `--allowed-host`. A POST whose `Origin` is not one of them, over `http` or
+   `https`, is refused, and so is an API request a browser marks as
+   cross-site; a browser tab on the page the GUI served sends its own
+   `Origin`, and a request with no `Origin` (a script, `curl`) is answered,
+   the secret above still required.
 4. **Name the person**, if the service shows one, in `X-FastMDX-Account-Name`
    (below), and **remove** any copy of that header a caller sent.
 
@@ -88,7 +90,7 @@ with: set it in their environment too.
 `--product-logo` replaces FastMDXplora's mark, as the tab's icon and over the
 folded sidebar, and the AAi Research Lab's logo, the avatar at the foot of the
 sidebar where nobody is signed in: a PNG, JPEG,
-GIF, WebP, ICO or SVG picture (told by its content), at most 256 KB, read once
+GIF, WebP, ICO or SVG picture (told by its content), at most 256 KiB, read once
 when the GUI starts and put into each page it serves. A 128 px PNG is enough.
 
 The person is named at the foot of the sidebar, with their initials, from a
@@ -125,7 +127,7 @@ On a person's own computer the Agent keeps a short memory of them in their
 settings folder ([What the Agent remembers of you](agent.md#what-the-agent-remembers-of-you)).
 A hosted GUI's settings folder is its operator's, so it keeps none there.
 One hosted GUI serves one person's workspace, and the service says where
-that person's memory is kept, with one of:
+that person's memory is saved, with one of:
 
 ```bash
 fastmdx gui --hosted ... --memory-dir /srv/memories/person-7
@@ -141,7 +143,7 @@ fastmdx gui --hosted ... --memory-store example-db
   as an entry point in the group `fastmdxplora.memory_stores`; the entry
   point is a store, or a function given `workspace=` (the one folder this
   GUI serves) that returns one. A store has `where` (what the person is told
-  of where it is kept), `learns_at_first` (False for a service), `read()`
+  of where it is saved), `learns_at_first` (False for a service), `read()`
   and `write(text)` for the memory as Markdown, `read_changes()` and
   `write_changes(text)` for the changes as JSON, `held()` (a lock while one
   is read and written back, across threads and processes alike: the
@@ -160,7 +162,7 @@ With neither, the Agent keeps no memory and Settings says so; with both,
 the GUI does not start. In a hosted GUI the Agent learns from a person's
 chats only once they turn that on in Settings: a service reading what its
 people write for a memory is each person's to choose. The person is told
-it is kept by the service, never a path on the server: a memory that cannot
+it is saved by the service, never a path on the server: a memory that cannot
 be read or written is said in a sentence, and the detail goes to the
 server's log. The service can read it as it can the person's studies, and
 should say so to its people, and removes it when it removes the person.

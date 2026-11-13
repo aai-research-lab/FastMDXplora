@@ -34,7 +34,7 @@ fastmdx explore --system your.pdb --output runs/smoke \
   --simulate-production-steps 5000
 ```
 
-Ten picoseconds through every phase. It proves the structure prepares, the
+Twelve picoseconds through every phase (ten of production). It proves the structure prepares, the
 system builds, the platform works and the report writes — which is everything
 except the length. A setup problem found after six hours of production is the
 same problem found in two minutes.
@@ -54,10 +54,10 @@ measured once, and estimates come from the measurement.
 from fastmdxplora.cost import measure_this_machine, estimate_study
 
 measure_this_machine()
-# k = 5.0e-07 s per particle-step, from 2000 steps on 3000 particles in 3.0s
+# Calibration(seconds_per_particle_step=5e-07, particles=3000, steps=2000, seconds=3.0, ...)
 
 estimate_study(config, particles=62_000, platform_name="CUDA", precision="mixed")
-# about 5.0 days for 25,000,000 steps on 62,000 particles
+# about 9.0 days for 25,000,000 steps on 62,000 particles
 ```
 
 **One number is measured: seconds per particle per integration step.** Molecular
@@ -382,7 +382,7 @@ run's own page in a study of several, read held to the run (it reads of its
 study only its record of its rounds, `stopping.round_stopped_when_asked`
 and `stopping.round_failed`, and its rule's card is the study's,
 `server.stopping_card`); the Report page (`report_page`, the round's sentence above the runs
-so far, or above a study of one run's report); `fastmdx share`
+so far, or above a study of one run's report); `fastmdx report --share`
 (`sharing.pack.finished_manifest`, for a study of one run or several, before
 it reads each run); the CLI's last line and
 exit code, `batch_manifest.json` and the comparison report; and the report
@@ -434,7 +434,7 @@ file walks every reader, each run's page and its rule's card in its held
 read, over each state it builds (a rule never applied, a piece not joined,
 runs joined and not analysed, stopped in a round, cut, failed, failed in its
 join, a resume that died, a resume refused, completed) and checks they
-agree, what each fix gives, what `fastmdx share` does, the CLI's last line
+agree, what each fix gives, what `fastmdx report --share` does, the CLI's last line
 and exit code, and that no read is refused.
 
 **How far to trust the precision it states.** Stopping as soon as an error
@@ -758,7 +758,8 @@ resume` writes it. A first
 Ctrl-C after a SIGTERM (a scheduler's, the GUI's Stop, a broken pool's)
 asks the stop already under way, and says so once, on the terminal ("Ctrl+C
 received: the stop asked already is under way ... Press Ctrl+C again to stop
-now."), so a run still saves at its frame; a second Ctrl-C means now, and
+now."), so a run still in production saves at its frame (after a broken pool,
+the run whose worker was killed has ended already); a second Ctrl-C means now, and
 the study says "Stopping now", with the `fastmdx resume` of the study. Either
 way the study records where it stopped (the retryable
 `simulation.run.stopped`, and its round stopped when asked), the GUI says
@@ -786,7 +787,7 @@ fastmdx resume runs/study
 |---|---|
 | Every phase of its plan recorded as done, and no extension since | Nothing |
 | All of production, and not its analyses or report | The analyses and the report, over the whole trajectory |
-| Part of production | The rest of it, from the last sealed checkpoint, then the join and the analyses, as [extending a study](#long-runs-and-segments) does; a segment that stopped before its first checkpoint is set aside (`segment-001-stopped-before-its-checkpoint`, its frames kept) and run again from the piece before it, for the length it was asked to run; an extension stopped past its checkpoint runs the rest of what it was asked, past the plan too |
+| Part of production | The rest of it, from the last sealed checkpoint, then the join and the analyses, as [extending a study](#long-runs-and-segments) does; a segment that stopped before its first checkpoint is set aside (`segment-001-stopped-before-its-checkpoint`, its frames saved) and run again from the piece before it, for the length it was asked to run; an extension stopped past its checkpoint runs the rest of what it was asked, past the plan too |
 | No production yet, or none as far as its first checkpoint | The whole study again: nothing it wrote can be continued from |
 
 **A study of several runs is carried on run by run.** A sweep, several systems

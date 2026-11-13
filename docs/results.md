@@ -112,7 +112,7 @@ quantity but not to pin it.
 converged, a potential of mean force across windows that do not overlap, a
 binding free energy from a run that never reached bulk: each is refused by name
 rather than reported. A refusal is the most informative thing this software
-produces, and it always says what would settle the question.
+produces, and it always says what would answer the question.
 
 ### Not enough data is a refusal too
 
@@ -137,7 +137,7 @@ from fastmdxplora.statistics import sampling_shortfall
 
 print(sampling_shortfall(rmsd_series, target_independent=10, frame_interval_ns=0.01))
 # 8.7 independent samples of the 10 needed. At one every 54 frames,
-# that is 72 further frames, about 0.72 ns more.
+# that is 72 further frames, about 720 ps more.
 ```
 
 One caveat the function states and this repeats: where the frames in hand are
