@@ -42,7 +42,7 @@ def _what_to_do(imported: Path) -> str:
         "install with an ordinary one and reports success either way. "
         "Restore it with:\n"
         "\n"
-        '    pip install -e ".[dev]"\n'
+        '    pip install -e ".[dev]" -e packages/fastmdxplora-membrane\n'
     )
 
 

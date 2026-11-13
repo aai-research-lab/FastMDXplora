@@ -125,6 +125,7 @@ def test_the_coverage_leg_runs_its_browser_files_on_two_workers():
     assert two == ['two="-n 2 ${parallel#-n auto }"'], two
     assert _parallel().split()[:2] == ["parallel=\"-n", "auto"]
     covered, plain = run.split("else\n", 1)
-    assert "pytest -rfEs $two --cov=fastmdxplora --cov-append" in covered
+    assert ("pytest -rfEs $two --cov=fastmdxplora --cov=fastmdxplora_membrane --cov-append"
+            in covered)
     assert "pytest -rfEs $browser || status=1" in [line.strip() for line in plain.splitlines()]
     assert "$two" not in plain

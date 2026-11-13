@@ -99,13 +99,6 @@ from fastmdxplora.analysis import (  # noqa: F401, E402
 )
 # The bilayer's own structure: area per lipid, thickness, chain order. Run
 # only where there is a bilayer.
-from fastmdxplora.analysis import (  # noqa: F401, E402
-    area_per_lipid as _area_per_lipid,
-)
-from fastmdxplora.analysis import (  # noqa: F401, E402
-    bilayer_thickness as _bilayer_thickness,
-)
-from fastmdxplora.analysis import lipid_order as _lipid_order  # noqa: F401, E402
 from fastmdxplora.analysis import cluster as _cluster  # noqa: F401, E402
 from fastmdxplora.analysis import dimred as _dimred  # noqa: F401, E402
 # Needs an explicitly solvated system, so it is not ligand-gated -- a water
@@ -117,6 +110,13 @@ from fastmdxplora.analysis import ligand_rmsf as _ligand_rmsf  # noqa: F401, E40
 from fastmdxplora.analysis import contacts as _contacts  # noqa: F401, E402
 from fastmdxplora.analysis import pl_hbonds as _pl_hbonds  # noqa: F401, E402
 from fastmdxplora.analysis import pl_interactions as _pl_interactions  # noqa: F401, E402
+
+# The analyses that separately installed packages offer, registered here,
+# after the core's own: the one place they are. The registry is then in the
+# order the analyses have always run in (`orchestrator.ANALYSIS_ORDER`).
+from fastmdxplora.analysis.orchestrator import register_plugged_in  # noqa: E402
+
+register_plugged_in()
 
 
 def __getattr__(name: str):

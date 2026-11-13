@@ -1038,15 +1038,16 @@ def _check_analysis_options(analysis: dict[str, Any], *, context: str) -> None:
     try:
         import fastmdxplora.analysis.analyze  # noqa: F401,PLC0415
         from fastmdxplora.analysis.orchestrator import (  # noqa: PLC0415
-            _REGISTRY,
             AnalysisOrchestrator,
+            available_analyses,
             get_analysis_class,
         )
     except ImportError:  # pragma: no cover - a trimmed install
         return
-    known = set(_REGISTRY)
+    known = set(available_analyses())
     for name, given in options.items():
         if str(name) not in known:
+            _refuse_what_is_not_installed(str(name), option=f"{context}.options")
             raise ConfigError(
                 f"{context} option 'options' names {str(name)!r}, which is no "
                 f"analysis{_suggest(str(name), known)}, so its settings would "
@@ -1430,6 +1431,26 @@ def without_the_reweighting_pass(analysis: dict[str, Any]) -> None:
                 del analysis[key]
 
 
+def _is_not_installed(name: str) -> bool:
+    """Whether ``name`` is an analysis of a package that is not installed,
+    or is and would not load."""
+    from fastmdxplora.analysis.orchestrator import not_installed  # noqa: PLC0415
+
+    return not_installed(name) is not None
+
+
+def _refuse_what_is_not_installed(name: str, *, option: str) -> None:
+    """Refuse an analysis whose package is not installed, or is and would
+    not load, with the package to install: it is not a misspelling, and the
+    nearest name is not what was meant."""
+    from fastmdxplora.analysis.orchestrator import not_installed  # noqa: PLC0415
+
+    absent = not_installed(name)
+    if absent is not None:
+        raise ConfigError(absent.message, code=absent.code, option=option,
+                          **absent.details)
+
+
 def _check_analysis_names(analysis: dict[str, Any]) -> None:
     """Refuse a name no analysis has.
 
@@ -1440,11 +1461,13 @@ def _check_analysis_names(analysis: dict[str, Any]) -> None:
     """
     try:
         import fastmdxplora.analysis.analyze  # noqa: F401,PLC0415
-        from fastmdxplora.analysis.orchestrator import _REGISTRY  # noqa: PLC0415
+        from fastmdxplora.analysis.orchestrator import (  # noqa: PLC0415
+            available_analyses,
+        )
     except ImportError:  # pragma: no cover - a trimmed install
         return
 
-    known = set(_REGISTRY)
+    known = set(available_analyses())
     for key in ("include", "exclude"):
         names = analysis.get(key)
         if not isinstance(names, (list, tuple)):
@@ -1452,6 +1475,10 @@ def _check_analysis_names(analysis: dict[str, Any]) -> None:
         for name in names:
             if str(name) in known:
                 continue
+            if key == "exclude" and _is_not_installed(str(name)):
+                # Left out already: excluding it asks for what is so.
+                continue
+            _refuse_what_is_not_installed(str(name), option=f"analysis.{key}")
             import difflib  # noqa: PLC0415
 
             near = difflib.get_close_matches(str(name), sorted(known), n=3,

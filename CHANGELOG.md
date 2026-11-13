@@ -7,6 +7,40 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Packaging
+
+- The bilayer analyses (`area_per_lipid`, `bilayer_thickness`, `lipid_order`
+  and the `bilayer` module they share) are a package of their own,
+  `fastmdxplora-membrane`, in `packages/`. `fastmdxplora` requires it, so
+  `pip install fastmdxplora` and the conda package install it and a study's
+  YAML, the `fastmdx` commands and the results are as they were: the
+  analyses have the names they had and run in the place they had
+  (`orchestrator.ANALYSIS_ORDER`). Their modules are
+  `fastmdxplora_membrane.*`; the old paths
+  (`fastmdxplora.analysis.lipid_order` and the rest) still import and give
+  the same modules. `fastmdxplora[membrane]` names the package, and `[all]`
+  includes it.
+- The core finds such a package by its entry points and never imports it
+  (`fastmdxplora/plugins.py`, group `fastmdxplora.analyses`; the analyses
+  are registered at one place, after the core's own, and importing a
+  plug-in registers nothing). A plug-in that fails to load is left out with
+  a warning naming it and why, and the core starts without it. `fastmdx
+  info` lists each plug-in and how it stands, and `fastmdx info --json`
+  carries it as `plugins`.
+- A study that asks for an analysis whose package is not installed is
+  refused with the package and the command that installs it
+  (`environment.plugin.missing`), and one whose package is installed and
+  would not load is told to reinstall it (`environment.plugin.broken`);
+  naming one in `analysis.exclude` is accepted, since it is left out
+  already, and a default plan on frames that hold a bilayer says which
+  analyses it goes without. Before, with every analysis in one package, neither could
+  happen.
+- In a clone, the core and `packages/fastmdxplora-membrane` are installed in
+  one command (`pip install -e ".[dev]" -e packages/fastmdxplora-membrane`),
+  since each requires the other. A clone installed before the move runs as
+  it did: a package in `packages/` that is not installed is read from where
+  it sits.
+
 ### Behaviour changes
 
 - Along a distance a barrier's rises on W(r) are judged against W's

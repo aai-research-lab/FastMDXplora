@@ -24,9 +24,9 @@ from fastmdxplora.refusals import StudyError
 md = pytest.importorskip("mdtraj")
 app = pytest.importorskip("openmm.app")
 
-from fastmdxplora.analysis.area_per_lipid import AreaPerLipid  # noqa: E402
-from fastmdxplora.analysis.bilayer_thickness import BilayerThickness  # noqa: E402
-from fastmdxplora.analysis.lipid_order import LipidOrder  # noqa: E402
+from fastmdxplora_membrane.area_per_lipid import AreaPerLipid  # noqa: E402
+from fastmdxplora_membrane.bilayer_thickness import BilayerThickness  # noqa: E402
+from fastmdxplora_membrane.lipid_order import LipidOrder  # noqa: E402
 
 
 def _patch(lipid: str):
@@ -223,7 +223,7 @@ class TestWaterByAnyNameIsWater:
     def test_four_site_water_with_its_virtual_site_is_water(self) -> None:
         """OPC as OpenMM writes it: O, H1, H2 and a massless site, under a
         name of the user's own."""
-        from fastmdxplora.analysis.bilayer import find_bilayer
+        from fastmdxplora_membrane.bilayer import find_bilayer
 
         traj = _patch("POPC")
         top = md.Topology()
@@ -245,7 +245,7 @@ class TestWaterByAnyNameIsWater:
         assert findings["area"]["protein_cross_section_nm2_mean"] == 0.0
 
     def test_a_molecule_of_three_atoms_that_is_not_water_is_an_occupant(self) -> None:
-        from fastmdxplora.analysis.bilayer import _is_water
+        from fastmdxplora_membrane.bilayer import _is_water
 
         top = md.Topology()
         chain = top.add_chain()
@@ -417,7 +417,7 @@ class TestTheMassDensityProfile:
         """The profile integrated over the box's height, times its area, is
         the water's mass, on a box moved through its own face so the bilayer
         crosses it, over two frames of different heights."""
-        from fastmdxplora.analysis.bilayer import density_profile, find_bilayer, leaflets
+        from fastmdxplora_membrane.bilayer import density_profile, find_bilayer, leaflets
 
         traj = _patch("POPC")
         moved = traj[:]
@@ -468,7 +468,7 @@ def test_uniform_water_reads_the_same_density_to_both_faces(height: float) -> No
     the last slab, which read 1.47 times bulk at the top of a 6.00 nm box."""
     import types
 
-    from fastmdxplora.analysis.bilayer import density_profile
+    from fastmdxplora_membrane.bilayer import density_profile
 
     rng = np.random.default_rng(0)
     top = md.Topology()
