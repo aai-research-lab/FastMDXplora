@@ -857,14 +857,22 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   also held by a local of the run until the clustering ended. That run
   now peaks 26.5 MiB past the check on 3.10, 15.0 on 3.11 and 32.5 on
   3.13, where it peaked at 56.3, 55.7 and 43.6; the plan is unchanged.
-- A figure not plotted for memory is said to need what plotting it maps:
-  two canvases of its pixels at 300 dpi and 2 MiB, and the map's mesh at
-  112 bytes a cell. 40 MB was said for every figure, where the dendrogram
-  of 500 frames needed 17.75 MiB of room (19.9 MB said now) and the map
-  of 1,000 cells 122.25 MiB (133.5 MB said now). Counted for each figure
-  of 500 frames on Python 3.10, 3.11 and 3.13, the said room is 1.22 to
-  1.34 MiB over the most counted, and the map's 0.4 MiB at 500 cells and
-  5.0 at 1,000.
+- A figure not plotted for memory is said to need what plotting it maps,
+  from its own size: two canvases of its pixels at 300 dpi and 6 MiB,
+  and a mesh at 116 bytes a cell. 40 MB was said for every figure; and as
+  `save_figure` closes the figure it runs out saving, its size is now
+  carried on the error, where the house figure's room was told otherwise
+  (a timeline of 13 x 8.4 inches told 21.8 MB needed 82.8). Counted with
+  one malloc arena, the limit set as each figure of a clustering of 500
+  frames begins, on Python 3.10, 3.11 and 3.13: the first figure, the
+  timeline, needed 23.0 to 23.5 MiB and is said as 24.75 (2 MiB once had
+  said 20.75, and it was not plotted); at 10 x 6 inches 45.0, said as
+  47.2; each figure after the first needed at least 4.7 MiB less than it
+  is said; the
+  map of 2,000 frames, 1,000 cells across, 130.0, said as 135.1 (at 112
+  bytes a cell, 127.3). The landscape of the projections counts its mesh.
+  The map's data past 1,000 frames, not saved, is no longer told "Its
+  canvas is the same at any stride" with no number.
 - Clustering plans its map of 1,000 cells at 169.2 MiB, up from 162.5:
   CI's Python 3.10 leg measured a whole DBSCAN run with a wide `eps` at
   169.1 MiB at 2,000 frames. On another machine, 18 runs on 3.10, 3.11 and
