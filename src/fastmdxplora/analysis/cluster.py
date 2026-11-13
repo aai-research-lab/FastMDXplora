@@ -424,34 +424,44 @@ ADDRESS_SHARE = 1.0
 
 #: What plotting a figure maps past what the process held, in canvases of
 #: its pixels at the dpi it is saved at (4 bytes a pixel), and once, in
-#: bytes: what a figure not plotted for memory is said to need more of
+#: bytes: what a figure not plotted for memory is said to need
 #: (:func:`figure_needed`), where its canvas is the same at any stride.
-#: Counted as the least room past a collected start in which each of
-#: clustering's figures plots, in a clustering of 500 frames with k-means
-#: or average linkage, the limit set as :meth:`Cluster._plotted` begins
-#: (bisected at 0.5 MiB in new processes, one malloc arena, as CI runs):
-#: the first figure, the k-means timeline (canvas 9.37 MiB), 23.50 MiB on
-#: Python 3.10, 23.00 on 3.11 and 23.50 on 3.13, and at 10 x 6 inches
-#: 45.00 and 13 x 8.4 79.00 on 3.10; a timeline after it 20.00, 9.50 and
-#: 9.50; the counts 15.00, 7.00 and 7.00; the dendrogram 18.00, 8.50 and
-#: 8.50. The first figure a process plots maps 2.75 to 3.5 MiB more than
-#: one after it, at any size. Planned on 6 MiB once: the first timeline is
-#: said as 24.75 MiB, 1.25 over the most counted, and 2.2 at 10 x 6 and
-#: 2.0 at 13 x 8.4; a figure after it more. With glibc's default arenas
-#: each plotted in less. 40 MB had been said for every figure, and then
-#: the house figure's 20.75 MiB, told from the figures still open where
-#: the one that ran out saving was closed already.
-FIGURE_CANVASES = 2
-FIGURE_ONCE_BYTES = 6 * 2**20
+#: Counted as the least room past a collected start in which the first
+#: figure of ``fastmdx analyze --analyses cluster`` (k-means, 500 frames),
+#: its timeline, plots in a new process, the limit set as
+#: :meth:`Cluster._plotted` begins (bisected at 0.25 MiB, one malloc arena,
+#: glibc's malloc settings otherwise unset, as the tests run it, and again
+#: with this machine's ``MALLOC_MMAP_THRESHOLD_`` of 64 MiB and
+#: ``MALLOC_TRIM_THRESHOLD_`` of 256 MiB): at the house's size (canvas 9.37
+#: MiB) 23.50 MiB on Python 3.10, 22.50 on 3.11 and 22.75 on 3.13; at
+#: 10 x 6 inches (20.60) 46.95, 45.70 and 45.95; at 13 x 8.4 (37.49)
+#: 82.48, 81.23 and 81.23; at 20 x 12 (82.40) 176.79, 175.54 and 175.54
+#: (the tests' own script, 176.54 on 3.13), the most of the two settings
+#: each (the thresholds fixed asked more on 3.10 only). Past two canvases
+#: that is 4.75 MiB at the house's size and 12.0 at 20 x 12: about a tenth
+#: of a canvas more, and 3.8 MiB. Planned
+#: on 2.15 canvases and 5 MiB: 1.65 MiB over the most counted at the
+#: house's size, 2.34 at 10 x 6, 3.13 at 13 x 8.4 and 5.36 at 20 x 12. On
+#: Python 3.10 a first figure maps 3.5 MiB more than a timeline plotted
+#: after it (20.0), and on 3.11 and 3.13 about 13 more (9.5); the counts
+#: and the dendrogram after it needed 15.0 and 18.0 MiB on 3.10, 7.0 and
+#: 8.5 on 3.11 and 3.13. Two canvases and 6 MiB, counted on a figure that
+#: had run out once in the same process, told 80.98 MiB at 13 x 8.4 and
+#: 170.79 at 20 x 12. 40 MB had been said for every figure, and then the
+#: house figure's 20.75 MiB, told from the figures still open where the
+#: one that ran out saving was closed already.
+FIGURE_CANVASES = 2.15
+FIGURE_ONCE_BYTES = 5 * 2**20
 
 #: What a mesh maps besides its canvases, a cell of it squared, in bytes
 #: (:func:`figure_needed`): the map's, and the projections' landscape's.
-#: Counted as the figures above, the map of 2,000 frames, 1,000 cells
-#: across, needed 130.0 MiB on Python 3.10, 3.11 and 3.13 (its canvases
-#: and once 24.46 MiB: 111 bytes a cell), and the map of 1,000 random
-#: distances alone, plotted first, 130.0 on 3.10 and 3.11 and 124.5 on
-#: 3.13. Planned on 116, 135.1 MiB, 5.1 over; at 112 it was said as 127.3
-#: MiB in the run, told the house figure's canvas, 2.7 under. The map of at
+#: Counted as the figures above, with glibc's malloc settings unset, the
+#: map of 2,000 frames, 1,000 cells across, needed 130.0 MiB on Python
+#: 3.10, 3.11 and 3.13 (two of its canvases and 6 MiB 24.46 MiB: 111 bytes
+#: a cell), and the map of 1,000 random distances alone, plotted first,
+#: 130.0 on 3.10 and 3.11 and 124.5 on 3.13. Planned on 116, with 2.15
+#: canvases and 5 MiB 135.5 MiB, 5.5 over; at 112 it was said as 127.3
+#: MiB, 2.7 under. The map of at
 #: most 1,000 frames is told the stride that makes it smaller instead.
 FIGURE_MESH_BYTES_PER_CELL = 116
 
@@ -467,7 +477,7 @@ def figure_needed(numbers: Any, dpi: int = 300, cells: int = 0,
     open, where the memory ran out before saving. Told from the figures
     still open alone, a figure that ran out saving was closed, and every one
     was told the house figure's room: a timeline of 13 x 8.4 inches 21.8
-    MB, where it needed 82.8 MB (79.0 MiB). Neither (the memory ran out
+    MB, where it needed 86.5 MB (82.48 MiB). Neither (the memory ran out
     making the figure), the house figure's canvas."""
     from fastmdxplora.analysis.plotting import PAPER_FIGSIZE, scaled_figsize
 
@@ -488,15 +498,17 @@ def figure_needed(numbers: Any, dpi: int = 300, cells: int = 0,
 def figure_more_said(memory: dict[str, Any], needed: int) -> str:
     """What helps a figure not plotted for memory whose canvas is the same
     at any stride, said by the room the check read (``memory``, the
-    record's ``findings.memory``): a ``ulimit -v`` or a container allowing
-    ``needed`` more (:func:`figure_needed`), or as much more memory free."""
-    more = _gigabytes(needed)
+    record's ``findings.memory``): a ``ulimit -v`` or a container leaving
+    ``needed`` (:func:`figure_needed`) for plotting it, or as much memory
+    free. Said as what the figure maps, not what it was short of: "allows
+    about 84.9 MB more" was said of a figure that plotted with 5.5 MB more."""
+    room = _gigabytes(needed)
     if memory.get("bytes_address_space") is not None:
-        where = f"where `ulimit -v` allows about {more} more"
+        where = f"where `ulimit -v` leaves about {room} for plotting it"
     elif str(memory.get("available_read_from", "")).startswith("the cgroup"):
-        where = f"where the container allows about {more} more"
+        where = f"where the container leaves about {room} for plotting it"
     else:
-        where = f"where about {more} more memory is free"
+        where = f"where about {room} is free for plotting it"
     return (f"Its canvas is the same at any stride, so a stride does not help: run it "
             f"{where}.")
 
