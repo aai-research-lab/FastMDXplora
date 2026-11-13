@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from fastmdxplora.refusals import CodedError
 from fastmdxplora.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -54,6 +55,7 @@ logger = get_logger(__name__)
 __all__ = [
     "ANALYSES",
     "MOVED_MODULES",
+    "MovedModuleMissing",
     "GROUPS",
     "FIRST_PARTY",
     "Failure",
@@ -89,6 +91,21 @@ FIRST_PARTY: dict[tuple[str, str], str] = {
     (MOVED_MODULES, "fastmdxplora.analysis.bilayer_thickness"): "fastmdxplora-membrane",
     (MOVED_MODULES, "fastmdxplora.analysis.lipid_order"): "fastmdxplora-membrane",
 }
+
+
+class MovedModuleMissing(CodedError, ModuleNotFoundError):
+    """An import of a module that moved to a package which is not installed.
+
+    A ``ModuleNotFoundError`` still, so code that catches the one an import
+    raises catches this; with the package to install, as a refusal.
+    """
+
+    default_code = "environment.plugin.missing"
+
+    def __init__(self, message: str = "", /, *, name: str | None = None,
+                 **details: Any) -> None:
+        super().__init__(message, **details)
+        self.name = name
 
 
 @dataclass(frozen=True)
@@ -464,9 +481,11 @@ class _MovedModules(importlib.abc.MetaPathFinder):
             return importlib.machinery.ModuleSpec(fullname, _MovedModule(moved[fullname]))
         package = FIRST_PARTY.get((MOVED_MODULES, fullname))
         if package is not None:
-            raise ModuleNotFoundError(
+            raise MovedModuleMissing(
                 f"{fullname} is now part of {package}, which is not installed. "
-                f"Install it with: {install_command(package)}", name=fullname)
+                f"Install it with: {install_command(package)}", name=fullname,
+                feature=fullname, package=package,
+                install_command=install_command(package))
         return None
 
 

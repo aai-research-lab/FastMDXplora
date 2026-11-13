@@ -98,6 +98,9 @@ class TestTheModulesAtTheirOldPaths:
             importlib.import_module("fastmdxplora.analysis.lipid_order")
         assert "fastmdxplora-membrane" in str(refused.value)
         assert "pip install fastmdxplora-membrane" in str(refused.value)
+        assert refused.value.name == "fastmdxplora.analysis.lipid_order"
+        assert refused.value.code == "environment.plugin.missing"
+        assert refused.value.refusal.details["package"] == "fastmdxplora-membrane"
 
     def test_a_path_that_never_was_is_not_found_as_before(self):
         with pytest.raises(ModuleNotFoundError) as refused:
