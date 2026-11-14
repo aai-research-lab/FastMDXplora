@@ -9,6 +9,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- End-to-end distance keeps a column for every measured chain when chain IDs
+  repeat or are blank, using the same chain labels as radius of gyration.
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried
