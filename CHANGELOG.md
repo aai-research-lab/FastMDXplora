@@ -733,6 +733,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The shared `--system` help says a sequence must be predicted first, and the
+  remote guide says it is refused here.
 - Tests: the test of 500 frames under `ulimit -v` 600000 allows Python's
   small-object allocator and glibc's heap what they take of their own.
   Python's maps its arenas 1 MiB at a time and gives one back once it is
