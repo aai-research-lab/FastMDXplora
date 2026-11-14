@@ -243,12 +243,13 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
                     "convert it to an indexed format such as XTC, TRR, DCD or NetCDF.")
         stride = target["stride"]
         first = target["first"]
-        stop = target["last"] if target["last"] is not None else len(range(0, n_total, stride))
+        loaded_frames = len(range(0, n_total, stride))
+        stop = target["last"] if target["last"] is not None else loaded_frames
         selected_source = np.arange(0, n_total, stride, dtype=np.int64)[first:stop]
         if not len(selected_source):
             _refuse(f"Target {label!r} selection retains no frames.")
         memory_checks.append(_memory_preflight(
-            reference, len(selected_source), n_atoms, len(ref_idx),
+            reference, loaded_frames, n_atoms, len(ref_idx),
             analysis.landscape_bins, label, analysis,
             retained_frames=sum(len(points) for points in projections) + len(selected_source)))
         loaded = load_trajectory(traj_path, top_path, first=first,

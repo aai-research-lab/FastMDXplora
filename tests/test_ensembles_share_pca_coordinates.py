@@ -354,6 +354,103 @@ def test_memory_estimate_includes_previously_retained_projections(tmp_path, monk
                                  retained_frames=1000)
 
 
+@pytest.mark.parametrize("extension", ["dcd", "xtc"])
+@pytest.mark.parametrize("slice_options", [
+    {"first": 2, "last": 7, "stride": 2},
+    {"first": 16, "stride": 2},
+    {"last": 5, "stride": 2},
+    {},
+])
+def test_target_preflight_counts_every_loaded_frame(tmp_path, monkeypatch,
+                                                   extension, slice_options):
+    import fastmdxplora.analysis.common_landscapes as common
+
+    reference, _, topology = _files(tmp_path)
+    target = _ensemble(1.0, n=41)
+    trajectory = tmp_path / f"allocation.{extension}"
+    target.save(str(trajectory))
+    analysis = _analysis(trajectory, topology, targets=[{
+        "label": "bound", "trajectory": str(trajectory), "topology": str(topology),
+        **slice_options,
+    }])
+    preflight = common._memory_preflight
+    load = md.load
+    budgeted, loaded = [], []
+
+    def inspect_preflight(*args, **kwargs):
+        if args[5] == "bound":
+            budgeted.append((args[1], kwargs["retained_frames"]))
+        return preflight(*args, **kwargs)
+
+    def inspect_load(*args, **kwargs):
+        result = load(*args, **kwargs)
+        if trajectory.name in str(args[0]):
+            loaded.append(result.n_frames)
+        return result
+
+    monkeypatch.setattr(common, "_memory_preflight", inspect_preflight)
+    monkeypatch.setattr(md, "load", inspect_load)
+    result = analysis.compute(reference)
+    source = list(range(0, 41, slice_options.get("stride", 1)))[
+        slice_options.get("first", 0):slice_options.get("last")]
+    full_count = len(range(0, 41, slice_options.get("stride", 1)))
+    print(f"{extension} {slice_options}: budget={budgeted}, md.load={loaded}, "
+          f"retained={len(result['projections'][1])}, source={source}")
+    assert loaded == [full_count]
+    assert budgeted == [(loaded[0], reference.n_frames + len(source))]
+    assert len(result["projections"][1]) == len(source)
+    assert result["source_frames"][1].tolist() == source
+    assert analysis.findings["comparison"]["histogrammed_frames"] == [
+        reference.n_frames, len(source)]
+
+
+@pytest.mark.parametrize("extension", ["dcd", "xtc"])
+def test_sliced_target_refuses_low_room_before_any_full_load(tmp_path, monkeypatch, extension):
+    import fastmdxplora.analysis.cluster as cluster
+    import fastmdxplora.analysis.common_landscapes as common
+
+    reference, _, topology = _files(tmp_path)
+    trajectory = tmp_path / f"large.{extension}"
+    _ensemble(1.0, n=2000).save(str(trajectory))
+    analysis = _analysis(trajectory, topology, targets=[{
+        "label": "bound", "trajectory": str(trajectory), "topology": str(topology),
+        "first": 2, "last": 7, "stride": 2,
+    }])
+    monkeypatch.setattr(cluster, "memory_available", lambda: (10**9, "test"))
+    monkeypatch.setattr(cluster, "resident_room", lambda *_: (10**9, "test"))
+    monkeypatch.setattr(cluster, "address_room", lambda *_: (10**9, "test"))
+    preflight = common._memory_preflight
+    ref_need = preflight(reference, 14, 8, 8, 12, "reference", analysis)["estimate_bytes"]
+    old_need = preflight(reference, 5, 8, 8, 12, "bound", analysis,
+                         retained_frames=19)["estimate_bytes"]
+    full_need = preflight(reference, 1000, 8, 8, 12, "bound", analysis,
+                          retained_frames=19)["estimate_bytes"]
+    room = max(ref_need, old_need) + 1
+    assert ref_need < room and old_need < room < full_need
+    monkeypatch.setattr(cluster, "resident_room", lambda *_: (room, "test"))
+    monkeypatch.setattr(cluster, "address_room", lambda *_: (room, "test"))
+    passed, loads = [], []
+    load = md.load
+
+    def inspect_preflight(*args, **kwargs):
+        result = preflight(*args, **kwargs)
+        passed.append(args[5])
+        return result
+
+    def inspect_load(*args, **kwargs):
+        loads.append(str(args[0]))
+        return load(*args, **kwargs)
+
+    monkeypatch.setattr(common, "_memory_preflight", inspect_preflight)
+    monkeypatch.setattr(md, "load", inspect_load)
+    with pytest.raises(StudyError, match="target 'bound'.*above the"):
+        analysis.compute(reference)
+    print(f"{extension}: reference={ref_need}, old={old_need}, room={room}, "
+          f"full={full_need}, passed={passed}, md.load calls={loads}")
+    assert passed == ["reference"]
+    assert loads == []
+
+
 def test_unknown_frame_count_refuses_before_loading(tmp_path, monkeypatch):
     import fastmdxplora.analysis.common_landscapes as common
 
