@@ -36,6 +36,18 @@ from tests.test_a_study_travels_and_comes_back import RELEASE, _send
 machine = travels.machine
 machine_path = travels.machine_path
 
+
+def test_a_remote_file_is_written_without_fchmod(tmp_path, monkeypatch):
+    import os
+
+    from fastmdxplora.remote.send import _written_into
+
+    monkeypatch.delattr(os, "fchmod", raising=False)
+    _written_into(tmp_path, "record.json", "content\n")
+
+    assert (tmp_path / "record.json").read_text(encoding="utf-8") == "content\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["record.json"]
+
 #: The machine these tests send to is this computer. A run working in a job
 #: folder is found there through /proc, which macOS has not: the send then
 #: goes on, as `_still_working` says it does on such a machine.

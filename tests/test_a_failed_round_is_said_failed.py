@@ -3203,6 +3203,19 @@ def test_a_stop_now_as_a_record_is_put_in_place_leaves_no_temporary(tmp_path, mo
     assert where.read_text() == "as before\n"
 
 
+def test_a_record_is_put_in_place_without_fchmod(tmp_path, monkeypatch):
+    import os
+
+    from fastmdxplora import orchestrator
+
+    monkeypatch.delattr(os, "fchmod", raising=False)
+    where = tmp_path / "record.json"
+    orchestrator._put_in_place(where, "content\n")
+
+    assert where.read_text(encoding="utf-8") == "content\n"
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["record.json"]
+
+
 def test_a_run_its_round_stopped_reads_stopped_after_a_stop_now(tmp_path, monkeypatch):
     """A resume stopped now in its round: the batch manifest said a run "ok,
     The study finished; there is nothing to carry on." (its own resume, before
