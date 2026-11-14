@@ -97,6 +97,23 @@ class TestTheDistance:
             expected = EndToEndDistance().compute(traj.atom_slice(atoms))
             assert np.allclose(result[label].to_numpy(), expected)
 
+    @pytest.mark.parametrize("chain_ids", [
+        ("A (2)", " A", "A "),
+        ("A (2)", "A", "A"),
+    ])
+    def test_a_generated_label_keeps_every_chains_distance(self, chain_ids):
+        traj = _straight_chains(
+            n_residues=5, chains=3, chain_ids=chain_ids,
+            chain_spacings=(0.2, 0.3, 0.4))
+        analysis = EndToEndDistance()
+
+        result = analysis.compute(traj)
+
+        assert len(result.columns) == analysis.findings["ends"]["chains"] == 3
+        assert list(result.columns) == ["chain A (2)", "chain A", "chain A (2) (2)"]
+        for label, spacing in zip(result.columns, (0.2, 0.3, 0.4)):
+            np.testing.assert_allclose(result[label].to_numpy(), 4 * spacing)
+
 
 class TestThePeriodicBoundary:
     def test_a_chain_longer_than_half_the_box_reads_its_length(self):

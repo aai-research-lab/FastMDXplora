@@ -371,7 +371,7 @@ class EndToEndDistance(Analysis):
                 chain = sub.topology.chain(i)
                 residues = list(chain.residues)
                 label = f"chain {chain_name(residues[0]) if residues else chain.index}"
-                if label in table:
+                while label in table:
                     label = f"{label} ({chain.index})"
                 table[label] = column
             result = pd.DataFrame(table)
