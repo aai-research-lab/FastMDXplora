@@ -1420,25 +1420,43 @@ def studies(tmp_path_factory):
             for n in (500, 1001, 2000)}
 
 
-#: ``allocator_said(path)``: what Python's small-object allocator has mapped
-#: (``sys._debugmallocstats``), written to ``path`` through the process's
-#: standard error, so nothing of it is read or parsed in the process. Said
-#: just after the ``VmSize`` it goes with is read: an arena the reading of
-#: ``/proc/self/status`` itself mapped is in both. Where the interpreter has
-#: no such allocator, nothing is written.
+#: ``allocator_said(path)``: what the process's allocators have mapped,
+#: written to ``path`` and read only by the test (:func:`_allocators_said`):
+#: Python's small-object allocator (``sys._debugmallocstats``, through the
+#: process's standard error), then ``/proc/self/maps`` (glibc's ``[heap]``)
+#: and ``/proc/self/status`` (its threads), copied through a buffer mapped
+#: before, so the copy grows no heap. Said just after the ``VmSize`` it goes
+#: with is read: an arena or a heap step the reading of
+#: ``/proc/self/status`` itself took is in both.
 _ALLOCATOR_SAID = r"""
+said_through = bytearray(1 << 20)
+
 def allocator_said(path):
-    if not hasattr(sys, "_debugmallocstats"):
-        return
-    sys.stderr.flush()
     said = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    saved = os.dup(2)
-    os.dup2(said, 2)
     try:
-        sys._debugmallocstats()
+        if hasattr(sys, "_debugmallocstats"):
+            os.write(said, b"== allocator\n")
+            sys.stderr.flush()
+            saved = os.dup(2)
+            os.dup2(said, 2)
+            try:
+                sys._debugmallocstats()
+            finally:
+                os.dup2(saved, 2)
+                os.close(saved)
+        for name, source in ((b"== maps\n", "/proc/self/maps"),
+                             (b"== status\n", "/proc/self/status")):
+            os.write(said, name)
+            read = os.open(source, os.O_RDONLY)
+            try:
+                while True:
+                    count = os.readv(read, [said_through])
+                    if count <= 0:
+                        break
+                    os.write(said, memoryview(said_through)[:count])
+            finally:
+                os.close(read)
     finally:
-        os.dup2(saved, 2)
-        os.close(saved)
         os.close(said)
 """
 
@@ -1536,44 +1554,91 @@ runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
 ROOM_AT_600000 = 600000 * 1024 - 548937728
 
 #: How far the room a run of the 600000 test reads at its check may be from
-#: :data:`ROOM_AT_600000`, past what Python's allocator mapped from its start
-#: to the check more or less than in the reading (:func:`_allocator_mapped`),
-#: for the run to be the one the test means, in bytes. Past the allocator,
-#: the run took from -0.05 to +0.11 MiB more than its reading in each of 230
-#: runs (Python 3.10, 3.11 and 3.13, 90 of them under CPU load); the plan for
-#: its 500 frames (61.0 MiB) is 1.4 MiB under the room.
+#: :data:`ROOM_AT_600000`, past what Python's allocator and glibc's heap
+#: took from its start to the check more or less than in the reading
+#: (:func:`_allocators_said`), for the run to be the one the test means, in
+#: bytes. Past both, the run took from -0.01 to +0.02 MiB more than its
+#: reading in each of 520 runs (Python 3.10, 3.11 and 3.13, 340 of them
+#: under CPU load, 120 with the environment's size stepped), where it had
+#: taken -1.07 to +1.11 MiB more; the plan for its 500 frames (61.0 MiB) is
+#: 1.4 MiB under the room.
 ROOM_READ_WITHIN = 2**20 // 4
 
+#: How far glibc's main heap (``[heap]``, one malloc arena with
+#: ``MALLOC_ARENA_MAX=1``) may have moved, from the start to the check, more
+#: or less than in the reading, in bytes: in those 520 runs it moved -0.20 to
+#: +0.19 MiB.
+HEAP_MOVED_WITHIN = 3 * 2**20 // 8
 
-def _allocator_mapped(path) -> tuple[int, int] | None:
-    """What Python's small-object allocator said it had mapped
-    (:data:`_ALLOCATOR_SAID`): its arenas, and their bytes with those of the
-    map it finds them by. None where it said nothing.
 
-    It maps an arena whole, 1 MiB from Python 3.10, and gives it back once
-    it is empty, so what a process holds moves by an arena where the last
-    one fills or empties: as it starts (2 arenas or 3, by the hash seed) and
-    at the check. On CI's ubuntu 3.11 leg the run read 1.02 MiB less room
-    than the reading said, with the clustering whole. Here, of 140 runs
-    with the environment's size stepped, 22 moved by more than 1 MiB from
-    their reading, each by an arena at the start or at the check, and none
-    of 40 with ``PYTHONMALLOC=malloc`` by more than 0.11 MiB."""
+def _allocators_said(path) -> dict:
+    """What a process's allocators said they had mapped
+    (:data:`_ALLOCATOR_SAID`): Python's small-object allocator's arenas
+    (``arenas``, None where it has none) and their bytes (``allocator``),
+    glibc's main heap (``heap``), and the threads (``threads``). ``unread``
+    says what could not be read. The map Python's allocator finds its
+    arenas by (128 KiB a node from Python 3.11) is not counted with them:
+    by the check it is taken from glibc's heap, and counted there.
+
+    Python's allocator maps an arena whole, 1 MiB from Python 3.10, and
+    gives it back once it is empty, so what a process holds moves by an
+    arena where the last one fills or empties: as it starts (2 arenas or 3,
+    by the hash seed and the environment's size) and at the check. On CI's
+    ubuntu 3.11 leg the run read 1.02 MiB less room than the reading said,
+    with the clustering whole. Here, of 140 runs with the environment's size
+    stepped, 22 moved by more than 1 MiB from their reading, each by an arena
+    at the start or at the check, and none of 40 with ``PYTHONMALLOC=malloc``
+    by more than 0.11 MiB. glibc's heap moves the same way, by a few pages
+    to its top pad and trim threshold (128 KiB), by the environment's size:
+    in 520 runs it moved -0.20 to +0.19 MiB more than in the reading, and
+    past it and the arenas the run took -0.01 to +0.02 MiB more."""
     import re
     from pathlib import Path
 
     try:
         text = Path(path).read_text()
-    except OSError:
-        return None
-    arenas = re.search(r"# arenas allocated current\s*=\s*([\d,]+)", text)
-    size = re.search(r"([\d,]+) bytes/arena", text)
-    if arenas is None or size is None:
-        return None
-    count = int(arenas.group(1).replace(",", ""))
-    found = count * int(size.group(1).replace(",", ""))
-    found += sum(int(lost.replace(",", "")) for lost in re.findall(
-        r"# bytes lost to arena map (?:root|mid|bot)\s*=\s*([\d,]+)", text))
-    return count, found
+    except OSError as error:
+        return {"unread": f"nothing written ({error.strerror})"}
+    parts = dict(re.findall(r"^== (\w+)\n(.*?)(?=^== |\Z)", text, re.S | re.M))
+    said: dict = {"unread": None, "arenas": None, "allocator": 0, "heap": 0}
+    allocator = parts.get("allocator", "")
+    if allocator.strip():
+        arenas = re.search(r"# arenas allocated current\s*=\s*([\d,]+)", allocator)
+        size = re.search(r"([\d,]+) bytes/arena", allocator)
+        if arenas is None or size is None:
+            said["unread"] = "Python's allocator said what this test cannot read"
+        else:
+            said["arenas"] = int(arenas.group(1).replace(",", ""))
+            said["allocator"] = said["arenas"] * int(size.group(1).replace(",", ""))
+    said["maps"] = {}
+    for line in parts.get("maps", "").splitlines():
+        fields = line.split(maxsplit=5)
+        if len(fields) < 5 or "-" not in fields[0]:
+            continue
+        low, high = (int(end, 16) for end in fields[0].split("-"))
+        name = (fields[5].strip() if len(fields) > 5 else "anonymous") + " " + fields[1]
+        said["maps"][name] = said["maps"].get(name, 0) + high - low
+        if name.startswith("[heap] "):
+            said["heap"] += high - low
+    threads = re.search(r"^Threads:\s*(\d+)", parts.get("status", ""), re.M)
+    if "maps" not in parts or threads is None:
+        said["unread"] = said["unread"] or "no maps or status"
+    said["threads"] = int(threads.group(1)) if threads else None
+    return said
+
+
+def _maps_moved(reading: dict, run: dict) -> str:
+    """The mappings, by file (or ``anonymous``) and protection, a run held
+    more or less than its reading at the same point, past glibc's heap,
+    16 KiB or more (from :func:`_allocators_said`): ``anonymous ---p`` is
+    mostly threads' guard pages, 4 KiB to a thread."""
+    moved = []
+    for name in sorted(set(reading["maps"]) | set(run["maps"])):
+        step = run["maps"].get(name, 0) - reading["maps"].get(name, 0)
+        if not name.startswith("[heap] ") and (
+                abs(step) >= 2**14 or (step and name == "anonymous ---p")):
+            moved.append(f"{name} {step / 2**10:+,.0f} KiB")
+    return ", ".join(moved) or "none"
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
@@ -1611,13 +1676,18 @@ class TestTheCommandLinesOwnProcess:
         read is asserted, and a run that took more than the reading between
         the two fails, saying both.
 
-        Past what Python's allocator mapped: an arena more or one fewer than
-        in the reading, at the start or at the check
-        (:func:`_allocator_mapped`), is its own, and on CI's ubuntu 3.11 leg
-        the run read 61.41 MiB of room for 62.43, 1.02 MiB more taken than
-        the reading's, with the clustering whole. More than two arenas
-        either way fails, and so does what the run took past the
-        allocator's arenas by more than :data:`ROOM_READ_WITHIN`."""
+        Past what Python's allocator and glibc's heap took
+        (:func:`_allocators_said`): an arena more or one fewer than in the
+        reading, at the start or at the check, is the allocator's own, and
+        on CI's ubuntu 3.11 leg the run read 61.41 MiB of room for 62.43,
+        1.02 MiB more taken than the reading's, with the clustering whole;
+        the heap moves by a few pages to its pad of 128 KiB the same way.
+        More than two arenas either way fails, so does the heap moved past
+        :data:`HEAP_MOVED_WITHIN`, and so does what the run took past both
+        by more than :data:`ROOM_READ_WITHIN`, naming the threads and the
+        mappings that moved. Up to about 2 MiB of small Python objects, or
+        :data:`HEAP_MOVED_WITHIN` of the heap, that the command line held
+        only under a limit, before the check, would pass as theirs."""
         import subprocess
         from pathlib import Path
 
@@ -1660,31 +1730,50 @@ class TestTheCommandLinesOwnProcess:
         took = limit - room - start
         ended = next((line.split()[1] for line in done.stdout.splitlines()
                       if line.startswith("ENDED ")), "not read")
-        # Python's allocator maps an arena whole: one more or one fewer at
-        # the start and at the check than in the reading is its own, not the
-        # command line's, and at most two in all.
-        said = {(who, when): _allocator_mapped(f"{path}.{when}")
-                for who, path in (("reading", reading), ("run", running))
-                for when in ("start", "check")}
-        if None in said.values():
-            arenas, allocator = 0, 0
-            allocator_note = "Python's allocator said nothing"
-        else:
-            arenas, allocator = (
-                said["run", "check"][part] - said["run", "start"][part]
-                - said["reading", "check"][part] + said["reading", "start"][part]
-                for part in (0, 1))
-            allocator_note = (
-                f"Python's allocator {allocator / 2**20:+.2f} MiB of it, its arenas "
-                f"{said['run', 'start'][0]} to {said['run', 'check'][0]}, the reading's "
-                f"{said['reading', 'start'][0]} to {said['reading', 'check'][0]}")
-        assert abs(arenas) <= 2 and (
-            abs(room + allocator - ROOM_AT_600000) <= ROOM_READ_WITHIN), (
+        # Python's allocator maps an arena whole, and glibc's heap moves by
+        # its pad: what they took from the start to the check more or less
+        # than in the reading is theirs, not the command line's.
+        dumps = {(who, when): _allocators_said(f"{path}.{when}")
+                 for who, path in (("reading", reading), ("run", running))
+                 for when in ("start", "check")}
+        figures = (
             f"the run read {room / 2**20:.2f} MiB of room at the check, meant "
             f"{ROOM_AT_600000 / 2**20:.2f}: from its start to the check it took "
             f"{took / 2**20:.2f} MiB, the reading {growth / 2**20:.2f} "
-            f"({(took - growth) / 2**20:+.2f}; {allocator_note}); threads at its "
-            f"start {threads}, at its end {ended}; {output}")
+            f"({(took - growth) / 2**20:+.2f}")
+        unread = [f"{who}'s {when}: {dump['unread']}"
+                  for (who, when), dump in dumps.items() if dump["unread"]]
+        assert not unread, (f"{figures}); the allocators could not be read at the "
+                            f"{'; '.join(unread)}; {output}")
+
+        def moved(key: str) -> int:
+            return (dumps["run", "check"][key] - dumps["run", "start"][key]
+                    - dumps["reading", "check"][key] + dumps["reading", "start"][key])
+
+        python = dumps["run", "start"]["arenas"] is not None
+        arenas = moved("arenas") if python else 0
+        allocator, heap = moved("allocator"), moved("heap")
+        figures += (
+            f"; Python's allocator {allocator / 2**20:+.2f} MiB of it"
+            + (f", its arenas {dumps['run', 'start']['arenas']} to "
+               f"{dumps['run', 'check']['arenas']}, the reading's "
+               f"{dumps['reading', 'start']['arenas']} to "
+               f"{dumps['reading', 'check']['arenas']}" if python else ", none here")
+            + f"; glibc's heap {heap / 2**20:+.2f} MiB of it); threads at its start "
+            f"{threads}, at the check {dumps['run', 'check']['threads']}, the "
+            f"reading's {dumps['reading', 'start']['threads']} and "
+            f"{dumps['reading', 'check']['threads']}, at its end {ended}; mappings "
+            f"the run held past the reading's at the start: "
+            f"{_maps_moved(dumps['reading', 'start'], dumps['run', 'start'])}; at the "
+            f"check: {_maps_moved(dumps['reading', 'check'], dumps['run', 'check'])}")
+        assert abs(arenas) <= 2, (
+            f"Python's allocator took {arenas:+d} arenas more than in the reading, "
+            f"at most 2: {figures}; {output}")
+        assert abs(heap) <= HEAP_MOVED_WITHIN, (
+            f"glibc's heap moved {heap / 2**20:+.2f} MiB more than in the reading, at "
+            f"most {HEAP_MOVED_WITHIN / 2**20:.2f}: {figures}; {output}")
+        assert abs(room + allocator + heap - ROOM_AT_600000) <= ROOM_READ_WITHIN, (
+            f"{figures}; {output}")
         assert done.returncode == 0, output
         for name in ("rmsd", "cluster"):
             row, findings = _record(study, name)
