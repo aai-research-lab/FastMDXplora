@@ -9,6 +9,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- B-factor comparisons now use the first CA conformer record in the first PDB
+  model, matching the conformer MDTraj loads even when it is labelled B or C.
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried

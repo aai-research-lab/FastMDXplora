@@ -27,6 +27,13 @@ def _pdb(tmp_path, bfactors, name="input.pdb", chain="A"):
     return path
 
 
+def _ca_record(serial, residue, altloc, x, occupancy, b, insertion=" "):
+    return (
+        f"ATOM  {serial:5d}  CA {altloc}ALA A{residue:4d}{insertion}   "
+        f"{x:8.3f}{0.0:8.3f}{0.0:8.3f}{occupancy:6.2f}{b:6.2f}           C"
+    )
+
+
 class TestReadingTheColumn:
     def test_it_reads_by_column_not_by_splitting(self, tmp_path):
         """The PDB is fixed-width, and its fields run together.
@@ -52,6 +59,58 @@ class TestReadingTheColumn:
             "1.100   2.000   3.000  0.50 90.00           C\n",
             encoding="utf-8")
         assert bfactors_from_pdb(path) == {("A", 1, ""): 10.00}
+
+    @pytest.mark.parametrize("altloc", ["B", "C"])
+    def test_a_b_or_c_only_conformer_keeps_its_b_factors(self, tmp_path, altloc):
+        path = tmp_path / f"{altloc}-only.pdb"
+        path.write_text("\n".join(
+            _ca_record(i, i, altloc, i * 3.8, 1.0, 10.0 * i)
+            for i in range(1, 4)
+        ) + "\nEND\n", encoding="utf-8")
+
+        loaded = md.load(str(path))
+        assert loaded.n_residues == 3
+        assert np.allclose(loaded.xyz[0, :, 0], [0.38, 0.76, 1.14])
+        assert bfactors_from_pdb(path) == {
+            ("A", i, ""): 10.0 * i for i in range(1, 4)}
+        assert has_crystallographic_bfactors(path)
+
+    def test_it_reads_the_alternate_conformer_mdtraj_loads(self, tmp_path):
+        path = tmp_path / "first-alternate.pdb"
+        records = []
+        serial = 1
+        for residue in range(1, 4):
+            records.extend((
+                _ca_record(serial, residue, "B", residue * 3.8, 0.25,
+                           20.0 * residue),
+                _ca_record(serial + 1, residue, "A", residue * 3.8 + 1,
+                           0.75, 60.0 * residue),
+            ))
+            serial += 2
+        path.write_text("\n".join(records) + "\nEND\n", encoding="utf-8")
+
+        loaded = md.load(str(path))
+        assert np.allclose(loaded.xyz[0, :, 0], [0.38, 0.76, 1.14])
+        assert bfactors_from_pdb(path) == {
+            ("A", i, ""): 20.0 * i for i in range(1, 4)}
+
+    def test_only_the_first_model_supplies_the_deposited_b_factors(self, tmp_path):
+        path = tmp_path / "models.pdb"
+        first = [_ca_record(i, i, "A", i * 3.8, 1.0, 10.0 * i)
+                 for i in range(1, 4)]
+        second = [_ca_record(i + 3, i, "A", i * 3.8 + 10, 1.0,
+                             80.0 + i) for i in range(1, 4)]
+        path.write_text(
+            "MODEL        1\n" + "\n".join(first) + "\nENDMDL\n"
+            "MODEL        2\n" + "\n".join(second) + "\nENDMDL\nEND\n",
+            encoding="utf-8",
+        )
+
+        loaded = md.load(str(path))
+        assert loaded.n_frames == 2
+        assert np.allclose(loaded.xyz[0, :, 0], [0.38, 0.76, 1.14])
+        assert bfactors_from_pdb(path) == {
+            ("A", i, ""): 10.0 * i for i in range(1, 4)}
 
     def test_a_file_of_zeros_does_not_count_as_having_them(self, tmp_path):
         """A minimised or generated structure writes zeros there.
