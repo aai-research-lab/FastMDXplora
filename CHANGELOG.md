@@ -733,6 +733,29 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Tests: the test of 500 frames under `ulimit -v` 600000 allows Python's
+  small-object allocator and glibc's heap what they take of their own.
+  Python's maps its arenas 1 MiB at a time and gives one back once it is
+  empty, so a process holds an arena more or one fewer as it starts (2
+  or 3, by the hash seed and the environment's size) and at clustering's
+  check, from a few KiB of difference: on CI's ubuntu 3.11 leg the run
+  read 61.41 MiB of room for 62.43, 1.02 MiB more taken than its reading
+  said, with the clustering whole. glibc's heap moves the same way by a
+  few pages, 0.20 MiB at most here. The reading and the run each write
+  what the two hold, with their mappings and threads, just after their
+  `VmSize` at the start and at the check, and the room is asserted past
+  them, within 0.25 MiB (it was 1 MiB, the arenas in it). Past both, 520
+  runs here took -0.01 to +0.02 MiB more than their reading on Python
+  3.10, 3.11 and 3.13, 340 of them under CPU load, where they had taken
+  -1.07 to +1.11 MiB more. More than two arenas either way fails, and so
+  does the heap moved by more than 0.375 MiB, each with its own message,
+  and so does a dump of the allocators the test cannot read, saying
+  which. A failure names the threads and the mappings that moved: a thread
+  started before the check reads "at the check 6, the reading's 1 and
+  5" and "anonymous rw-p +8,208 KiB". 0.5 MiB mapped before the check
+  still fails, and so do 3 MiB of Python objects there, 1 MiB more of
+  heap, a plan 4 MiB larger, the check skipped and a figure not plotted.
+
 - Docs: the counts, flags and settings say what the code has: 31 analyses
   (28 of the system and 3 readers of a biased run), 364 of the 381 analysis
   options shown in the GUI and its 131 settings, each count held by a test,
