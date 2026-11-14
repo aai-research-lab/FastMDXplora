@@ -744,15 +744,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - Docs: behaviour and science as the code has it: no direction claimed for
   a barrier (the curve sits high), `run_corpus(DEFECTS, CLEAN)`, the steered
   `from` computed from the structure and again at production when left out
-  (no pulling rate then), but given for a pull beside `umbrella` (found with
-  `pair_distance` on the prepared system) or the pull run as its own study
-  and named with `seed_from`, the interaction thresholds as the rule
-  functions' parameters, histidine's charge from setup, the contact
-  error from the statistical inefficiency, a study of several runs shared
-  whole, a POST with no `Origin` answered and one marked same-site refused,
-  `Q_line` for a drift off a line, Python 3.10 to 3.13 for a cluster's
-  wheels with `markdown` and `threadpoolctl`, and the cost estimate's
-  arithmetic.
+  (no rate in `steered_work.json` then), but given for a pull beside
+  `umbrella` (found with `pair_distance` on the prepared system) or the pull
+  run as its own study and named with `seed_from`, the interaction
+  thresholds as the rule functions' parameters, histidine's charge from
+  setup, the contact error from the statistical inefficiency, a study of
+  several runs shared whole, a POST with no `Origin` answered and one
+  marked same-site refused, `Q_line` for a drift off a line, Python 3.10 to
+  3.13 for a cluster's wheels with `markdown` and `threadpoolctl`, and the
+  cost estimate's arithmetic.
 - Docs: no em or en dashes on any page (a console line quoted as it is
   printed, the work report described by its fields), and "saved",
   "computed" and "decided" where they are meant.
