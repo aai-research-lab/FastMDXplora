@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fastmdxplora import record_access as _records
+from fastmdxplora.analysis.residues import resname_selection
 
 __all__ = ["selection_for", "states_for", "topology_the_analyses_read"]
 
@@ -122,8 +123,11 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
     except Exception as exc:  # noqa: BLE001 - the panel says why
         return {"ok": False, "reason": f"could not read {where.name}: {exc}"}
 
-    known = _frames_atom(Path(root), topology, where, frames_atom) \
-        if frames_atom not in (None, "") else None
+    try:
+        known = _frames_atom(Path(root), topology, where, frames_atom) \
+            if frames_atom not in (None, "") else None
+    except Exception as exc:  # noqa: BLE001 - the panel says why
+        return {"ok": False, "reason": f"could not select the frames' atoms: {exc}"}
     if known is not None and (known.residue.resSeq != number
                               or known.residue.name.upper() != resname
                               or (atom and known.name != atom)):
@@ -148,23 +152,29 @@ def selection_for(root: Path | str, *, chain: str, resseq: Any, resname: str,
                           f"{chain!r} does not say which"}
     index = chains.pop()
     wanted = next(r for r in chosen if r.chain.index == index)
-    residue = (f"chainid {index} and resSeq {number}" if several_chains
-               else f"resSeq {number}")
-    if {topology.atom(i).residue.index for i in topology.select(residue)} != {wanted.index}:
-        # Another residue shares the number (a ligand numbered 1 beside the
-        # protein's first residue): the name tells them apart.
-        residue += f" and resname {resname}"
-    if known is not None and \
-            {topology.atom(i).residue.index for i in topology.select(residue)} != {wanted.index}:
-        # Nor the name: its place in the topology, counted from 0, is exact.
-        residue = f"resid {wanted.index}"
+    # MDTraj cannot parse a negative resSeq; its topology index is exact.
+    residue = (f"resid {wanted.index}" if number < 0 else
+               f"chainid {index} and resSeq {number}" if several_chains else
+               f"resSeq {number}")
+    try:
+        if {topology.atom(i).residue.index for i in topology.select(residue)} != {wanted.index}:
+            # Another residue shares the number: the name tells them apart.
+            residue += f" and {resname_selection(resname)}"
+        if known is not None and {
+                topology.atom(i).residue.index for i in topology.select(residue)
+        } != {wanted.index}:
+            # Nor the name: its place in the topology, counted from 0, is exact.
+            residue = f"resid {wanted.index}"
+        count = int(len(topology.select(residue)))
+    except Exception as exc:  # noqa: BLE001 - the panel says why
+        return {"ok": False, "against": where.name,
+                "reason": f"could not select the residue: {exc}"}
     answer: dict[str, Any] = {"ok": True, "against": where.name,
-                              "residue": {"selection": residue,
-                                          "atoms": int(len(topology.select(residue)))}}
+                              "residue": {"selection": residue, "atoms": count}}
     if atom:
         # Quoted where the name carries a character the language would read
-        # as an operator: O5' and the like.
-        name = atom if re.fullmatch(r"[A-Za-z0-9]+", atom) else f'"{atom}"'
+        # as a number or operator: 1HB, O5' and the like.
+        name = atom if re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", atom) else f'"{atom}"'
         one = f"{residue} and name {name}"
         try:
             count = int(len(topology.select(one)))

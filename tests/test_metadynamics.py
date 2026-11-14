@@ -27,6 +27,23 @@ def _topology():
     return top
 
 
+def test_a_digit_leading_ligand_is_the_group_the_variable_biases():
+    from fastmdxplora.simulation.metadynamics import plan_from_config
+    from fastmdxplora.simulation.reference_state import _groups
+    from fastmdxplora.simulation.seeding import the_two_groups
+
+    top = _topology()
+    top.residue(6).name = "3GR"
+    plan = plan_from_config(
+        {"collective_variable": "ligand_distance", "ligand_resname": '"3GR"',
+         "site_selection": "resid 1 to 3 and name CA", "sigma": 0.05,
+         "walls": {"upper": 2.5}}, top)
+    assert list(plan.atoms["ligand"]) == list(range(24, 30))
+    assert _groups(top, "3GR", "protein")["ligand"].tolist() == list(range(24, 30))
+    ligand, _site = the_two_groups(top, "3GR", "protein")
+    assert ligand.tolist() == list(range(24, 30))
+
+
 class TestChoosingWhatToBias:
     """Choosing a collective variable is the decision the method turns on: if
     it does not distinguish the states that matter, the surface converges and

@@ -26,6 +26,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
@@ -325,7 +326,7 @@ class SASA(Analysis):
         if not self.ligand_resname:
             return np.empty(0, dtype=int)
         try:
-            ligand = traj.topology.select(f"resname {self.ligand_resname}")
+            ligand = traj.topology.select(resname_selection(self.ligand_resname))
         except Exception:  # noqa: BLE001 - a name the language cannot parse
             ligand = np.empty(0, dtype=int)
         return np.setdiff1d(ligand, selected)
@@ -374,7 +375,7 @@ class SASA(Analysis):
                 f"{self.selection!r}, so there is no ligand to compute the "
                 "surface in the presence of."
             , code="analysis.selection.empty",
-                expression=f"resname {self.ligand_resname}", role="ligand")
+                expression=resname_selection(self.ligand_resname), role="ligand")
         self._say_which_surface(ligand)
 
         if self.with_ligand:
