@@ -10,7 +10,8 @@ from fastmdxplora.analysis.end_to_end import EndToEndDistance
 from fastmdxplora.refusals import StudyError
 
 
-def _straight_chains(n_residues=6, spacing=0.38, chains=1, box=None, frames=4):
+def _straight_chains(n_residues=6, spacing=0.38, chains=1, box=None, frames=4,
+                     chain_ids=None, chain_spacings=None):
     """Chains laid along x with CA atoms ``spacing`` apart.
 
     The end-to-end distance is then ``(n_residues - 1) * spacing`` exactly,
@@ -19,13 +20,15 @@ def _straight_chains(n_residues=6, spacing=0.38, chains=1, box=None, frames=4):
     top = md.Topology()
     positions = []
     for c in range(chains):
-        chain = top.add_chain()
+        chain = top.add_chain(chain_ids[c] if chain_ids is not None else None)
+        chain_spacing = (chain_spacings[c] if chain_spacings is not None
+                         else spacing)
         for i in range(n_residues):
             res = top.add_residue("ALA", chain, resSeq=i + 1)
             top.add_atom("N", md.element.nitrogen, res)
             top.add_atom("CA", md.element.carbon, res)
             top.add_atom("C", md.element.carbon, res)
-            base = np.array([i * spacing, c * 1.5, 0.0])
+            base = np.array([i * chain_spacing, c * 1.5, 0.0])
             positions.extend([
                 base + [-0.05, 0.0, 0.0],
                 base,
@@ -72,6 +75,27 @@ class TestTheDistance:
 
         assert result.shape == (4, 3)
         assert np.allclose(result, 4 * 0.3)
+
+    @pytest.mark.parametrize(
+        ("chain_ids", "labels"),
+        [(("A", "A"), ["chain A", "chain A (1)"]),
+         ((" ", " "), ["chain A", "chain B"])],
+    )
+    def test_chains_with_repeated_or_blank_ids_keep_their_own_distances(
+            self, chain_ids, labels):
+        traj = _straight_chains(
+            n_residues=5, chains=2, chain_ids=chain_ids,
+            chain_spacings=(0.3, 0.4))
+        analysis = EndToEndDistance()
+
+        result = analysis.compute(traj)
+
+        assert list(result.columns) == labels
+        assert len(result.columns) == analysis.findings["ends"]["chains"] == 2
+        for chain, label in zip(traj.topology.chains, labels):
+            atoms = [atom.index for atom in chain.atoms]
+            expected = EndToEndDistance().compute(traj.atom_slice(atoms))
+            assert np.allclose(result[label].to_numpy(), expected)
 
 
 class TestThePeriodicBoundary:
@@ -166,14 +190,14 @@ class TestWhatItRefuses:
         """A default run of a dimer failed here, in every study of one."""
         result = EndToEndDistance().compute(_straight_chains(chains=3))
         assert result.shape[1] == 3
-        assert list(result.columns) == ["chain 0", "chain 1", "chain 2"]
+        assert list(result.columns) == ["chain A", "chain B", "chain C"]
         assert np.allclose(result, EndToEndDistance(by_chain=True).compute(
             _straight_chains(chains=3)))
 
     def test_several_chains_are_drawn_and_saved_by_name(self, tmp_path):
         result = EndToEndDistance(output_dir=tmp_path).run(_straight_chains(chains=2))
         assert result.status == "ok", result.message
-        assert result.data_path.read_text().splitlines()[0] == "chain 0,chain 1"
+        assert result.data_path.read_text().splitlines()[0] == "chain A,chain B"
         assert result.figure_path.is_file()
 
     def test_several_chains_are_not_reweighted_as_one(self):
