@@ -733,6 +733,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The shared `--system` help says a sequence must be predicted first, and the
+  remote guide says it is refused here.
 - Docs: the counts, flags and settings say what the code has: 31 analyses
   (28 of the system and 3 readers of a biased run), 364 of the 381 analysis
   options shown in the GUI and its 131 settings, each count held by a test,

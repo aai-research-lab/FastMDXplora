@@ -669,7 +669,8 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
     The system value is auto-classified downstream: a path ending in
     ``.pdb`` / ``.cif`` is loaded from disk, a 4-character alphanumeric
     string is fetched from RCSB as a PDB ID, and a longer alphabetic
-    string is treated as a one-letter sequence. There is therefore no
+    string is recognized as a one-letter sequence and refused because a
+    structure predictor is needed to build it. There is therefore no
     separate ``--pdb-id`` flag — ``--system 1L2Y`` does the right thing.
     """
     src = p.add_argument_group("input")
@@ -678,8 +679,9 @@ def _common_input_args(p: argparse.ArgumentParser) -> None:
         dest="system",
         metavar="SYSTEM",
         help=(
-            "System input: a PDB/CIF file path, a 4-character PDB ID "
-            "(e.g. 1L2Y, fetched from RCSB), or a one-letter sequence. "
+            "System input: a PDB or mmCIF file path, or a 4-character "
+            "PDB ID (e.g. 1L2Y, fetched from RCSB). A sequence needs a "
+            "structure predictor; predict it first. "
             "May instead be supplied via --config."
         ),
     )
