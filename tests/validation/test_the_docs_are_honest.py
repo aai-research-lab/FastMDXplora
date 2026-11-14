@@ -71,6 +71,33 @@ class TestEveryAnalysisIsDocumented:
         assert "five ligand analyses" in _analysis_section()
 
 
+class TestTheAnalysisCountIsTheRealOneOnEveryPage:
+    """api.md said 27 names for four releases after there were 31: a count
+    only analyses.md was held to."""
+
+    @staticmethod
+    def _page(name: str) -> str:
+        return " ".join((DOCS / name).read_text(encoding="utf-8").split())
+
+    def test_the_api_page_counts_the_names_and_the_classes(self) -> None:
+        page = self._page("api.md")
+        assert f"# the {len(_REGISTRY)} names, in execution order" in page
+        assert f"every one of the {len(_REGISTRY)} classes" in page
+
+    def test_the_config_reference_counts_the_names(self) -> None:
+        assert (f"The {len(_REGISTRY)} names `include` and `exclude` accept"
+                in self._page("config_reference.md"))
+
+    def test_how_it_works_counts_the_system_s_and_the_biased_run_s(self) -> None:
+        words = {3: "three", 24: "Twenty-four", 25: "Twenty-five",
+                 26: "Twenty-six", 27: "Twenty-seven", 28: "Twenty-eight",
+                 29: "Twenty-nine", 30: "Thirty"}
+        system = len(_REGISTRY) - len(METHOD_GATED)
+        assert (f"{words[system]} analyses of the system, plus "
+                f"{words[len(METHOD_GATED)]} that read what a biased run "
+                "itself produced") in self._page("how_it_works.md")
+
+
 class TestTheEnhancedSamplingThreeAreNotLigandAnalyses:
     """They were filed under 'Protein and ligand together', which is where a
     row lands if it is appended to the end of the file. None of them needs a
@@ -200,12 +227,32 @@ class TestTheGuiPageCountsWhatThereIs:
         total = sum(len(describe_analysis(name)) for name in _REGISTRY)
         assert f"{total} analysis options" in self._page()
 
-    def test_the_settings_count_is_the_real_one(self) -> None:
-        from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
+    def test_the_options_shown_are_counted_without_the_ignored_selection(self) -> None:
+        """An analysis that works out its own atoms is offered no
+        `selection` (schema_payload drops it), so the form shows fewer
+        options than the analyses declare."""
+        from fastmdxplora.analysis.describe import describe_analysis
+        from fastmdxplora.analysis.orchestrator import get_analysis_class
 
-        total = len(TOP_LEVEL.fields) + sum(
+        total = sum(len(describe_analysis(name)) for name in _REGISTRY)
+        ignored = sum(
+            1 for name in _REGISTRY
+            if not getattr(get_analysis_class(name), "honours_selection", True)
+            and any(o.name == "selection" for o in describe_analysis(name)))
+        page = " ".join(self._page().split())
+        assert (f"the `selection` that {ignored} of them ignore, "
+                f"so {total - ignored} shown") in page
+
+    def test_the_settings_count_is_the_real_one(self) -> None:
+        """Every setting the form carries: the four phases, the top-level
+        settings (the output folder and the phase checkboxes among them) and
+        the execution settings beside the run options."""
+        from fastmdxplora.config.schema import EXECUTION, PHASE_SCHEMAS, TOP_LEVEL
+
+        total = len(TOP_LEVEL.fields) + len(EXECUTION.fields) + sum(
             len(group.fields) for group in PHASE_SCHEMAS.values())
-        assert f"{total} phase and top-level settings" in self._page()
+        page = " ".join(self._page().split())
+        assert f"{total} phase, top-level and execution settings" in page
 
     def test_it_says_the_browser_builds_and_the_cli_runs(self) -> None:
         """The claim external summaries keep getting wrong: this is not a
@@ -644,3 +691,4 @@ class TestThePagesThatEnumerateTheSchemaAreCurrent:
         assert named, "the page names no endpoints; the regex has drifted"
         gone = sorted(named - served)
         assert not gone, f"docs/gui.md names endpoints the server lacks: {gone}"
+

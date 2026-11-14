@@ -9,13 +9,13 @@ study, starting it, watching it happen, and reading the results.
 
 The GUI is not a cut-down version of the command line. It offers **every
 setting the software has** (all 381 analysis options across 31 analyses, but
-for the `selection` that 17 of them ignore, so 364 shown; and all
-127 phase and top-level settings), because the form is generated from the
+for the `selection` that 17 of them ignore, so 364 shown; and all 131 phase,
+top-level and execution settings), because the form is generated from the
 same declaration the CLI and the [Config](config.md) are built from rather than
 written by hand. Adding a setting to the schema puts a control in the GUI;
 nothing has to be kept in step.
 
-Those three counts are checked against the software on every release, because a
+Those counts are checked against the software on every release, because a
 count in a document nobody recomputes is a claim that decays, and this one is
 load-bearing: it is the sentence that says the GUI is not a cut-down command
 line.
