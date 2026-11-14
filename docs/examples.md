@@ -257,21 +257,25 @@ simulation:
   duration_ns: 2
   steered:
     collective_variable: radius_of_gyration
-    from: 0.71             # where the coordinate starts
-    to: 1.20               # where to pull it
+    to: 1.20               # nm, where to pull it
     force_constant: 1000.0
 ```
 
-`from` has to be the value the coordinate **actually has** at the start. It is
-refused rather than guessed, because a pull that begins somewhere the molecule
-is not spends its first half hauling the system to the anchor and reports work
-that means nothing.
+`from`, where the pull starts, is left out: it is computed from the structure
+the run starts from, and again from the equilibrated state just before
+production, so the pull starts where the molecule is. A pull that began
+somewhere else would spend its first part hauling the system to the anchor and
+report work that means nothing. Give `from` only to start the pull elsewhere;
+it is then used as given. Left out, it is refused rather than guessed where it
+cannot be computed (no structure yet, or a variable other than `distance`,
+`ligand_distance`, `radius_of_gyration` and `torsion`).
 
-Compute it before writing the Config:
+Run it, and check where it started with the radius of gyration on the
+equilibrated frame:
 
 ```bash
-fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses rg
 fastmdx explore --config pull.yml
+fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses rg
 ```
 
 The work profile lands in the analysis directory. On a correct pull it starts

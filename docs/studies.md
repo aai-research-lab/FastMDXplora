@@ -357,8 +357,7 @@ simulation:
   steered:
     collective_variable: ligand_distance
     site_selection: "resid 84 to 121 and name CA"
-    from: 0.4          # nm, where the coordinate starts
-    to: 3.0            # where to pull it
+    to: 3.0            # nm, where to pull it
     steps: 5000000     # over which the anchor travels
 ```
 
@@ -376,13 +375,23 @@ when the pulling is fast.
 FastMDXplora reports the pulling rate and the work, and does not claim a free
 energy from a steered run.
 
-`from` has to be the value the coordinate **actually has** at the start. It is
-refused rather than guessed, because a pull that begins somewhere the molecule
-is not spends its first half hauling the system to the anchor and reports work
-that means nothing. Compute it before writing the Config: the distance
-between the centres of mass of the ligand and of `site_selection`, on the
-equilibrated frame, is the first value of `pair_distance` over the same two
-groups (`LIG` is `ligand_name`'s default):
+Leave `from`, where the pull starts, out unless you want the pull to start
+somewhere else. Left out, it is computed from the structure the run starts
+from, and computed again from the equilibrated state just before production,
+so the anchor is where the system is when the force is attached (each value is
+logged; if the second cannot be computed, the run says so and keeps the
+first). A pull that begins somewhere the molecule is not spends its first part
+hauling the system to the anchor and reports work that means nothing. A `from`
+you give is used as given, and neither value is computed. Left out, it is
+refused (`simulation.bias.parameter_missing`) only where it cannot be
+computed: no structure is there yet, or the variable is not one read from
+coordinates alone (`distance`, `ligand_distance`, `radius_of_gyration` and
+`torsion` are).
+
+To check the value, compute the distance between the centres of mass of the
+ligand and of `site_selection` on the equilibrated frame: it is the first
+value of `pair_distance` over the same two groups (`LIG` is `ligand_name`'s
+default):
 
 ```bash
 fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses pair_distance \
