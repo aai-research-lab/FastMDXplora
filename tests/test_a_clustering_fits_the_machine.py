@@ -1420,12 +1420,36 @@ def studies(tmp_path_factory):
             for n in (500, 1001, 2000)}
 
 
+#: ``allocator_said(path)``: what Python's small-object allocator has mapped
+#: (``sys._debugmallocstats``), written to ``path`` through the process's
+#: standard error, so nothing of it is read or parsed in the process. Said
+#: just after the ``VmSize`` it goes with is read: an arena the reading of
+#: ``/proc/self/status`` itself mapped is in both. Where the interpreter has
+#: no such allocator, nothing is written.
+_ALLOCATOR_SAID = r"""
+def allocator_said(path):
+    if not hasattr(sys, "_debugmallocstats"):
+        return
+    sys.stderr.flush()
+    said = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    saved = os.dup(2)
+    os.dup2(said, 2)
+    try:
+        sys._debugmallocstats()
+    finally:
+        os.dup2(saved, 2)
+        os.close(saved)
+        os.close(said)
+"""
+
 #: ``fastmdx analyze`` in its own process, as `python -m fastmdxplora` runs
 #: it, to clustering's memory check: there it prints what the process holds
 #: (the libraries mapped, as the check maps them) past what it held as it
 #: started, and stops. With :data:`_UNDER_THE_LIMIT_SCRIPT`, what a run of
 #: the command line holds at the check is read from a process of its own
-#: kind, under coverage or not.
+#: kind, under coverage or not. Just after each ``VmSize`` is read, Python's
+#: allocator says what it has mapped (:data:`_ALLOCATOR_SAID`), into the
+#: files ``argv[2]`` + ``.start`` and + ``.check``.
 _TO_THE_CHECK_SCRIPT = r"""
 import os, runpy, sys
 src = sys.argv[1]
@@ -1438,24 +1462,33 @@ def held():
     raise SystemExit("no VmSize")
 
 start = held()
+""" + _ALLOCATOR_SAID + r"""
+said_to = sys.argv[2]
+allocator_said(said_to + ".start")
 from fastmdxplora.analysis import cluster
 
 def at_the_check():
     cluster.libraries_mapped()
-    print("VMCHECK", held() - start, flush=True)
+    at_it = held()
+    allocator_said(said_to + ".check")
+    print("VMCHECK", at_it - start, flush=True)
     os._exit(0)
 
 cluster.memory_available = at_the_check
-sys.argv = ["fastmdxplora", *sys.argv[2:]]
+sys.argv = ["fastmdxplora", *sys.argv[3:]]
 runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
 """
 
 #: ``fastmdx analyze`` in its own process, as :data:`_TO_THE_CHECK_SCRIPT`
 #: runs it, under ``RLIMIT_AS`` set from what this interpreter holds at the
 #: same point of its start: that, what the reading took from there to the
-#: check (``argv[2]``), and the room meant (``argv[3]``). Nothing of the
-#: command line is changed. It prints what it held at its start, the limit
-#: and its threads, and its threads and ``VmSize`` as it exits.
+#: check (``argv[3]``), and the room meant (``argv[4]``). Nothing of the
+#: command line is changed: the libraries are mapped as they are, and once
+#: they are, just after the check reads ``VmSize``, Python's allocator says
+#: what it has mapped into the file ``argv[2]`` + ``.check``, and at its
+#: start into + ``.start``, as the reading's does. It prints what it held at
+#: its start, the limit and its threads, and its threads and ``VmSize`` as
+#: it exits.
 _UNDER_THE_LIMIT_SCRIPT = r"""
 import os, runpy, sys
 src = sys.argv[1]
@@ -1468,13 +1501,31 @@ def status(name):
     raise SystemExit("no " + name)
 
 start = status("VmSize") * 1024
+""" + _ALLOCATOR_SAID + r"""
+said_to = sys.argv[2]
+allocator_said(said_to + ".start")
 import atexit, resource
-limit = start + int(sys.argv[2]) + int(sys.argv[3])
+limit = start + int(sys.argv[3]) + int(sys.argv[4])
 resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
 print("STARTED", start, limit, status("Threads"), flush=True)
 atexit.register(lambda: print("ENDED", status("Threads"), status("VmSize") * 1024, flush=True))
-from fastmdxplora.analysis import cluster  # noqa: F401 -- as the reading imports it
-sys.argv = ["fastmdxplora", *sys.argv[4:]]
+from fastmdxplora.analysis import cluster
+mapped, status_read, said = cluster.libraries_mapped, cluster._process_status, []
+
+def libraries_mapped(*args, **kwargs):
+    mapped(*args, **kwargs)
+    if not said:
+        said.append("the check reads next")
+
+def process_status():
+    held = status_read()
+    if said == ["the check reads next"]:
+        said.append("said")
+        allocator_said(said_to + ".check")
+    return held
+
+cluster.libraries_mapped, cluster._process_status = libraries_mapped, process_status
+sys.argv = ["fastmdxplora", *sys.argv[5:]]
 runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
 """
 
@@ -1485,10 +1536,44 @@ runpy.run_module("fastmdxplora", run_name="__main__", alter_sys=True)
 ROOM_AT_600000 = 600000 * 1024 - 548937728
 
 #: How far the room a run of the 600000 test reads at its check may be from
-#: :data:`ROOM_AT_600000` for the run to be the one the test means, in
-#: bytes. Here the run read within 0.22 MiB of it in each of 21 runs; the
-#: plan for its 500 frames (61.0 MiB) is 1.4 MiB under it.
-ROOM_READ_WITHIN = 2**20
+#: :data:`ROOM_AT_600000`, past what Python's allocator mapped from its start
+#: to the check more or less than in the reading (:func:`_allocator_mapped`),
+#: for the run to be the one the test means, in bytes. Past the allocator,
+#: the run took from -0.05 to +0.11 MiB more than its reading in each of 230
+#: runs (Python 3.10, 3.11 and 3.13, 90 of them under CPU load); the plan for
+#: its 500 frames (61.0 MiB) is 1.4 MiB under the room.
+ROOM_READ_WITHIN = 2**20 // 4
+
+
+def _allocator_mapped(path) -> tuple[int, int] | None:
+    """What Python's small-object allocator said it had mapped
+    (:data:`_ALLOCATOR_SAID`): its arenas, and their bytes with those of the
+    map it finds them by. None where it said nothing.
+
+    It maps an arena whole, 1 MiB from Python 3.10, and gives it back once
+    it is empty, so what a process holds moves by an arena where the last
+    one fills or empties: as it starts (2 arenas or 3, by the hash seed) and
+    at the check. On CI's ubuntu 3.11 leg the run read 1.02 MiB less room
+    than the reading said, with the clustering whole. Here, of 140 runs
+    with the environment's size stepped, 22 moved by more than 1 MiB from
+    their reading, each by an arena at the start or at the check, and none
+    of 40 with ``PYTHONMALLOC=malloc`` by more than 0.11 MiB."""
+    import re
+    from pathlib import Path
+
+    try:
+        text = Path(path).read_text()
+    except OSError:
+        return None
+    arenas = re.search(r"# arenas allocated current\s*=\s*([\d,]+)", text)
+    size = re.search(r"([\d,]+) bytes/arena", text)
+    if arenas is None or size is None:
+        return None
+    count = int(arenas.group(1).replace(",", ""))
+    found = count * int(size.group(1).replace(",", ""))
+    found += sum(int(lost.replace(",", "")) for lost in re.findall(
+        r"# bytes lost to arena map (?:root|mid|bot)\s*=\s*([\d,]+)", text))
+    return count, found
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="reads Linux /proc/self/status")
@@ -1524,7 +1609,15 @@ class TestTheCommandLinesOwnProcess:
         difference at the start is not in the room; one between the start
         and the check, the command line's own, still is: the room the run
         read is asserted, and a run that took more than the reading between
-        the two fails, saying both."""
+        the two fails, saying both.
+
+        Past what Python's allocator mapped: an arena more or one fewer than
+        in the reading, at the start or at the check
+        (:func:`_allocator_mapped`), is its own, and on CI's ubuntu 3.11 leg
+        the run read 61.41 MiB of room for 62.43, 1.02 MiB more taken than
+        the reading's, with the clustering whole. More than two arenas
+        either way fails, and so does what the run took past the
+        allocator's arenas by more than :data:`ROOM_READ_WITHIN`."""
         import subprocess
         from pathlib import Path
 
@@ -1548,12 +1641,14 @@ class TestTheCommandLinesOwnProcess:
             return [int(part) for part in line.split()[1:]]
 
         # The cache written, then read as the run reads it.
-        said(ran(_TO_THE_CHECK_SCRIPT, src, *analyze), "VMCHECK")
-        growth = said(ran(_TO_THE_CHECK_SCRIPT, src, *analyze), "VMCHECK")[0]
+        reading, running = tmp_path / "reading_allocator", tmp_path / "run_allocator"
+        said(ran(_TO_THE_CHECK_SCRIPT, src, str(reading), *analyze), "VMCHECK")
+        growth = said(ran(_TO_THE_CHECK_SCRIPT, src, str(reading), *analyze), "VMCHECK")[0]
 
         # A record of an earlier run is not read as this run's.
         (study / "analysis" / "cluster" / "options.json").unlink(missing_ok=True)
-        done = ran(_UNDER_THE_LIMIT_SCRIPT, src, str(growth), str(ROOM_AT_600000), *analyze)
+        done = ran(_UNDER_THE_LIMIT_SCRIPT, src, str(running), str(growth),
+                   str(ROOM_AT_600000), *analyze)
         output = f"exit {done.returncode}\n" + done.stdout[-3000:] + done.stderr[-2000:]
         start, limit, threads = said(done, "STARTED")
         try:
@@ -1565,12 +1660,31 @@ class TestTheCommandLinesOwnProcess:
         took = limit - room - start
         ended = next((line.split()[1] for line in done.stdout.splitlines()
                       if line.startswith("ENDED ")), "not read")
-        assert abs(room - ROOM_AT_600000) <= ROOM_READ_WITHIN, (
+        # Python's allocator maps an arena whole: one more or one fewer at
+        # the start and at the check than in the reading is its own, not the
+        # command line's, and at most two in all.
+        said = {(who, when): _allocator_mapped(f"{path}.{when}")
+                for who, path in (("reading", reading), ("run", running))
+                for when in ("start", "check")}
+        if None in said.values():
+            arenas, allocator = 0, 0
+            allocator_note = "Python's allocator said nothing"
+        else:
+            arenas, allocator = (
+                said["run", "check"][part] - said["run", "start"][part]
+                - said["reading", "check"][part] + said["reading", "start"][part]
+                for part in (0, 1))
+            allocator_note = (
+                f"Python's allocator {allocator / 2**20:+.2f} MiB of it, its arenas "
+                f"{said['run', 'start'][0]} to {said['run', 'check'][0]}, the reading's "
+                f"{said['reading', 'start'][0]} to {said['reading', 'check'][0]}")
+        assert abs(arenas) <= 2 and (
+            abs(room + allocator - ROOM_AT_600000) <= ROOM_READ_WITHIN), (
             f"the run read {room / 2**20:.2f} MiB of room at the check, meant "
             f"{ROOM_AT_600000 / 2**20:.2f}: from its start to the check it took "
             f"{took / 2**20:.2f} MiB, the reading {growth / 2**20:.2f} "
-            f"({(took - growth) / 2**20:+.2f}); threads at its start {threads}, at its "
-            f"end {ended}; {output}")
+            f"({(took - growth) / 2**20:+.2f}; {allocator_note}); threads at its "
+            f"start {threads}, at its end {ended}; {output}")
         assert done.returncode == 0, output
         for name in ("rmsd", "cluster"):
             row, findings = _record(study, name)
