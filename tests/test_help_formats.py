@@ -25,6 +25,18 @@ def test_subcommand_help_formats(cmd, capsys):
     assert capsys.readouterr().out
 
 
+@pytest.mark.parametrize("cmd", ["explore", "setup"])
+def test_system_help_says_a_sequence_needs_a_predicted_structure(cmd):
+    command = _build_parser()._subparsers._group_actions[0].choices[cmd]
+    system = next(action for action in command._actions if action.dest == "system")
+    system_help = " ".join(system.help.split())
+    formatted_help = " ".join(command.format_help().split())
+
+    assert system_help in formatted_help
+    assert "or a one-letter sequence" not in system_help
+    assert "sequence needs a structure predictor; predict it first" in system_help
+
+
 def test_top_level_help_formats(capsys):
     with pytest.raises(SystemExit) as excinfo:
         _build_parser().parse_args(["--help"])
