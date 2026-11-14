@@ -689,7 +689,9 @@ def watch(job, result):
 
 report = work(queue, study_runner("runs", queue=queue),
               campaign="tau-scaffolds", watch=watch)
-# 3 finished, 0 refused, 7 abandoned, 9.0 GPU-hours: the line is empty
+report.finished, report.failed, report.abandoned   # 3, 0, 7
+report.seconds / 3600                             # 9.0 GPU-hours
+report.stopped_because                            # 'the line is empty'
 ```
 
 The worker claims, runs, records and looks again. Its only real decisions are

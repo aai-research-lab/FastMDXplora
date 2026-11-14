@@ -42,9 +42,9 @@ def test_a_link_to_ranger_s_section_reaches_it():
 def test_the_cli_page_names_the_modes():
     text = (DOCS / "cli.md").read_text(encoding="utf-8")
     assert "| `--assisted` | *(default)* | Seeker (built-in, assisted): draft it and stop |" in text
-    assert ("| `--autonomous` | none | Ranger (built-in, autonomous): draft it and run it. "
+    assert ("| `--autonomous` | off | Ranger (built-in, autonomous): draft it and run it. "
             "**Requires `--budget-hours`** |") in text
-    assert ("| `--unvalidated` | none | Outside the schema, not one of the modes: marks the "
+    assert ("| `--unvalidated` | off | Outside the schema, not one of the modes: marks the "
             "output as having gone outside the schema |") in text
 
 

@@ -406,8 +406,8 @@ fastmdx agent                                            # opens the GUI Agent p
 | `--phases PHASES` | `setup,simulation` | Which phases to write, comma-separated |
 | `--attempts N` | `3` | Attempts in all, the first included, before giving up |
 | `--assisted` | *(default)* | Seeker (built-in, assisted): draft it and stop |
-| `--autonomous` | none | Ranger (built-in, autonomous): draft it and run it. **Requires `--budget-hours`** |
-| `--unvalidated` | none | Outside the schema, not one of the modes: marks the output as having gone outside the schema |
+| `--autonomous` | off | Ranger (built-in, autonomous): draft it and run it. **Requires `--budget-hours`** |
+| `--unvalidated` | off | Outside the schema, not one of the modes: marks the output as having gone outside the schema |
 | `--budget-hours H` | none | Maximum GPU time, checked after setup |
 | `--host` / `--port` / `--no-browser` | `127.0.0.1` / `8765` | For the no-request panel route |
 
