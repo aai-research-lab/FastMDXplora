@@ -372,13 +372,15 @@ recovers a free energy from an ensemble of pulls, but the average is dominated
 by rare low-work trajectories, so it needs many repeats and converges badly
 when the pulling is fast.
 
-FastMDXplora reports the work, and the pulling rate where `from` is given,
-and does not claim a free energy from a steered run. With `from` left out the
-rate is not worked out: `simulation/steered_work.json` records
-`pull_rate_per_ns` as null and the console line gives no rate.
+FastMDXplora reports the work and the pulling rate, and does not claim a free
+energy from a steered run. The rate is said when the pull is prepared
+("Steered pull prepared: ... (X per ns)", on the console and in
+`fastmdxplora.log`; with `from` left out, from the anchor computed on the
+structure the run starts from). `simulation/steered_work.json` records
+`pull_rate_per_ns` only where `from` is given, and null where it is left out.
 
 Leave `from`, where the pull starts, out unless you want the pull to start
-somewhere else (or want the rate, above). Left out, it is computed from the
+somewhere else. Left out, it is computed from the
 structure the run starts from, and computed again from the equilibrated state
 just before production, so the anchor is where the system is when the force is
 attached; if the second cannot be computed, the run says so and keeps the
@@ -390,20 +392,25 @@ variable is not one read from coordinates alone (`distance`,
 `ligand_distance`, `radius_of_gyration` and `torsion` are).
 
 To check where a pull started, read `from` in `simulation/steered_work.json`,
-the coordinate PLUMED recorded first, and the run's `fastmdxplora.log`, where
-"Pull re-anchored at ... nm, computed from the equilibrated state" gives the
-anchor production started from.
+the coordinate PLUMED recorded first, and, with `from` left out, the run's
+`fastmdxplora.log`, where "Pull re-anchored at ... nm, computed from the
+equilibrated state" gives the anchor production started from (or a warning
+says it kept the first).
 
 **A pull that seeds umbrella windows in the same Config** (a `steered` block
 beside `umbrella`) needs `from` given, for now. Before any window runs, the
 study checks the pull against the one prepared system its windows share, from
 its topology alone, so a `from` left out there is refused
 (`simulation.cv.selection_empty`) once that system is prepared and before
-anything is simulated. Prepare it first (`fastmdx explore --config study.yml
---include setup`), and take the value on it: the first value of
-`pair_distance` over the same two groups, with `--trajectory` and
-`--topology` both the prepared `shared_setup/setup/topology.pdb` under the
-study's output (`LIG` is `ligand_name`'s default):
+anything is simulated. Prepare it first with `fastmdx explore --config
+study.yml --include setup`: it prepares the system, then stops with that
+refusal and exit status 1, and the prepared system is saved and reused by the
+next run.
+
+Take the value on it: the first value of `pair_distance` over the same two
+groups, with `--trajectory` and `--topology` both the prepared
+`shared_setup/setup/topology.pdb` under the study's output (`LIG` is
+`ligand_name`'s default):
 
 ```bash
 fastmdx analyze --trajectory runs/study/shared_setup/setup/topology.pdb \
