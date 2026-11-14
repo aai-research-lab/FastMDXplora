@@ -2084,7 +2084,8 @@ def _written_into(folder: Path, name: str, text: str) -> None:
     handle, scratch = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".part")
     try:
         # As any file written here would be, not mkstemp's owner-only mode.
-        os.fchmod(handle, 0o666 & ~_UMASK)
+        if hasattr(os, "fchmod"):
+            os.fchmod(handle, 0o666 & ~_UMASK)
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             out.write(text)
         os.replace(scratch, folder / name)

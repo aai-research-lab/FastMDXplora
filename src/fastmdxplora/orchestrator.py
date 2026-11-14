@@ -2005,7 +2005,8 @@ def _put_in_place(path: Path, text: str) -> None:
         # owner-only one `mkstemp` gives): a lab's shared study is read by
         # the group, its record from another machine among it.
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            os.fchmod(stream.fileno(), 0o666 & ~_umask())
+            if hasattr(os, "fchmod"):
+                os.fchmod(stream.fileno(), 0o666 & ~_umask())
             stream.write(text)
         os.replace(name, path)
     except BaseException:

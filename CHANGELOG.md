@@ -9,6 +9,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
+- On Windows, `analyze`, `explore`, `setup`, `simulate` and `report` no longer
+  stop at startup because `os.fchmod` is unavailable. Windows remains
+  unsupported; this removes the initial crash so protein-only studies and the
+  GUI can be used by people developing there.
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried
