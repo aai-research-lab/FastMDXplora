@@ -358,7 +358,7 @@ def test_unknown_frame_count_refuses_before_loading(tmp_path, monkeypatch):
     import fastmdxplora.analysis.common_landscapes as common
 
     reference, trajectory, topology = _files(tmp_path)
-    monkeypatch.setattr(common, "_frames_in", lambda *args: None)
+    monkeypatch.setattr(common, "_frames_in", lambda *args, **kwargs: None)
     monkeypatch.setattr(common, "load_trajectory",
                         lambda *args, **kwargs: pytest.fail("unknown-size target was loaded"))
 
@@ -406,3 +406,145 @@ def test_comparison_schema_rejects_wrong_method_and_unknown_fields(tmp_path):
     analysis.comparison["targets"][0]["model_file"] = "untrusted.pkl"
     with pytest.raises(StudyError, match="unknown keys"):
         analysis.compute(reference)
+
+
+@pytest.mark.parametrize("suffix", (".gro", ".lammpstrj"))
+def test_a_target_without_a_frame_index_is_refused_before_it_is_loaded(
+        tmp_path, monkeypatch, suffix):
+    import fastmdxplora.analysis.common_landscapes as common
+    import fastmdxplora.analysis.loading as loading
+
+    reference, trajectory, topology = _files(tmp_path)
+    target = md.load(str(trajectory), top=str(topology))
+    target.unitcell_vectors = np.repeat(np.eye(3, dtype=np.float32)[None] * 5,
+                                        target.n_frames, axis=0)
+    unindexed = tmp_path / f"target{suffix}"
+    getattr(target, f"save_{suffix[1:]}")(str(unindexed))
+    assert loading._frames_in(unindexed, topology) == target.n_frames  # default still counts
+    assert loading._frames_in(unindexed, topology, load=False) is None
+    assert loading._frames_in(trajectory, topology, load=False) == target.n_frames
+    calls = []
+    load = loading.md.load
+    monkeypatch.setattr(loading.md, "load",
+                        lambda *args, **kwargs: calls.append(args) or load(*args, **kwargs))
+    monkeypatch.setattr(common, "load_trajectory",
+                        lambda *args, **kwargs: pytest.fail("unindexed target was loaded"))
+
+    with pytest.raises(StudyError, match="without loading it whole"):
+        _analysis(unindexed, topology).compute(reference)
+    assert calls == []
+
+
+def test_the_saved_table_rebins_to_the_saved_counts_with_a_literal_label(
+        tmp_path, monkeypatch):
+    import csv
+
+    import fastmdxplora.analysis.common_landscapes as common
+
+    reference, trajectory, topology = _files(tmp_path, 4.0)
+    label = r"bad $\frac$ label"
+    analysis = _analysis(trajectory, topology, output_dir=tmp_path / "out", targets=[
+        {"label": label, "trajectory": str(trajectory), "topology": str(topology)}])
+    titles = []
+    save_figure = common.save_figure
+
+    def inspect_figure(fig, path):
+        titles.extend(axis.get_title() for axis in fig.axes)
+        return save_figure(fig, path)
+
+    monkeypatch.setattr(common, "save_figure", inspect_figure)
+
+    result = analysis.run(reference)
+
+    assert result.status == "ok" and result.figure_path.is_file(), result.message
+    assert any(title.startswith(label + " (N=14") for title in titles)
+    assert analysis.findings["comparison"]["labels"] == ["WT", label]
+    with (result.data_path).open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    with np.load(tmp_path / "out" / "dimred" / "common_pca_landscapes.npz") as grids:
+        edges_x, edges_y, counts = grids["edges_pc1"], grids["edges_pc2"], grids["counts"]
+        assert grids["labels"].tolist() == ["WT", label]
+    points = np.array([[float(row["component_1_nm"]), float(row["component_2_nm"])]
+                       for row in rows])
+    assert [points[:, 0].min(), points[:, 0].max()] == [edges_x[0], edges_x[-1]]
+    assert [points[:, 1].min(), points[:, 1].max()] == [edges_y[0], edges_y[-1]]
+    for ensemble, name in enumerate(("WT", label)):
+        mine = [row["label"] == name and int(row["ensemble"]) == ensemble for row in rows]
+        assert sum(mine) == 14
+        histogram, _, _ = np.histogram2d(points[mine, 0], points[mine, 1],
+                                         bins=(edges_x, edges_y))
+        assert np.array_equal(histogram, counts[ensemble])
+    assert "own minimum" in analysis.findings["comparison"]["landscape_convention"]
+    assert any("not a common absolute zero" in text
+               for text in analysis.findings["comparison"]["qualifications"])
+
+
+@pytest.mark.parametrize("late", ("model", "grid", "table"))
+def test_a_late_write_failure_after_a_good_run_leaves_no_comparison_outputs(
+        tmp_path, monkeypatch, late):
+    import json
+
+    import fastmdxplora.analysis.common_landscapes as common
+
+    reference, trajectory, topology = _files(tmp_path)
+    analysis = _analysis(trajectory, topology, output_dir=tmp_path / "out")
+    folder = tmp_path / "out" / "dimred"
+    folder.mkdir(parents=True)
+    unrelated = folder / "dimred_pca_landscape.png"
+    unrelated.write_bytes(b"standalone PCA output")
+    assert analysis.run(reference).status == "ok"
+    if late == "table":
+        def failing_writer(*args, **kwargs):
+            raise OSError("injected table failure")
+
+        monkeypatch.setattr(common.csv, "writer", failing_writer)
+    else:
+        savez, written = common.np.savez, []
+
+        def failing_savez(path, *args, **kwargs):
+            written.append(path)
+            if len(written) == (1 if late == "model" else 2):
+                raise OSError(f"injected {late} failure")
+            return savez(path, *args, **kwargs)
+
+        monkeypatch.setattr(common.np, "savez", failing_savez)
+
+    result = analysis.run(reference)
+
+    assert result.status == "error" and result.figure_path is None
+    assert f"injected {late} failure" in result.message
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "dimred_pca_landscape.png", "options.json"]
+    assert unrelated.read_bytes() == b"standalone PCA output"
+    record = json.loads(result.options_path.read_text(encoding="utf-8"))
+    assert "comparison" not in record["findings"]
+
+
+def test_a_figure_failure_keeps_complete_numbers_and_no_old_figure(tmp_path, monkeypatch):
+    import fastmdxplora.analysis.common_landscapes as common
+
+    reference, trajectory, topology = _files(tmp_path)
+    analysis = _analysis(trajectory, topology, output_dir=tmp_path / "out")
+    assert analysis.run(reference).status == "ok"
+    folder = tmp_path / "out" / "dimred"
+    assert (folder / "common_pca_landscapes.png").is_file()
+    analysis.findings["made_whole"] = "stale note from an earlier input"
+
+    def failing_save(fig, path):
+        raise RuntimeError("injected figure failure")
+
+    monkeypatch.setattr(common, "save_figure", failing_save)
+    result = analysis.run(reference)
+
+    assert result.status == "ok" and result.figure_path is None
+    assert "figure unavailable" in result.message
+    assert not (folder / "common_pca_landscapes.png").exists()
+    assert not (folder / "common_pca_landscapes.svg").exists()
+    assert {path.name for path in result.artifacts} == {
+        "options.json", "common_pca_model.npz", "common_pca_projections.dat",
+        "common_pca_landscapes.npz"}
+    assert analysis.findings["comparison"]["figure_status"].startswith(
+        "unavailable: RuntimeError: injected figure failure")
+    assert "made_whole" not in analysis.findings
+    with np.load(folder / "common_pca_landscapes.npz") as grids:
+        assert grids["counts"].sum(axis=(1, 2)).tolist() == [14, 14]

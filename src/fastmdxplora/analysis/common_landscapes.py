@@ -227,8 +227,6 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
     original_ref = np.asarray(reference.xyz[:, ref_idx, :]).copy()
     if whole_note:
         analysis.findings["made_whole"] = whole_note
-    analysis.findings["comparison_memory"] = {"reference_frames": reference.n_frames,
-                                               "reference_atoms": reference.n_atoms}
     for target in targets:
         label = target["label"]
         traj_path = Path(target["trajectory"]).expanduser().resolve()
@@ -239,10 +237,10 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
         topology_facts, top_sig = _file_facts(top_path)
         topology = md.load_topology(str(top_path))
         n_atoms = topology.n_atoms
-        n_total = _frames_in(traj_path, top_path)
+        n_total = _frames_in(traj_path, top_path, load=False)
         if n_total is None:
-            _refuse(f"Cannot safely count frames in target {label!r}; convert it or give an "
-                    "explicit stride.")
+            _refuse(f"Cannot safely count frames in target {label!r} without loading it whole; "
+                    "convert it to an indexed format such as XTC, TRR, DCD or NetCDF.")
         stride = target["stride"]
         first = target["first"]
         stop = target["last"] if target["last"] is not None else len(range(0, n_total, stride))
@@ -290,12 +288,8 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
         _refuse("Reference trajectory changed during alignment.")
     union = np.concatenate(projections, axis=0)
     _, edges_x, edges_y = np.histogram2d(union[:, 0], union[:, 1], bins=analysis.landscape_bins)
-    landscapes = []
-    for points in projections:
-        grid = free_energy_landscape(points[:, 0], points[:, 1], edges=(edges_x, edges_y))
-        if int(grid["counts"].sum()) != len(points):
-            _refuse("A common-grid histogram did not retain every projected frame.")
-        landscapes.append(grid)
+    landscapes = [free_energy_landscape(points[:, 0], points[:, 1], edges=(edges_x, edges_y))
+                  for points in projections]
     metadata = json.dumps({"schema_version": 1, "reference_frame": 0, "units": "nm",
                            "fit_solver": "full", "atom_keys": ref_keys}, sort_keys=True)
     model_id = hashlib.sha256(metadata.encode() + mean.tobytes() + components.tobytes()).hexdigest()
@@ -314,9 +308,9 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
     if any(item["sampling"] == "unknown" for item in [ref_meta, *targets]):
         qualifications.append("Sampling state is unknown for one or more ensembles.")
     qualifications.append("Target motion outside reference PC1 and PC2 is not displayed.")
+    qualifications.append("Each panel's zero is its own minimum, not a common absolute zero.")
     analysis.findings["comparison"] = {
         "schema_version": 1, "labels": labels, "model_id": model_id,
-        "model_sha256": _hash_arrays(mean, components),
         "reference_selected_coordinates_sha256": reference_digest,
         "reference_raw_trajectory": "unknown for in-memory input",
         "selected_indices": [int(value) for value in ref_idx],
@@ -331,7 +325,12 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
         "temperature_source": ["user" if t is not None else "unknown" for t in temps],
         "sampling": [item["sampling"] for item in [ref_meta, *targets]],
         "sampling_source": analysis._comparison_sampling_sources,
-        "qualifications": qualifications, "solver": "sklearn PCA(svd_solver='full')",
+        "qualifications": qualifications,
+        "landscape_convention": (
+            "Per ensemble: density = counts / (that ensemble's frames x bin area); value = "
+            "-ln(density) minus that ensemble's own minimum over occupied bins. Panels share "
+            "the grid and colour range, not an absolute zero."),
+        "solver": "sklearn PCA(svd_solver='full')",
         "tolerance_pc2": tolerance, "alignment_tolerance": "10 * float32 epsilon, scale-relative",
         "software": {"numpy": np.__version__, "mdtraj": md.__version__,
                      "scikit_learn": sklearn.__version__},
@@ -357,19 +356,19 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
             "model_id": model_id}
 
 
+_OUTPUTS = ("common_pca_model.npz", "common_pca_projections.dat", "common_pca_landscapes.npz",
+            "common_pca_landscapes.png", "common_pca_landscapes.svg")
+
+
 def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
     """Write one comparative run without disturbing default PCA artifacts."""
     started = datetime.now(timezone.utc).isoformat()
     opened = figures_open()
     analysis.output_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("common_pca_model.npz", "common_pca_projections.dat",
-                 "common_pca_landscapes.npz", "common_pca_landscapes.png",
-                 "common_pca_landscapes.svg"):
+    for name in _OUTPUTS:
         (analysis.output_dir / name).unlink(missing_ok=True)
-    analysis.findings.pop("comparison", None)
-    analysis.findings.pop("comparison_memory", None)
-    analysis.findings.pop("refused", None)
-    analysis.findings.pop("figures_not_plotted", None)
+    for key in ("comparison", "memory", "made_whole", "refused", "figures_not_plotted"):
+        analysis.findings.pop(key, None)
     options_path = analysis._write_options_manifest()
     try:
         analysis.result = analysis.compute(traj)
@@ -393,7 +392,7 @@ def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
                 for i, row in enumerate(points):
                     writer.writerow((ensemble, label, i,
                                      "" if source is None else int(source[i]),
-                                     f"{row[0]:.12g}", f"{row[1]:.12g}"))
+                                     float(row[0]), float(row[1])))  # repr round-trips
         grids = details["landscapes"]
         counts = np.stack([grid["counts"] for grid in grids]).astype(np.int64)
         density = np.stack([grid["density"] for grid in grids]).astype(np.float64)
@@ -411,8 +410,9 @@ def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
             nrows = 1 if len(grids) <= 2 else 2
             fig, placeholder = new_figure(figsize=(10.0, 6.0 if nrows == 1 else 9.0))
             fig.delaxes(placeholder)
-            layout = fig.add_gridspec(nrows + 2, 2,
-                                      height_ratios=[1] * nrows + [0.07, 0.2], hspace=0.32)
+            layout = fig.add_gridspec(nrows + 2, 2, height_ratios=[1] * nrows + [0.07, 0.2],
+                                      hspace=0.32 if nrows == 1 else 0.45,
+                                      top=None if nrows == 1 else 0.92)
             fig.suptitle("Common PCA empirical occupancy landscapes", y=0.99)
             axes = [fig.add_subplot(layout[row, col])
                     for row in range(nrows) for col in range(2)]
@@ -429,7 +429,7 @@ def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
                 temperature = "unknown T" if np.isnan(temp) else f"{temp:g} K"
                 sampling = str(details["sampling"][i])
                 ax.set_title(f"{details['labels'][i]} (N={len(details['projections'][i])}; "
-                             f"{temperature}; {sampling})")
+                             f"{temperature}; {sampling})", parse_math=False)
                 ax.set_xlabel("PC 1 (nm)")
                 ax.set_ylabel("PC 2 (nm)")
                 ax.set_xlim(float(details["edges_x"][0]), float(details["edges_x"][-1]))
@@ -471,6 +471,12 @@ def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
                               finished_at=datetime.now(timezone.utc).isoformat())
     except Exception as exc:  # noqa: BLE001 - an analysis refusal is a recorded result
         close_figures_opened_since(opened)
+        analysis.findings.pop("comparison", None)
+        for name in _OUTPUTS:
+            try:
+                (analysis.output_dir / name).unlink(missing_ok=True)
+            except OSError:  # the original error is what the result reports
+                pass
         code = getattr(exc, "code", None)
         if code:
             analysis.findings["refused"] = {"code": code, "said": str(exc)}

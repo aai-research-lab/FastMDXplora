@@ -307,6 +307,9 @@ For an explicit conformational comparison, add `comparison` under
 `analysis.options.dimred` and include only `dimred` in the analysis plan. The
 reference is the trajectory already named by `analysis.trajectory`; `targets`
 names one to three additional single-file trajectories and their topologies.
+A target must be in a format whose frames can be counted without loading it,
+such as XTC, TRR, DCD or NetCDF; GRO and LAMMPSTRJ targets are refused before
+loading, so convert them first.
 For example:
 
 ```yaml
@@ -340,8 +343,11 @@ their combined projected ranges.
 The figure and `common_pca_landscapes.npz` show **reduced empirical occupancy**
 on the displayed reference PC1/PC2 subspace. They are not free energies,
 convergence or significance tests, equilibrium probabilities, kinetics, or
-binding results. Target motion outside the first two reference components is
-not displayed. Temperature and sampling labels are user-supplied; different
+binding results. Each panel is -ln of its own density (its counts over its own
+frames times bin area), shifted so that its own lowest occupied bin is zero:
+the panels share a grid and a colour range, not an absolute zero, and the
+record says so under `landscape_convention`. Target motion outside the first
+two reference components is not displayed. Temperature and sampling labels are user-supplied; different
 temperatures are identified, biased occupancy is not reweighted, and every
 comparison says equilibrium and convergence were not established. Model,
 projection and grid provenance are saved as `common_pca_model.npz`,
