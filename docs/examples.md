@@ -265,18 +265,20 @@ simulation:
 the run starts from, and again from the equilibrated state just before
 production, so the pull starts where the molecule is. A pull that began
 somewhere else would spend its first part hauling the system to the anchor and
-report work that means nothing. Give `from` only to start the pull elsewhere;
+report work that means nothing. Give `from` only to start the pull elsewhere,
+or to have the pulling rate reported (left out, `pull_rate_per_ns` is null);
 it is then used as given. Left out, it is refused rather than guessed where it
-cannot be computed (no structure yet, or a variable other than `distance`,
-`ligand_distance`, `radius_of_gyration` and `torsion`).
-
-Run it, and check where it started with the radius of gyration on the
-equilibrated frame:
+cannot be computed (a variable other than `distance`, `ligand_distance`,
+`radius_of_gyration` and `torsion`). A pull that seeds umbrella windows in the
+same Config is the exception for now and needs `from` given: see
+[Steered molecular dynamics](studies.md#steered-molecular-dynamics).
 
 ```bash
 fastmdx explore --config pull.yml
-fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses rg
 ```
+
+Where it started is `from` in `runs/pull/simulation/steered_work.json`, and the
+log line "Pull re-anchored at ... nm" in `runs/pull/fastmdxplora.log`.
 
 The work profile lands in the analysis directory. On a correct pull it starts
 at zero and increases; work that goes negative early is the anchor being in the

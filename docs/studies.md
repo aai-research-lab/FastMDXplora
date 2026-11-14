@@ -372,31 +372,50 @@ recovers a free energy from an ensemble of pulls, but the average is dominated
 by rare low-work trajectories, so it needs many repeats and converges badly
 when the pulling is fast.
 
-FastMDXplora reports the pulling rate and the work, and does not claim a free
-energy from a steered run.
+FastMDXplora reports the work, and the pulling rate where `from` is given,
+and does not claim a free energy from a steered run. With `from` left out the
+rate is not worked out: `simulation/steered_work.json` records
+`pull_rate_per_ns` as null and the console line gives no rate.
 
 Leave `from`, where the pull starts, out unless you want the pull to start
-somewhere else. Left out, it is computed from the structure the run starts
-from, and computed again from the equilibrated state just before production,
-so the anchor is where the system is when the force is attached (each value is
-logged; if the second cannot be computed, the run says so and keeps the
-first). A pull that begins somewhere the molecule is not spends its first part
+somewhere else (or want the rate, above). Left out, it is computed from the
+structure the run starts from, and computed again from the equilibrated state
+just before production, so the anchor is where the system is when the force is
+attached; if the second cannot be computed, the run says so and keeps the
+first. A pull that begins somewhere the molecule is not spends its first part
 hauling the system to the anchor and reports work that means nothing. A `from`
 you give is used as given, and neither value is computed. Left out, it is
-refused (`simulation.bias.parameter_missing`) only where it cannot be
-computed: no structure is there yet, or the variable is not one read from
-coordinates alone (`distance`, `ligand_distance`, `radius_of_gyration` and
-`torsion` are).
+refused (`simulation.bias.parameter_missing`) where it cannot be computed: the
+variable is not one read from coordinates alone (`distance`,
+`ligand_distance`, `radius_of_gyration` and `torsion` are).
 
-To check the value, compute the distance between the centres of mass of the
-ligand and of `site_selection` on the equilibrated frame: it is the first
-value of `pair_distance` over the same two groups (`LIG` is `ligand_name`'s
-default):
+To check where a pull started, read `from` in `simulation/steered_work.json`,
+the coordinate PLUMED recorded first, and the run's `fastmdxplora.log`, where
+"Pull re-anchored at ... nm, computed from the equilibrated state" gives the
+anchor production started from.
+
+**A pull that seeds umbrella windows in the same Config** (a `steered` block
+beside `umbrella`) needs `from` given, for now. Before any window runs, the
+study checks the pull against the one prepared system its windows share, from
+its topology alone, so a `from` left out there is refused
+(`simulation.cv.selection_empty`) once that system is prepared and before
+anything is simulated. Prepare it first (`fastmdx explore --config study.yml
+--include setup`), and take the value on it: the first value of
+`pair_distance` over the same two groups, with `--trajectory` and
+`--topology` both the prepared `shared_setup/setup/topology.pdb` under the
+study's output (`LIG` is `ligand_name`'s default):
 
 ```bash
-fastmdx analyze --trajectory equilibrated.dcd --topology system.pdb --analyses pair_distance \
+fastmdx analyze --trajectory runs/study/shared_setup/setup/topology.pdb \
+  --topology runs/study/shared_setup/setup/topology.pdb --analyses pair_distance \
   --options '{pair_distance: {selection_a: "resname LIG", selection_b: "resid 84 to 121 and name CA"}}'
 ```
+
+A `from` given there is used as given and not computed again at production.
+Or run the pull as a study of its own, where `from` is computed, with
+`simulation.save_selection: all` (a seed is a complete set of positions), and
+point the umbrella study at it with both `simulation.setup_from` and
+`umbrella.seed_from` (see [Where the windows start](#where-the-windows-start)).
 
 On a correct pull the work profile starts at zero and increases; work that goes
 negative early is the anchor being in the wrong place.
@@ -1116,7 +1135,9 @@ find it; a different preparation at the old path is refused
 Windows started from a single structure are strained at the far end of the
 range, and the strain relaxes into the sampling as drift. The usual source is a
 steered run: pull once, take a frame near each window's centre, and each window
-begins near where it will sit.
+begins near where it will sit. A `steered` block beside `umbrella` needs its
+`from` given for now, or the pull can be a study of its own named with
+`umbrella.seed_from` (see [Steered molecular dynamics](#steered-molecular-dynamics)).
 
 Each window's start is written to `seeds/window-NN/`: a copy of the prepared
 system, the chosen frame as `state.xml`, and `seeded_from.json`, which names the
