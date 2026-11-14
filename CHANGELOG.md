@@ -737,22 +737,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   (28 of the system and 3 readers of a biased run), 364 of the 381 analysis
   options shown in the GUI and its 131 settings, each count held by a test,
   `--sweep`, `--analyze-options`, `--report-region-highlights`,
-  `--report-comparison` and the YAML block flags, `--config` the same on every command, `include_phase`, the
-  builder's systems, sweeps and button names, `fastmdx gui`'s logo and
-  memory flags, `setup.temperature_K` unset as the run's temperature, and
-  the API's signatures and `__all__`.
+  `--report-comparison` and the YAML block flags, `--config` the same on
+  every command, `include_phase`, the builder's systems, sweeps and button
+  names, `fastmdx gui`'s logo and memory flags, `setup.temperature_K` unset
+  as the run's temperature, and the API's signatures and `__all__`.
 - Docs: behaviour and science as the code has it: no direction claimed for
   a barrier (the curve sits high), `run_corpus(DEFECTS, CLEAN)`, the steered
   `from` computed from the structure and again at production when left out
-  (`pair_distance` to check it), the interaction thresholds as the
-  rule functions' parameters, histidine's charge from setup, the contact
+  (no pulling rate then), but given for a pull beside `umbrella` (found with
+  `pair_distance` on the prepared system) or the pull run as its own study
+  and named with `seed_from`, the interaction thresholds as the rule
+  functions' parameters, histidine's charge from setup, the contact
   error from the statistical inefficiency, a study of several runs shared
   whole, a POST with no `Origin` answered and one marked same-site refused,
   `Q_line` for a drift off a line, Python 3.10 to 3.13 for a cluster's
   wheels with `markdown` and `threadpoolctl`, and the cost estimate's
   arithmetic.
-- Docs: no em or en dashes on any page (the console line quoted as it is
-  printed), and "saved", "computed" and "decided" where they are meant.
+- Docs: no em or en dashes on any page (a console line quoted as it is
+  printed, the work report described by its fields), and "saved",
+  "computed" and "decided" where they are meant.
 - The record's `summary.barrier_zero` claims no direction for a barrier,
   `Shortfall` says a length under 1 ns in ps and none in powers of ten, the
   share refusal's summary no longer says a study of several runs is refused
