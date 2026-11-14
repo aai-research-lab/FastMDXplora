@@ -20,7 +20,7 @@ For the flag spelling of any setting below, see
 
 ---
 
-## Top level — 9 settings
+## Top level: 9 settings
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
@@ -39,7 +39,7 @@ For the flag spelling of any setting below, see
 
 ---
 
-## `setup` — 48 settings
+## `setup`: 48 settings
 
 ### How this phase was written
 
@@ -63,7 +63,7 @@ What is kept, what is repaired, and how it is protonated.
 | `replace_nonstandard_residues` | bool | `true` | Substitute selenomethionine, oxidised cysteine and the like with their standard equivalents |
 | `chains` | list | the declared assembly | Chains to simulate, by deposited ID, as `[A, B]`. Unset, the biological assembly the file declares, or every chain where it declares none |
 | `build_missing_termini` | bool | `false` | Build unresolved residues past the ends of a chain, not only the gaps between resolved ones |
-| `fixed_pdb` | str | none | An already-fixed PDB to use directly, skipping PDBFixer |
+| `fixed_pdb` | str | repaired here | An already-fixed PDB to use directly, skipping PDBFixer |
 | `preparation_audit` | bool | `false` | Save a record of each step of the preparation in `setup/preparation_audit.json`: the structure's SHA-256 and counts after each, and a copy within 16 MB a file and 64 MB in all. It only observes: the system prepared is the same with it and without it |
 | `mutations` | list | none | Point substitutions, as `L99A` or `LEU-99-ALA` |
 | `mutation_chain` | str | first chain | Which chain the mutations apply to |
@@ -102,7 +102,7 @@ on.
 | `membrane` | str | none | `POPC`, `POPE`, `DLPC`, `DLPE`, `DMPC`, `DOPC` or `DPPC`. The bilayer is built in the xy plane at z = 0 around the placed protein |
 | `membrane_orient` | bool | `false` | Rotate the structure onto its fitted membrane normal and centre it on the fitted bilayer |
 | `membrane_orientation_checked` | bool | `false` | Keep the structure's orientation; its centre along z is fitted |
-| `membrane_center_z_nm` | float | none | The bilayer centre along z in the structure's frame, in nm. Needs `membrane_orientation_checked` |
+| `membrane_center_z_nm` | float | fitted | The bilayer centre along z in the structure's frame, in nm. Needs `membrane_orientation_checked` |
 
 An OPM file is recognised and keeps its own frame, with none of these set.
 See [Membrane proteins](membranes.md) for how the protein is placed, what is
@@ -161,7 +161,7 @@ them, and what you set stands, even where it equals the force field's own. See
 
 ---
 
-## `simulation` — 45 settings
+## `simulation`: 45 settings
 
 ### How this phase was written
 
@@ -265,7 +265,7 @@ this for you: see [Continuing a study that stopped](agent.md#continuing-a-study-
 | `integrator` | str | `langevin_middle` | `langevin_middle`, `langevin`, `brownian`, `variable_langevin`. `brownian` needs a friction of about 100 per ps at 2 fs and 300 K. `verlet` and `variable_verlet` (no thermostat) are not offered; an older record naming one reads |
 | `timestep_fs` | int or float | `2.0` | Integrator timestep |
 | `integrator_error_tolerance` | float | `0.001` | The variable-timestep integrator (`variable_langevin`) only |
-| `random_seed` | int | none | Integrator seed. Fixes the dynamics, not the solvation |
+| `random_seed` | int | a different seed each run | Integrator seed. Fixes the dynamics, not the solvation |
 
 ### Enhanced sampling
 
@@ -346,7 +346,7 @@ Nothing leaves the machine: these are files in the run directory that the
 
 ---
 
-## `analysis` — 14 settings
+## `analysis`: 14 settings
 
 ### How this phase was written
 
@@ -418,7 +418,7 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 
 ---
 
-## `report` — 11 settings
+## `report`: 11 settings
 
 ### How this phase was written
 
@@ -454,7 +454,7 @@ page-width figure scaled down would take its 9 pt ticks to about 5 pt.
 
 ---
 
-## `execution` — 4 settings
+## `execution`: 4 settings
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|

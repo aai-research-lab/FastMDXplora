@@ -712,7 +712,7 @@ write the study, run it, analyse it), the Agent may keep a plan: shown
 under its reply as a checklist, the steps done ticked. The newest goes back
 with each message, so the Agent keeps to it and ticks a step once the
 conversation shows it done. The checklist does nothing: each step is still
-done only when you say so, as everything is. Kept with the conversation and
+done only when you say so, as everything is. Saved with the conversation and
 shown again when it is opened. An AI model asked in the text protocol keeps
 no plan.
 

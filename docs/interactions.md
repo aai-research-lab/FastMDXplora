@@ -147,7 +147,7 @@ So each interaction is reported with:
   gives a number several times too small. Left empty where the contact formed
   fewer than twice, or where a correlated presence (`g` of 2 or more) holds
   fewer than 25 independent samples
-- **well sampled**, whether it rests on enough independent observation to
+- **well sampled**: whether it rests on enough independent observation to
   average
 
 The figure plots thinly observed contacts as hollow markers rather than footnoting them,

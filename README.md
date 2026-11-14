@@ -64,7 +64,7 @@ fastmdx info
 | **A membrane protein** | Embedded in one of seven bilayers, oriented by a fit checked against OPM, with pressure coupling that suits a lipid system and the bilayer's area, thickness and chain order analysed. |
 | **Free energy along a coordinate** | Umbrella sampling, metadynamics and steered MD from a named collective variable (nine of them, one or two at a time) without writing PLUMED input. Each says what its output is and is not: a surface if the bias converged, a pathway and the work along it, a potential of mean force if the windows overlap. |
 | **A trajectory from another engine** | Skip the simulation and analyse what you already have: GROMACS `.xtc` and `.trr`, Amber `.nc`, NAMD and CHARMM `.dcd`, LAMMPS `.lammpstrj`, or `.pdb`, `.cif` and `.h5` that carry their own topology. |
-| **Many systems at once** | Mutants against wild type (named as `L99A`, and checked against the residue actually there) a sweep across a setting, runs pinned one per GPU, and a comparison report across all of them. Where the members differ only by seed, the spread of their means is set against the error each run claimed for itself. |
+| **Many systems at once** | Mutants against wild type (named as `L99A`, and checked against the residue actually there), a sweep across a setting, runs pinned one per GPU, and a comparison report across all of them. Where the members differ only by seed, the spread of their means is set against the error each run claimed for itself. |
 
 **It refuses rather than guesses.** An ambiguous ligand charge, a protein
 backwards in its membrane, a free-energy surface that never converged, each
@@ -101,7 +101,7 @@ that one file.
 | **The Python API** | `FastMDXplora(config="study.yml").explore()`, or the same blocks passed as options. |
 
 None of these is the primary interface and none is a subset of another
-(form, flags and API are generated from one declaration) and a study designed
+(form, flags and API are generated from one declaration), and a study designed
 in the GUI on a laptop runs unchanged on a cluster, because what travels is
 the config.
 

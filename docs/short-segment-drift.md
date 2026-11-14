@@ -45,7 +45,7 @@ means stray from a line by more than they allow) and `drift_p` is the scatter's
 probability alone. Returning 1 there (as first built) pooled a large monotone
 drift off a straight line, and the larger the drift against the errors, the
 surer it failed the fit: a real run's temperature, 177.79, 185.45, 186.61 and
-192.58 K over errors of 0.5 to 0.7 K (Cochran's Q 310 on 3 degrees of freedom), was
+192.58 K over errors of 0.5 to 0.7 K (`Q_line` 11.95 on 2 degrees of freedom, p 0.0025), was
 pooled; its scatter's p is 0.024, and it is now called. The refusal says how much the
 line changes by: its slope times the span from the first centre to the last.
 As before, a drift refusal also

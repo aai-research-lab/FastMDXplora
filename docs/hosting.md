@@ -39,10 +39,10 @@ starts do not inherit it.
    before the server looks at it.
 3. **Pass the public name through** as `Host`, or one of the names given with
    `--allowed-host`. A POST whose `Origin` is not one of them, over `http` or
-   `https`, is refused, and so is an API request a browser marks as
-   cross-site; a browser tab on the page the GUI served sends its own
-   `Origin`, and a request with no `Origin` (a script, `curl`) is answered,
-   the secret above still required.
+   `https`, is refused, and so is an API request or POST a browser marks as
+   cross-site or same-site (`Sec-Fetch-Site`); a browser tab on the page the
+   GUI served sends its own `Origin`, and a request with no `Origin` (a
+   script, `curl`) is answered, the secret above still required.
 4. **Name the person**, if the service shows one, in `X-FastMDX-Account-Name`
    (below), and **remove** any copy of that header a caller sent.
 

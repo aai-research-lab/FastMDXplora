@@ -110,7 +110,7 @@ order of magnitude.
 ### The machine learns from what it has run
 
 Argon is a bootstrap. A machine that has run real studies knows more about
-itself than that, every finished run writes `simulation/cost.json` beside its
+itself than that: every finished run writes `simulation/cost.json` beside its
 output, holding particles, steps, seconds, platform and precision.
 
 ```python

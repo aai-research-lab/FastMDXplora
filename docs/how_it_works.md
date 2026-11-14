@@ -257,8 +257,8 @@ there is one worth following:
 
 ```
 ▸ Minimizing energy
-  The starting structure has strain in it (atoms slightly too close,
-  bonds slightly too long) from the experiment, from adding hydrogens,
+  The starting structure has strain in it -- atoms slightly too close,
+  bonds slightly too long -- from the experiment, from adding hydrogens,
   and from dropping the protein into water. At the temperature of a
   simulation that strain becomes violent motion. Minimisation walks the
   structure downhill to a nearby arrangement with no such forces in it,

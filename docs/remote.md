@@ -224,11 +224,11 @@ folder (the one your account names, or the one `HOME` names), or at the top of
 the file system, is refused, since its folder is what
 travels; where no home folder can be found at all, every Config is refused,
 since its folder could be your home folder (set `HOME` and send it again);
-and nothing in a place keys and credentials are kept (`.ssh`,
+and nothing in a place keys and credentials are saved (`.ssh`,
 `.gnupg`, `.aws`, `.kube` and the like, and FastMDXplora's own settings) is
 ever sent: a folder that travels is refused if one is anywhere in it, reached
 directly or through a link. Nor is a Config, or a prepared study it names,
-kept where programs keep their settings and tokens, and no results folder
+saved where programs keep their settings and tokens, and no results folder
 is fetched into such a place: a folder directly in your home folder whose
 name starts with a dot (`~/.config`, `~/.local`), or that is `AppData` or
 `Library` (its `CloudStorage` and `Mobile Documents` aside); the folders

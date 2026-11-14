@@ -492,7 +492,7 @@ the terminal and ends when the run does. The CLI calls it; nothing else should.
 | `fastmdxplora.config` | Schema, loader, template generation |
 | `fastmdxplora.setup` / `.simulation` / `.report` | Each phase's `run()` and its direct-use helpers |
 | `fastmdxplora.refusals`, `.statistics`, `.cost`, `.provenance`, `.explain`, `.advisories` | Public |
-| `fastmdxplora.validation` | Measurements of the software's own behaviour: see [How FastMDXplora is validated](validation.md) |
+| `fastmdxplora.validation` | Counts of the software's own behaviour: see [How FastMDXplora is validated](validation.md) |
 | `fastmdxplora.agent` | [The Agent](agent.md), plus campaign machinery |
 | `fastmdxplora.remote.api` | [Running on another machine](#running-on-another-machine); the rest of `fastmdxplora.remote` is what it is built from |
 | `fastmdxplora.batch` | The execution layer underneath `FastMDXplora`. Usable, but `FastMDXplora(config=…)` is the supported path |
@@ -651,6 +651,6 @@ what each changes) is in [The FastMDXplora analyses](analyses.md).
 
 ## See also
 
-- **[The FastMDXplora Config](config.md)**, every setting `options` accepts
+- **[The FastMDXplora Config](config.md)**: every setting `options` accepts
 - **[The FastMDXplora Manifest](manifest.md)**: what a finished run records
 - **[Worked examples](examples.md)**: recipes, several with Python

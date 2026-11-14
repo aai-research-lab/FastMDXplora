@@ -83,7 +83,7 @@ simulated a system prepared elsewhere: the study's own shared one
 whatever the package: the system as OpenMM built it (`system.xml`, which the
 run finds it by, from its SHA-256), the state it starts from, its topology and
 its setup record (`setup_parameters.json`, with the ligand's chemistry beside
-it). A system kept outside the study, or in a folder of it a shared study leaves
+it). A system saved outside the study, or in a folder of it a shared study leaves
 out (one whose name begins with a dot, one set aside such as `previous/`, a
 run's folder the record of runs does not name), is carried once, however many runs used it, in `prepared/<name>/`,
 named from the folder the runs name it by (`prepared/preparation/` where that
@@ -129,7 +129,7 @@ carried the same way.
   earlier deposits (`deposit/`), the project bundle, which is a copy of the
   rest, and any file or folder whose name begins with a dot.
 
-A file or folder of the study kept as a link (a trajectory linked to scratch,
+A file or folder of the study saved as a link (a trajectory linked to scratch,
 say) is never packed, and keeps the study back (`environment.share.not_finished`,
 naming each): shared without it, the study would be opened missing what it
 leads to. Put the files it leads to in its place (or remove one that leads

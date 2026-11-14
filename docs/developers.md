@@ -237,7 +237,7 @@ ligand RMSD had aligned the frames, and 10 when run alone. The 10 was right.
 
 **Put every option in `self.options`.** It is what `options.json` records and
 what makes two disagreeing analyses of the same trajectory resolvable. Also
-note that unknown options are refused rather than ignored, every analysis ends
+note that unknown options are refused rather than ignored: every analysis ends
 in `**kwargs`, so `n_clusteres` used to cluster at the default and report
 success.
 

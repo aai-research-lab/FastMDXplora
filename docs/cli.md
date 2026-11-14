@@ -247,7 +247,7 @@ Prepare a system and stop. Flag names here drop the `--setup-` prefix.
 ```
 
 Every other `setup` setting has a flag too, spelled from its name. See
-[Config reference](config_reference.md#setup--48-settings) and
+[Config reference](config_reference.md#setup-48-settings) and
 `fastmdx setup --help`.
 
 ---
@@ -400,15 +400,15 @@ fastmdx agent                                            # opens the GUI Agent p
 
 | Flag | Default | What it does |
 |---|---|---|
-| `request` (positional) | — | The study, in plain language. The literal word `model` shows the AI model in use and runs the chooser instead (`set`, its old name, stops and names `model`). With no request, the agent panel opens |
-| `-f`, `-file`, `--file FILE` | — | Read the request from a file |
-| `-o`, `--output FILE` | — | Also write the Config here; it prints either way |
+| `request` (positional) | none | The study, in plain language. The literal word `model` shows the AI model in use and runs the chooser instead (`set`, its old name, stops and names `model`). With no request, the agent panel opens |
+| `-f`, `-file`, `--file FILE` | none | Read the request from a file |
+| `-o`, `--output FILE` | none | Also write the Config here; it prints either way |
 | `--phases PHASES` | `setup,simulation` | Which phases to write, comma-separated |
 | `--attempts N` | `3` | Attempts in all, the first included, before giving up |
 | `--assisted` | *(default)* | Seeker (built-in, assisted): draft it and stop |
-| `--autonomous` | — | Ranger (built-in, autonomous): draft it and run it. **Requires `--budget-hours`** |
-| `--unvalidated` | — | Outside the schema, not one of the modes: marks the output as having gone outside the schema |
-| `--budget-hours H` | — | Maximum GPU time, checked after setup |
+| `--autonomous` | none | Ranger (built-in, autonomous): draft it and run it. **Requires `--budget-hours`** |
+| `--unvalidated` | none | Outside the schema, not one of the modes: marks the output as having gone outside the schema |
+| `--budget-hours H` | none | Maximum GPU time, checked after setup |
 | `--host` / `--port` / `--no-browser` | `127.0.0.1` / `8765` | For the no-request panel route |
 
 The three mode flags are mutually exclusive.
