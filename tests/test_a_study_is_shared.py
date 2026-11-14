@@ -202,6 +202,11 @@ def test_the_refusal_does_not_say_a_study_of_several_runs_is_refused():
     summary = next(c.summary for c in CODES if c.id == "environment.share.not_finished")
     assert "is a study of several runs" not in summary
     assert "a run of it did not finish" in summary
+    # Two more the packer and the deposit raise under this code: a prepared
+    # system changed since a run simulated it, and a share record copied in
+    # from another study.
+    assert "its prepared system is not found or is another one now" in summary
+    assert "it carries another study's share record" in summary
 
 
 def test_a_study_named_from_its_own_folder_keeps_its_words(tmp_path, monkeypatch):

@@ -692,3 +692,19 @@ class TestThePagesThatEnumerateTheSchemaAreCurrent:
         gone = sorted(named - served)
         assert not gone, f"docs/gui.md names endpoints the server lacks: {gone}"
 
+
+class TestTheLogoLimitIsSaidInItsUnit:
+    """`gui --help` said 256 KB; the limit is 256 * 1024 bytes."""
+
+    def test_the_help_and_the_pages_say_the_limit_in_kib(self) -> None:
+        from fastmdxplora.cli.main import _build_parser
+        from fastmdxplora.gui.hosting import LARGEST_PRODUCT_LOGO
+
+        assert LARGEST_PRODUCT_LOGO % 1024 == 0
+        said = f"at most {LARGEST_PRODUCT_LOGO // 1024} KiB"
+        gui = _build_parser()._subparsers._group_actions[0].choices["gui"]
+        logo = next(a for a in gui._actions if "--product-logo" in a.option_strings)
+        assert said in " ".join(logo.help.split())
+        for page in ("gui.md", "hosting.md"):
+            assert said in " ".join(
+                (DOCS / page).read_text(encoding="utf-8").split()), page

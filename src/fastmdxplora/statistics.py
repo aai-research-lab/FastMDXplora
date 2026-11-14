@@ -768,11 +768,13 @@ def _summary(
 
 def _length(ns: float) -> str:
     """Picoseconds under one nanosecond ("65.6 ps"), nanoseconds to three
-    figures from there, as the pages give a length."""
-    if abs(ns) < 1.0:
+    figures from there, as the pages give a length, and never in powers of
+    ten ("12350 ns", not "1.23e+04 ns")."""
+    said = f"{ns:.3g}"
+    if abs(ns) < 1.0 or "e" in said:
         from fastmdxplora.simulation.sampling_ask import length_said
         return length_said(ns)
-    return f"{ns:.3g} ns"
+    return f"{said} ns"
 
 
 @dataclass(frozen=True)

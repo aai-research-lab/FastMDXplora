@@ -435,6 +435,19 @@ def test_a_shortfall_is_said_in_its_records_own_words(tmp_path, lower_bound, sai
     assert "should give" not in items[0]["fix"]
 
 
+@pytest.mark.parametrize("more_ns, said", [
+    (0.72, "720 ps"), (2.5, "2.5 ns"), (999.6, "999.6 ns"),
+    (1500.0, "1500 ns"), (12345.6, "12350 ns"),
+])
+def test_a_shortfall_s_length_is_never_said_in_powers_of_ten(more_ns, said):
+    from fastmdxplora.statistics import Shortfall
+
+    text = str(Shortfall(target=25.0, have=0.5, inefficiency=67.0,
+                         more_frames=1640, more_ns=more_ns))
+    assert text.endswith(f"1640 further frames, about {said} more."), text
+    assert "e+0" not in text
+
+
 def test_a_retryable_refusal_keeps_its_registry_remedy(tmp_path):
     refusal = {"code": "environment.service.unreachable",
                "message": "The service did not answer."}

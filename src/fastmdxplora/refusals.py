@@ -315,9 +315,10 @@ CODES: tuple[Code, ...] = (
          Kind.ENVIRONMENTAL, Disclosure.NOTHING),
     Code("environment.share.not_finished",
          "A study asked to be shared is running or stopped short, a run of it "
-         "did not finish, its prepared system is not found, a file of it is a "
-         "link or cannot be read, something a reader needs is missing (an "
-         "author, a topology, its resolved Config), or it is being shared "
+         "did not finish, its prepared system is not found or is another one "
+         "now, a file of it is a link or cannot be read, something a reader "
+         "needs is missing (an author, a topology, its resolved Config), it "
+         "carries another study's share record, or it is being shared "
          "already.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION),
     Code("environment.share.unscrubbed",

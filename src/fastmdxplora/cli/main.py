@@ -1237,7 +1237,7 @@ def _build_parser() -> argparse.ArgumentParser:
                              "FastMDXplora's own without.")
     hosted.add_argument("--product-logo", default="", metavar="FILE",
                         help="With --hosted: the service's logo (PNG, JPEG, GIF, "
-                             "WebP, ICO or SVG, at most 256 KB), shown as the "
+                             "WebP, ICO or SVG, at most 256 KiB), shown as the "
                              "tab's icon and the avatar in place of the lab's.")
     hosted.add_argument("--runs-url", default="", metavar="PATH",
                         help="With --hosted: the service's page that runs a "
