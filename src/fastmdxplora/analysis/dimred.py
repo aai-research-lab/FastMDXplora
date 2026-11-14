@@ -101,6 +101,9 @@ class DimRed(Analysis):
         detects in the RMSD of the selected atoms from the first frame. How
         many frames were projected, from where, and whether the equilibration
         is among them is recorded under ``findings.frames`` either way.
+    comparison : dict or None, default None
+        Optional one-to-three-target comparison on the loaded trajectory's
+        reference PCA basis; it reports empirical occupancy, not free energy.
     selection : str, optional
         MDTraj atom selection used to flatten coordinates. Defaults to
         ``"protein and name CA"`` (CA-only is a standard featurization for protein
@@ -139,6 +142,7 @@ class DimRed(Analysis):
         random_state: int = 42,
         landscape_bins: int = 40,
         start: float | str = 0.0,
+        comparison: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -170,6 +174,34 @@ class DimRed(Analysis):
             landscape_bins=self.landscape_bins,
         )
         self.start: float | str | None = start_as_given(start)
+        self.comparison = comparison
+        if comparison is not None:
+            if (self.methods != ["pca"] or isinstance(n_components, bool)
+                    or not isinstance(n_components, int) or n_components != 2
+                    or isinstance(start, bool) or self.start not in (0, 0.0, None)):
+                raise StudyError(
+                    "A common-landscape comparison requires methods=['pca'], "
+                    "n_components=2 and start=0.",
+                    code="analysis.option.inapplicable")
+            if (isinstance(landscape_bins, bool) or not isinstance(landscape_bins, int)
+                    or not 2 <= landscape_bins <= 200):
+                raise StudyError("Comparison landscape_bins must be an integer from 2 to 200.",
+                                 code="analysis.option.out_of_range")
+            if not isinstance(comparison, dict):
+                raise StudyError("`comparison` must be a mapping.",
+                                 code="analysis.option.wrong_type")
+            target_options = comparison.get("targets")
+            if not isinstance(target_options, list):
+                target_options = []
+            self._comparison_sampling_sources = [
+                "user" if isinstance(comparison.get("reference"), dict)
+                and "sampling" in comparison["reference"] else "unknown"
+            ] + ["user" if isinstance(target, dict) and "sampling" in target else "unknown"
+                 for target in target_options]
+            from fastmdxplora.analysis.common_landscapes import normalize_comparison
+
+            self.comparison = normalize_comparison(comparison)
+            self.options["comparison"] = self.comparison
         if self.start is not None:
             self.options["start"] = self.start
 
@@ -182,6 +214,10 @@ class DimRed(Analysis):
         from fastmdxplora.analysis.cluster import threads_held_to_one
 
         with threads_held_to_one(self.findings):
+            if self.comparison is not None:
+                from fastmdxplora.analysis.common_landscapes import compute_comparison
+
+                return compute_comparison(self, traj)
             return self._projected(traj)
 
     def _projected(self, traj: md.Trajectory) -> dict[str, np.ndarray]:
@@ -371,6 +407,10 @@ class DimRed(Analysis):
     # Override run() so each method gets its own output pair.
     # --------------------------------------------------------------
     def run(self, traj: md.Trajectory) -> AnalysisResult:
+        if self.comparison is not None:
+            from fastmdxplora.analysis.common_landscapes import run_comparison
+
+            return run_comparison(self, traj)
         from datetime import datetime, timezone
 
         # Its figures are closed if it fails part-way, as base.run's are.
@@ -579,7 +619,8 @@ class DimRed(Analysis):
 
 
 def free_energy_landscape(x: np.ndarray, y: np.ndarray, *, bins: int = 40,
-                          temperature_K: float | None = None) -> dict[str, Any]:
+                          temperature_K: float | None = None,
+                          edges: tuple[np.ndarray, np.ndarray] | None = None) -> dict[str, Any]:
     """The free energy over two coordinates, from how often each bin is visited.
 
     G(x, y) = -kT ln P(x, y), with P the histogram normalised over the bin
@@ -593,7 +634,28 @@ def free_energy_landscape(x: np.ndarray, y: np.ndarray, *, bins: int = 40,
 
     x = np.asarray(x, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
-    counts, edges_x, edges_y = np.histogram2d(x, y, bins=int(bins))
+    if edges is None:
+        counts, edges_x, edges_y = np.histogram2d(x, y, bins=int(bins))
+    else:
+        edges_x, edges_y = (np.asarray(edge, dtype=np.float64) for edge in edges)
+        if (x.ndim != 1 or y.ndim != 1 or x.size == 0 or x.size != y.size
+                or not np.isfinite(x).all() or not np.isfinite(y).all()):
+            raise StudyError(
+                "Explicit landscape edges need equal, nonempty finite x and y samples.",
+                code="analysis.option.out_of_range")
+        for name, edge in (("PC1", edges_x), ("PC2", edges_y)):
+            if (edge.ndim != 1 or edge.size < 2 or not np.isfinite(edge).all()
+                    or not np.all(np.diff(edge) > 0)):
+                raise StudyError(f"Explicit {name} edges must be finite and strictly increasing.",
+                                 code="analysis.option.out_of_range")
+        if (np.any(x < edges_x[0]) or np.any(x > edges_x[-1])
+                or np.any(y < edges_y[0]) or np.any(y > edges_y[-1])):
+            raise StudyError("A landscape sample lies outside the explicit histogram edges.",
+                             code="analysis.option.out_of_range")
+        counts, edges_x, edges_y = np.histogram2d(x, y, bins=(edges_x, edges_y))
+        if int(counts.sum()) != len(x):
+            raise StudyError("The explicit landscape histogram did not retain every sample.",
+                             code="analysis.option.out_of_range")
     area = np.outer(np.diff(edges_x), np.diff(edges_y))
     density = counts / (counts.sum() * area)
     with np.errstate(divide="ignore"):

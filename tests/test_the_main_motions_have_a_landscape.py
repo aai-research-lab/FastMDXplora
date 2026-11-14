@@ -37,6 +37,19 @@ def _two_basins(n_frames: int = 400) -> md.Trajectory:
 
 
 class TestTheFormula:
+    def test_explicit_edges_match_numpy_including_upper_endpoint(self):
+        x = y = np.array([0.0, 0.5, 1.0])
+        edges = (np.array([0.0, 0.5, 1.0]),) * 2
+        found = free_energy_landscape(x, y, edges=edges)
+        expected, _, _ = np.histogram2d(x, y, bins=edges)
+        assert np.array_equal(found["counts"], expected)
+        assert found["counts"].sum() == len(x)
+        with pytest.raises(ValueError, match="outside"):
+            free_energy_landscape(np.array([np.nextafter(1.0, np.inf)]), y[:1],
+                                  edges=edges)
+        with pytest.raises(ValueError, match="strictly increasing"):
+            free_energy_landscape(x, y, edges=(np.array([0.0, 0.0]), edges[1]))
+
     def test_it_is_minus_kt_ln_p_from_its_lowest_bin(self):
         x = np.array([0.1, 0.1, 0.1, 0.9])
         y = np.array([0.1, 0.1, 0.1, 0.9])

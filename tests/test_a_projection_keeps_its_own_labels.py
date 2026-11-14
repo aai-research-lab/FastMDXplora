@@ -34,6 +34,14 @@ def test_the_pca_axes_keep_their_variance_when_mds_runs_after(tmp_path):
     assert label.startswith("PC 1 (") and label.endswith("%)")       # was "PCA 1"
 
 
+def test_default_dimred_still_writes_its_original_landscape(tmp_path):
+    analysis = DimRed(methods=["pca"], output_dir=tmp_path)
+    result = analysis.run(_alpha_carbons(30))
+    assert analysis.comparison is None
+    assert result.status == "ok", result.message
+    assert (tmp_path / "dimred" / "dimred_pca_landscape.npz").is_file()
+
+
 def test_tsne_runs_on_five_frames(tmp_path):
     import json
 
