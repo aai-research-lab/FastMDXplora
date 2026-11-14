@@ -26,6 +26,8 @@ from typing import Any
 
 import numpy as np
 
+from fastmdxplora.analysis.residues import resname_selection
+
 __all__ = ["GRID_ANGSTROM", "REACH", "pocket_points", "pocket_volume"]
 
 GRID_ANGSTROM = 0.5
@@ -50,7 +52,7 @@ class _Pocket:
         from fastmdxplora.gui.trajectory_frames import pocket_backbone
 
         topology = frames.topology
-        heavy = topology.select(f"resname {ligand} and not element H")
+        heavy = topology.select(f"{resname_selection(ligand)} and not element H")
         first = frames.xyz[0, heavy] * 10.0
         low = first.min(axis=0) - REACH
         shape = np.ceil((first.max(axis=0) + REACH - low) / GRID_ANGSTROM).astype(int) + 1
@@ -101,7 +103,7 @@ class _Pocket:
 
 def _pocket(frames: Any, ligand: str, cutoff: float) -> tuple[_Pocket | None, str | None]:
     """The pocket's region in these frames, or why there is none."""
-    if len(frames.topology.select(f"resname {ligand} and not element H")) == 0:
+    if len(frames.topology.select(f"{resname_selection(ligand)} and not element H")) == 0:
         return None, f"There is no {ligand} in the frames."
     return _Pocket(frames, ligand, cutoff), None
 

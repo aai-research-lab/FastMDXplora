@@ -32,6 +32,7 @@ from typing import Any
 
 import numpy as np
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.refusals import CodedError, MissingResultError, StudyError
 
 logger = logging.getLogger("fastmdxplora.gui.trajectory_frames")
@@ -910,7 +911,7 @@ def pocket_backbone(frames: Any, ligand: str, cutoff_angstrom: float) -> tuple[A
     import mdtraj as md
 
     topology = frames.topology
-    heavy = topology.select(f"resname {ligand.upper()} and not element H")
+    heavy = topology.select(f"{resname_selection(ligand.upper())} and not element H")
     if len(heavy) == 0:
         return None, []
     protein = topology.select("protein and not element H")

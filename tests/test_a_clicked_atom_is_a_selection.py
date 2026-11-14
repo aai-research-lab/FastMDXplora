@@ -45,6 +45,38 @@ def study(tmp_path) -> Path:
     return tmp_path
 
 
+@pytest.mark.parametrize("number,atom_name", [(-2, "CA"), (1, "1HB")])
+def test_a_negative_number_or_digit_leading_atom_is_selected(tmp_path, number, atom_name):
+    resname = "GLY" if number < 0 else "UNK"
+    path = _topology(tmp_path / "simulation" / "trajectory_topology.pdb",
+                     chains=(("A", [(resname, 1)]),))
+    # MDTraj's writer wraps negative numbers, so write the deposited fields.
+    lines = path.read_text().splitlines(keepends=True)
+    path.write_text("".join(
+        line[:12] + f"{atom_name:>4}" + line[16:22] + f"{number:4d}" + line[26:]
+        if line.startswith("ATOM") and line[12:16].strip() == "CA" else
+        line[:22] + f"{number:4d}" + line[26:] if line.startswith("ATOM") else line
+        for line in lines))
+    top = md.load_topology(str(path))
+    assert top.residue(0).resSeq == number
+    assert top.atom(1).name == atom_name
+    found = selection_for(tmp_path, chain="A", resseq=number, resname=resname, atom=atom_name)
+    assert found["ok"]
+    assert top.select(found["residue"]["selection"]).tolist() == [0, 1, 2]
+    assert top.select(found["atom"]["selection"]).tolist() == [1]
+
+
+@pytest.mark.filterwarnings("ignore:WARNING. two consecutive residues with same number")
+def test_a_digit_leading_residue_name_distinguishes_a_shared_number(tmp_path):
+    path = _topology(tmp_path / "simulation" / "trajectory_topology.pdb",
+                     chains=(("A", [("ALA", 1), ("3GR", 1)]),))
+    top = md.load_topology(str(path))
+    found = selection_for(tmp_path, chain="A", resseq=1, resname="3GR", atom="CA")
+    assert found["ok"]
+    assert top.select(found["residue"]["selection"]).tolist() == [3, 4, 5]
+    assert top.select(found["atom"]["selection"]).tolist() == [4]
+
+
 class TestTheSelection:
     def test_a_residue_and_its_atom_by_number_and_chain(self, study):
         found = selection_for(study, chain="A", resseq=2, resname="GLY", atom="CA")
@@ -73,7 +105,7 @@ class TestTheSelection:
         _topology(tmp_path / "simulation" / "trajectory_topology.pdb",
                   chains=(("A", [("ALA", 1), ("LIG", 1)]),))
         found = selection_for(tmp_path, chain="A", resseq=1, resname="LIG", atom="CA")
-        assert found["residue"]["selection"] == "resSeq 1 and resname LIG"
+        assert found["residue"]["selection"] == 'resSeq 1 and resname "LIG"'
         assert found["residue"]["atoms"] == 2
 
     def test_a_name_with_a_prime_is_quoted(self, study):

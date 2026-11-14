@@ -32,6 +32,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from typing import Any
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.refusals import StudyError
 
 __all__ = [
@@ -428,7 +429,7 @@ def plan_from_config(
                 "one -- which is a question the topology cannot answer. Give "
                 "`ligand_resname`."
             , code="simulation.cv.missing_companion")
-        atoms["ligand"] = select(f"resname {resname}", "ligand")
+        atoms["ligand"] = select(resname_selection(resname), "ligand")
         if variable == "ligand_distance":
             site = spec.get("site_selection")
             if not site:
@@ -455,7 +456,7 @@ def plan_from_config(
             atoms[name] = select(str(expression), name)
     elif variable == "membrane_depth":
         molecule = spec.get("selection") or (
-            f"resname {spec.get('ligand_resname') or ligand_resname}"
+            resname_selection(spec.get("ligand_resname") or ligand_resname)
             if (spec.get("ligand_resname") or ligand_resname) else None)
         if not molecule:
             raise StudyError(

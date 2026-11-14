@@ -49,6 +49,7 @@ import matplotlib.pyplot as plt
 import mdtraj as md
 import numpy as np
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis, superposed
 from fastmdxplora.analysis.orchestrator import register_analysis
@@ -509,7 +510,7 @@ class LigandRMSD(Analysis):
         np.ndarray of shape (n_frames,)
             Ligand RMSD in nanometers.
         """
-        ligand_idx = traj.topology.select(f"resname {self.ligand_resname}")
+        ligand_idx = traj.topology.select(resname_selection(self.ligand_resname))
         if len(ligand_idx) == 0:
             raise StudyError(
                 f"No atoms matched ligand resname "
