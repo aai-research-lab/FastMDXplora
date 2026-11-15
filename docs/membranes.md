@@ -135,6 +135,55 @@ close around the protein. The setup manifest records how many lipids were
 built, how many in each leaflet, the box, and its area per lipid before the
 protein's share is taken out.
 
+OpenMM removes only the lipids that overlap the protein shrunk to half its
+width, then grows it back by position over the relaxation. For a compact
+protein the lipids are pushed aside. For a hollow one, a porin's barrels,
+lipids are left where the pores will be, and the growing wall has to cut
+through them: 2POR's packings ran away to NaN on exactly those lipids, and
+the one that packed held lipids in its pores. So before the packing the
+protein's pores are mapped: slices 0.6 nm thick across the lipids' z range,
+laid twice half a slice apart, each protein heavy atom covering a 0.2 nm
+disk on a 0.1 nm grid, and every region the disks enclose on all sides, of
+at least 1.5 nm², is a pore. A groove between subunits is open to the
+bilayer and is not one; a space between subunits that they enclose is, as
+2POR's trimer centre is in its outer leaflet, where the three lumens join
+round it. A lipid OpenMM would leave in place with a heavy atom in a pore
+is removed from its patch. As many lipids are removed from the other
+leaflet so the leaflets stay equal, the farthest from the protein and at
+least 3 nm apart, so no part of the far bilayer is thinned.
+
+Once the bilayer is packed, water is added only to the pores a removed
+lipid was in: the connected regions of the map, joined across slices, that
+held a heavy atom of one. Of those, a region is filled only where it is
+lined as water's are: at least 20% of the side-chain heavy atoms within
+0.4 nm of it are N or O. A porin's lumen is lined 27 to 31% so, and
+bacteriorhodopsin's central cavity, which natively holds lipids, 4 to 11%;
+a region lined below that is left without water, and the manifest counts
+it as `pore_regions_left_dry`. The water is OpenMM's `addSolvent` run on a
+copy, of which only the waters whose oxygen lies in a region to fill are
+retained. No ions are added, so the salt is diluted by the water added:
+0.9% for 2POR.
+
+The manifest records `pore_lipids_removed` per leaflet (upper, lower),
+`pore_balancing_lipids_removed` and `pore_waters_added`, and the methods
+section says so where any were removed. A protein with no lipid in a pore
+is packed from OpenMM's own patch, exactly as before, and no pore of it is
+filled.
+
+The patch is tiled as `addMembrane` tiles it (OpenMM 8.2 to 8.6.1 compute the
+tiling the same way) and given a unit cell of the whole tiling, so OpenMM
+tiles it once. Before it is used, OpenMM's own `addMembrane` is run on it
+and on the lipid's name, as far as its relaxation and with no force field,
+about 13 s for 2POR: the box and water must be the same, the patch's
+lipids where OpenMM's own tiling puts them, exactly the removed lipids
+missing, none left in a pore, and the leaflets equal. The check stops
+OpenMM by standing in for the `Context` it makes, so it is not run where
+`addMembrane` no longer names `Context`, and it gives up after 120 s.
+Where any of that fails, the bilayer is packed from OpenMM's patch as it
+is, with the lipids in the pores; the log says why, the manifest records
+how many were left as `pore_lipids_left_in`, and the methods section says
+they were left there.
+
 ### The barostat
 
 An ordinary barostat scales x, y and z together, which squeezes a bilayer
@@ -245,6 +294,29 @@ and not the same quantity.
 - **A peripheral protein resting on a bilayer.** The fit looks for a
   transmembrane belt, and a protein with none is refused rather than pushed
   into the membrane.
+- **Native lipids in a protein's cavity.** Some proteins hold lipids in an
+  enclosed central cavity: bacteriorhodopsin's trimer, or an ATP synthase's
+  c-ring. `addMembrane` cannot place them correctly. A lipid it would leave
+  with a heavy atom in such a cavity, of at least 1.5 nm², is removed with
+  the pore lipids, and the cavity is filled with water only where its
+  lining is polar enough (above). Bacteriorhodopsin's central cavity is
+  not: with POPE one lipid touching its edge is removed, and the cavity is
+  left without water. Built alone in POPC, bacteriorhodopsin's trimer
+  (1C3W) and a c15 ring (2WIE) lose none: OpenMM's own removal already
+  clears a cavity at the centre of the protein's box. Lipids that belong in
+  a cavity have to be modelled into the structure some other way.
+- **What was counted.** With POPC, none of KcsA (1BL8), rhodopsin (1U19),
+  the beta2 receptor (2RH1), 6B73, OmpA (1BXW), bacteriorhodopsin's trimer
+  (1C3W), aquaporin-1's tetramer (1J4N), MscL (2OAR), alpha-hemolysin
+  (7AHL), a c15 ring (2WIE) or GLIC (4HFI) loses a lipid. With the other
+  lipids, a lipid with an atom in a cavity is removed, with one more from
+  the other leaflet: aquaporin-1 loses 8 with DLPC and 1 with DPPC, and
+  its vestibules take water; MscL loses 1 with POPE, DLPE, DOPC or DPPC,
+  and its pore, lined as water's is, is filled (about 230 waters around the
+  protein alone); bacteriorhodopsin's trimer loses 1 with POPE, and its
+  cavity is left dry. The rest lose none with any of OpenMM's seven lipids.
+  A centred pore such as MscL's in POPC, or alpha-hemolysin's, loses no
+  lipid and is left without water in the bilayer, as before.
 
 ---
 

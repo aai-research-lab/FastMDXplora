@@ -172,7 +172,15 @@ CORPUS: tuple[Expectation, ...] = (
             "against the belt, and the copies are compared by the three-fold "
             "that relates them. Built 2026-09-28: 279,657 atoms, 442 POPC "
             "lipids (221 per leaflet), 84% of the protein's atoms between the "
-            "phosphate planes."
+            "phosphate planes. Its packings then ran away to NaN on most "
+            "nights: OpenMM left lipids inside the barrels' pores and the "
+            "walls cut through them as the trimer grew back. With those "
+            "lipids removed first (31 and 32, and 11 and 14 from the other "
+            "leaflet) and the pores filled with 725 and 726 waters, it packed "
+            "on the first attempt with packing seeds 1863626584 and "
+            "975501023 (`packing_seed`, not `setup.random_seed`; 2026-11-15, "
+            "padding 2.0 nm): 309,528 and 309,248 atoms, 400 and 398 POPC, "
+            "no lipid in a pore."
         ),
     ),
     Expectation(

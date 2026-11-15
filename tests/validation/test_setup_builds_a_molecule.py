@@ -259,3 +259,49 @@ class TestAMembraneSystemHoldsTheProtein:
             "atoms between the leaflets: it is next to the membrane rather "
             "than in it."
         )
+
+    @pytest.mark.parametrize("kind", MEMBRANE_KINDS)
+    def test_no_lipid_is_inside_a_pore_of_the_protein(self, kind, prepared) -> None:
+        """2POR's packings ran away on lipids OpenMM had left inside its
+        barrels, and the one that packed held lipids in its pores. A pore is
+        aqueous: no lipid heavy atom belongs in one."""
+        from fastmdxplora.lipids import is_lipid
+        from fastmdxplora.setup.membrane import (
+            PORE_LIPID_MIN_ATOMS,
+            lipid_z_range,
+            pore_map,
+        )
+
+        result = prepared(kind)
+        if not result.succeeded:
+            pytest.skip("did not build; covered by the preparation test")
+
+        structure = load(result.solvated_pdb)
+        xyz = structure.xyz[0]
+        # What setup mapped: everything that was there before the bilayer
+        # (the protein and what it holds), across the lipids' z range in
+        # setup's frame, which the written system does not move from.
+        added = {"HOH", "NA", "CL", "K", "NA+", "CL-"}
+        solute = np.array([
+            atom.index for atom in structure.topology.atoms
+            if not is_lipid(atom.residue.name)
+            and atom.residue.name.upper() not in added
+            and atom.element.symbol != "H"])
+        lipid = np.array([
+            atom.index for atom in structure.topology.atoms
+            if is_lipid(atom.residue.name) and atom.element.symbol != "H"])
+        pores = pore_map(xyz[solute], np.ones(len(solute), bool),
+                         *lipid_z_range(result.expectation.membrane))
+        inside = pores.holds(xyz[lipid])
+        counted: dict[int, int] = {}
+        for i in lipid[inside]:
+            residue = structure.topology.atom(int(i)).residue.index
+            counted[residue] = counted.get(residue, 0) + 1
+        # As setup counts it: a lipid with this many heavy atoms in a pore.
+        residues = sorted(r for r, n in counted.items() if n >= PORE_LIPID_MIN_ATOMS)
+
+        assert not residues, (
+            f"{result.expectation.label} has {len(residues)} lipids with heavy "
+            "atoms inside the protein's pores, where the bilayer could only "
+            "have put them by the protein cutting through them."
+        )
