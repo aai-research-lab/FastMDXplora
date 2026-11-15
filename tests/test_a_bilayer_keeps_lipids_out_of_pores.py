@@ -145,6 +145,7 @@ def test_the_patch_lands_where_openmm_s_own_tiling_puts_it():
     with the lipid's name and with the cleared patch: the lipids it places from
     the patch are where it puts them from its own tiling, the water is the
     same, and only the lipids cleared are missing."""
+    pytest.importorskip("openmm")
     from openmm.app import modeller as module
 
     points = _ring()
@@ -270,6 +271,7 @@ _ONE_ATOM = """<ForceField>
 
 
 def test_the_fill_puts_water_only_in_the_pore():
+    pytest.importorskip("openmm")
     from openmm.app import ForceField
 
     points = _ring()
@@ -319,6 +321,7 @@ def test_a_change_in_openmm_s_own_tiling_falls_back_to_the_lipid_s_name(monkeypa
     relaxation: an OpenMM that tiled one copy more each way (a margin tile)
     would place the cleared patch where its holes miss the pores, and the
     guard sees it and the bilayer is packed from the lipid's name."""
+    pytest.importorskip("openmm")
     from openmm.app import modeller as module
 
     topology, positions = _protein(_ring())
@@ -410,6 +413,7 @@ def test_the_check_finds_z_extremes_that_moved():
 # record and the log say.
 
 def _prepare_with(monkeypatch, tmp_path, clearing):
+    pytest.importorskip("openmm")
     from openmm.app import Modeller as OpenMMModeller
 
     from fastmdxplora.setup import prepare
@@ -595,6 +599,7 @@ def test_an_openmm_that_makes_its_context_otherwise_is_not_probed(monkeypatch):
     """The stand-in stops OpenMM by replacing the module's `Context`. Where
     `addMembrane` no longer names it, OpenMM would run its whole relaxation
     on the stand-in system, so the probe is not run and the patch not used."""
+    pytest.importorskip("openmm")
     from openmm.app import Modeller as OpenMMModeller
 
     def elsewhere(self, forcefield, **kwargs):
@@ -610,6 +615,7 @@ def test_an_openmm_that_makes_its_context_otherwise_is_not_probed(monkeypatch):
 def test_a_probe_that_runs_too_long_is_given_up(monkeypatch):
     import time
 
+    pytest.importorskip("openmm")
     from openmm.app import Modeller as OpenMMModeller
 
     def slow(self, forcefield, **kwargs):
@@ -626,6 +632,97 @@ def test_a_probe_that_runs_too_long_is_given_up(monkeypatch):
     assert time.monotonic() - started < 20
     assert clearing.patch is None
     assert "ran past 0.5 s" in clearing.fallback
+
+
+def test_a_timer_running_before_the_probe_runs_on_after_it(monkeypatch):
+    """The probe's own time limit used the process's one real timer, and
+    cancelled any timer running before it: a test's time limit, say."""
+    import signal
+    import threading
+    import time
+
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        pytest.skip("the probe is timed only on the main thread where setitimer exists")
+    pytest.importorskip("openmm")
+    from openmm.app import Modeller as OpenMMModeller
+
+    def slow(self, forcefield, **kwargs):
+        forcefield.createSystem, openmm.Context  # noqa: B018 - the names it checks
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+
+    fired: list[int] = []
+
+    def mine(*_):
+        fired.append(1)
+
+    before = signal.signal(signal.SIGALRM, mine)
+    saved = signal.setitimer(signal.ITIMER_REAL, 60.0)
+    try:
+        topology, positions = _protein(_ring())
+        monkeypatch.setattr(membrane, "PROBE_SECONDS", 0.5)
+        monkeypatch.setattr(OpenMMModeller, "addMembrane", slow)
+        clearing = membrane.clear_the_pores(topology, positions, "POPC", padding_nm=2.0)
+        left = signal.getitimer(signal.ITIMER_REAL)[0]
+        handler = signal.getsignal(signal.SIGALRM)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, before)
+        if saved[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, *saved)
+    assert "ran past 0.5 s" in clearing.fallback
+    assert 0 < left < 60.0
+    assert handler is mine and fired == []
+
+
+def test_a_timer_whose_handler_is_not_python_s_is_left_alone(monkeypatch):
+    """A SIGALRM handler installed from C reads as None and could not be put
+    back: the probe then runs untimed, and gives up once it ends past its
+    limit, with the handler and the timer as they were."""
+    import signal
+    import threading
+    import time
+
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        pytest.skip("the probe is timed only on the main thread where setitimer exists")
+    pytest.importorskip("openmm")
+    from openmm.app import Modeller as OpenMMModeller
+
+    def slow(self, forcefield, **kwargs):
+        forcefield.createSystem, openmm.Context  # noqa: B018 - the names it checks
+        time.sleep(1.0)
+
+    fired: list[int] = []
+
+    def mine(*_):
+        fired.append(1)
+
+    getsignal, install = signal.getsignal, signal.signal
+    before = signal.signal(signal.SIGALRM, mine)
+    saved = signal.setitimer(signal.ITIMER_REAL, 60.0)
+    try:
+        topology, positions = _protein(_ring())
+        monkeypatch.setattr(membrane, "PROBE_SECONDS", 0.5)
+        monkeypatch.setattr(OpenMMModeller, "addMembrane", slow)
+        monkeypatch.setattr(signal, "getsignal",
+                            lambda n: None if n == signal.SIGALRM else getsignal(n))
+        monkeypatch.setattr(signal, "signal",
+                            lambda n, h: install(n, h) if n != signal.SIGALRM
+                            else (install(n, h), None)[1])
+        clearing = membrane.clear_the_pores(topology, positions, "POPC", padding_nm=2.0)
+        monkeypatch.undo()
+        left = signal.getitimer(signal.ITIMER_REAL)
+        handler = getsignal(signal.SIGALRM)
+    finally:
+        monkeypatch.undo()
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, before)
+        if saved[0] > 0:
+            signal.setitimer(signal.ITIMER_REAL, *saved)
+    assert "ran past 0.5 s" in clearing.fallback
+    assert 0 < left[0] < 60.0 and left[1] == 0
+    assert handler is mine and fired == []
 
 
 def test_the_probe_counts_the_lipids_removed_and_finds_one_left_in_a_pore():
@@ -656,6 +753,7 @@ def test_a_wrapped_add_membrane_is_still_probed(monkeypatch):
     logger) keeps the name check on the function it wraps."""
     import functools
 
+    pytest.importorskip("openmm")
     from openmm.app import Modeller as OpenMMModeller
 
     original = OpenMMModeller.addMembrane

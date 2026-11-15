@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastmdxplora.refusals import StudyError
+from fastmdxplora.refusals import CodedError, StudyError
 from fastmdxplora.utils.logging import get_logger
 
 logger = get_logger("setup.membrane")
@@ -999,6 +999,8 @@ def clear_the_pores(topology: Any, positions: Any, lipid: str, *,
                 topology, positions, lipid, patch, pores, padding_nm=padding_nm,
                 center_z_nm=center_z_nm,
                 removed=sum(in_pores) + sum(balancing))
+        except _ProbeFailed as exc:
+            problem = f"OpenMM could not be asked ({exc})"
         except Exception as exc:  # noqa: BLE001 - any failure means not shown
             problem = f"OpenMM could not be asked ({type(exc).__name__}: {exc})"
         if problem:
@@ -1109,6 +1111,13 @@ def _periodic_xy(a: tuple, b: tuple, box_xy: tuple[float, float]) -> float:
 PROBE_SECONDS = 120.0
 
 
+class _ProbeFailed(CodedError, RuntimeError):
+    """The probe of OpenMM's own `addMembrane` was given up. Caught where it is
+    run, and the bilayer packed from the lipid's name, with why in a warning."""
+
+    default_code = "setup.membrane.pores_unprobed"
+
+
 def _openmm_starts_from(topology: Any, positions: Any, lipid_type: Any, *,
                         padding_nm: float, center_z_nm: float) -> tuple[Any, Any]:
     """The membrane OpenMM's own `addMembrane` builds from ``lipid_type``,
@@ -1156,7 +1165,7 @@ def _openmm_starts_from(topology: Any, positions: Any, lipid_type: Any, *,
     names = set(getattr(getattr(inspect.unwrap(Modeller.addMembrane), "__code__", None),
                         "co_names", ()))
     if not {"Context", "createSystem"} <= names:
-        raise RuntimeError("addMembrane no longer makes its context by the name "
+        raise _ProbeFailed("addMembrane no longer makes its context by the name "
                            "the stand-in replaces")
 
     import signal
@@ -1164,19 +1173,25 @@ def _openmm_starts_from(topology: Any, positions: Any, lipid_type: Any, *,
     import time
 
     def _too_long(*_):
-        raise TimeoutError(f"addMembrane ran past {PROBE_SECONDS:g} s")
+        raise _ProbeFailed(f"addMembrane ran past {PROBE_SECONDS:g} s")
 
-    timed = threading.current_thread() is threading.main_thread()
+    # A SIGALRM handler installed from C reads as None and could not be put
+    # back, so the probe then runs untimed and leaves it and its timer alone.
+    timed = (threading.current_thread() is threading.main_thread()
+             and signal.getsignal(signal.SIGALRM) is not None)
     # The stand-in replaces the module's `Context` for the whole process while
     # it runs, and is put back in `finally`; setup prepares one system at a
     # time on one thread, so nothing else builds a membrane meanwhile.
     original = module.Context
-    module.Context = _Context
-    if timed:
-        previous = signal.signal(signal.SIGALRM, _too_long)
-        signal.setitimer(signal.ITIMER_REAL, PROBE_SECONDS)
     started_at = time.monotonic()
+    if timed:
+        # A timer already running (a test's time limit) is saved and armed
+        # again after, less the time the probe took: one deadline falling
+        # inside the probe comes when it ends.
+        previous = signal.signal(signal.SIGALRM, _too_long)
+        outer = signal.setitimer(signal.ITIMER_REAL, PROBE_SECONDS)
     try:
+        module.Context = _Context
         trial = Modeller(topology, positions)
         try:
             trial.addMembrane(_NoForceField(), lipidType=lipid_type,
@@ -1189,10 +1204,14 @@ def _openmm_starts_from(topology: Any, positions: Any, lipid_type: Any, *,
         if timed:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
+            if outer[0] > 0:
+                signal.setitimer(signal.ITIMER_REAL,
+                                 max(outer[0] - (time.monotonic() - started_at), 1e-6),
+                                 outer[1])
     if time.monotonic() - started_at > PROBE_SECONDS:
-        raise TimeoutError(f"addMembrane ran past {PROBE_SECONDS:g} s")
+        raise _ProbeFailed(f"addMembrane ran past {PROBE_SECONDS:g} s")
     if not made or not started:
-        raise RuntimeError("addMembrane did not reach its relaxation")
+        raise _ProbeFailed("addMembrane did not reach its relaxation")
     built = made[0]
     return built, started[0][:built.getNumAtoms()]
 

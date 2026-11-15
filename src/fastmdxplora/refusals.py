@@ -619,6 +619,11 @@ CODES: tuple[Code, ...] = (
          "NaN in every packing tried.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("lipid", "seeds")),
+    Code("setup.membrane.pores_unprobed",
+         "OpenMM's own packing could not be run up to its relaxation on the "
+         "patch cleared of the lipids in a protein's pores, so the patch is "
+         "not used and the bilayer is packed from the lipid's name.",
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, since="2.7"),
 
     # -- simulation: collective variables -----------------------------------
     Code("simulation.cone.unmeasured",
