@@ -733,6 +733,45 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Setup: a bilayer is packed with no lipid inside the protein's pores.
+  OpenMM's `addMembrane` removes only the lipids that overlap the protein
+  shrunk to half its width, then grows it back by position. A porin's
+  barrels shrunk about the trimer's axis left lipids where the pores would
+  be, and the walls cut through them: 2POR's packings ran away to NaN on
+  most nights (4 of 5 attempts here), each time on a lipid that had started
+  in a pore, and the one that packed held lipids in its pores. The pores
+  are now mapped (slices 0.6 nm thick laid twice half a slice apart, 0.2 nm
+  disks on a 0.1 nm grid, enclosed holes of 1.5 nm2 or more; a space the
+  subunits enclose, as 2POR's trimer centre, counts), the lipids OpenMM
+  would leave with a heavy atom in one are removed from its patch, with as
+  many from the other leaflet, farthest from the protein and at least 3 nm
+  apart. Once the bilayer is packed, water is added only to the pore
+  regions a removed lipid was in, and only where at least 20% of the
+  side-chain atoms lining them are N or O: a porin's lumen, not
+  bacteriorhodopsin's central cavity, which natively holds lipids. No ions
+  are added, so the salt is diluted by 0.9% for 2POR. Before the patch is
+  used, OpenMM's own `addMembrane` is run on it and on the lipid's name as
+  far as its relaxation, with no force field (about 13 s for 2POR), and
+  must place the same box and water and the patch's lipids where its own
+  tiling does; where it does not, or where it no longer makes its context
+  by the name the check replaces, or takes over 120 s, the bilayer is
+  packed from OpenMM's patch as before, the log says why, the manifest
+  records `pore_lipids_left_in`, and the methods say those lipids were left
+  there. 2POR packed on the first attempt with packing seeds
+  (`packing_seed`) 1863626584 and 975501023: 31 and 32 pore lipids and 11
+  and 14 more removed, 725 and 726 waters added, 309,528 and 309,248
+  atoms, 400 and 398 POPC. The manifest records `pore_lipids_removed`,
+  `pore_balancing_lipids_removed`, `pore_waters_added` and
+  `pore_regions_left_dry`, and the methods say so where any were removed.
+  Results change: a protein with lipids in its pores, a porin such as 2OMF
+  too, is now built with fewer lipids and with water in its pores. A
+  protein with no lipid in a pore builds exactly as before: with POPC, none
+  of KcsA, rhodopsin, the beta2 receptor, 6B73, OmpA, bacteriorhodopsin's
+  trimer, aquaporin-1, MscL, alpha-hemolysin, a c15 ring or GLIC loses a
+  lipid. With other lipids, aquaporin-1 loses 8 (DLPC) or 1 (DPPC), MscL 1
+  (POPE, DLPE, DOPC, DPPC), whose pores take water, and
+  bacteriorhodopsin's trimer 1 (POPE), whose cavity is left dry.
+
 - Tests: the test of 500 frames under `ulimit -v` 600000 allows Python's
   small-object allocator and glibc's heap what they take of their own.
   Python's maps its arenas 1 MiB at a time and gives one back once it is
