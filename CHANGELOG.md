@@ -770,7 +770,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   trimer, aquaporin-1, MscL, alpha-hemolysin, a c15 ring or GLIC loses a
   lipid. With other lipids, aquaporin-1 loses 8 (DLPC) or 1 (DPPC), MscL 1
   (POPE, DLPE, DOPC, DPPC), whose pores take water, and
-  bacteriorhodopsin's trimer 1 (POPE), whose cavity is left dry.
+  bacteriorhodopsin's trimer 1 (POPE), whose cavity is left dry. A docs
+  search for "membrane lipids" finds the section on choosing the lipid.
 
 - Tests: the test of 500 frames under `ulimit -v` 600000 allows Python's
   small-object allocator and glibc's heap what they take of their own.
