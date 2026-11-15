@@ -31,7 +31,7 @@ happens in between, and what to check afterwards, is below.
 
 ## Choosing the lipid, and the temperature
 
-OpenMM builds a bilayer of one of seven lipids.
+OpenMM builds the membrane as a bilayer of one of seven lipids.
 
 | Lipid | Chains | Main transition | Use |
 |---|---|---|---|
