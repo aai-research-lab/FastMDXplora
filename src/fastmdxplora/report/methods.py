@@ -366,6 +366,42 @@ def _lipid_parameters_clause(source: Any) -> str:
             else f", described by {source}")
 
 
+def _pore_sentence(bilayer: dict[str, Any]) -> str:
+    """What was done about lipids in the protein's pores, where anything was:
+    removed before packing and the pores filled with water, or left there
+    where the patch without them could not be used."""
+    def total(name: str) -> int:
+        value = bilayer.get(name) or []
+        if isinstance(value, (list, tuple)):
+            return sum(int(n) for n in value)
+        return int(value)
+
+    removed = total("pore_lipids_removed")
+    left = total("pore_lipids_left_in")
+    if removed:
+        balancing = total("pore_balancing_lipids_removed")
+        waters = total("pore_waters_added")
+        return (" Before packing, "
+                + ("the one lipid that would have started inside the protein's "
+                   "pores was removed" if removed == 1 else
+                   f"the {removed} lipids that would have started inside the "
+                   "protein's pores were removed")
+                + (f", with {balancing} more removed from the other leaflet far "
+                   "from the protein so that the leaflets stayed equal"
+                   if balancing else "")
+                + (", and the pores were then filled with "
+                   + ("one water" if waters == 1 else f"{waters} waters")
+                   if waters else "")
+                + ".")
+    if left == 1:
+        return (" One lipid that started inside the protein's pores was left "
+                "there, as OpenMM packed it.")
+    if left:
+        return (f" The {left} lipids that started inside the protein's pores were "
+                "left there, as OpenMM packed them.")
+    return ""
+
+
 def _bilayer_sentence(bilayer: dict[str, Any], padding: Any, positive: str,
                       negative: str, concentration: Any) -> str:
     """The protein embedded in its bilayer, as a sentence: how it was placed,
@@ -394,7 +430,7 @@ def _bilayer_sentence(bilayer: dict[str, Any], padding: Any, positive: str,
         text += f" with at least {_nm(padding)} of padding"
     if concentration is not None:
         text += f", and {positive}/{negative} ions at {concentration} M"
-    return text + "."
+    return text + "." + _pore_sentence(bilayer)
 
 
 def _flatten(manifest: dict[str, Any]) -> dict[str, Any]:

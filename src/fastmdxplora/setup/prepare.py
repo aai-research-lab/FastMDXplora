@@ -801,6 +801,8 @@ def prepare_system(
         from fastmdxplora.setup.membrane import (
             LIPIDS,
             check_chains_point_the_same_way,
+            clear_the_pores,
+            fill_the_pores,
             place_for_membrane,
         )
 
@@ -841,6 +843,37 @@ def prepare_system(
         # evaluation took over a second there, so a thousand steps take
         # twenty minutes.
         slow = any("charmm" in str(name).lower() for name in (force_field or []))
+        # A lipid OpenMM leaves inside a pore of the protein can only be
+        # enclosed by the protein's wall cutting through it as the protein
+        # grows back; 2POR's packings ran away on exactly those lipids. They
+        # are removed from the patch before it is packed, and the pores
+        # filled with water after. A protein with no lipid in a pore is
+        # packed from the lipid's name, as before.
+        pores = clear_the_pores(modeller.topology, modeller.positions, lipid,
+                                padding_nm=solvent_padding_nm, center_z_nm=0.0)
+        def lipids(n: int) -> str:
+            return f"{n} {lipid} lipid" + ("" if n == 1 else "s")
+
+        if pores.fallback:
+            logger.warning(
+                "The protein's pores would start with %s in them, and the "
+                "patch without them could not be shown to land where OpenMM's "
+                "own tiling puts it (%s), so the bilayer is packed from OpenMM's "
+                "patch as it is, with those lipids in.",
+                lipids(sum(pores.pore_lipids)), pores.fallback)
+        elif pores.patch is not None:
+            logger.info(
+                "Removed %s from the protein's pores (%d and %d per leaflet), "
+                "and %d more, spread far from the protein, from the other "
+                "leaflet so the leaflets stay equal: a lipid in a pore could "
+                "only be enclosed by the protein cutting through it as OpenMM "
+                "grows the protein back. %s",
+                lipids(sum(pores.pore_lipids)), *pores.pore_lipids,
+                sum(pores.balancing_lipids),
+                "The pores they were in are filled with water once the bilayer "
+                "is packed, where lined as water's are." if pores.to_fill else
+                "The pores they were in are lined as a lipid's site is, and are "
+                "left without water.")
         logger.info(
             "Packing the %s bilayer round the protein: OpenMM tiles its patch, "
             "removes the lipids the protein overlaps, and relaxes the rest "
@@ -852,6 +885,7 @@ def prepare_system(
                 modeller,
                 ff,
                 lipid,
+                lipid_type=pores.patch,
                 membraneCenterZ=0.0 * unit.nanometer,
                 minimumPadding=solvent_padding_nm * unit.nanometer,
                 positiveIon=ion_positive,
@@ -881,13 +915,26 @@ def prepare_system(
             # reaches a component the force field cannot describe before
             # createSystem does, as solvation does.
             raise _explain_unparameterized(exc, ff, modeller.topology) from exc
+        cleared = pores.patch is not None
+        waters = fill_the_pores(modeller, ff, pores.to_fill) if cleared else 0
         n_atoms_solvated = modeller.topology.getNumAtoms()
         membrane_record.update(_bilayer_built(modeller, unit))
         membrane_record.update(packed)
+        membrane_record["pore_lipids_removed"] = (
+            list(pores.pore_lipids) if cleared else [0, 0])
+        membrane_record["pore_balancing_lipids_removed"] = (
+            list(pores.balancing_lipids) if cleared else [0, 0])
+        membrane_record["pore_waters_added"] = waters
+        if cleared:
+            membrane_record["pore_regions_left_dry"] = pores.left_dry
+        if pores.fallback:
+            membrane_record["pore_lipids_left_in"] = sum(pores.pore_lipids)
         logger.info(
-            "Membrane system: %d atoms, %d %s lipids (%d and %d per leaflet).",
+            "Membrane system: %d atoms, %d %s lipids (%d and %d per leaflet)%s.",
             n_atoms_solvated, membrane_record["lipids"], lipid,
-            *membrane_record["lipids_per_leaflet"])
+            *membrane_record["lipids_per_leaflet"],
+            (f", {waters} water{'' if waters == 1 else 's'} added in the protein's "
+             "pores") if cleared else "")
     else:
         try:
             try:
@@ -1151,8 +1198,12 @@ def prepare_system(
 
 
 #: Packings tried before a bilayer is refused. Each draws its own seed, so
-#: one that blew up is not repeated; three cost three packings, which for
-#: 2POR on a CPU is about 40 minutes.
+#: one that blew up is not repeated. One packing of 2POR took 716 to 735 s
+#: on one CPU thread and its whole setup 832 to 840 s (2026-11-14, the
+#: other core busy), so the corpus's 1800 s budget fits a second packing
+#: and not a third. With the lipids removed from its pores 2POR packed on
+#: the first attempt with every packing seed tried; the retry is the safety
+#: net, not the fix.
 PACKING_ATTEMPTS = 3
 
 #: How a packing that ran away says so: OpenMM's NaN, or Python's on
@@ -1203,8 +1254,8 @@ def _seeded_packing(seed: int):
     return seeded()
 
 
-def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
-                      **packing: Any) -> dict[str, Any]:
+def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str, *,
+                      lipid_type: Any = None, **packing: Any) -> dict[str, Any]:
     """Pack the bilayer, seeded from setup's stream, trying again on a NaN.
 
     The relaxation grows the protein back from half its width through the
@@ -1215,6 +1266,11 @@ def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
     so the packing, and any packing tried again, repeats with the rest of
     the preparation. A failed packing leaves the Modeller as it was: OpenMM
     writes the bilayer to it only once the relaxation is done.
+
+    ``lipid_type`` is the patch to pack from, where the lipids in the
+    protein's pores were removed from it
+    (:func:`fastmdxplora.setup.membrane.clear_the_pores`); without
+    one, OpenMM tiles its own patch of ``lipid``.
 
     Returns what the record keeps: the seed the bilayer was packed with
     (None where OpenMM's integrator could not be seeded) and how many
@@ -1228,7 +1284,9 @@ def _pack_the_bilayer(modeller: Any, ff: Any, lipid: str,
         tried.append(seed)
         try:
             with _seeded_packing(seed) as made:
-                modeller.addMembrane(ff, lipidType=lipid, **packing)
+                modeller.addMembrane(
+                    ff, lipidType=lipid if lipid_type is None else lipid_type,
+                    **packing)
         except Exception as exc:  # noqa: BLE001 - OpenMM's own exception type
             # A runaway reaches the caller two ways: OpenMM's own "Particle
             # coordinate is NaN" during the relaxation, or, where the

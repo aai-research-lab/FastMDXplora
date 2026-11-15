@@ -6,7 +6,10 @@ Langevin integrator it makes itself and never seeds. With one
 `setup.random_seed`, four preparations of 2POR gave four systems (279,726 to
 279,807 atoms), and on 2026-10-04 the network corpus stopped 2POR with
 "Particle coordinate is NaN" after 14 minutes of packing, where it had packed
-the night before.
+the night before. The runaways were lipids OpenMM had left inside the
+barrels' pores, cut by the walls as the protein grew back; those lipids are
+now removed before the packing (tests/test_a_bilayer_keeps_lipids_out_of_pores.py),
+and the retry stays as the safety net.
 """
 
 from __future__ import annotations
@@ -62,10 +65,27 @@ def test_the_packing_is_seeded_from_the_setup_stream_and_recorded():
 
     assert packed["packing_seed"] == first.seeds[0] == again.seeds[0] != 0
     assert packed["packing_attempts"] == 1
+    # No patch given, as for a protein with no lipid in a pore: OpenMM tiles
+    # its own patch of the lipid named, as it always did.
     assert first.asked[0] == {"lipidType": "POPC", "membraneCenterZ": 0.0}
     # Put back: nothing after setup makes a seeded integrator by accident.
     assert module.LangevinIntegrator is original
     assert original(300, 1, 0.002).getRandomNumberSeed() == 0
+
+
+def test_a_patch_cleared_of_pore_lipids_is_what_openmm_packs_every_time():
+    """Where lipids were removed from the protein's pores, the patch without
+    them is handed to OpenMM as `lipidType`, the same patch for every packing
+    tried; the lipid's name still says which lipid in the messages."""
+    from fastmdxplora.setup.prepare import _pack_the_bilayer
+
+    patch = object()
+    random.seed(13)
+    modeller = _Modeller([_nan(), None])
+    packed = _pack_the_bilayer(modeller, None, "POPC", lipid_type=patch,
+                               membraneCenterZ=0.0)
+    assert packed["packing_attempts"] == 2
+    assert [asked["lipidType"] for asked in modeller.asked] == [patch, patch]
 
 
 def test_a_packing_that_runs_away_is_tried_again_with_the_next_seed(caplog):
