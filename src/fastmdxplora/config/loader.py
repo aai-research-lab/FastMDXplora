@@ -1384,10 +1384,10 @@ def _check_barostat_has_a_box(data: dict[str, Any]) -> None:
         where = (f"Run {run_id} (its own settings, from `systems` or `sweep`): "
                  if own else "")
         raise ConfigError(
-            f"{where}setup.nonbonded_method is {method}, which has no periodic box, and "
-            "the simulation would hold the pressure with a barostat, which scales one: "
-            "OpenMM refuses the pair. Run at constant volume (`simulation.ensemble: nvt` "
-            "with `npt_duration_ns: 0`), or use a periodic method such as PME.",
+            f"{where}OpenMM cannot pair a barostat with a system that has no periodic "
+            f"box: the nonbonded method {method} has none, and the simulation would hold "
+            "the pressure with a barostat. Run at constant volume (ensemble: nvt and "
+            "npt_duration_ns: 0), or use a periodic method such as PME.",
             code="config.option.conflicting",
             options=["setup.nonbonded_method", "simulation.ensemble"],
             context="setup")

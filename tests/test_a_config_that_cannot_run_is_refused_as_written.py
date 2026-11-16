@@ -37,6 +37,9 @@ def test_no_box_with_a_barostat_is_refused(method: str) -> None:
         validate_config({"systems": [{"system": "1UBQ"}],
                          "setup": {"nonbonded_method": method}})
     assert caught.value.refusal.code == "config.option.conflicting"
+    # Shown as written in the GUI's Check verdict, where code marks are not set.
+    said = str(caught.value)
+    assert said.startswith("OpenMM cannot pair a barostat") and "`" not in said
 
 
 def test_an_ensemble_of_nvt_still_equilibrates_under_pressure() -> None:
