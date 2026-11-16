@@ -124,12 +124,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   trajectory was not found. While the analyses are planned the dialog says
   so, a second press asks nothing more, and an answer for a study no longer
   open is dropped, where it was shown and its button ran on the study opened
-  since. An analysis manifest that is not valid JSON is said not read, as a
-  refused one is, and the defaults are not ticked in its place. A study with
-  no `analysis/` is not told that what the run replaces is saved in
-  `previous/`, nor is one with no `report/` on Write it again, nor an AI
-  app's `run_phases_again` once done. A plan that fails names its file from the study's folder, not
-  by the server's path to it.
+  since; nor is what the dialog says, or its end, read from that answer.
+  An Analyze again pressed on a cell while the dialog is planned is ticked
+  once it is, where it was ignored. An analysis manifest that is not valid
+  JSON is said not read, as a refused one is, and the defaults are not
+  ticked in its place. Only what the run saves in `previous/` is said saved
+  there, by name: a study with no `analysis/` and no `report/` is told
+  nothing of it, nor is one with no `report/` on Write it again, and an
+  analysis that did not finish (no manifest, or a damaged one), removed
+  with its report and not saved, is said removed, in the dialog, its end,
+  the Agent's question and an AI app's `run_phases_again`. A run of a study
+  of several left out reads "Run b is left out: it has no trajectory to
+  analyse.", and the dialog's prose says "analyse" as the rest of the GUI
+  does. A plan that fails names its file from the study's folder, not by
+  the server's path to it, the longer of the two stripped first.
 
 ### Added
 
