@@ -17,13 +17,14 @@ from typing import Any
 def automatic_analyses(study: Path) -> list[str]:
     """The analyses the analysis phase would run on the study ``study`` by
     default, from its recorded settings, planned on the first frame of its
-    trajectory (of its first run, in a study of several). Writes nothing."""
-    from fastmdxplora.again import first_run
+    trajectory (of its first run with frames, in a study of several).
+    Writes nothing."""
+    from fastmdxplora.again import first_run_with_frames
     from fastmdxplora.analysis import AnalysisOrchestrator
     from fastmdxplora.analysis.analyze import _detect_ligand_resname, analysis_paths
     from fastmdxplora.config.recorded import RECORDED, phase_settings
 
-    study = first_run(study)
+    study = first_run_with_frames(study)
     settings = phase_settings(study / RECORDED, "analysis", study=study)
     trajectory, topology = analysis_paths(
         study, trajectory=settings.get("trajectory"), topology=settings.get("topology"))

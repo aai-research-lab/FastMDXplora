@@ -309,6 +309,19 @@ def first_run(study: str | Path) -> Path:
     return root
 
 
+def first_run_with_frames(study: str | Path) -> Path:
+    """The run a study's default analyses are planned from: the study
+    itself, or the first run of a study of several that has frames to
+    analyse (`frames_of`), as `plan` leaves out those that have none; its
+    first run where none has."""
+    root = Path(study)
+    if not _several(root):
+        return root
+    runs = _runs_of(root)
+    return next((run for run in runs if frames_of(run) is not None),
+                runs[0] if runs else root)
+
+
 def recorded_analyses(study: str | Path) -> list[str]:
     """The analyses a study ran last, to offer them ticked: those its last
     analysis made, else those it recorded asking for."""

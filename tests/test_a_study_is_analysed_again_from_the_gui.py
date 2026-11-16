@@ -175,6 +175,23 @@ def test_a_trajectory_that_cannot_be_planned_from_has_nothing_ticked(tmp_path):
     assert "MDTraj failed to load trajectory" in offered["analysis"]["defaults_why"]
 
 
+def test_a_study_of_several_plans_from_its_first_run_with_frames(tmp_path):
+    from fastmdxplora import again
+
+    root = _campaign(tmp_path)
+    for run in (root / "runs").iterdir():
+        _forget_analysis_selection(run)
+    # Its first run has no trajectory: the analysis leaves it out and
+    # analyses run b, so what is ticked is planned from b.
+    (root / "runs" / "a" / "simulation" / "production.dcd").unlink()
+    offered = _again(root, "?defaults=1")
+    assert offered["analysis"]["can"]
+    assert offered["analysis"]["defaults"] == _TINY_PROTEIN_DEFAULTS
+    assert not offered["analysis"].get("defaults_why")
+    # What the study ran last is still read from its first run.
+    assert again.first_run(root) == root / "runs" / "a"
+
+
 @pytest.mark.parametrize("route,method,body", [
     ("/api/again", "run_again", {"phases": ["analysis"], "analyses": ["rmsd"]}),
     ("/api/report/write", "write_the_report_again", {}),
