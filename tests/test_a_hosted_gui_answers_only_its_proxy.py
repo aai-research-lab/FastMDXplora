@@ -285,6 +285,24 @@ class TestNoPathOnTheServerIsShown:
         for beside in (f"{root}2/x", f"{root}.yml", f"{root}-old"):
             assert hosting.scrub(beside) == beside
 
+    @pytest.mark.parametrize("after, rewritten", [
+        ("", True), ("/", True), ("/x", True), (" is not a study.", True), (".", True),
+        (": no such file", True), (" copy", True), ("`", True), ("\nnext/line", True),
+        (" copy/x", False), ("-old", False), (".bak", False), ("2", False), ("(1)", False),
+    ])
+    def test_a_path_ends_where_no_folder_name_goes_on(self, hosting, after, rewritten) -> None:
+        """`/srv/ws copy/x` was rewritten as `~ copy/x`: a space let the
+        workspace's name go on into a folder beside it."""
+        root = str(hosting.workspace)
+        assert hosting.scrub(root + after) == ("~" + after if rewritten else root + after)
+
+    def test_a_folder_whose_path_ends_with_the_workspace_is_not_in_it(self, hosting) -> None:
+        root = str(hosting.workspace)
+        for before in ("/other", "x", "a-", "~"):
+            assert hosting.scrub(f"{before}{root}/x") == f"{before}{root}/x"
+        for before in (" ", "`", "(", "=", "'"):
+            assert hosting.scrub(f"see{before}{root}/x") == f"see{before}~/x"
+
     def test_the_agent_s_reply_as_it_is_written_shows_no_path(
         self, hosting, workspace, monkeypatch
     ) -> None:

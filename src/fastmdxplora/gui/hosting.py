@@ -343,8 +343,10 @@ class Hosting:
             # The workspace itself as well as what is in it: a sentence that
             # names it ("No such file: /srv/ws", "/srv/ws is not a study.")
             # showed it whole. Not a sibling whose name it begins
-            # (`/srv/ws2`, `/srv/ws.yml`, `/srv/ws-old`), which is outside it.
-            text = re.sub(re.escape(prefix) + r"(?=/|$|\.(?!\w)|[^\w.\-])",
+            # (`/srv/ws2`, `/srv/ws.yml`, `/srv/ws-old`, `/srv/ws copy/x`),
+            # which is outside it, nor a folder whose path ends with it
+            # (`/other/srv/ws`).
+            text = re.sub(_NOT_AFTER_A_NAME + re.escape(prefix) + _WHERE_A_PATH_ENDS,
                           HOME_MARK, text)
         return text
 
@@ -353,6 +355,19 @@ class Hosting:
                      os.path.abspath(self.workspace)}
         # Longest first, so a spelling that contains another is replaced whole.
         return tuple(sorted(spellings, key=len, reverse=True))
+
+
+#: Where a path ends after the workspace's name: at `/`, the end of the
+#: text or of a line, a mark that closes or punctuates a sentence (`.`, `,`,
+#: `;`, `:`, `!` and `?` only where no name goes on after them), or a space
+#: not followed by a word that goes on as a path. Anything else (a letter, a
+#: digit, `-`, `.bak`, `(1)`, ` copy/x`) goes on to name another folder.
+_WHERE_A_PATH_ENDS = (r"(?=/|$|[\r\n]|[.,;:!?](?![\w\-])|[\"'`)\]}<>*]"
+                      r"|[^\S\r\n](?!\w\S*/))")
+
+#: Where a path to the workspace begins: not inside a longer name or path
+#: (`/other/srv/ws` is a folder of `/other`).
+_NOT_AFTER_A_NAME = r"(?<![\w.\-~])"
 
 
 def memory_kept(memory_dir: str = "", memory_store: str = "", *,
