@@ -110,6 +110,14 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   pages do: 9.96 read "10.0 effective samples -- too few", 30 read "30.0"
   and 1.05 "1.0 effective samples". Under one it says "fewer than one
   effective sample".
+- GUI: Analyze again on a study with no analyses on record (none asked for,
+  no analysis manifest) ticks the analyses its analysis phase would run by
+  default, where it ticked every analysis this release has, the image check
+  among them. They are planned from the study's recorded settings on the
+  first frame of its trajectory (its first run's, in a study of several),
+  held to the study's own records and writing nothing, and only when the
+  dialog asks (`GET /api/again?defaults=1`). Where they cannot be planned,
+  nothing is ticked and the dialog says why. (Prince Otegbulu, #73)
 
 ### Added
 
@@ -122,6 +130,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 - The unused `/api/agent/conversation/clear` route is gone: a request to it
   is answered as one to no route.
+- `AnalysisOrchestrator` makes its output folder when it runs, not when it
+  is made, so its plan (`planned_analyses`, new) writes nothing;
+  `load_trajectory(first_frame_only=True)` reads the first frame alone.
 
 ## [2.6.1] - 2026-11-16
 
