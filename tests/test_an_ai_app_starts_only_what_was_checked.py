@@ -126,7 +126,11 @@ class TestWhatRuns:
             sleeper.wait()
         assert spawned == []
 
-    def test_a_continuation_runs_in_the_study_it_continues(self, wire, workspace, spawned):
+    def test_a_continuation_runs_in_the_study_it_continues(self, wire, workspace, spawned,
+                                                            monkeypatch):
+        # One that can be extended: one that cannot is refused before it
+        # starts (`test_a_study_is_extended_in_place`).
+        monkeypatch.setattr("fastmdxplora.gui.exploration._not_extended", lambda *_: None)
         _study(workspace / "ubq", duration=10, means={}, started="2026-09-02T10:00:00+00:00")
         (workspace / "more.yml").write_text("simulation:\n  resume_from: ubq\n  extra_ns: 5\n")
         said = text_of(wire.request("tools/call", {"name": "start_study", "arguments": {

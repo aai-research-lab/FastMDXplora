@@ -490,3 +490,65 @@ class TestTheErrorPathsAreRun(unittest.TestCase):
         root = _study()
         (root / "resolved_config.yml").write_text("simulation: [unclosed", encoding="utf-8")
         self.assertIsNone(frames_before_checkpoint(root))
+
+
+def _workspace_with_a_study_of_no_production(monkeypatch):
+    from fastmdxplora.gui import exploration
+    from fastmdxplora.gui.exploration import DashboardRuntime
+
+    root = _study(done_steps=0, duration=0.0)
+    (root / "simulation" / "production.dcd").unlink()
+    (root / "manifest.json").write_text("{}", encoding="utf-8")
+    runtime = DashboardRuntime(workspace_root=root.parent, exploration_root=root.parent)
+    spawned: list = []
+    monkeypatch.setattr(exploration.DashboardRuntime, "_spawn",
+                        lambda self, *a, **k: spawned.append(a) or {"launched": True})
+    return root, runtime, spawned
+
+
+def test_the_gui_refuses_to_extend_a_study_with_no_production(monkeypatch) -> None:
+    """It started `fastmdx explore`, which refused, and left a config in
+    `continuations/` that showed in Recent and All studies."""
+    root, runtime, spawned = _workspace_with_a_study_of_no_production(monkeypatch)
+    answer = runtime.launch_from_config(None, config={
+        "simulation": {"resume_from": str(root), "extra_ns": 0.002}})
+    assert answer["ok"] is False
+    assert "ran no production of its own" in answer["error"]
+    assert spawned == []
+    assert not (root.parent / "continuations").exists()
+
+
+def test_and_so_does_the_agent_s_run(monkeypatch) -> None:
+    from fastmdxplora.gui.agent_panel import run_endpoint
+
+    root, runtime, spawned = _workspace_with_a_study_of_no_production(monkeypatch)
+    answer = run_endpoint({"config": {"agent": "guided", "simulation": {
+        "resume_from": str(root), "extra_ns": 0.002}}}, runtime)
+    assert answer["ok"] is False
+    assert "ran no production of its own" in answer["error"]
+    assert spawned == [] and not (root.parent / "continuations").exists()
+
+
+def test_a_hosted_gui_reads_home_as_its_workspace(monkeypatch) -> None:
+    """`~/study`, as a hosted GUI writes the study, was read in the server's
+    home folder and refused as a config with no `systems:` list."""
+    from fastmdxplora.gui.hosting import Hosting
+
+    root, runtime, spawned = _workspace_with_a_study_of_no_production(monkeypatch)
+    runtime.hosting = Hosting(workspace=root.parent.resolve(),
+                              allowed_hosts=frozenset({"x.org"}), secret="s" * 40)
+    answer = runtime.launch_from_config(None, config={
+        "simulation": {"resume_from": f"~/{root.name}", "extra_ns": 0.002}})
+    assert "ran no production of its own" in answer["error"], answer
+    # Extendable, it runs the study as found, not `~/...`.
+    root2 = _study()
+    (root2 / "manifest.json").write_text("{}", encoding="utf-8")
+    moved = root.parent / "extendable"
+    root2.rename(moved)
+    answer = runtime.launch_from_config(None, config={
+        "simulation": {"resume_from": "~/extendable", "duration_ns": 0.6}})
+    assert answer["ok"], answer
+    [(command, watched, _url)] = spawned
+    assert watched == moved.resolve()
+    written = yaml.safe_load(Path(command[command.index("--config") + 1]).read_text())
+    assert written["simulation"]["resume_from"] == str(moved.resolve())

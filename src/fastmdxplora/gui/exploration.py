@@ -1025,6 +1025,34 @@ def stopped_said(where: Any) -> str:
             "carries it on.")
 
 
+def _not_extended(study: Path, source: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The answer refusing an extension of ``study`` that cannot run, or None."""
+    from fastmdxplora.simulation.resume import extension_of
+
+    simulation = dict(source or {}).get("simulation") or {}
+    if not isinstance(simulation, Mapping):
+        return None
+    try:
+        plan = extension_of(study, total_ns=simulation.get("duration_ns"),
+                            more_ns=simulation.get("extra_ns"))
+    except StudyError as exc:
+        return {"ok": False, "error": str(exc), "config_path": None, "command": None}
+    except (TypeError, ValueError):
+        return None  # a length of the wrong type is refused by the config's own check
+    if plan.possible:
+        return None
+    why = str(plan.refusal).rstrip(".")
+    return {"ok": False, "error": f"{study.name} cannot be extended: {why}.",
+            "config_path": None, "command": None}
+
+
+def _resuming_from(source: Mapping[str, Any], study: Path) -> dict[str, Any]:
+    """``source`` with `simulation.resume_from` naming ``study`` as found."""
+    simulation = dict(source.get("simulation") or {})
+    simulation["resume_from"] = str(study)
+    return {**dict(source), "simulation": simulation}
+
+
 @dataclass
 class DashboardRuntime:
     """Mutable state shared by all request-handler threads."""
@@ -1890,10 +1918,18 @@ class DashboardRuntime:
             return None
         from fastmdxplora.gui.browse import is_study
 
-        study = Path(str(named)).expanduser()
-        if not study.is_absolute():
-            study = self.exploration_root / study
-        study = study.resolve()
+        if self.hosting is not None:
+            # `~` is the workspace, as a hosted GUI writes it, not the
+            # server's home folder.
+            inside = self.hosting.inside(str(named))
+            if inside is None:
+                return None
+            study = inside
+        else:
+            study = Path(str(named)).expanduser()
+            if not study.is_absolute():
+                study = self.exploration_root / study
+            study = study.resolve()
         return study if study.is_dir() and is_study(study) else None
 
     def _continue_in_place(self, study: Path, state: Mapping[str, Any] | None,
@@ -1917,6 +1953,18 @@ class DashboardRuntime:
         refused = _fix_refused(study, None)
         if refused is not None:
             return refused
+        # Refused as `fastmdx explore` refuses it, before anything is written
+        # or started: an extension of a study with no production started a
+        # process that stopped at once and left a config in the workspace.
+        refused = _not_extended(study, config if config is not None else state)
+        if refused is not None:
+            return refused
+        # The study as found, for the run to read: `~/x` from a hosted page
+        # is no folder to the command line.
+        if config is not None:
+            config = _resuming_from(config, study)
+        elif state is not None:
+            state = _resuming_from(state, study)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         kept = self.workspace_root / "continuations" / f"{study.name}-{stamp}"
         made = _made_by(kept)

@@ -108,6 +108,9 @@ class TestContinuingAStudy:
             return {"launched": True, "output": str(output_dir)}
 
         monkeypatch.setattr(exploration.DashboardRuntime, "_spawn", spawn)
+        # A study that can be extended (`test_a_study_is_extended_in_place`
+        # has one that cannot).
+        monkeypatch.setattr(exploration, "_not_extended", lambda *_: None)
         return runtime, spawned
 
     def test_it_runs_inside_the_study_and_is_watched_there(self, tmp_path, monkeypatch) -> None:

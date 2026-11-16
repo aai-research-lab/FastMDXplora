@@ -371,6 +371,8 @@ class TestNoTwoRunsWriteOneFolder:
         window = DashboardRuntime(workspace_root=workspace, exploration_root=workspace)
         monkeypatch.setattr(DashboardRuntime, "_study_being_continued",
                             lambda self, source: workspace / "first")
+        # One that could be extended, were it not running.
+        monkeypatch.setattr("fastmdxplora.gui.exploration._not_extended", lambda *_: None)
         config = {"systems": [{"system": str(workspace / "top.pdb")}],
                   "simulation": {"resume_from": str(workspace / "first")}}
         refused = window.launch_from_config(None, config=config)
