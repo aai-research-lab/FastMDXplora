@@ -5140,6 +5140,10 @@ def test_the_copy_refusal_names_the_draft_not_its_concept(tmp_path, unsteady, ca
     assert _share_to_zenodo(copy, tmp_path / "b.zip") == 2
     said = capsys.readouterr().err
     assert "that one is shared as the draft or record 7 on zenodo-sandbox" in said
+    # The refusal names the study's folders, and a temporary folder's name can
+    # hold "c7" (macOS's are /var/folders/<two characters>/...).
+    for folder in {str(tmp_path), str(tmp_path.resolve())}:
+        said = said.replace(folder, "")
     assert "c7" not in said
 
 
