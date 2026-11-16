@@ -18,6 +18,12 @@
   /* When the run started here began, as the server recorded it; null
    * while none is waited for. A state sent before it began is not its end. */
   var started = null;
+  /* The request out for the panel, while one is: a second is not started,
+   * and an answer to one dropped (the panel closed, or another study
+   * opened) is not shown. */
+  var asking = null;
+  /* The study the panel is open on, closed when another is opened. */
+  var openOn = null;
 
   function el(id) { return document.getElementById(id); }
 
@@ -30,7 +36,16 @@
 
   function panel() { return el("analysis-again-ask"); }
 
+  /* The study open, as the dashboard has it. */
+  function studyOpen() {
+    var board = window.FastMDXDashboard;
+    return (board && board.state && board.state.appState
+            && board.state.appState.active_run) || "";
+  }
+
   function close() {
+    asking = null;
+    openOn = null;
     var box = panel();
     if (box) { box.hidden = true; box.innerHTML = ""; }
     var button = el("analysis-again");
@@ -237,8 +252,18 @@
   function open(only) {
     var box = panel();
     var named = Array.isArray(only) && only.length ? only : null;
+    if (asking) return;
     if (!named && box && !box.hidden && box.querySelector(".again-choices")) { close(); return; }
+    var study = studyOpen();
+    var request = {};
+    // Planning what to tick reads the study's trajectory: said while it does.
+    if (!named) say("Planning the analyses to tick…");
+    asking = request;
+    openOn = study;
     load(!named).then(function (data) {
+      if (asking !== request) return;
+      asking = null;
+      if (studyOpen() !== study) { close(); return; }
       if (!data || !data.available) { say((data && data.why) || "Nothing is open to analyze."); return; }
       ask(named);
     });
@@ -251,6 +276,9 @@
     if (!button) return;
     app = app || {};
     running = !!app.process_running;
+    // Another study opened: the panel, and any answer it waits for, were
+    // for the one before.
+    if (openOn !== null && (app.active_run || "") !== openOn) close();
     // Not offered where it would be refused: a GUI served beyond this
     // computer answers no POST that starts a run.
     button.hidden = !app.active_run || document.body.dataset.beyondLoopback === "true";

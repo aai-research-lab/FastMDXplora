@@ -525,6 +525,60 @@ def test_a_run_again_that_fails_is_said_to_have_failed(tmp_path) -> None:
     assert said == "The workflow exited with code 1."
 
 
+def test_the_dialog_says_it_plans_and_drops_an_answer_for_another_study(tmp_path) -> None:
+    """An answer for the study open before arrived after another was opened
+    and was shown in the open panel, whose button then ran on the new one;
+    nothing was said while it was planned, and a second press asked again."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    held: list = []
+    errors: list[str] = []
+
+    def hold(route):
+        if "defaults=1" in route.request.url:
+            held.append(route)
+        else:
+            route.continue_()
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/again?defaults=1", hold)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            while not held:
+                page.wait_for_timeout(100)
+            planning = page.text_content("#analysis-again-ask") or ""
+            page.click("#analysis-again")
+            page.wait_for_timeout(500)
+            asked = len(held)
+            page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
+                          "{detail: d}))", {"active_run": str(tmp_path / "other"),
+                                            "process_running": False})
+            for route in held:
+                route.continue_()
+            page.wait_for_timeout(1500)
+            choices = page.locator("#analysis-again-ask .again-choices").count()
+            hidden = page.eval_on_selector("#analysis-again-ask", "box => box.hidden")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    # Said while planned, asked once, and the answer for the study before dropped.
+    assert ("Planning the analyses to tick" in planning, asked, choices, hidden) == (
+        True, 1, 0, True)
+    assert errors == []
+
+
 def test_a_study_with_no_analysis_is_not_told_of_previous_once_analysed(tmp_path) -> None:
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
