@@ -137,6 +137,30 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   of several left out reads "Run b is left out: it has no trajectory to
   analyse." A plan that fails names its file from the study's folder, not by
   the server's path to it, the longer of the two stripped first.
+- Records are written where Python has no `os.fchmod` (Windows), with the
+  mode left as the system gives it. (Prince Otegbulu, #89)
+- The end-to-end distance gives each chain its own column, named by its
+  chain ID as the radius of gyration names them; two chains with the same
+  ID, or with none, had one column between them. (Prince Otegbulu, #90)
+- A ligand whose residue name begins with a digit (`3GR`) is selected in
+  every analysis, scope, map and biased variable that names it: unquoted,
+  MDTraj matched no atom. A residue numbered below zero is selected from
+  the viewer by its place in the topology, as MDTraj cannot read a negative
+  `resSeq`, and an atom name beginning with a digit (`1HB`) is quoted.
+  (Prince Otegbulu, #91)
+- Q counts native contacts between chains whatever their order in the
+  topology. The sequence separation applies within a chain only, and was
+  taken over residue numbers counted across chains, so the last residues
+  of one chain and the first of the next were left out of S. Both schemes
+  take their residue pairs from the same set, and a short chain at an
+  interface is no longer refused. (Prince Otegbulu, #94)
+- The `--system` help no longer offers a one-letter sequence, which is
+  refused, and `docs/remote.md` says so. (Prince Otegbulu, #95)
+- The B-factor comparison reads each residue's B-factor from the conformer
+  loaded, the first alternate location given, and from the first model
+  only. It read the `A` location whatever was loaded, skipped a residue
+  with only `B` or `C`, and took a later model's values over the first's.
+  (Prince Otegbulu, #96)
 
 ### Added
 
