@@ -91,3 +91,12 @@ def test_a_protein_keeps_every_one() -> None:
 def test_a_selection_that_cannot_be_parsed_is_left_for_the_analysis_to_refuse() -> None:
     plan = _plan(_dna(), options={"rg": {"selection": "resname ((("}})
     assert "rg" in plan
+
+
+def test_the_protein_gate_is_declared_with_the_others() -> None:
+    """Read by the plan from every analysis, it was declared on one."""
+    from fastmdxplora.analysis.base import Analysis
+    from fastmdxplora.analysis.dihedrals import Dihedrals
+
+    assert Analysis.__dict__["requires_protein"] is False
+    assert Dihedrals.requires_protein is True

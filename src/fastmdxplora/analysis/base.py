@@ -222,6 +222,11 @@ class Analysis(ABC):
     #: and honoured when named in ``include``, where they say why not.
     requires_bilayer: bool = False
 
+    #: True for analyses of a protein's own atoms (backbone dihedrals), which
+    #: a system of DNA or RNA alone has none of. Left out of the automatic
+    #: plan of a system without one, whatever selection it is given.
+    requires_protein: bool = False
+
     #: Whether ``compute`` returns one value per frame.
     #:
     #: A quantity measured every frame has a mean, and a mean is not a
