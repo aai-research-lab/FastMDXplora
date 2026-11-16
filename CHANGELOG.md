@@ -7,6 +7,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed
+
+- A test of the refusal to share a copied study no longer fails where a
+  temporary folder's name holds the record's concept ("c7"), as macOS's
+  `/var/folders/<two characters>/` can.
+
 ## [2.6.1] - 2026-11-16
 
 This release changes the errors a study gives, how umbrella studies are read,
