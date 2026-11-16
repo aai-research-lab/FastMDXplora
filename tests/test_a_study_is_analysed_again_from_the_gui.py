@@ -192,6 +192,15 @@ def test_a_study_of_several_plans_from_its_first_run_with_frames(tmp_path):
     assert again.first_run(root) == root / "runs" / "a"
 
 
+def test_the_planning_failure_names_the_file_from_the_study(tmp_path):
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    (root / "simulation" / "production.dcd").write_bytes(b"not a trajectory")
+    why = _again(root, "?defaults=1")["analysis"]["defaults_why"]
+    assert "Could not open file: simulation/production.dcd" in why, why
+    assert str(root.resolve()) not in why and str(root) not in why
+
+
 @pytest.mark.parametrize("route,method,body", [
     ("/api/again", "run_again", {"phases": ["analysis"], "analyses": ["rmsd"]}),
     ("/api/report/write", "write_the_report_again", {}),

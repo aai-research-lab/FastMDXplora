@@ -877,7 +877,12 @@ def _again_defaults(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
         try:
             return {"defaults": automatic_analyses(inside)}
         except Exception as exc:  # noqa: BLE001 - said, and nothing is ticked
-            return {"defaults": None, "defaults_why": refusal_of(exc).message}
+            # A file of the study named from its folder, not by the
+            # server's path to it.
+            why = refusal_of(exc).message
+            for folder in {str(inside), str(Path(root))}:
+                why = why.replace(folder.rstrip(os.sep) + os.sep, "")
+            return {"defaults": None, "defaults_why": why}
 
     plan = _confined(Path(root), planned)
     defaults = plan.get("defaults")
