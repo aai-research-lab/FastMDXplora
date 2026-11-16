@@ -100,3 +100,41 @@ def test_the_protein_gate_is_declared_with_the_others() -> None:
 
     assert Analysis.__dict__["requires_protein"] is False
     assert Dihedrals.requires_protein is True
+
+
+def test_a_study_none_applies_to_says_so(tmp_path) -> None:
+    """A study of DNA alone planned nothing, and its analysis was said
+    "complete" with no word on why."""
+    import json
+
+    from fastmdxplora.analysis.orchestrator import NOTHING_APPLIES, AnalysisOrchestrator
+
+    traj = _dna()
+    traj[0].save_pdb(str(tmp_path / "top.pdb"))
+    traj.save_dcd(str(tmp_path / "traj.dcd"))
+    orchestrator = AnalysisOrchestrator(trajectory=str(tmp_path / "traj.dcd"),
+                                        topology=str(tmp_path / "top.pdb"),
+                                        output_dir=tmp_path / "analysis")
+    assert orchestrator.run() == {}
+    manifest = json.loads((tmp_path / "analysis" / "analysis_manifest.json").read_text())
+    assert manifest["plan"] == [] and manifest["nothing_applies"] == NOTHING_APPLIES
+    assert "--scope all" in NOTHING_APPLIES and "--analyses" in NOTHING_APPLIES
+
+    from fastmdxplora.orchestrator import PhaseResult, _how_it_ended
+
+    ended = _how_it_ended(PhaseResult(name="analysis", status="ok",
+                                      output_dir=tmp_path / "analysis"))
+    assert ended["status"] == "warning" and "ran nothing" in ended["message"]
+
+    from fastmdxplora.report.document import _results_section
+
+    assert "No analysis of the molecule applies" in _results_section(tmp_path)
+
+
+def test_a_plan_asked_for_is_not_said_to_be_empty_for_want_of_atoms() -> None:
+    from fastmdxplora.analysis.orchestrator import _REGISTRY, _nothing_applies
+
+    assert _nothing_applies(_plan(_protein()), None, None) is None
+    assert _nothing_applies([], ["rg"], None) is None
+    assert _nothing_applies([], None, list(_REGISTRY)) is None
+    assert _nothing_applies(_plan(_dna()), None, None)

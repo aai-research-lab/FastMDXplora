@@ -333,6 +333,9 @@ class AnalysisOrchestrator:
 
         plan = list(self.planned_analyses(include=include, exclude=exclude,
                                           options=options))
+        self.nothing_applies = _nothing_applies(plan, include, exclude)
+        if self.nothing_applies:
+            logger.info("%s", self.nothing_applies)
         merged_options = self._merge_options(plan, options)
         # Made once the plan and its options are accepted: a refused one
         # leaves no empty folder behind.
@@ -1047,6 +1050,8 @@ class AnalysisOrchestrator:
             "plan": list(self.results.keys()),
             **({"image_check_left_out": self.image_check_left_out}
                if getattr(self, "image_check_left_out", None) else {}),
+            **({"nothing_applies": self.nothing_applies}
+               if getattr(self, "nothing_applies", None) else {}),
             # The same facts under the names a config uses, so the run's
             # resolved config can carry them. `include` is the one that
             # matters: left unset it means "the default set of measures",
@@ -1088,6 +1093,30 @@ def _separation_for(cls: type, asked: dict[str, Any]) -> int:
     except (KeyError, TypeError, ValueError):
         return 4
     return 4 if declared is inspect.Parameter.empty else int(declared)
+
+
+#: Said where the gates leave no analysis in a plan the study did not list.
+NOTHING_APPLIES = (
+    "No analysis of the molecule applies to this study: each was left out of the plan "
+    "for needing "
+    "what this system does not have, such as a protein's atoms. To run them anyway, "
+    "name them with `include` (`--analyses` on the command line), or give the atoms "
+    "they read with `select_atoms` (`--select-atoms`) or `scope: all` (`--scope all`).")
+
+
+def _nothing_applies(plan: list[str], include: list[str] | None,
+                     exclude: list[str] | None) -> str | None:
+    """Why the plan is empty, where the gates emptied it, else None.
+
+    A study of DNA alone planned nothing and was reported as an analysis
+    that completed, with nothing said. One that lists its analyses, or
+    leaves out every one by name, asked for what it got.
+    """
+    if include is not None or any(name != _IMAGE_CHECK for name in plan):
+        return None
+    if exclude is not None and not set(_REGISTRY) - set(exclude):
+        return None
+    return NOTHING_APPLIES
 
 
 # The check of the solute against its own periodic images registers here,

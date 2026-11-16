@@ -659,7 +659,10 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
 
     lines = ["## Results", ""]
     if not plan:
-        lines.append("No analyses were executed in this session.")
+        # Said why, where the gates left nothing a study of this system can run.
+        lines.append(_md_with_code(analysis_manifest["nothing_applies"])
+                     if analysis_manifest.get("nothing_applies")
+                     else "No analyses were executed in this session.")
         return "\n".join(lines)
 
     n_frames = analysis_manifest.get("n_frames")
@@ -682,6 +685,9 @@ def _results_section(project_root: Path, report_dir: Path | None = None) -> str:
         )
     lines.append(f"Analyses performed: {', '.join(_md_text(a) for a in plan)}.")
     lines.append("")
+    if analysis_manifest.get("nothing_applies"):
+        lines.append(_md_with_code(analysis_manifest["nothing_applies"]))
+        lines.append("")
     if analysis_manifest.get("image_check_left_out"):
         # What is then not known of every mean below.
         lines.append(_md_with_code(analysis_manifest["image_check_left_out"]))
