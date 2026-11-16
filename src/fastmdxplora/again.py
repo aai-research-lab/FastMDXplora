@@ -325,28 +325,37 @@ def first_run_with_frames(study: str | Path) -> Path:
 def recorded_analyses(study: str | Path) -> list[str]:
     """The analyses a study ran last, to offer them ticked: those its last
     analysis made, else those it recorded asking for."""
+    return _recorded(study)[0]
+
+
+def _recorded(study: str | Path) -> tuple[list[str], bool]:
+    """`recorded_analyses`, and whether the study's analysis manifest is
+    there but could not be read as one (not valid JSON, or not an object)."""
     import json
 
     from fastmdxplora import record_access
 
     root = first_run(study)
+    damaged = False
     try:
         # Held to the study where the read is: a manifest linked out of it
         # is refused, and those the study asked for are offered instead.
         made = json.loads(record_access.read_text(
             root / "analysis" / "analysis_manifest.json", encoding="utf-8")).get("results")
-    except (OSError, ValueError, AttributeError):
+    except OSError:
         made = None
+    except (ValueError, AttributeError):
+        made, damaged = None, True
     if isinstance(made, dict) and made:
-        return _analyses_only(made)
+        return _analyses_only(made), damaged
     from fastmdxplora.config import ConfigError
     from fastmdxplora.config.recorded import RECORDED, phase_settings
 
     try:
         asked = phase_settings(root / RECORDED, "analysis", study=root).get("include")
     except (ConfigError, OSError):
-        return []
-    return _analyses_only(asked) if isinstance(asked, list) else []
+        return [], damaged
+    return (_analyses_only(asked) if isinstance(asked, list) else []), damaged
 
 
 def _analyses_only(names: Any) -> list[str]:
@@ -367,13 +376,18 @@ def offered(study: str | Path) -> dict[str, Any]:
 
     root = Path(study).expanduser().resolve()
     with record_access.refusals_noted() as refused:
-        recorded = recorded_analyses(root)
+        recorded, damaged = _recorded(root)
     out: dict[str, Any] = {"study": str(root), "several": _several(root),
                            "recorded": recorded}
-    if any(name.endswith("analysis_manifest.json") for name in refused):
-        # Named in the answer's `not_read` by the held read (`server._confined`).
-        out["recorded_said"] = ("The analysis manifest was not read, so those offered "
-                                "ticked are the analyses the study's Config asked for.")
+    if damaged or any(name.endswith("analysis_manifest.json") for name in refused):
+        # A refused one is named in the answer's `not_read` by the held read
+        # (`server._confined`). Either way nothing is ticked in its place
+        # but what the study's Config asked for.
+        out["recorded_said"] = (
+            ("The analysis manifest could not be read (it is not a valid manifest)" if damaged
+             else "The analysis manifest was not read")
+            + (", so those offered ticked are the analyses the study's Config asked for."
+               if recorded else ", and the study's Config names no analyses, so none is ticked."))
     for phase in PHASES:
         try:
             found = plan(root, [phase])

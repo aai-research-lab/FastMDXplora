@@ -201,6 +201,18 @@ def test_the_planning_failure_names_the_file_from_the_study(tmp_path):
     assert str(root.resolve()) not in why and str(root) not in why
 
 
+def test_a_damaged_analysis_manifest_is_said_and_nothing_is_ticked(tmp_path):
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    (root / "analysis" / "analysis_manifest.json").write_text("{not json", encoding="utf-8")
+    offered = _again(root, "?defaults=1")
+    assert offered["recorded"] == [] and offered["analysis"]["can"]
+    assert offered["recorded_said"] == (
+        "The analysis manifest could not be read (it is not a valid manifest), and the "
+        "study's Config names no analyses, so none is ticked.")
+    assert "defaults" not in offered["analysis"]
+
+
 @pytest.mark.parametrize("route,method,body", [
     ("/api/again", "run_again", {"phases": ["analysis"], "analyses": ["rmsd"]}),
     ("/api/report/write", "write_the_report_again", {}),
