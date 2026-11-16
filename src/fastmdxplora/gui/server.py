@@ -3419,13 +3419,31 @@ def make_handler(
             request is closed with it."""
             from fastmdxplora.gui.agent_panel import propose_endpoint
 
-            def emit(event: dict[str, Any]) -> None:
-                if hosting is not None:
-                    # As `_send_json` does for `/api/agent/propose`: the same
-                    # answer, a line at a time, shows no path on the server.
-                    event = hosting.scrub(event)
+            streamed = hosting.scrubbed_as_it_goes() if hosting is not None else None
+
+            def send(event: dict[str, Any]) -> None:
                 self.wfile.write((json.dumps(event, default=str) + "\n").encode("utf-8"))
                 self.wfile.flush()
+
+            def emit(event: dict[str, Any]) -> None:
+                if streamed is None:
+                    send(event)
+                    return
+                # As `_send_json` does for `/api/agent/propose`: the same
+                # answer, a line at a time, shows no path on the server. The
+                # reply's text comes in pieces that may split a path, so it
+                # is scrubbed as written so far, the rest of it held until
+                # the next piece or the next event.
+                if event.get("type") == "text":
+                    piece = streamed.add(str(event.get("text") or ""))
+                    if piece:
+                        send({**hosting.scrub({k: v for k, v in event.items() if k != "text"}),
+                              "text": piece})
+                    return
+                rest = streamed.flush()
+                if rest:
+                    send({"type": "text", "text": rest})
+                send(hosting.scrub(event))
 
             self.send_response(200)
             self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")

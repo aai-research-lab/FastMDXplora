@@ -350,6 +350,10 @@ class Hosting:
                           HOME_MARK, text)
         return text
 
+    def scrubbed_as_it_goes(self) -> StreamedScrub:
+        """A scrub for text sent in pieces, as the Agent's reply is."""
+        return StreamedScrub(self)
+
     def _prefixes(self) -> tuple[str, ...]:
         spellings = {str(self.workspace), os.path.realpath(self.workspace),
                      os.path.abspath(self.workspace)}
@@ -368,6 +372,75 @@ _WHERE_A_PATH_ENDS = (r"(?=/|$|[\r\n]|[.,;:!?](?![\w\-])|[\"'`)\]}<>*]"
 #: Where a path to the workspace begins: not inside a longer name or path
 #: (`/other/srv/ws` is a folder of `/other`).
 _NOT_AFTER_A_NAME = r"(?<![\w.\-~])"
+
+
+class StreamedScrub:
+    """`Hosting.scrub` for text that arrives in pieces.
+
+    Scrubbed a piece at a time, a path split across two pieces went out
+    whole: "Read /srv/w" then "s/notes.md". The text so far is scrubbed
+    instead, and only what no later piece can change is sent: up to the
+    start of its last complete word, with the rest held until the next
+    piece or `flush`. A spelling of the workspace with a space in it is
+    never cut.
+    """
+
+    def __init__(self, hosting: Hosting) -> None:
+        self._hosting = hosting
+        self._raw = ""
+        self._sent = ""
+
+    def add(self, piece: str) -> str:
+        """The scrubbed text that `piece` lets go, maybe empty."""
+        self._raw += piece
+        cut = self._safe_cut()
+        if cut <= 0:
+            return ""
+        word = re.match(r"\S*", self._raw[cut:]).group(0)
+        # What decides the last path before the cut: whether the word after
+        # it goes on as a path. Said by a stand-in no scrub changes.
+        stand_in = "a/" if re.match(r"\w\S*/", word) else "-"
+        scrubbed = self._hosting._scrub_text(self._raw[:cut] + stand_in)[:-len(stand_in)]
+        return self._new(scrubbed)
+
+    def flush(self) -> str:
+        """The rest, at the end of the text."""
+        tail = self._new(self._hosting._scrub_text(self._raw))
+        self._raw = self._sent = ""
+        return tail
+
+    def _new(self, scrubbed: str) -> str:
+        if not scrubbed.startswith(self._sent) or len(scrubbed) <= len(self._sent):
+            return ""
+        tail = scrubbed[len(self._sent):]
+        self._sent = scrubbed
+        return tail
+
+    def _safe_cut(self) -> int:
+        raw = self._raw
+        words = [m.start() for m in re.finditer(r"\S+", raw)]
+        # The last word may go on in the next piece; the one before it is
+        # whole, and decides the path before it.
+        whole = words if raw[-1:].isspace() else words[:-1]
+        if not whole:
+            return 0
+        cut = whole[-1]
+        whole_ones = (sys.executable, *self._hosting._prefixes())
+        moved = True
+        while moved and cut > 0:
+            moved = False
+            for spelling in whole_ones:
+                for start in range(max(0, cut - len(spelling) + 1), cut):
+                    seen = raw[start:start + len(spelling)]
+                    if spelling.startswith(seen) and start + len(seen) > cut:
+                        cut = start
+                        moved = True
+                        break
+            if moved:
+                # Back to the start of the word it is in.
+                while cut > 0 and not raw[cut - 1].isspace():
+                    cut -= 1
+        return cut
 
 
 def memory_kept(memory_dir: str = "", memory_store: str = "", *,

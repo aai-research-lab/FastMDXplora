@@ -326,6 +326,53 @@ class TestNoPathOnTheServerIsShown:
         assert events[0]["text"] == "Read ~/first-study/notes.md"
         assert events[-1]["answer"]["config_path"] == "~/first-study/run.yml"
 
+    def test_a_path_split_across_the_reply_s_pieces_shows_no_path(
+        self, hosting, workspace, monkeypatch
+    ) -> None:
+        """The streamed reply was scrubbed a piece at a time, so a path split
+        across two pieces went out whole."""
+        from fastmdxplora.gui import agent_panel
+
+        root = str(workspace.resolve())
+        cut_in_the_path = len(root) + len("/first-st")
+        cut_in_the_workspace = len(root) // 2
+        reply = f"{root}/first-study/notes.md and {root} copy/x, then {root}."
+
+        def propose(payload, runtime, *, emit=None, **_):
+            emit({"type": "begin"})
+            for start, end in ((0, 5), (5, cut_in_the_workspace + 5),
+                               (cut_in_the_workspace + 5, cut_in_the_path + 5),
+                               (cut_in_the_path + 5, None)):
+                emit({"type": "text", "text": ("Read " + reply)[start:end]})
+            return {"ok": True, "reply": "Read " + reply}
+
+        monkeypatch.setattr(agent_panel, "propose_endpoint", propose)
+        with _serving(hosting) as (address, _):
+            status, body = _ask(address, "/api/agent/propose-stream",
+                                body={"request": "x"},
+                                headers={"Origin": f"https://{NAME}"})
+        events = [json.loads(line) for line in body.decode().splitlines()]
+        assert status == 200
+        assert [e["type"] for e in events][0] == "begin"
+        assert events[-1]["type"] == "done"
+        written = "".join(e["text"] for e in events if e["type"] == "text")
+        assert written == f"Read ~/first-study/notes.md and {root} copy/x, then ~."
+        assert written == events[-1]["answer"]["reply"]
+        for event in events[:-1]:
+            assert root + "/" not in event.get("text", "")
+
+    def test_the_reply_scrubbed_in_pieces_is_the_reply_scrubbed_whole(self, hosting) -> None:
+        root = str(hosting.workspace)
+        reply = (f"Read {root}/a.md\n{root} is a folder; {root} copy/x is not, "
+                 f"nor /other{root}/b, `{root}`. Done")
+        whole = hosting.scrub(reply)
+        for cut in range(1, len(reply)):
+            for second in (cut + 1, cut + len(root) // 2, cut + len(root) + 3):
+                streamed = hosting.scrubbed_as_it_goes()
+                said = (streamed.add(reply[:cut]) + streamed.add(reply[cut:second])
+                        + streamed.add(reply[second:]) + streamed.flush())
+                assert said == whole, (cut, second)
+
     def test_the_state_names_the_workspace_as_home(self, hosting) -> None:
         with _serving(hosting) as (address, _):
             _ask(address, "/api/explore/switch", body={"folder": "~/first-study"})
