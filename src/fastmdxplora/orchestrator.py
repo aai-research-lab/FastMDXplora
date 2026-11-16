@@ -929,12 +929,21 @@ class FastMDXplora:
         simulate`` on the command line -- passed its settings straight to
         the phase. A misspelled ``duraton_ns`` and a temperature of -50 K
         were both taken, where a configuration holding them is refused.
+
+        Checked as a study that runs this phase alone, so what holds between
+        phases is asked only of the phases that run: setup on its own adds no
+        barostat. A simulation is checked with the setup settings this study
+        was given, which built the system it runs.
         """
-        if settings:
+        setup = self.options.get("setup") if phase == "simulation" else None
+        if settings or setup:
             from fastmdxplora.config.loader import validate_config
 
-            validate_config({"systems": [{"system": str(self.system)}], phase: dict(settings)},
-                            require_systems=True)
+            data: dict[str, Any] = {"systems": [{"system": str(self.system)}],
+                                    "include_phase": [phase], phase: dict(settings)}
+            if setup:
+                data["setup"] = dict(setup)
+            validate_config(data, require_systems=True)
         return settings
 
     def compare(self, *, output_dir: str | os.PathLike | None = None) -> Path | None:

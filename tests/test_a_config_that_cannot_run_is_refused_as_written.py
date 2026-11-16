@@ -66,6 +66,44 @@ def test_without_a_simulation_there_is_no_barostat() -> None:
                      "include_phase": ["setup"]})
 
 
+def test_setup_run_alone_adds_no_barostat(tmp_path: Path) -> None:
+    """`.setup(nonbonded_method="NoCutoff")` was refused, as if the default
+    NPT simulation ran with it."""
+    from fastmdxplora import FastMDXplora
+
+    study = FastMDXplora("1UBQ", output_dir=str(tmp_path / "study"))
+    assert study._validated("setup", {"nonbonded_method": "NoCutoff"}) == {
+        "nonbonded_method": "NoCutoff"}
+
+
+def test_a_simulation_on_a_system_with_no_box_is_still_refused(tmp_path: Path) -> None:
+    from fastmdxplora import FastMDXplora
+
+    study = FastMDXplora("1UBQ", output_dir=str(tmp_path / "study"),
+                         options={"setup": {"nonbonded_method": "NoCutoff"},
+                                  "simulation": {"ensemble": "nvt", "npt_duration_ns": 0}})
+    with pytest.raises(ConfigError, match="no periodic box"):
+        study._validated("simulation", {"npt_duration_ns": 1})
+    with pytest.raises(ConfigError, match="no periodic box"):
+        study._validated("simulation", {})
+    study._validated("simulation", {"ensemble": "nvt", "npt_duration_ns": 0})
+
+
+def test_the_cli_still_refuses_a_study_with_no_box_and_a_barostat(tmp_path: Path, capsys) -> None:
+    from fastmdxplora.cli.main import main
+
+    try:
+        code = main(["explore", "--system", "1UBQ", "--output", str(tmp_path / "study"),
+                     "--setup-nonbonded-method", "NoCutoff", "--dry-run"])
+    except ConfigError as refused:
+        said = str(refused)
+    else:
+        assert code != 0
+        printed = capsys.readouterr()
+        said = printed.out + printed.err
+    assert "no periodic box" in said
+
+
 def test_runs_that_cannot_be_expanded_are_judged_as_the_study_s_own() -> None:
     """The batch check says what is wrong with them; this one reads the
     study's own settings."""
