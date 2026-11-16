@@ -662,6 +662,30 @@ class TestQBiasesTheSameThingItReports:
         assert np.isclose(weight.sum(), 1.0)
         assert "  SUM" in script.splitlines()
 
+    @pytest.mark.parametrize("reverse", [False, True])
+    def test_a_small_interface_with_repeated_chain_ids_is_a_q_coordinate(
+        self, tmp_path, reverse,
+    ):
+        import mdtraj as md
+        import numpy as np
+
+        from fastmdxplora.analysis.qvalue import QValue
+
+        top = md.Topology()
+        for _ in range(2):
+            residue = top.add_residue("ALA", top.add_chain("A"), resSeq=1)
+            top.add_atom("CA", md.element.carbon, residue)
+        xyz = np.zeros((3, 2, 3))
+        xyz[:, 1, 0] = [0.1, 0.2, 0.5]
+        traj = md.Trajectory(xyz[:, ::-1] if reverse else xyz, top)
+        _, script = self._script(tmp_path, traj)
+        pairs, beta, lam, r0, weight = self._parse(script)
+        np.testing.assert_array_equal(pairs, [[0, 1]])
+        np.testing.assert_allclose(r0, [0.1], atol=1e-7)
+        r = np.array([[0.1], [0.2], [0.5]])
+        expected = (weight / (1 + np.exp(beta * (r - lam * r0)))).sum(1)
+        np.testing.assert_allclose(QValue().compute(traj), expected, atol=2e-6)
+
     def test_it_uses_plumed_s_own_q_switching_function(self, tmp_path) -> None:
         """Rather than a hand-written CUSTOM sigmoid.
 
