@@ -24,6 +24,9 @@
   var asking = null;
   /* The study the panel is open on, closed when another is opened. */
   var openOn = null;
+  /* The analyses a cell's Analyze again asked for while the panel was
+   * being planned: ticked once the answer comes. */
+  var queued = null;
 
   function el(id) { return document.getElementById(id); }
 
@@ -46,6 +49,7 @@
   function close() {
     asking = null;
     openOn = null;
+    queued = null;
     var box = panel();
     if (box) { box.hidden = true; box.innerHTML = ""; }
     var button = el("analysis-again");
@@ -96,19 +100,20 @@
   }
 
   /* `defaults`: asked where the dialog ticks what the study's analysis
-   * would run by default, which the server plans from its trajectory. */
+   * would run by default, which the server plans from its trajectory. The
+   * answer is taken as `offered` by `open`, once it is for the study open:
+   * one dropped is never read. */
   function load(defaults) {
     return fetch(defaults ? "/api/again?defaults=1" : "/api/again", { cache: "no-store" })
       .then(function (res) { return res.json(); })
-      .then(function (data) { offered = data; return data; })
-      .catch(function () { offered = null; return null; });
+      .catch(function () { return null; });
   }
 
   /* What the run will do, as the person reads it before agreeing. */
   function told(analysis, chosen) {
     var several = offered.several && analysis.runs > 1;
     var where = several ? "each of this study's " + analysis.runs + " runs" : "this study";
-    var lines = ["Analyze " + where + " again from its records, with the " +
+    var lines = ["Analyse " + where + " again from its records, with the " +
                  (chosen === 1 ? "analysis" : chosen + " analyses") + " ticked. " +
                  "Nothing is simulated."];
     if (analysis.report_too) {
@@ -120,7 +125,7 @@
     if (analysis.saved_said) lines.push(analysis.saved_said);
     if (offered.several) lines.push("The comparison of the runs is built again after.");
     (analysis.left_out || []).forEach(function (left) {
-      lines.push(left.run + " is left out: " + left.why);
+      lines.push("Run " + left.run + " is left out: " + left.why);
     });
     return lines.join(" ");
   }
@@ -152,7 +157,7 @@
     if (!box || !analysis) return;
     askedFrom = document.activeElement;
     if (!analysis.can) {
-      say(analysis.why || "This study cannot be analyzed again here.", analysis.terminal);
+      say(analysis.why || "This study cannot be analysed again here.", analysis.terminal);
       return;
     }
     box.innerHTML = "";
@@ -241,7 +246,7 @@
     }).then(function (res) { return res.json(); }).then(function (d) {
       if (d && d.ok) {
         started = (d.state && d.state.started_at) || "";
-        say("Analyzing again. Its log is in the side panel, and the analyses appear " +
+        say("Analysing again. Its log is in the side panel, and the analyses appear " +
             "here as they are written.");
       } else {
         say((d && d.error) || "Could not start it.");
@@ -252,7 +257,12 @@
   function open(only) {
     var box = panel();
     var named = Array.isArray(only) && only.length ? only : null;
-    if (asking) return;
+    if (asking) {
+      // A cell's, pressed while the panel is planned: ticked once it is,
+      // as the planning said meanwhile.
+      if (named) queued = named;
+      return;
+    }
     if (!named && box && !box.hidden && box.querySelector(".again-choices")) { close(); return; }
     var study = studyOpen();
     var request = {};
@@ -264,8 +274,13 @@
       if (asking !== request) return;
       asking = null;
       if (studyOpen() !== study) { close(); return; }
-      if (!data || !data.available) { say((data && data.why) || "Nothing is open to analyze."); return; }
-      ask(named);
+      // Only now, the answer being for the study open: one dropped (the
+      // panel closed, or another study opened) would be read on this one.
+      offered = data;
+      var only = queued || named;
+      queued = null;
+      if (!data || !data.available) { say((data && data.why) || "Nothing is open to analyse."); return; }
+      ask(only);
     });
   }
 
@@ -284,8 +299,8 @@
     button.hidden = !app.active_run || document.body.dataset.beyondLoopback === "true";
     button.disabled = running;
     button.title = running
-      ? "A run is going. The study can be analyzed again once it ends."
-      : "Analyze this study's frames again, with the analyses you choose, simulating nothing";
+      ? "A run is going. The study can be analysed again once it ends."
+      : "Analyse this study's frames again, with the analyses you choose, simulating nothing";
     // Each analysis's own (analysis-cells.js), on the same state.
     Array.prototype.forEach.call(document.querySelectorAll(".cell-again"), function (cell) {
       cell.hidden = button.hidden;
@@ -298,7 +313,7 @@
     if (app.again_round) {
       // Done over a round left unfinished: said so, with that round and
       // the command that carries it on, as the terminal says it.
-      say("Analyzed again. " + app.again_round.said, app.again_round.terminal);
+      say("Analysed again. " + app.again_round.said, app.again_round.terminal);
       return;
     }
     if (app.returncode !== 0 || app.error) {
@@ -307,10 +322,11 @@
           app.error ? app.error_terminal : "");
       return;
     }
-    // What it replaced is said only where there was something to replace.
-    var replaced = offered && offered.analysis && offered.analysis.replaces;
-    say("Analyzed again." + (replaced
-      ? " What it replaced is in " + ((offered && offered.previous) || "previous") + "/." : ""));
+    // What it replaced, as the server says it (`again.done_said`): in
+    // previous/ only what is saved there, an analysis that did not finish
+    // said removed.
+    var done = (offered && offered.analysis && offered.analysis.done_said) || "";
+    say("Analysed again." + (done ? " " + done : ""));
   }
 
   document.addEventListener("DOMContentLoaded", function () {

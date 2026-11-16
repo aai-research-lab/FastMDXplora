@@ -394,7 +394,7 @@ def test_the_analysis_page_analyses_again_after_asking(tmp_path) -> None:
             said = page.text_content("#analysis-again-ask .again-said")
             assert "POST" not in asked          # nothing yet: asked first
             page.click("#analysis-again-ask .fix-confirm")
-            page.wait_for_selector("#analysis-again-ask:has-text('Analyzed again.')",
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysed again.')",
                                    timeout=180000)
             browser.close()
     finally:
@@ -418,16 +418,26 @@ def test_the_panel_says_an_unfinished_analysis_is_removed(tmp_path) -> None:
     # Stopped part-way: its analyses written, not its manifest.
     (root / "analysis" / "analysis_manifest.json").unlink()
     session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    began = "2026-10-06T13:15:02+00:00"
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
             page = browser.new_page(viewport={"width": 1400, "height": 1000})
             page.set_default_timeout(60000)
+            page.route("**/api/again", lambda route: route.fulfill(
+                json={"ok": True, "said": "", "state": {"started_at": began}})
+                if route.request.method == "POST" else route.continue_())
             page.goto(session.url + "#analysis", wait_until="domcontentloaded")
             page.wait_for_selector("#analysis-again:not([hidden])")
             page.click("#analysis-again")
             page.wait_for_selector("#analysis-again-ask .again-choices")
             said = page.text_content("#analysis-again-ask .again-said")
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysing again.')")
+            page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
+                          "{detail: d}))", {"active_run": str(root), "process_running": False,
+                                            "started_at": began, "returncode": 0})
+            ended = page.text_content("#analysis-again-ask .again-said")
             browser.close()
     finally:
         session.server.shutdown()
@@ -439,6 +449,9 @@ def test_the_panel_says_an_unfinished_analysis_is_removed(tmp_path) -> None:
     # One wording with what `fastmdx mcp` and the Agent are told.
     rule = again.saved_said(again.plan(root, ["analysis"]))
     assert rule in said and rule in again.plan(root, ["analysis"]).said()
+    # Nor said, once done, to be in previous/.
+    assert ended == ("Analysed again. What it replaced is removed, not saved in previous/, "
+                     "as its analysis did not finish."), ended
 
 
 def test_a_state_sent_before_the_run_began_is_not_its_end(tmp_path) -> None:
@@ -473,7 +486,7 @@ def test_a_state_sent_before_the_run_began_is_not_its_end(tmp_path) -> None:
             page.wait_for_selector("#analysis-again:not([hidden])")
             page.click("#analysis-again")
             page.click("#analysis-again-ask .fix-confirm")
-            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysing again.')")
 
             def sent(detail):
                 page.evaluate("d => window.dispatchEvent(new CustomEvent("
@@ -487,9 +500,9 @@ def test_a_state_sent_before_the_run_began_is_not_its_end(tmp_path) -> None:
             browser.close()
     finally:
         session.server.shutdown()
-    assert before.startswith("Analyzing again.") and earlier.startswith("Analyzing again.")
-    assert going.startswith("Analyzing again.")
-    assert ended.startswith("Analyzed again.")
+    assert before.startswith("Analysing again.") and earlier.startswith("Analysing again.")
+    assert going.startswith("Analysing again.")
+    assert ended.startswith("Analysed again.")
     assert errors == []
 
 
@@ -514,7 +527,7 @@ def test_a_run_again_that_fails_is_said_to_have_failed(tmp_path) -> None:
             page.wait_for_selector("#analysis-again:not([hidden])")
             page.click("#analysis-again")
             page.click("#analysis-again-ask .fix-confirm")
-            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysing again.')")
             page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
                           "{detail: d}))", {"active_run": str(root), "process_running": False,
                                             "started_at": began, "returncode": 1,
@@ -607,7 +620,7 @@ def test_a_study_with_no_analysis_is_not_told_of_previous_once_analysed(tmp_path
             page.wait_for_selector("#analysis-again-ask .again-choices")
             asked = page.text_content("#analysis-again-ask .again-said")
             page.click("#analysis-again-ask .fix-confirm")
-            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysing again.')")
             page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
                           "{detail: d}))", {"active_run": str(root), "process_running": False,
                                             "started_at": began, "returncode": 0})
@@ -616,7 +629,113 @@ def test_a_study_with_no_analysis_is_not_told_of_previous_once_analysed(tmp_path
     finally:
         session.server.shutdown()
     assert "previous" not in asked, asked
-    assert said == "Analyzed again.", said
+    assert said == "Analysed again.", said
+    assert errors == []
+
+
+def test_an_answer_dropped_is_not_read_by_the_dialog_or_its_end(tmp_path) -> None:
+    """An answer for the study open before, arriving after another study
+    was opened and the dialog asked again and answered, replaced what the
+    dialog had been told: it said the runs of the study before, and its end
+    what that one replaced."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=("rmsd", "rg"), report=False)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    began = "2026-10-06T13:15:02+00:00"
+    held: list = []
+    errors: list[str] = []
+
+    def hold(route):
+        if route.request.method == "POST":
+            route.fulfill(json={"ok": True, "said": "", "state": {"started_at": began}})
+        else:
+            held.append(route)
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/again*", hold)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            while len(held) < 1:
+                page.wait_for_timeout(100)
+            page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
+                          "{detail: d}))", {"active_run": str(tmp_path / "other"),
+                                            "process_running": False})
+            page.click("#analysis-again")
+            while len(held) < 2:
+                page.wait_for_timeout(100)
+            before, now = held
+            answer = now.fetch()
+            real = answer.json()
+            now.fulfill(response=answer)
+            page.wait_for_selector("#analysis-again-ask .again-choices")
+            dropped = json.loads(json.dumps(real))
+            dropped["several"] = True
+            dropped["analysis"].update(runs=3, replaces=True, saves=True,
+                                       done_said="What it replaced is in previous/.")
+            before.fulfill(json=dropped)
+            page.wait_for_timeout(1000)
+            page.uncheck("#analysis-again-ask input[value='rg']")
+            told = page.text_content("#analysis-again-ask .again-said")
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysing again.')")
+            page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
+                          "{detail: d}))", {"active_run": str(root), "process_running": False,
+                                            "started_at": began, "returncode": 0})
+            ended = page.text_content("#analysis-again-ask .again-said")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert "each of this study's" not in told and "comparison of the runs" not in told, told
+    done = real["analysis"]["done_said"]
+    assert ended == "Analysed again." + (" " + done if done else ""), ended
+    assert errors == []
+
+
+def test_a_cell_pressed_while_the_dialog_is_planned_is_ticked_once_it_is(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=("rmsd", "rg"), report=False)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    held: list = []
+    errors: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/again?defaults=1", lambda route: held.append(route))
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.wait_for_selector(".cell-again:not([hidden])")
+            page.click("#analysis-again")
+            while not held:
+                page.wait_for_timeout(100)
+            # The cell's own, while the page's is planned.
+            page.evaluate("() => window.FastMDXAgain.open(['rg'])")
+            page.wait_for_timeout(300)
+            for route in held:
+                route.continue_()
+            page.wait_for_selector("#analysis-again-ask .again-choices")
+            ticked = page.eval_on_selector_all(
+                "#analysis-again-ask input:checked", "boxes => boxes.map(b => b.value)")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert ticked == ["rg"]
     assert errors == []
 
 

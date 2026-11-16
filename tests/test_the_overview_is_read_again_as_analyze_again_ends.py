@@ -79,7 +79,7 @@ def test_the_overview_drops_the_earlier_rules_as_analyze_again_ends(tmp_path) ->
             page.wait_for_selector("#analysis-again:not([hidden])")
             page.click("#analysis-again")
             page.click("#analysis-again-ask .fix-confirm")
-            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analysing again.')")
             record.write_text(judged, encoding="utf-8")
             # Well inside the Overview's 20 s, so the read is the end's.
             with page.expect_response("**/api/overview", timeout=5000):
@@ -91,7 +91,7 @@ def test_the_overview_drops_the_earlier_rules_as_analyze_again_ends(tmp_path) ->
     finally:
         session.server.shutdown()
     assert json.loads(judged)["findings"]["mean"]["rules"] >= 2
-    assert ended.startswith("Analyzed again.")
+    assert ended.startswith("Analysed again.")
     assert errors == []
 
 

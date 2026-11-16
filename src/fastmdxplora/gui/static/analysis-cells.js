@@ -148,7 +148,7 @@
     button.type = "button";
     button.hidden = offered.hidden;
     button.disabled = offered.disabled;
-    button.dataset.title = "Analyze this study's frames again with " + name +
+    button.dataset.title = "Analyse this study's frames again with " + name +
       " alone ticked; the panel above says what it writes again before it starts";
     button.title = offered.disabled ? offered.title : button.dataset.title;
     button.addEventListener("click", function () {

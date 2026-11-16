@@ -39,7 +39,7 @@ def test_a_rerun_over_an_unfinished_round_is_said_in_a_browser(request, tmp_path
     monkeypatch.setenv("PYTHONPATH", _source())
     made = _rerun_case(request, case, broken, tmp_path)
     page_of, where = made["page"], made["phase"]
-    done = "Analyzed again." if where == "analysis" else "Written again."
+    done = "Analysed again." if where == "analysis" else "Written again."
     box = "#analysis-again-ask" if where == "analysis" else "#report-write-ask"
     session = start_dashboard_session(output=str(page_of), host="127.0.0.1", port=0)
     try:
