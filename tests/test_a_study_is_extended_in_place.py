@@ -552,3 +552,17 @@ def test_a_hosted_gui_reads_home_as_its_workspace(monkeypatch) -> None:
     assert watched == moved.resolve()
     written = yaml.safe_load(Path(command[command.index("--config") + 1]).read_text())
     assert written["simulation"]["resume_from"] == str(moved.resolve())
+
+
+def test_the_agent_is_not_offered_an_extension_that_would_be_refused() -> None:
+    """A study with no production was said to "still be extended past" its
+    plan, with the command that then refused."""
+    from fastmdxplora.simulation.resume import continuation_of
+
+    root = _study(done_steps=0, duration=0.0)
+    (root / "simulation" / "production.dcd").unlink()
+    said = continuation_of(root).refusal
+    assert "ran no production of its own" in said
+    assert "--simulate-resume-from" not in said
+    finished = continuation_of(_study()).refusal
+    assert "it can still be extended past it" in finished

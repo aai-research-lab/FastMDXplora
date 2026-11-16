@@ -546,6 +546,13 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
         # continued" here sent the Agent to offer a fresh run of the same
         # molecule instead of the hundred picoseconds that were asked for.
         asked = total_ns is not None or more_ns is not None
+        if (not asked and from_segment is None and done_ns <= 0
+                and _ran_no_production(root)):
+            # Not offered an extension, which `extension_of` refuses.
+            return Continuation(parent=str(root), checkpoint=str(checkpoint),
+                                production_done_ns=done_ns,
+                                production_planned_ns=planned_ns,
+                                config={}, refusal=NO_PRODUCTION_OF_ITS_OWN)
         why = (f"{done_ns:.3f} ns of production is already written, which is "
                f"at or past the {float(total_ns):.3f} ns asked for"
                if total_ns is not None else
@@ -825,6 +832,23 @@ def production_done_ns(study: str | Path) -> float:
     return round(total, 9)
 
 
+#: Why a study that ran no production cannot be extended.
+NO_PRODUCTION_OF_ITS_OWN = ("the study ran no production of its own, so a segment would "
+                            "have no trajectory to be joined to; run it again with a "
+                            "production length")
+
+
+def _ran_no_production(study: str | Path) -> bool:
+    """Whether ``study`` holds no segment of production, its own first one."""
+    from fastmdxplora.analysis.joining import survey_segments
+
+    try:
+        pieces = survey_segments(Path(study))
+    except StudyError:
+        return False  # two folders of one segment: the join says which
+    return not any(piece.index == 0 for piece in pieces)
+
+
 def extension_of(study: str | Path, *, total_ns: float | None = None,
                  more_ns: float | None = None) -> Continuation:
     """The next segment of ``study``, written inside it.
@@ -850,13 +874,7 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
         else continuation_of(study, from_segment=last)
     if not plan.possible:
         return plan
-    from fastmdxplora.analysis.joining import survey_segments
-
-    try:
-        pieces = survey_segments(Path(study))
-    except StudyError:
-        pieces = None  # two folders of one segment: the join says which
-    if pieces is not None and not any(piece.index == 0 for piece in pieces):
+    if _ran_no_production(study):
         # A study run with no production (`duration_ns: 0`) still writes a
         # production checkpoint, at step zero. Its segment was simulated and
         # then refused by the join as "segments [0] are missing", which was
@@ -864,10 +882,7 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
         return Continuation(parent=plan.parent, checkpoint=plan.checkpoint,
                             production_done_ns=done,
                             production_planned_ns=plan.production_planned_ns,
-                            config={},
-                            refusal="the study ran no production of its own, so a "
-                                    "segment would have no trajectory to be joined to; "
-                                    "run it again with a production length")
+                            config={}, refusal=NO_PRODUCTION_OF_ITS_OWN)
     index = next_segment_index(study)
     config = dict(plan.config)
     config["output"] = str(Path(study) / f"segment-{index:03d}")
