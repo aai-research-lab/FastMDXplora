@@ -293,7 +293,7 @@ CODES: tuple[Code, ...] = (
     Code("environment.service.busy",
          "The GUI was preparing other trajectory frames, and this one waited its "
          "turn too long.",
-         Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True),
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, since="2.6.1", retryable=True),
     Code("environment.service.machine_unreachable",
          "A machine did not answer over SSH.",
          Kind.ENVIRONMENTAL, Disclosure.NOTHING, retryable=True,
@@ -347,7 +347,7 @@ CODES: tuple[Code, ...] = (
     Code("environment.path.not_saved",
          "A record of the study could not be saved: its writer failed, as on "
          "a full disk.",
-         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.6.1"),
     Code("environment.budget.absent",
          "An unattended run was asked for with no ceiling on what it may "
          "spend.",
@@ -547,11 +547,11 @@ CODES: tuple[Code, ...] = (
          detail_keys=("path", "count")),
     Code("setup.ligand.names_collide",
          "Two molecules in the ligand files would share one residue name.",
-         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.1",
          detail_keys=("names", "option")),
     Code("setup.ligand.too_many_molecules",
          "The ligand files hold more molecules than there are residue names.",
-         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.1",
          detail_keys=("option",)),
     Code("setup.ligand.pose_unavailable",
          "The pose policy asked for a source that does not hold one.",
@@ -560,18 +560,18 @@ CODES: tuple[Code, ...] = (
     Code("setup.ligand.atoms_unmatched",
          "The structure's residue is not the ligand file's molecule: its "
          "heavy atoms do not match the file's by element and bond.",
-         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.1",
          detail_keys=("resname", "file_atoms", "structure_atoms", "option")),
     Code("setup.ligand.stereo_mismatch",
          "The structure holds another stereoisomer of the ligand file's "
          "molecule.",
-         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.1",
          detail_keys=("resname", "atoms", "option")),
     Code("setup.ligand.hydrogens_overlap",
          "A hydrogen from the ligand file, built on the structure's pose, "
          "still overlaps an atom three or more bonds away after its rotor's "
          "scan.",
-         Kind.SEMANTIC, Disclosure.FIELD_ONLY,
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.1",
          detail_keys=("resname", "atoms", "option")),
     Code("setup.ligand.clash",
          "The ligand pose overlaps the protein beyond the threshold.",
@@ -597,7 +597,7 @@ CODES: tuple[Code, ...] = (
     Code("setup.system.mass_not_positive",
          "The system built gives an atom a mass at or below zero, as a "
          "repartitioned hydrogen mass too large for its heavy atom does.",
-         Kind.SEMANTIC, Disclosure.NOTHING, since="2.7",
+         Kind.SEMANTIC, Disclosure.NOTHING, since="2.6.1",
          detail_keys=("atoms", "hydrogen_mass_amu")),
     Code("setup.membrane.orientation_unchecked",
          "A bilayer was asked for and the protein's orientation relative to "
@@ -623,7 +623,7 @@ CODES: tuple[Code, ...] = (
          "OpenMM's own packing could not be run up to its relaxation on the "
          "patch cleared of the lipids in a protein's pores, so the patch is "
          "not used and the bilayer is packed from the lipid's name.",
-         Kind.ENVIRONMENTAL, Disclosure.NOTHING, since="2.7"),
+         Kind.ENVIRONMENTAL, Disclosure.NOTHING, since="2.6.1"),
 
     # -- simulation: collective variables -----------------------------------
     Code("simulation.cone.unmeasured",
@@ -717,7 +717,7 @@ CODES: tuple[Code, ...] = (
          "A stopping rule's round whose extension ran to its end and failed as "
          "it was joined: its piece is whole, and is joined again once what the "
          "join refused is put right.",
-         Kind.SEMANTIC, Disclosure.NOTHING),
+         Kind.SEMANTIC, Disclosure.NOTHING, since="2.6.1"),
     Code("simulation.resume.checkpoint_truncated",
          "A checkpoint that is not the whole file that was written.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
@@ -771,7 +771,7 @@ CODES: tuple[Code, ...] = (
     Code("simulation.run.engine_failed",
          "A step stopped on an error that is not a non-finite state: a "
          "reporter's setting, or the engine's own error.",
-         Kind.SEMANTIC, Disclosure.NOTHING, since="2.7",
+         Kind.SEMANTIC, Disclosure.NOTHING, since="2.6.1",
          detail_keys=("stage", "error")),
 
     # -- analysis -----------------------------------------------------------
@@ -824,7 +824,7 @@ CODES: tuple[Code, ...] = (
          "of it, or under an address-space limit what the libraries and "
          "figures map besides, would not fit in the memory this process can "
          "take.",
-         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.7",
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.6.1",
          detail_keys=("frames", "bytes_needed", "bytes_available", "stride")),
     Code("analysis.data.not_this_system",
          "The prepared system found where a run's record points is not the "
@@ -833,11 +833,11 @@ CODES: tuple[Code, ...] = (
          detail_keys=("recorded", "found")),
     Code("analysis.frame.outside",
          "A trajectory frame named by its number is not in the trajectory.",
-         Kind.SEMANTIC, Disclosure.FIELD_ONLY),
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.1"),
     Code("analysis.frame.changed",
          "The trajectory a frame was named in has changed since: extended, "
          "joined or written again.",
-         Kind.ENVIRONMENTAL, Disclosure.ACTION),
+         Kind.ENVIRONMENTAL, Disclosure.ACTION, since="2.6.1"),
 
     # -- analysis: not enough to answer with --------------------------------
     # The family this software exists to take seriously. Separated from
@@ -888,7 +888,7 @@ CODES: tuple[Code, ...] = (
     # -- batch and report ---------------------------------------------------
     Code("batch.manifest.invalid",
          "A batch manifest does not hold a JSON object.",
-         Kind.STRUCTURAL, Disclosure.FIELD_ONLY),
+         Kind.STRUCTURAL, Disclosure.FIELD_ONLY, since="2.6.1"),
     Code("batch.sweep.invalid",
          "A parameter sweep that does not describe a set of runs.",
          Kind.STRUCTURAL, Disclosure.FIELD_ONLY,

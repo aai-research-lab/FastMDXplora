@@ -7,6 +7,156 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-11-16
+
+This release changes the errors a study gives, how umbrella studies are read,
+and what is run by default, so numbers, verdicts and refusals can differ from
+2.6.0's. A block bootstrap's blocks are three correlation times, not two, and
+its resamples' spread is widened by `uncertainty.spread_factor` (about 1.1 on
+correlated frames, saved beside each error it widens), so a PMF's band, a
+binding free energy's error and interval and a reweighted mean's error are
+wider, and a barrier or a bulk tail judged against them can now be withheld,
+refused or passed where it was not (the tail's check refused 20 of 600 umbrella
+studies, against 46). A binding free energy's 95% interval is the number +/-
+Student's t times its standard error, on one fewer degrees of freedom than the
+resamples that gave a number, where it was their 2.5th and 97.5th percentiles
+(saved beside it). Counted on studies with an exact answer, it held the answer
+on correlated frames in 550 of 574 one-series studies (95.8%) and 547 of 579
+umbrella studies (94.5%), and on independent frames in 575 of 599. A PMF's
+resamples are zeroed at the curve's lowest bin, not their own, and on the 100
+sets of `validation.pmf_coverage` its band held the truth in 91.3% of bins,
+from 75.5%; the curve sits about 0.7 of its error high, which is said and not
+corrected. A slow tail beside a fast decay still gives too narrow an interval
+on a mean (it held the answer 92% of the time on 3000 frames with half the
+correlation at 66 frames).
+
+Umbrella studies give other barriers and binding free energies. A barrier is a
+peak standing above the curve on both sides, judged with the curve's other
+peaks as a family, so a curve with none quotes one at most about 5% of the time
+by design (counted: a flat turn at 90 frames a window quoted one on 2 seeds in
+100), and no direction is claimed for how far it may be off, since the curve's
+zero puts a barrier high and the bins' width puts a narrow one low. Along a
+distance WHAM solves on a grid eight times finer; the figure and the summary
+are W(r) = A(r) + 2kT ln r, zero between the outermost windows' centres; and
+the binding free energy's bound state starts at W's minimum there. The binding
+free energy is refused where W's well is less than kT below bulk
+(`well_depth_kjmol`), or marked marginal within its error of kT, so a free
+particle is refused on every seed tried. Its bulk tail is judged against the
+resampled curves, the cone's wall in every window with frames inside the
+cutoff, a full turn is read on a grid from -pi to pi, and `pmf.json` is written
+as strict JSON. `fastmdx report` or `analyze` over an umbrella study saved
+before recomputes its record.
+
+More means are withheld. A mean whose frames still trend is withheld when the
+trend is large against its own error (about two in five of a slow decay's
+means, all of which were called determined before, and a stationary series'
+about once in a hundred), and a joined run of three or four segments can now be
+called drifting (mean rules version 5), with a note of how large a drift that
+few segments could miss. One reader (`statistics.withheld_reason`) decides a
+withheld mean on every page, and no error is given beside one; a mean an
+earlier version called determined on fewer independent samples than this
+version needs reads "not determined" until it is analysed again. Replicas'
+spread is set against their predicted error at a factor from how many there are
+(2.3 for 2, 2.0 for 3, 1.5 for 10), not a fixed 2. Every study with a solute in
+a periodic box is checked against its own images first (`image_check`, unless
+it is excluded by name), and a mean whose solute came within the cutoff of its
+own image in the frames it uses is noted as possibly biased, its verdict and
+error unchanged (`end_to_end` alone withholds its error).
+
+What is run changes. The default padding (`setup.solvent_padding_nm`) is 2.0
+nm, not 1.0, so a new study has more water (about twice the atoms for a
+10-residue peptide). A bilayer is packed with no lipid in a protein's pores:
+the lipids OpenMM's packing would leave in one are removed, with enough from
+the other leaflet to make the leaflets equal, and once the bilayer is packed
+water is added to the pores they were in where at least 20% of the side-chain
+atoms lining them are N or O, so a porin such as 2POR or 2OMF is built with
+fewer lipids and with water in its pores (2POR packed on its first attempt with
+each of two seeds, where it ran away to NaN on 4 of 5 attempts before). Setup
+records `pore_lipids_removed`, `pore_balancing_lipids_removed`,
+`pore_waters_added` and `pore_regions_left_dry`, and the methods say so; where
+the cleared patch cannot be used (OpenMM's own packing, run on it first, places
+its lipids otherwise or cannot be run, or the leaflets cannot be made equal),
+the bilayer is packed as before and `pore_lipids_left_in` and the methods say
+so. A protein with no lipid in a pore builds as before. `verlet` and
+`variable_verlet` are refused, as they hold no temperature, and `brownian`
+below the friction its step needs. CHARMM36 runs without the dispersion
+correction its file turns off, a force-field list takes its family's cutoff
+scheme, and `amber-fb15` runs with TIP3P-FB. Each restraint is held at its own
+force constant, a torsion restraint is 2k(1 - cos x), twice as stiff as 2.6.0's
+for one k, and a distance, angle or torsion restraint given no target is held
+where it is in the prepared structure. `setup.temperature_K` left unset is the
+run's temperature. A Config is checked whole before it runs (a system entry's
+settings, each swept value, a timestep of 0, NaN anywhere), and a run whose
+named analysis failed exits 1. A ligand's pose from the structure is matched by
+the file's bond orders, stereochemistry and bond lengths and refused as another
+molecule, a stereoisomer no match explains or overlapping hydrogens; its
+hydrogens are built from internal coordinates, and setup saves a copy of each
+ligand file with its SHA-256. A free nucleobase or N-methyl amide deposited as
+a HETATM takes its pose from the structure; a sugar whose C1 is within 2.8 A of
+an asparagine's ND2 with no LINK record is read as an N-glycan's first sugar
+(1HZH now prepares), and a second sugar near one asparagine is asked about as a
+free sugar. `rdf`'s first peak and `coordination_number`'s cutoff are judged
+against g(r)'s own scatter and refused where the minimum is not located; `rdf`
+and `coordination_number` stop at half the cell's shortest lattice vector, not
+half its shortest edge; an analysis handed molecules split across the box makes
+them whole first; `bfactor_comparison` and `ligand_rmsf` leave out the
+equilibration; and `rmsd`, `cluster` and `dimred` refuse fewer than three atoms
+to superpose on.
+
+Clustering clusters at most 5,000 frames by default (`max_frames`), every k-th
+frame past them, with the populations said as of those frames, and plans its
+memory before it runs, refusing with the stride that fits; a figure the memory
+runs out plotting is left out and said. The whole RMSD matrix is saved only
+with `save_full_matrix: true`, and the bundle leaves out any matrix past 100
+MB. `fastmdx resume` and a study's rounds read a study's state from one
+derivation: a study is carried on by one process at a time under its lock, its
+process record stamped every 5 minutes, a study whose process is recorded on
+another machine or container resumed from here only once its records have been
+quiet for an hour, or at once with `--taken-over`, a failed round said failed
+(never "Batch complete"), and every stop asked exits 130 unless a run ended in
+an error of its own. In a study of replicas, a run whose records are written
+again from the start the replicas share has its report written again from them,
+so its numbers are those of that start. The docs were checked against the code
+(counts, flags, settings and behaviour) and hold no em or en dashes. The GUI
+adds one Settings page, a Display size, Compare, a Timeline and a Problems tab,
+and reads only inside the study it shows. A study of several runs is shared as
+one file, which 2.6.1 or later opens. `threadpoolctl` (2.0 or later) is now a
+required dependency. The demo study is not yet published for 2.6.1: `fastmdx
+gui --demo` refuses, saying so (code `environment.demo.absent`), and **Open the
+demo study** is not shown.
+
+What can break for a 2.6.0 user. A Config 2.6.0 accepted can now be refused,
+such as one with a misspelt setting in a system entry, a swept value its
+setting cannot take, a timestep of 0 or NaN anywhere, a defaults file that sets
+one study's settings, `brownian` below the friction its step needs, or `verlet`
+or `variable_verlet`, which are withdrawn; and a study 2.6.0 prepared or ran
+can be refused where a ligand's pose from the structure is a stereoisomer no
+match explains or has overlapping hydrogens, or where `rmsd`, `cluster` or
+`dimred` has fewer than three atoms to superpose on. A new study's padding is
+2.0 nm, not 1.0, unless the study or its defaults set it. A bilayer round a
+protein with lipids in its pores holds fewer lipids, and water in the
+polar-lined pores, so its lipid and atom counts differ from 2.6.0's. A torsion
+restraint is twice as stiff for the same k.
+`batch.aggregate.CALIBRATION_FACTOR` is removed (`calibration_factor(n)`
+replaces it), as are `batch.explorer.COORDINATES_WITH_A_VOLUME`
+(`simulation.umbrella`'s `SHELL_COORDINATES` replaces it) and
+`mcp.remote_tools.LIST_MACHINES` and `REMOTE_TOOLS`. Clustering no longer
+writes `hierarchical_distance_matrix.npy`; `cluster_rmsd_matrix.npz` holds a
+map at most 1,000 cells across, the matrix averaged in blocks (`block` saved
+beside it), and the whole matrix is written, as `cluster_rmsd_matrix_full.npy`,
+only with `save_full_matrix: true`. Past 5,000 frames clustering labels every
+k-th frame by default, so `cluster_<method>.dat` has a row per frame clustered,
+not per frame: read its `frame` column, not the row number (`max_frames: null`
+for every frame). `fastmdx resume` of a study whose process was recorded on
+another node or container is refused within an hour of its records' last write
+unless given `--taken-over`, so a Slurm or PBS requeue, or a container
+restarted on another node, within the hour needs it. Some exit codes change: a
+study stopped by SIGTERM or the GUI's Stop exits 130, not 1; a stopping rule's
+failed round exits 1, not 0; `fastmdx agent --autonomous`, or a study with a
+budget, that stopped or failed exits 130 or 1, not 0; `fastmdx resume` stopped
+when asked exits 130, not 1; and a run whose named analysis failed exits 1.
+`pmf.json` saves a NaN or an infinity as `null`.
+
 ### Behaviour changes
 
 - Along a distance a barrier's rises on W(r) are judged against W's
@@ -433,10 +583,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   86.2% between the window centres, from 74.7%; the mean gauge does not
   move (89.5%). `pmf.json` says where the band is zeroed
   (`pmf.uncertainty.zeroed_at`), how many resamples had nothing in that bin
-  and were left out (`pmf.uncertainty.resamples_left_out`), and that the curve, and
-  a barrier read off it, sit about 0.8 of their error high
-  (`pmf.uncertainty.zero`, `summary.barrier_zero`); that offset is said, not
-  corrected. A barrier's two-error gate reads the new errors.
+  and were left out (`pmf.uncertainty.resamples_left_out`), and that the
+  curve sits about 0.7 of its error high (`pmf.uncertainty.zero`; 0.8 as
+  first counted, before the bootstrap's blocks were widened), with no
+  direction claimed for a barrier (`summary.barrier_zero`); that offset is
+  said, not corrected. A barrier's two-error gate reads the new errors.
 - `validation.environments` reads the input structure's SHA-256 from
   `setup/setup_parameters.json` (`input.structure.sha256`), where setup
   writes it; it read `manifest.json`, which does not carry it, so the
@@ -743,24 +894,25 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   are now mapped (slices 0.6 nm thick laid twice half a slice apart, 0.2 nm
   disks on a 0.1 nm grid, enclosed holes of 1.5 nm2 or more; a space the
   subunits enclose, as 2POR's trimer centre, counts), the lipids OpenMM
-  would leave with a heavy atom in one are removed from its patch, with as
-  many from the other leaflet, farthest from the protein and at least 3 nm
-  apart. Once the bilayer is packed, water is added only to the pore
-  regions a removed lipid was in, and only where at least 20% of the
-  side-chain atoms lining them are N or O: a porin's lumen, not
-  bacteriorhodopsin's central cavity, which natively holds lipids. No ions
-  are added, so the salt is diluted by 0.9% for 2POR. Before the patch is
-  used, OpenMM's own `addMembrane` is run on it and on the lipid's name as
-  far as its relaxation, with no force field (about 13 s for 2POR), and
-  must place the same box and water and the patch's lipids where its own
-  tiling does; where it does not, or where it no longer makes its context
-  by the name the check replaces, or takes over 120 s, the bilayer is
-  packed from OpenMM's patch as before, the log says why, the manifest
-  records `pore_lipids_left_in`, and the methods say those lipids were left
-  there. 2POR packed on the first attempt with packing seeds
-  (`packing_seed`) 1863626584 and 975501023: 31 and 32 pore lipids and 11
-  and 14 more removed, 725 and 726 waters added, 309,528 and 309,248
-  atoms, 400 and 398 POPC. The manifest records `pore_lipids_removed`,
+  would leave with a heavy atom in one are removed from its patch, with
+  enough from the other leaflet to make the leaflets equal, farthest from
+  the protein and at least 3 nm apart. Once the bilayer is packed, water is
+  added only to the pore regions a removed lipid was in, and only where at
+  least 20% of the side-chain atoms lining them are N or O: a porin's
+  lumen, not bacteriorhodopsin's central cavity, which natively holds
+  lipids. No ions are added, so the salt is diluted by 0.9% for 2POR.
+  Before the patch is used, OpenMM's own `addMembrane` is run on it and on
+  the lipid's name as far as its relaxation, with no force field (about
+  13 s for 2POR), and must place the same box and water and the patch's
+  lipids where its own tiling does; where it does not, or where it no
+  longer makes its context by the name the check replaces, or takes over
+  120 s, or where the leaflets cannot be made equal, the bilayer is packed
+  from OpenMM's patch as before, the log says why, the manifest records
+  `pore_lipids_left_in`, and the methods say those lipids were left there.
+  2POR packed on the first attempt with packing seeds (`packing_seed`)
+  1863626584 and 975501023: 31 and 32 pore lipids and 11 and 14 more
+  removed, 725 and 726 waters added, 309,528 and 309,248 atoms, 400 and 398
+  POPC. The manifest records `pore_lipids_removed`,
   `pore_balancing_lipids_removed`, `pore_waters_added` and
   `pore_regions_left_dry`, and the methods say so where any were removed.
   Results change: a protein with lipids in its pores, a porin such as 2OMF
@@ -769,9 +921,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   of KcsA, rhodopsin, the beta2 receptor, 6B73, OmpA, bacteriorhodopsin's
   trimer, aquaporin-1, MscL, alpha-hemolysin, a c15 ring or GLIC loses a
   lipid. With other lipids, aquaporin-1 loses 8 (DLPC) or 1 (DPPC), MscL 1
-  (POPE, DLPE, DOPC, DPPC), whose pores take water, and
-  bacteriorhodopsin's trimer 1 (POPE), whose cavity is left dry. A docs
-  search for "membrane lipids" finds the section on choosing the lipid.
+  (POPE, DLPE, DOPC, DPPC), whose pores take water, and bacteriorhodopsin's
+  trimer 1 (POPE), whose cavity is left dry. A docs search for "membrane
+  lipids" finds the section on choosing the lipid.
 
 - Tests: the test of 500 frames under `ulimit -v` 600000 allows Python's
   small-object allocator and glibc's heap what they take of their own.
@@ -2523,15 +2675,6 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   said in ps under 1 ns; the frames' pieces linked out of the study are said
   in the notice as the frames are played whole.
 
-- The phone-to-desktop browser check waits for the side panel to return
-  after its dialog closes, avoiding a timing-sensitive assertion.
-
-- Problems confines actual record reads and helper reads to the open run's
-  public files. It checks evidence candidates without recursively listing
-  artifacts, so unrelated trajectory links and scratch trees do not block
-  the list. Unused axis and remedy-price work is skipped; unexpected reader
-  failures retain a public note and a private debug traceback.
-
 - A running study is named in the tab's title and its end notice from its
   first status, even where its results are not read with it; the name is
   read from the study's own manifest, and one linked out of it is not read:
@@ -2724,6 +2867,180 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   NaN or not a number gives no interval and says why; it gave [nan, nan] or
   raised. The GUI no longer calls a missing error "a standard error", nor
   gives an error of rounding to 16 decimal places, on older records.
+
+- A long value in an Agent Config version's change list (a "Prepared
+  from" path) wraps inside the card instead of running past its edge.
+
+- The phone-to-desktop browser check waits for the side panel to return
+  after its dialog closes, avoiding a timing-sensitive assertion.
+
+- Problems confines actual record reads and helper reads to the open run's
+  public files. It checks evidence candidates without recursively listing
+  artifacts, so unrelated trajectory links and scratch trees do not block
+  the list. Unused axis and remedy-price work is skipped; unexpected reader
+  failures retain a public note and a private debug traceback. A record
+  linked out of the study is named by its place in it.
+
+- Problems reads the run's own process record, so a running study is read
+  (and is not a problem), and a run the Overview calls Interrupted is listed.
+  A stop or interruption is listed only while the Overview says so: a study
+  being carried on, or carried on to the end, lists neither the stop nor the
+  stop's own warnings. Each warning in `simulation/live_events.log`, a
+  piece's own narration or `fastmdxplora.log` is listed once, with the
+  record it came from, and without the runner's "warning:" before it. A
+  warning the log keeps from a phase a later run did again, as a run with
+  `--force-overwrite` or Analyze again does, is not listed. A run that
+  stopped or was interrupted in the piece carrying it on opens that piece's
+  record as its evidence. A phase is titled as the Overview says it ("Setup
+  failed").
+
+- Problems names the records it read, and names each record missing or
+  unreadable, `manifest.json`, the analysis manifest, the narration and the
+  log included; the headline then never says there are no problems. A
+  running study's `manifest.json`, written when the run ends, is said as
+  that, and a folder with no records yet says so rather than asking for a
+  study to be opened.
+
+- Under What would fix it, Problems gives a withheld mean's recorded
+  shortfall in its record's own words (where the count is a floor, at
+  least so much more and then a new estimate) and a retryable refusal's
+  registry remedy; where none is recorded, it says so, and what the
+  telemetry says of a warning is given as its reason, not as a fix. A quantity the same in every frame is named as the Overview
+  names it.
+
+- `/api/problems` answers with no study open, or with the study's folder
+  gone, instead of failing; a folder above the study need only be
+  searchable.
+
+- A study given on the command line with `--dashboard` and no `--output`
+  (`fastmdx explore -s 1L2Y --dashboard`) is written to
+  `fastmdxplora_1L2Y_study_<time>`, named by its system, not
+  `fastmdxplora_s1_study_<time>`. `s1` is the id a system is given when it
+  names none, so it does not name the folder even when written in a config;
+  any other `id` does. Runs and records still carry `s1`.
+
+- `FastMDXplora(system=...)` with no `output_dir` runs again, in a folder
+  named by its system. From 2.5.7 it stopped with an AttributeError on
+  `config`.
+
+- `fastmdx explore` given no `--output`, and `FastMDXplora(config=...)` or
+  `FastMDXplora(config_data=...)` given a config with no `output`, run
+  again, in a folder named by the first system. From 2.5.7 each stopped
+  before it started with an AttributeError on `config`, whether the study
+  had one run or several.
+
+- A water map and the water sites asked for at once no longer fail. Both
+  read the same frames, kept for one study at a time, and one request could
+  empty them while the other read them, which then failed with a KeyError
+  on `xyz`.
+
+- A movie made with ffmpeg 8 is tagged with its colour primaries and
+  transfer (BT.709) again. ffmpeg 8 reads them from the frames, which did
+  not carry them, so the movie was written with its colour space and range
+  only, and a player could show its colours wrong.
+
+- A structure fetched from RCSB over a connection that goes quiet once made
+  is given up on after 60 s of silence and asked for again, as a dropped
+  connection is. The fetch took no timeout, so a connection that stalled
+  rather than dropped held setup for as long as it stayed open. A file
+  shorter than the length RCSB gave is still refused as cut short.
+
+- A path longer than its column in the Config Builder (a structure, a
+  setting for one system, a config file not found) breaks where it must in
+  the system's row and its chips, the plan, what setup will build and the
+  config's verdict, and the plan's one line saying why there is none yet
+  wraps in its card; each ran past its card, and in a narrow window
+  scrolled the page sideways.
+- An AI app's `check_study`, the Agent's `check_config` and a study sent to
+  another machine fill your defaults (`fastmdx-defaults.yml`) as a run does,
+  from the study's folder up. `check_study` read them from the workspace's
+  top and a send from beside its config, so a nearer file applied to the run
+  and not to the plan checked; the Agent's check filled none. A study that
+  has run is said not to be filled.
+- Two or more ligand files given without `ligand_name` are named from their
+  files. The default `LIG` was counted as one name given for all of them, and
+  the study was refused. A study run again from its own `resolved_config.yml`
+  is named the same way.
+
+- A setting's description reworded in the config schema no longer fails the
+  suite. The suite replays the Agent's recorded runs and fails on a verdict
+  turned, on a replay that diverges from the run, or on a change to what it
+  holds of what is sent: the Agent's own words (its instructions, its tools,
+  how a message is put together) and the schema's structure (names, types,
+  choices, bounds, defaults), not the schema's prose. The replay's table
+  counts the exchanges asked differently since a run. See
+  `docs/validation.md`, The run kept in the suite.
+- The Agent's look at a study's record gives the analysis asked about first,
+  and no longer loses it at the look's 4,000 characters. `read_study` takes
+  the analysis (named by its folder or its heading); the look at what the
+  page shows passes the Report's section or the analysis whose file is open;
+  an analysis named with @ says to pass it. A reason a mean is not
+  determined gives its first sentence on its own line and the rest once
+  under the list, so a short run's record, each analysis saying the same
+  rule, fits one look.
+- A structure fetched from RCSB is tried up to three times when the connection
+  is dropped, the transfer is cut short, or RCSB answers 429 or 5xx. A study
+  stopped by such a failure is told so, not that the machine may have no route
+  to the internet.
+- The Report and its Methods say what the records hold. Methods now states
+  that frames whose statistical inefficiency, before the correction for the
+  sample mean, is under 2 are given an error without spanning 25
+  statistical inefficiencies, as the estimator already did; a withheld error
+  says so too. A count of
+  independent samples under one is said as fewer than one, not 0. An
+  analysis's parameters and its findings are two lists, rendered as lists. A
+  run on the CPU platform is not said to have used the precision it asked
+  for, which only the GPU platforms take.
+- In the GUI, a config named outside the folders the window reaches, or by
+  a relative path that a plan would read elsewhere, is refused with the ways
+  to send it that work: open the GUI on the config's folder, or copy it, with
+  the files it names, into a new folder inside the folder opened. No way is
+  offered for a file that is no study's config, or one kept where keys or
+  settings are kept. See `docs/remote.md`, From the GUI.
+- The Config Builder's draft is saved as the page goes: a reload right after a
+  change, a value still being typed, or Reset then a reload no longer opens
+  the draft from before, and a study started discards a save still waiting.
+  A page closed does not write its older draft over one another tab saved
+  since. Ctrl+Enter from a field sends the value typed, and where the study
+  is not started the field keeps the focus and the refusal stays said.
+  "Saved" plays once for each save that changed the draft, not again when the
+  page is shown, and not for a save made while the page was hidden.
+- The slides and the reweighted averages, in their own text and in the
+  Report, say a count of independent samples as the rest of the Report
+  does: under one as fewer than one, and one as one sample. The start
+  banner gives a precision beside a GPU platform, and beside `auto` as the
+  one a GPU would use; beside the CPU it gives none.
+- `fastmdx resume` carries on a finished study's extension that was stopped
+  before it was joined, to the length the extension asked, past the plan
+  too. A piece stopped before its first checkpoint, or killed as it wrote it,
+  counts nothing and is run again from the checkpoint before it; production
+  off the frame grid is carried on rather than refused; and a piece that
+  stopped with an error is said, not run again, with how to run it again
+  anyway. A study is carried on by one process at a time: a resume or an
+  extension of a study another process is carrying on is refused. The
+  Overview's speed is read from the last piece run.
+- MDTraj's notes on reading a structure (a placeholder CRYST1 cell, two
+  residues under one number) no longer print in the terminal under
+  `fastmdx gui`; any other warning still shows, and two of the GUI's reads
+  at once no longer leave the terminal showing nothing after them.
+- A job sent to a workstation that ended as its status was read now says
+  the processes its run left working there. It was read failed with only
+  its exit code, and `fastmdx remote cancel` then stopped nothing; a run
+  counted as it ended was said as one more process left.
+- A run of a study of several run until what it asks is determined
+  (`simulation.stop_when`) is said waiting for the study's next round while
+  the study extends another run: its card no longer reads Completed, Report
+  at 100%, from the pieces it finished so far, but how far its production is
+  towards the length the round runs it to, and which run the study extends
+  first. The study's list of runs, its Overview and Files pages, its pages
+  of all runs and the Records answer read it the same way; a run going on in
+  a later piece reads running, and one killed or failed there reads so.
+- A text file opened in the side panel's reader as the page was still
+  loading is told to the Agent as the one open. Opened before the page knew
+  its study, it was kept as of no study and never said once the study was
+  known. It is now kept as of the study the server read it from; an answer
+  come late, after another file was opened, is not shown; and no file is
+  said while no study is open.
 
 ### Added
 
@@ -3264,182 +3581,6 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   the GPU room read the new count. A study or defaults file that sets its
   own padding keeps it, setup still grows a box too narrow for the cutoff,
   and studies already run are unchanged.
-
-### Fixed
-
-- A long value in an Agent Config version's change list (a "Prepared
-  from" path) wraps inside the card instead of running past its edge.
-
-- The phone-to-desktop browser check waits for the side panel to return
-  after its dialog closes, avoiding a timing-sensitive assertion.
-
-- Problems confines actual record reads and helper reads to the open run's
-  public files. It checks evidence candidates without recursively listing
-  artifacts, so unrelated trajectory links and scratch trees do not block
-  the list. Unused axis and remedy-price work is skipped; unexpected reader
-  failures retain a public note and a private debug traceback. A record
-  linked out of the study is named by its place in it.
-
-- Problems reads the run's own process record, so a running study is read
-  (and is not a problem), and a run the Overview calls Interrupted is listed.
-  A stop or interruption is listed only while the Overview says so: a study
-  being carried on, or carried on to the end, lists neither the stop nor the
-  stop's own warnings. Each warning in `simulation/live_events.log`, a
-  piece's own narration or `fastmdxplora.log` is listed once, with the
-  record it came from, and without the runner's "warning:" before it. A
-  warning the log keeps from a phase a later run did again, as a run with
-  `--force-overwrite` or Analyze again does, is not listed. A run that
-  stopped or was interrupted in the piece carrying it on opens that piece's
-  record as its evidence. A phase is titled as the Overview says it ("Setup
-  failed").
-
-- Problems names the records it read, and names each record missing or
-  unreadable, `manifest.json`, the analysis manifest, the narration and the
-  log included; the headline then never says there are no problems. A
-  running study's `manifest.json`, written when the run ends, is said as
-  that, and a folder with no records yet says so rather than asking for a
-  study to be opened.
-
-- Under What would fix it, Problems gives a withheld mean's recorded
-  shortfall in its record's own words (where the count is a floor, at
-  least so much more and then a new estimate) and a retryable refusal's
-  registry remedy; where none is recorded, it says so, and what the
-  telemetry says of a warning is given as its reason, not as a fix. A quantity the same in every frame is named as the Overview
-  names it.
-
-- `/api/problems` answers with no study open, or with the study's folder
-  gone, instead of failing; a folder above the study need only be
-  searchable.
-
-- A study given on the command line with `--dashboard` and no `--output`
-  (`fastmdx explore -s 1L2Y --dashboard`) is written to
-  `fastmdxplora_1L2Y_study_<time>`, named by its system, not
-  `fastmdxplora_s1_study_<time>`. `s1` is the id a system is given when it
-  names none, so it does not name the folder even when written in a config;
-  any other `id` does. Runs and records still carry `s1`.
-
-- `FastMDXplora(system=...)` with no `output_dir` runs again, in a folder
-  named by its system. From 2.5.7 it stopped with an AttributeError on
-  `config`.
-
-- `fastmdx explore` given no `--output`, and `FastMDXplora(config=...)` or
-  `FastMDXplora(config_data=...)` given a config with no `output`, run
-  again, in a folder named by the first system. From 2.5.7 each stopped
-  before it started with an AttributeError on `config`, whether the study
-  had one run or several.
-
-- A water map and the water sites asked for at once no longer fail. Both
-  read the same frames, kept for one study at a time, and one request could
-  empty them while the other read them, which then failed with a KeyError
-  on `xyz`.
-
-- A movie made with ffmpeg 8 is tagged with its colour primaries and
-  transfer (BT.709) again. ffmpeg 8 reads them from the frames, which did
-  not carry them, so the movie was written with its colour space and range
-  only, and a player could show its colours wrong.
-
-- A structure fetched from RCSB over a connection that goes quiet once made
-  is given up on after 60 s of silence and asked for again, as a dropped
-  connection is. The fetch took no timeout, so a connection that stalled
-  rather than dropped held setup for as long as it stayed open. A file
-  shorter than the length RCSB gave is still refused as cut short.
-
-- A path longer than its column in the Config Builder (a structure, a
-  setting for one system, a config file not found) breaks where it must in
-  the system's row and its chips, the plan, what setup will build and the
-  config's verdict, and the plan's one line saying why there is none yet
-  wraps in its card; each ran past its card, and in a narrow window
-  scrolled the page sideways.
-- An AI app's `check_study`, the Agent's `check_config` and a study sent to
-  another machine fill your defaults (`fastmdx-defaults.yml`) as a run does,
-  from the study's folder up. `check_study` read them from the workspace's
-  top and a send from beside its config, so a nearer file applied to the run
-  and not to the plan checked; the Agent's check filled none. A study that
-  has run is said not to be filled.
-- Two or more ligand files given without `ligand_name` are named from their
-  files. The default `LIG` was counted as one name given for all of them, and
-  the study was refused. A study run again from its own `resolved_config.yml`
-  is named the same way.
-
-- A setting's description reworded in the config schema no longer fails the
-  suite. The suite replays the Agent's recorded runs and fails on a verdict
-  turned, on a replay that diverges from the run, or on a change to what it
-  holds of what is sent: the Agent's own words (its instructions, its tools,
-  how a message is put together) and the schema's structure (names, types,
-  choices, bounds, defaults), not the schema's prose. The replay's table
-  counts the exchanges asked differently since a run. See
-  `docs/validation.md`, The run kept in the suite.
-- The Agent's look at a study's record gives the analysis asked about first,
-  and no longer loses it at the look's 4,000 characters. `read_study` takes
-  the analysis (named by its folder or its heading); the look at what the
-  page shows passes the Report's section or the analysis whose file is open;
-  an analysis named with @ says to pass it. A reason a mean is not
-  determined gives its first sentence on its own line and the rest once
-  under the list, so a short run's record, each analysis saying the same
-  rule, fits one look.
-- A structure fetched from RCSB is tried up to three times when the connection
-  is dropped, the transfer is cut short, or RCSB answers 429 or 5xx. A study
-  stopped by such a failure is told so, not that the machine may have no route
-  to the internet.
-- The Report and its Methods say what the records hold. Methods now states
-  that frames whose statistical inefficiency, before the correction for the
-  sample mean, is under 2 are given an error without spanning 25
-  statistical inefficiencies, as the estimator already did; a withheld error
-  says so too. A count of
-  independent samples under one is said as fewer than one, not 0. An
-  analysis's parameters and its findings are two lists, rendered as lists. A
-  run on the CPU platform is not said to have used the precision it asked
-  for, which only the GPU platforms take.
-- In the GUI, a config named outside the folders the window reaches, or by
-  a relative path that a plan would read elsewhere, is refused with the ways
-  to send it that work: open the GUI on the config's folder, or copy it, with
-  the files it names, into a new folder inside the folder opened. No way is
-  offered for a file that is no study's config, or one kept where keys or
-  settings are kept. See `docs/remote.md`, From the GUI.
-- The Config Builder's draft is saved as the page goes: a reload right after a
-  change, a value still being typed, or Reset then a reload no longer opens
-  the draft from before, and a study started discards a save still waiting.
-  A page closed does not write its older draft over one another tab saved
-  since. Ctrl+Enter from a field sends the value typed, and where the study
-  is not started the field keeps the focus and the refusal stays said.
-  "Saved" plays once for each save that changed the draft, not again when the
-  page is shown, and not for a save made while the page was hidden.
-- The slides and the reweighted averages, in their own text and in the
-  Report, say a count of independent samples as the rest of the Report
-  does: under one as fewer than one, and one as one sample. The start
-  banner gives a precision beside a GPU platform, and beside `auto` as the
-  one a GPU would use; beside the CPU it gives none.
-- `fastmdx resume` carries on a finished study's extension that was stopped
-  before it was joined, to the length the extension asked, past the plan
-  too. A piece stopped before its first checkpoint, or killed as it wrote it,
-  counts nothing and is run again from the checkpoint before it; production
-  off the frame grid is carried on rather than refused; and a piece that
-  stopped with an error is said, not run again, with how to run it again
-  anyway. A study is carried on by one process at a time: a resume or an
-  extension of a study another process is carrying on is refused. The
-  Overview's speed is read from the last piece run.
-- MDTraj's notes on reading a structure (a placeholder CRYST1 cell, two
-  residues under one number) no longer print in the terminal under
-  `fastmdx gui`; any other warning still shows, and two of the GUI's reads
-  at once no longer leave the terminal showing nothing after them.
-- A job sent to a workstation that ended as its status was read now says
-  the processes its run left working there. It was read failed with only
-  its exit code, and `fastmdx remote cancel` then stopped nothing; a run
-  counted as it ended was said as one more process left.
-- A run of a study of several run until what it asks is determined
-  (`simulation.stop_when`) is said waiting for the study's next round while
-  the study extends another run: its card no longer reads Completed, Report
-  at 100%, from the pieces it finished so far, but how far its production is
-  towards the length the round runs it to, and which run the study extends
-  first. The study's list of runs, its Overview and Files pages, its pages
-  of all runs and the Records answer read it the same way; a run going on in
-  a later piece reads running, and one killed or failed there reads so.
-- A text file opened in the side panel's reader as the page was still
-  loading is told to the Agent as the one open. Opened before the page knew
-  its study, it was kept as of no study and never said once the study was
-  known. It is now kept as of the study the server read it from; an answer
-  come late, after another file was opened, is not shown; and no file is
-  said while no study is open.
 
 ### Security
 

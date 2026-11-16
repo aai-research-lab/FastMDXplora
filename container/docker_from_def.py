@@ -17,7 +17,7 @@ port.
 Usage, from the repository root::
 
     python container/docker_from_def.py build/docker
-    docker build --build-arg FASTMDX_VERSION=2.6.0 -t fastmdx build/docker
+    docker build --build-arg FASTMDX_VERSION=2.6.1 -t fastmdx build/docker
 
 Standard library only, so it runs on a build machine with nothing installed.
 """

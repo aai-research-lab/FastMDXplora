@@ -1176,8 +1176,9 @@ def _build_parser() -> argparse.ArgumentParser:
     gui.add_argument("--demo", nargs="?", const=".", default=None, metavar="DIR",
                      help="Copy the demo study, trypsin with benzamidine (3PTB), "
                           "finished, into DIR (default: the current folder) and "
-                          "open it. Fetched the first time (about 11 MB) and kept "
-                          "in the cache, once it is published; it is not yet.")
+                          "open it. Fetched the first time (about 11 MB) and saved "
+                          "in the cache, once it is published; it is not yet "
+                          "for 2.6.1.")
     gui.add_argument("--open", default=None, metavar="SOURCE",
                      help="Open a shared study: its DOI (10.5281/zenodo.N), its Zenodo "
                           "address, or the archive's file. Every file is checked against "

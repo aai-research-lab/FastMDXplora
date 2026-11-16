@@ -194,7 +194,7 @@ Each release is published as a Docker image as well as the Apptainer image on
 its release page:
 
 ```bash
-docker pull ghcr.io/aai-research-lab/fastmdxplora:2.6.0
+docker pull ghcr.io/aai-research-lab/fastmdxplora:2.6.1
 ```
 
 Both come from one recipe, `container/fastmdx.def`. The Docker build is
@@ -210,7 +210,7 @@ A person's GUI, with their workspace on a volume and the GPU passed through:
 docker run -d --gpus all -p 8765:8765 \
     -v person-42:/workspace \
     -e FASTMDX_PROXY_SECRET="$SECRET_FOR_PERSON_42" \
-    ghcr.io/aai-research-lab/fastmdxplora:2.6.0 \
+    ghcr.io/aai-research-lab/fastmdxplora:2.6.1 \
     gui --hosted --host 0.0.0.0 --workspace /workspace \
     --allowed-host app.example.org
 ```

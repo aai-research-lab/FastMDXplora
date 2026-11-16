@@ -250,7 +250,7 @@ version of the same record, or a draft asked for and its answer lost), is refuse
 `shared_to.json` to share it as a study of its own; a study moved, or the same
 folder reached by another path (a container's bind mount, say), goes on with
 its draft or record. Not told apart: a copy made before its `shared_to.json`
-named its folder (as every one written by 2.6.0 or before this release), and a
+named its folder (as every one written by 2.6.0 or earlier), and a
 copy of a study moved since it last shared (neither folder is the one named),
 a copy whose original's folder this account may not look into, and the
 other copies of a folder whose `shared_to.json` was moved by hand into one of
