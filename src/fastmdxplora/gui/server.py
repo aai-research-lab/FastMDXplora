@@ -2480,7 +2480,7 @@ def make_handler(
                 self._drain_request_body()
                 self._send_json({"ok": False, "error": (
                     str(exc) if isinstance(exc, StudyError)
-                    else "Request body is not JSON.")}, status=400)
+                    else "The request body is not JSON.")}, status=400)
                 return
             remote_answer = remote_desk.post(path, payload or {})
             if remote_answer is not None:
@@ -3353,7 +3353,7 @@ def make_handler(
                 self._body_was_read = True
                 return {}
             if length > MOST_A_BODY_MAY_BE:
-                raise StudyError("Request body is too large",
+                raise StudyError("The request body is too large.",
                                  code="config.option.wrong_type")
             # Marked before the read, not after: a read that fails partway
             # has still taken bytes off the socket, and a drain that then
@@ -3363,7 +3363,7 @@ def make_handler(
             raw = self.rfile.read(length)
             data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict):
-                raise StudyError("JSON body must be an object", code="config.option.wrong_type")
+                raise StudyError("The request body is not a JSON object.", code="config.option.wrong_type")
             return data
 
         def _send_json(self, payload: dict[str, Any], *, status: int = 200,

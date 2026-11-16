@@ -48,7 +48,8 @@ def test_a_body_that_is_not_an_object_is_refused_as_one(home, body: bytes) -> No
     status, answer = _post(url + "/api/schema", body)
     assert status == 400
     assert answer["ok"] is False
-    assert answer["error"] in ("Request body is not JSON.", "JSON body must be an object")
+    assert answer["error"] == ("The request body is not JSON." if body in (b"not json", b"\xff\xfe")
+                               else "The request body is not a JSON object.")
 
 
 @pytest.mark.parametrize("state", [{}, {"system": 7}, {"systems": [{"system": 7}]}])
