@@ -225,6 +225,7 @@ when named in `include`**.
 | `requires_crystallographic_bfactors` | The input PDB carries real B-factors |
 | `requires_state_record` | `simulation/energy.csv` exists |
 | `requires_tertiary_structure` + `min_seq_separation` | The solute has more residues than the separation |
+| `requires_protein` | The topology has protein atoms |
 | `requires_umbrella` / `requires_metadynamics` / `requires_steered` | That method's result file exists |
 | `requires_naming` | **Never automatically.** The quantity is between two named things and the trajectory does not contain which two |
 

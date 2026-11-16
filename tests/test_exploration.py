@@ -46,6 +46,7 @@ def test_config_launch_clears_stale_data_state(tmp_path: Path) -> None:
     )
     fake_process = SimpleNamespace(pid=43, poll=lambda: None)
     (tmp_path / "new-run").mkdir()
+    (tmp_path / "run.yml").write_text("systems:\n- system: 1L2Y\n", encoding="utf-8")
     prepared = {
         "ok": True,
         "command": ["python", "-m", "fastmdxplora.cli.main", "explore"],

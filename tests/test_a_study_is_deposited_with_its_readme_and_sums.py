@@ -230,6 +230,17 @@ def test_the_server_plans_and_writes_it_on_this_computer(study):
         assert "data-deposit" not in json.loads(_ask(url + "/api/files-page")[1])["html"]
 
 
+@pytest.mark.parametrize("sets", [7, "trajectory", {"trajectory": True}])
+def test_sets_given_as_one_value_are_read_as_none(study, sets):
+    """A number was a server failure, "Dashboard request failed.", and a
+    mapping was read as its keys."""
+    with _serving(study) as url:
+        status, body = _ask(url + "/api/files/deposit", {"sets": sets, "figures": "svg"})
+    said = json.loads(body)
+    assert status == 200, said
+    assert said == {"ok": False, "error": "Nothing was ticked to deposit."}
+
+
 def test_the_dialog_writes_it_in_a_browser(study):
     playwright = pytest.importorskip("playwright.sync_api")
     from fastmdxplora.gui.server import start_dashboard_session

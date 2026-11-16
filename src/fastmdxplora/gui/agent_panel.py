@@ -2058,7 +2058,12 @@ def _named_place(runtime: Any, study: Any) -> tuple[Path | None, Path] | None:
     """The study named and where its conversations are kept: ``None`` for
     the workspace's own (Chats), or a study's folder. None if that is no
     study."""
+    import os
+
     workspace, _ = _scope(runtime)
+    if study and not isinstance(study, (str, os.PathLike)):
+        # A number, a list or a mapping from the browser names no folder.
+        return None
     target = Path(study) if study else None
     if target is not None and not _holds_conversations(target):
         return None
@@ -2536,6 +2541,9 @@ def attach_conversation(runtime: Any, study: Any, cid: Any = None,
     """
     import os
 
+    if not isinstance(study, (str, os.PathLike)) or (
+            from_study and not isinstance(from_study, (str, os.PathLike))):
+        return {"ok": False, "error": "No such study."}
     target = Path(study) if study else None
     if target is None or not target.is_dir():
         return {"ok": False, "error": "No such study."}

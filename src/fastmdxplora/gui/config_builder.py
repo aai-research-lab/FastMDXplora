@@ -724,6 +724,10 @@ def check_config_file(path: str, *, to_run: bool = False,
 
     from pathlib import Path
 
+    if not str(path or "").strip():
+        # Not the folder `Path("")` is, which was said as "That is a
+        # folder, not a config: .".
+        return {"ok": False, "error": "No config was named."}
     target = Path(path).expanduser()
     if not target.exists():
         return {"ok": False, "error": f"No such file: {target}"}
@@ -734,6 +738,9 @@ def check_config_file(path: str, *, to_run: bool = False,
         raw = target.read_text(encoding="utf-8")
     except OSError as exc:
         return {"ok": False, "error": f"Could not read it: {exc}"}
+    except UnicodeDecodeError:
+        return {"ok": False, "error": "That is not a text file: a config is YAML, "
+                                      "written in UTF-8."}
 
     try:
         data = yaml.safe_load(raw)
@@ -741,6 +748,8 @@ def check_config_file(path: str, *, to_run: bool = False,
         # A syntax error, which is the most common thing to come back with
         # after somebody has edited a file by hand.
         return {"ok": False, "error": f"That is not valid YAML: {exc}"}
+    except RecursionError:
+        return {"ok": False, "error": "That YAML is nested too deeply to be a config."}
 
     if not isinstance(data, dict):
         return {"ok": False, "error": "A config is a mapping of settings."}

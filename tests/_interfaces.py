@@ -72,6 +72,11 @@ def a_value_other_than_the_default(block: str, name: str) -> Any:
         # Checked against the bonds setup can hold, as a choice in any
         # letter case, though not declared as `choices`.
         return "AllBonds"
+    if (block, name) == ("setup", "nonbonded_method"):
+        # A periodic one: one with no box is refused beside the barostat the
+        # default ensemble adds.
+        return next(c for c in f.choices if c != default
+                    and c not in ("NoCutoff", "CutoffNonPeriodic"))
     if f.choices:
         return next((c for c in f.choices if c != default), f.choices[0])
     kind = f.type

@@ -135,6 +135,8 @@ class Dihedrals(Analysis):
     #: This works out its own atoms, so a general selection has nothing to
     #: apply to.
     honours_selection = False
+    #: A protein's backbone, which a system of DNA or RNA alone has none of.
+    requires_protein = True
 
     def __init__(
         self,

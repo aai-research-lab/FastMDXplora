@@ -2469,7 +2469,19 @@ def make_handler(
                 # A frame of a movie, a PNG as the body rather than JSON.
                 self._add_movie_frame(path.removeprefix("/api/movies/").removesuffix("/frame"))
                 return
-            payload = self._read_json_body()
+            try:
+                payload = self._read_json_body()
+            except (ValueError, StudyError) as exc:
+                # A body that is not JSON, or not an object: the caller's
+                # mistake, said as one, not the server's failure.
+                # (`JSONDecodeError` and `UnicodeDecodeError` are both
+                # `ValueError`s.) A body refused as too large is unread, and
+                # drained first so the refusal reaches the caller.
+                self._drain_request_body()
+                self._send_json({"ok": False, "error": (
+                    str(exc) if isinstance(exc, StudyError)
+                    else "Request body is not JSON.")}, status=400)
+                return
             remote_answer = remote_desk.post(path, payload or {})
             if remote_answer is not None:
                 self._send_json(remote_answer)
@@ -2513,7 +2525,9 @@ def make_handler(
                         return {"ok": False, "error": "Where the deposit would be written is "
                                                       "not one of this study's own records."}
                     return write_deposit(inside, _artifact_records(inside),
-                                         sets=[str(k) for k in asked.get("sets") or []],
+                                         # A list of names; one value is none.
+                                         sets=[k for k in asked["sets"] if isinstance(k, str)]
+                                         if isinstance(asked.get("sets"), list) else [],
                                          figures=str(asked.get("figures") or "svg"))
 
                 said = _said_not_read(_confined(root, written))
