@@ -60,8 +60,10 @@ _LOOK_DEPTH = 3
 _ENOUGH = 25
 
 
-def _interesting(directory: Path, depth: int = _LOOK_DEPTH) -> dict[str, Any]:
-    """How many trajectories and structures are in here or just below.
+def _interesting(directory: Path, depth: int = _LOOK_DEPTH,
+                 within: Path | None = None) -> dict[str, Any]:
+    """How many trajectories and structures are in here or just below, and
+    with ``within``, only those that are inside it.
 
     Bounded in both directions -- a few levels down, and stopping once there
     is clearly something -- because this runs once per row of a listing.
@@ -81,6 +83,8 @@ def _interesting(directory: Path, depth: int = _LOOK_DEPTH) -> dict[str, Any]:
             if trajectories + structures >= _ENOUGH:
                 truncated = True
                 return
+            if within is not None and not _stays_in(entry, within):
+                continue
             if entry.is_dir():
                 if not entry.name.startswith("."):
                     walk(entry, remaining - 1)
@@ -248,8 +252,18 @@ def run_of(directory: Path) -> dict[str, Any] | None:
     return {"study": root.name}
 
 
+def _stays_in(entry: Path, within: Path) -> bool:
+    """Whether ``entry``, its links followed, is ``within`` or inside it."""
+    try:
+        resolved = entry.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return resolved == within or within in resolved.parents
+
+
 def browse(
-    path: str | Path | None = None, kind: str | None = None
+    path: str | Path | None = None, kind: str | None = None,
+    within: Path | None = None,
 ) -> dict[str, Any]:
     """What is inside ``path``: the folders always, and the files worth naming.
 
@@ -259,8 +273,14 @@ def browse(
 
     With no path, starts at the home directory, which is where somebody's data
     usually is and never somewhere they cannot read.
+
+    With ``within`` (a hosted GUI's workspace), a link in the folder that
+    leads out of it is left out: it cannot be opened from here, and listing
+    it read what it holds outside, its files counted and their sizes.
     """
     root = Path(path).expanduser() if path else Path.home()
+    if within is not None:
+        within = Path(within).resolve()
 
     try:
         root = root.resolve()
@@ -291,10 +311,12 @@ def browse(
         for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
             if entry.name.startswith("."):
                 continue
+            if within is not None and not _stays_in(entry, within):
+                continue
             if entry.is_dir():
                 if len(entries) < _MAX_ENTRIES:
                     entries.append({"name": entry.name, "path": str(entry),
-                                    **_interesting(entry)})
+                                    **_interesting(entry, within=within)})
                 continue
             if not wanted or entry.suffix.lower() not in wanted:
                 continue
@@ -327,5 +349,5 @@ def browse(
         "truncated": len(entries) >= _MAX_ENTRIES,
         # What this folder itself holds, so somebody can stop as soon as the
         # listing says there is something here.
-        **_interesting(root),
+        **_interesting(root, within=within),
     }

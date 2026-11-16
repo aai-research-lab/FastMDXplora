@@ -1574,7 +1574,7 @@ def make_handler(
                 inside = self._inside_or_refuse(where)
                 if inside is None:
                     return
-                listing = browse(inside, kind or None)
+                listing = browse(inside, kind or None, within=hosting.workspace)
                 if listing.get("ok"):
                     # The workspace is the top: nothing above it to go to.
                     here = Path(listing["path"])
@@ -3420,6 +3420,10 @@ def make_handler(
             from fastmdxplora.gui.agent_panel import propose_endpoint
 
             def emit(event: dict[str, Any]) -> None:
+                if hosting is not None:
+                    # As `_send_json` does for `/api/agent/propose`: the same
+                    # answer, a line at a time, shows no path on the server.
+                    event = hosting.scrub(event)
                 self.wfile.write((json.dumps(event, default=str) + "\n").encode("utf-8"))
                 self.wfile.flush()
 
