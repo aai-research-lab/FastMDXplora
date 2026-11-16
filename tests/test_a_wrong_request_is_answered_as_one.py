@@ -59,6 +59,8 @@ def test_a_run_of_nothing_is_refused_before_anything_starts(home, state: dict) -
     assert status == 200
     assert answer["ok"] is False
     assert answer["error"]
+    # The config written for it is taken back, and not named as if it were there.
+    assert "path" not in answer and answer["config_path"] is None
     popen.assert_not_called()
     studies = [p for p in (tmp_path / "workspace").iterdir()
                if p.is_dir() and not p.name.startswith(".")]

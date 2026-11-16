@@ -1847,7 +1847,9 @@ class DashboardRuntime:
                                     base=self.exploration_root)
         if not checked["ok"]:
             _taken_back(Path(prepared["config_path"]), output_dir, made)
-            return {**checked, "config_path": None, "command": None}
+            # Not the file checked, which is taken back with its folder.
+            return {**{k: v for k, v in checked.items() if k != "path"},
+                    "config_path": None, "command": None}
         environment_error = exploration_environment_error(written)
         if environment_error:
             # What this launch wrote taken back, so the same folder can be
