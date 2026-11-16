@@ -118,6 +118,18 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   held to the study's own records and writing nothing, and only when the
   dialog asks (`GET /api/again?defaults=1`). Where they cannot be planned,
   nothing is ticked and the dialog says why. (Prince Otegbulu, #73)
+- GUI: Analyze again on a study of several whose first run has no trajectory
+  plans what it ticks from the first run that has one, as the analysis
+  leaves the others out; it ticked nothing and said the first run's
+  trajectory was not found. While the analyses are planned the dialog says
+  so, a second press asks nothing more, and an answer for a study no longer
+  open is dropped, where it was shown and its button ran on the study opened
+  since. An analysis manifest that is not valid JSON is said not read, as a
+  refused one is, and the defaults are not ticked in its place. A study with
+  no `analysis/` is not told that what the run replaces is saved in
+  `previous/`, nor is one with no `report/` on Write it again, nor an AI
+  app's `run_phases_again` once done. A plan that fails names its file from the study's folder, not
+  by the server's path to it.
 
 ### Added
 
