@@ -101,8 +101,11 @@ class TestMDSRefusedIsSaidOnTheCard:
                 # Kept when the card shows the figure in place of the plot:
                 # it was inside the plot and left with it.
                 page.click(f"{card} [data-figure-toggle]")
+                # Until the image loads it has no size, and Playwright
+                # counts it hidden: waited for, not read at the click.
+                figure_shown = page.wait_for_selector(
+                    f"{card} img", state="visible", timeout=30000) is not None
                 shown = page.is_visible(f"{card} .figure-note")
-                figure_shown = page.is_visible(f"{card} img")
                 browser.close()
         finally:
             session.server.shutdown()
