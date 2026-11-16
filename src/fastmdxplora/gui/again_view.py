@@ -3,13 +3,44 @@
 The Analysis page's **Analyze again** and the Report page's **Write it
 again** read it: whether each phase can run again and, where not, why;
 the analyses the study ran last, to offer ticked; and the analyses this
-release has, each with its title, to add one.
+release has, each with its title, to add one. A study with no analyses on
+record is offered those its analysis would run by default
+(`automatic_analyses`), planned only when the dialog asks.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+
+
+def automatic_analyses(study: Path) -> list[str]:
+    """The analyses the analysis phase would run on the study ``study`` by
+    default, from its recorded settings, planned on the first frame of its
+    trajectory (of its first run, in a study of several). Writes nothing."""
+    from fastmdxplora.again import first_run
+    from fastmdxplora.analysis import AnalysisOrchestrator
+    from fastmdxplora.analysis.analyze import _detect_ligand_resname, analysis_paths
+    from fastmdxplora.config.recorded import RECORDED, phase_settings
+
+    study = first_run(study)
+    settings = phase_settings(study / RECORDED, "analysis", study=study)
+    trajectory, topology = analysis_paths(
+        study, trajectory=settings.get("trajectory"), topology=settings.get("topology"))
+    planner = AnalysisOrchestrator(
+        trajectory=str(trajectory),
+        topology=str(topology),
+        output_dir=study / "analysis",
+        selection=settings.get("selection") or settings.get("select_atoms"),
+        scope=settings.get("scope", "solute"),
+        ligand_resname=(settings.get("ligand_resname")
+                        or _detect_ligand_resname(study)),
+        figure_colours=settings.get("figure_colours"),
+        figure_width=settings.get("figure_width"),
+        first_frame_only=True,
+    )
+    return list(planner.planned_analyses(
+        exclude=settings.get("exclude"), options=settings.get("options")))
 
 
 def again_payload(root: Any) -> dict[str, Any]:

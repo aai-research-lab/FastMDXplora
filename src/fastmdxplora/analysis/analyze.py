@@ -102,6 +102,36 @@ def study_trajectory(project_root: Path) -> tuple[Path | None, Path | None]:
                     and _records.is_file(topology) else None)
 
 
+def analysis_paths(
+    project_root: Path,
+    *,
+    trajectory: str | Path | None = None,
+    topology: str | Path | None = None,
+    joined: tuple[Path | None, Path | None] | None = None,
+) -> tuple[Path, Path]:
+    """The trajectory and topology the analysis of the study at
+    ``project_root`` reads: those given, else its joined trajectory with the
+    topology the join names, else its own production trajectory. ``joined``
+    is what `study_trajectory` said of the study, where it was read already."""
+    joined_trajectory, joined_topology = (
+        joined if joined is not None else study_trajectory(project_root))
+    traj_path = Path(trajectory) if trajectory else (
+        joined_trajectory or project_root / "simulation" / "production.dcd")
+    if not trajectory and not topology and joined_topology is not None:
+        topology = str(joined_topology)
+    # The topology that matches the trajectory, where the two differ.
+    # `save_selection` defaults to leaving the solvent out, so the file
+    # beside the trajectory describes fewer atoms than the prepared system
+    # does, and loading a subset against the full topology is not a
+    # near-miss: it is an atom-count mismatch that stops the phase, or
+    # worse a silent misalignment wherever the counts happen to agree.
+    if topology:
+        return traj_path, Path(topology)
+    saved = project_root / "simulation" / "trajectory_topology.pdb"
+    return traj_path, (saved if saved.is_file()
+                       else project_root / "simulation" / "topology.pdb")
+
+
 def run(
     *,
     orchestrator: "FastMDXplora",
@@ -147,23 +177,10 @@ def run(
     # own files are recorded at their paths (`analysis.trajectory` in the
     # resolved config), not relative to where the command ran.
     project_root = Path(orchestrator.output_dir).absolute()
-    joined_trajectory, joined_topology = study_trajectory(project_root)
-    traj_path = Path(trajectory) if trajectory else (
-        joined_trajectory or project_root / "simulation" / "production.dcd")
-    if not trajectory and not topology and joined_topology is not None:
-        topology = str(joined_topology)
-    # The topology that matches the trajectory, where the two differ.
-    # `save_selection` defaults to leaving the solvent out, so the file
-    # beside the trajectory describes fewer atoms than the prepared system
-    # does, and loading a subset against the full topology is not a
-    # near-miss: it is an atom-count mismatch that stops the phase, or
-    # worse a silent misalignment wherever the counts happen to agree.
-    if topology:
-        top_path = Path(topology)
-    else:
-        saved = project_root / "simulation" / "trajectory_topology.pdb"
-        top_path = (saved if saved.is_file()
-                    else project_root / "simulation" / "topology.pdb")
+    joined = study_trajectory(project_root)
+    joined_trajectory = joined[0]
+    traj_path, top_path = analysis_paths(
+        project_root, trajectory=trajectory, topology=topology, joined=joined)
 
     presenter = getattr(orchestrator, "_presenter", None)
 

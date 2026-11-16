@@ -857,6 +857,37 @@ def _again_answer(root: Path, links: list[tuple[str, str]] | None = None) -> dic
     return answer
 
 
+def _again_defaults(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
+    """``answer`` (`_again_answer`) with the analyses Analyze again ticks on
+    a study with none on record that can be analysed again: those its
+    analysis would run by default (`again_view.automatic_analyses`), planned
+    held to the study (`_confined`). Where they cannot be planned, the
+    defaults are ``None`` and ``defaults_why`` says why, and nothing is
+    ticked. A study with analyses on record, or a record of them not read,
+    is offered as it was."""
+    analysis = answer.get("analysis")
+    if (not isinstance(analysis, dict) or not analysis.get("can")
+            or answer.get("recorded") or answer.get("recorded_said")
+            or answer.get("not_read")):
+        return answer
+    from fastmdxplora.gui.again_view import automatic_analyses
+    from fastmdxplora.refusals import refusal_of
+
+    def planned(inside: Path) -> dict[str, Any]:
+        try:
+            return {"defaults": automatic_analyses(inside)}
+        except Exception as exc:  # noqa: BLE001 - said, and nothing is ticked
+            return {"defaults": None, "defaults_why": refusal_of(exc).message}
+
+    plan = _confined(Path(root), planned)
+    defaults = plan.get("defaults")
+    if isinstance(defaults, list) and not plan.get("unavailable"):
+        return {**answer, "analysis": {**analysis, "defaults": defaults}}
+    why = (_refusals_said(plan) or plan.get("defaults_why") or plan.get("reason")
+           or _RECORDS_UNREADABLE["reason"])
+    return {**answer, "analysis": {**analysis, "defaults": None, "defaults_why": why}}
+
+
 def _at_the_terminal(argv: list[str], cwd: str = "") -> str:
     """A fix's command as typed at the terminal, quoted: from the folder it
     is run from (``cwd``) where it has one, since its paths are as typed."""
@@ -1990,8 +2021,13 @@ def make_handler(
                 # Not answered beyond loopback, like the POST it offers.
                 # Read from the study's own records only (`_confined`): what
                 # is offered again is planned from its own Config, and is what
-                # the POST would do (`_again_answer`).
-                self._send_json(_again_answer(root))
+                # the POST would do (`_again_answer`). The dialog asks for
+                # the analyses to tick where none are on record
+                # (``defaults=1``), planned for it alone (`_again_defaults`).
+                answer = _again_answer(root)
+                if (parse_qs(parsed.query).get("defaults") or [""])[0] == "1":
+                    answer = _again_defaults(root, answer)
+                self._send_json(answer)
                 return
             if path == "/api/fixes":
                 # What would fix the study on screen, its command and its

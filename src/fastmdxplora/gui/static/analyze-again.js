@@ -4,7 +4,9 @@
  *
  * The Analysis page offers it while a study with frames is open and
  * nothing runs. Pressing it opens the analyses to run: those the study ran
- * last, ticked, and the others this release has, to add one. The panel
+ * last, ticked, or, where it has none on record, those its analysis would
+ * run by default, as the server plans them; and the others this release
+ * has, to add one. The panel
  * says what is written again and what is kept aside, and only its own
  * button starts the run. The analyses appear on the page as they are
  * written, as they do while any run goes. */
@@ -78,8 +80,10 @@
     box.hidden = false;
   }
 
-  function load() {
-    return fetch("/api/again", { cache: "no-store" })
+  /* `defaults`: asked where the dialog ticks what the study's analysis
+   * would run by default, which the server plans from its trajectory. */
+  function load(defaults) {
+    return fetch(defaults ? "/api/again?defaults=1" : "/api/again", { cache: "no-store" })
       .then(function (res) { return res.json(); })
       .then(function (data) { offered = data; return data; })
       .catch(function () { offered = null; return null; });
@@ -145,6 +149,10 @@
     if (unread) box.appendChild(node("p", "again-unread", unread));
 
     var recorded = offered.recorded || [];
+    // With none on record, those the analysis would run by default; null
+    // where they could not be planned, and then nothing is ticked.
+    var automatic = !recorded.length && !unread && Array.isArray(analysis.defaults)
+      ? analysis.defaults : null;
     var catalogue = offered.catalogue || [];
     var known = {};
     catalogue.forEach(function (item) { known[item.name] = item; });
@@ -155,6 +163,16 @@
       first.appendChild(choice(known[name] || { name: name }, !only || only.indexOf(name) >= 0));
     });
     fields.appendChild(first);
+    if (!only && !recorded.length && !unread) {
+      if (automatic === null) {
+        fields.appendChild(node("p", "again-none",
+          "The analyses that apply to this study could not be planned, so none is ticked." +
+          (analysis.defaults_why ? " " + analysis.defaults_why : "")));
+      } else if (!automatic.length) {
+        fields.appendChild(node("p", "again-none",
+          "No analysis applies to this study by default, so none is ticked."));
+      }
+    }
     var others = catalogue.filter(function (item) { return recorded.indexOf(item.name) < 0; });
     if (others.length) {
       var more = node("details", "again-more");
@@ -162,7 +180,7 @@
       var rest = node("div", "again-list");
       others.forEach(function (item) {
         rest.appendChild(choice(item, only ? only.indexOf(item.name) >= 0
-          : !recorded.length && !unread));
+          : automatic !== null && automatic.indexOf(item.name) >= 0));
       });
       more.appendChild(rest);
       if (!recorded.length) more.open = true;
@@ -220,7 +238,7 @@
     var box = panel();
     var named = Array.isArray(only) && only.length ? only : null;
     if (!named && box && !box.hidden && box.querySelector(".again-choices")) { close(); return; }
-    load().then(function (data) {
+    load(!named).then(function (data) {
       if (!data || !data.available) { say((data && data.why) || "Nothing is open to analyze."); return; }
       ask(named);
     });

@@ -177,6 +177,30 @@ class TestLoadTrajectory:
         sliced = load_trajectory(dcd, top=pdb, first=2, last=7)
         assert sliced.n_frames == 5
 
+    @pytest.mark.parametrize("extension", ["dcd", "xtc", "pdb"])
+    @pytest.mark.parametrize("several", [False, True])
+    def test_a_plan_reads_the_first_frame_alone(self, tmp_path, synthetic_traj, extension,
+                                                several, monkeypatch):
+        synthetic_traj.unitcell_lengths = np.tile([5.0, 5.0, 5.0], (synthetic_traj.n_frames, 1))
+        synthetic_traj.unitcell_angles = np.tile([90.0, 90.0, 90.0], (synthetic_traj.n_frames, 1))
+        source = tmp_path / f"first.{extension}"
+        synthetic_traj.save(str(source))
+        topology = tmp_path / "topology.pdb"
+        synthetic_traj[0].save_pdb(str(topology))
+        paths = [source, source] if several else source
+        top = topology if extension in ("dcd", "xtc") else None
+        whole = load_trajectory(paths, top=top)
+
+        def all_frames(*args, **kwargs):
+            pytest.fail("a plan reads one frame, not the trajectory")
+
+        monkeypatch.setattr(md, "load", all_frames)
+        first = load_trajectory(paths, top=top, first_frame_only=True)
+        assert first.n_frames == 1
+        assert first.topology == whole.topology
+        np.testing.assert_allclose(first.xyz, whole.xyz[:1])
+        np.testing.assert_allclose(first.unitcell_vectors, whole.unitcell_vectors[:1])
+
     def test_invalid_slice_raises(self, traj_files: tuple[Path, Path]):
         dcd, pdb = traj_files
         with pytest.raises(TrajectoryLoadError, match="Invalid frame slice"):
@@ -364,7 +388,10 @@ class TestAnalysisOrchestrator:
         )
         assert ao.traj.n_frames > 0
         assert ao.output_dir == tmp_path / "run"
-        assert ao.output_dir.exists()
+        # Made by a run, not by a plan.
+        assert not ao.output_dir.exists()
+        assert ao.planned_analyses(include=["rmsd"]) == ("rmsd",)
+        assert not ao.output_dir.exists()
 
     def test_run_executes_registered_analyses(
         self, tmp_path: Path, traj_files: tuple[Path, Path]

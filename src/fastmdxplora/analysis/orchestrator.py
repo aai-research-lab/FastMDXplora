@@ -175,12 +175,16 @@ class AnalysisOrchestrator:
         :func:`load_trajectory`).
     output_dir : path, optional
         Where to write per-analysis subdirectories. Defaults to
-        ``./fastmdx_analysis_<timestamp>``.
+        ``./fastmdx_analysis_<timestamp>``. Made by :meth:`run`, not here,
+        so a plan (:meth:`planned_analyses`) writes nothing.
     selection : str, optional
         Default MDTraj selection string applied to every analysis that
         does not override it.
     stride, first, last : int, optional
         Frame-selection parameters applied at load time.
+    first_frame_only : bool, optional
+        Read only the first frame, to plan from: the plan reads the
+        topology and the box, not the frames. Frame selection is not applied.
 
     Examples
     --------
@@ -218,6 +222,7 @@ class AnalysisOrchestrator:
         saving_interval_ps: float | None = None,
         figure_colours: str | None = None,
         figure_width: str | None = None,
+        first_frame_only: bool = False,
     ) -> None:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.output_dir: Path = (
@@ -225,7 +230,6 @@ class AnalysisOrchestrator:
             if output_dir is not None
             else Path(f"fastmdx_analysis_{timestamp}")
         )
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.default_selection: str | None = selection
         # Scope resolves to a concrete selection used as the default for
@@ -258,6 +262,7 @@ class AnalysisOrchestrator:
         self.traj: md.Trajectory = load_trajectory(
             trajectory, topology, stride=stride, first=first, last=last,
             saving_interval_ps=saving_interval_ps,
+            first_frame_only=first_frame_only,
         )
         # The insertion codes read with this topology, put back when it is
         # run: the table holds the codes of the topology read last, so an
@@ -274,6 +279,21 @@ class AnalysisOrchestrator:
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
+    def planned_analyses(
+        self,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+        options: dict[str, dict[str, Any]] | None = None,
+    ) -> tuple[str, ...]:
+        """The analyses :meth:`run` would run on these frames, in its
+        order, writing nothing."""
+        plan = self._build_plan(include, exclude, options)
+        # The image check first, so its finding is there for every analysis
+        # of the same frames after it.
+        plan.sort(key=lambda name: name != _IMAGE_CHECK)
+        return tuple(plan)
+
     def run(
         self,
         *,
@@ -310,11 +330,12 @@ class AnalysisOrchestrator:
             residues._INSERTION_CODES.clear()
             residues._INSERTION_CODES.update(codes)
 
-        plan = self._build_plan(include, exclude, options)
-        # The image check first, so its finding is there for every analysis
-        # of the same frames after it.
-        plan.sort(key=lambda name: name != _IMAGE_CHECK)
+        plan = list(self.planned_analyses(include=include, exclude=exclude,
+                                          options=options))
         merged_options = self._merge_options(plan, options)
+        # Made once the plan and its options are accepted: a refused one
+        # leaves no empty folder behind.
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.debug("Plan: %s", ", ".join(plan))
 

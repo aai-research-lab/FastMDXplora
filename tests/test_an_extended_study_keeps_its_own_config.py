@@ -167,6 +167,51 @@ def test_the_analysis_phase_reads_the_joined_trajectory_unless_given_one(tmp_pat
     assert read.value.args[0] == str(own)
 
 
+@pytest.mark.parametrize("explicit_trajectory,explicit_topology", [
+    (False, False), (True, False), (False, True), (True, True),
+])
+def test_the_analysis_and_analyze_again_read_the_same_trajectory(
+    tmp_path, monkeypatch, explicit_trajectory, explicit_topology,
+):
+    from types import SimpleNamespace
+
+    import fastmdxplora.analysis
+    from fastmdxplora.analysis import analyze
+    from fastmdxplora.config import recorded
+    from fastmdxplora.gui.again_view import automatic_analyses
+
+    class Read(Exception):
+        pass
+
+    class Orchestrator:
+        def __init__(self, *, trajectory, topology, **_):
+            raise Read(trajectory, topology)
+
+    monkeypatch.setattr(analyze, "AnalysisOrchestrator", Orchestrator)
+    monkeypatch.setattr(fastmdxplora.analysis, "AnalysisOrchestrator", Orchestrator)
+    root, joined, topology = _joined_study(tmp_path)
+    joined_topology = root / "joined" / "topology.pdb"
+    joined_topology.write_text("END\n", encoding="utf-8")
+    (root / "joined" / "joined.json").write_text(
+        json.dumps({"topology": str(joined_topology)}), encoding="utf-8")
+    settings = {}
+    if explicit_trajectory:
+        settings["trajectory"] = str(root / "simulation" / "production.dcd")
+    if explicit_topology:
+        settings["topology"] = str(root / "simulation" / "explicit.pdb")
+    monkeypatch.setattr(recorded, "phase_settings", lambda *args, **kwargs: settings)
+    with pytest.raises(Read) as read:
+        analyze.run(orchestrator=SimpleNamespace(output_dir=root),
+                    output_dir=root / "analysis", **settings)
+    expected = (settings.get("trajectory", str(joined)),
+                settings.get("topology",
+                             str(topology if explicit_trajectory else joined_topology)))
+    assert read.value.args == expected
+    with pytest.raises(Read) as read:
+        automatic_analyses(root)
+    assert read.value.args == expected
+
+
 def test_a_join_record_that_cannot_be_read_is_no_joined_trajectory(tmp_path):
     from fastmdxplora.analysis.analyze import study_trajectory
 
