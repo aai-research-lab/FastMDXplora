@@ -89,7 +89,8 @@ class Again:
         if self.report_added:
             lines.append("The report is written again too, as the study has one: one "
                          "from the analyses before would contradict them.")
-        lines.append(saved_said(self.phases))
+        if replaces_something(self):
+            lines.append(saved_said(self.phases))
         if self.campaign is not None and "analysis" in self.phases:
             lines.append("The comparison of the runs is built again after.")
         for name, why in self.left_out:
@@ -119,6 +120,14 @@ def saved_said(phases: Iterable[str]) -> str:
                  + (", with its report/" if "report" in phases else "")
                  + f", and what {PREVIOUS}/ holds is left as it is.")
     return said
+
+
+def replaces_something(planned: "Again") -> bool:
+    """Whether the run again ``planned`` replaces anything: whether any of
+    its runs holds what its phases wrote (`replaced.outputs_of`)."""
+    from fastmdxplora.replaced import outputs_of
+
+    return any(outputs_of(run, phase) for run in planned.runs for phase in planned.phases)
 
 
 def phases_named(given: Iterable[Any]) -> tuple[str, ...]:
@@ -396,8 +405,12 @@ def offered(study: str | Path) -> dict[str, Any]:
             out[phase] = {"can": False, "why": why, "code": refusal_of(exc).code,
                           **({"terminal": _command_said(why)} if _command_said(why) else {})}
             continue
+        # What is saved in previous/ is said only where there is something
+        # to replace: a study with no analysis/ has none made.
+        replaces = replaces_something(found)
         out[phase] = {"can": True, "runs": len(found.runs),
                       "report_too": found.report_added, "said": found.said(),
-                      "saved_said": saved_said(found.phases),
+                      "replaces": replaces,
+                      "saved_said": saved_said(found.phases) if replaces else "",
                       "left_out": [{"run": name, "why": why} for name, why in found.left_out]}
     return out

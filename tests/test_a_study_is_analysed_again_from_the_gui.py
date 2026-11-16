@@ -213,6 +213,23 @@ def test_a_damaged_analysis_manifest_is_said_and_nothing_is_ticked(tmp_path):
     assert "defaults" not in offered["analysis"]
 
 
+def test_a_study_with_nothing_to_replace_is_not_told_of_previous(tmp_path):
+    from fastmdxplora import again
+    from fastmdxplora.gui.again_view import again_fix
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    shutil.rmtree(root / "analysis")
+    offered = _again(root)
+    assert offered["analysis"]["can"] and offered["analysis"]["replaces"] is False
+    assert offered["analysis"]["saved_said"] == ""
+    assert "previous/" not in again.plan(root, ["analysis"]).said()
+    assert "previous/" not in again_fix(root, "analyze again", {"analyses": ["rmsd"]})[
+        "fix"]["fix"]
+    replacing = _analysed(tmp_path / "replacing", report=False)
+    assert _again(replacing)["analysis"]["replaces"] is True
+
+
 @pytest.mark.parametrize("route,method,body", [
     ("/api/again", "run_again", {"phases": ["analysis"], "analyses": ["rmsd"]}),
     ("/api/report/write", "write_the_report_again", {}),
@@ -506,3 +523,43 @@ def test_a_run_again_that_fails_is_said_to_have_failed(tmp_path) -> None:
     finally:
         session.server.shutdown()
     assert said == "The workflow exited with code 1."
+
+
+def test_a_study_with_no_analysis_is_not_told_of_previous_once_analysed(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _analysed(tmp_path / "study", analyses=(), report=False)
+    _forget_analysis_selection(root)
+    shutil.rmtree(root / "analysis")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    began = "2026-10-06T13:15:02+00:00"
+    errors: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.route("**/api/again", lambda route: route.fulfill(
+                json={"ok": True, "said": "", "state": {"started_at": began}})
+                if route.request.method == "POST" else route.continue_())
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_selector("#analysis-again:not([hidden])")
+            page.click("#analysis-again")
+            page.wait_for_selector("#analysis-again-ask .again-choices")
+            asked = page.text_content("#analysis-again-ask .again-said")
+            page.click("#analysis-again-ask .fix-confirm")
+            page.wait_for_selector("#analysis-again-ask:has-text('Analyzing again.')")
+            page.evaluate("d => window.dispatchEvent(new CustomEvent('dashboard:app-state', "
+                          "{detail: d}))", {"active_run": str(root), "process_running": False,
+                                            "started_at": began, "returncode": 0})
+            said = page.text_content("#analysis-again-ask .again-said")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert "previous" not in asked, asked
+    assert said == "Analyzed again.", said
+    assert errors == []

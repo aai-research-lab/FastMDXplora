@@ -279,7 +279,10 @@
           app.error ? app.error_terminal : "");
       return;
     }
-    say("Analyzed again. What it replaced is in " + ((offered && offered.previous) || "previous") + "/.");
+    // What it replaced is said only where there was something to replace.
+    var replaced = offered && offered.analysis && offered.analysis.replaces;
+    say("Analyzed again." + (replaced
+      ? " What it replaced is in " + ((offered && offered.previous) || "previous") + "/." : ""));
   }
 
   document.addEventListener("DOMContentLoaded", function () {
