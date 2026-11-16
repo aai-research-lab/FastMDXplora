@@ -46,6 +46,19 @@ def test_an_analysis_is_added_and_said_done(workspace):
     assert _made(root) == ["rmsd", "rg"] and _made(root / "previous") == ["rmsd"]
 
 
+def test_a_study_with_nothing_to_replace_is_not_told_of_previous(workspace):
+    import shutil
+
+    root = workspace.root / "study"
+    for folder in ("analysis", "report"):
+        shutil.rmtree(root / folder, ignore_errors=True)
+    said = _run_phases_again(Context(workspace), {"study": "study", "phases": ["analysis"],
+                                                  "analyses": ["rmsd"]})
+    assert said.startswith("Done on study: analysis run again."), said
+    assert "previous" not in said and not (root / "previous").exists()
+    assert _made(root) == ["rmsd"]
+
+
 def test_what_cannot_be_run_again_is_refused_as_the_software_says(workspace):
     with pytest.raises(ToolError) as caught:
         _run_phases_again(Context(workspace), {"study": "study", "phases": ["simulation"]})

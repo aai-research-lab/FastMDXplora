@@ -83,7 +83,7 @@ def test_the_agent_is_answered_with_what_would_run(tmp_path, monkeypatch):
     assert fix["route"] == "/api/again"
     assert fix["request"] == {"phases": ["analysis", "report"], "analyses": ["rmsd", "rg"]}
     assert fix["fix"] == ("Analyze this study again with rmsd, rg, writing its report again "
-                          "too, keeping what they replace in previous/")
+                          "too, saving what they replace in previous/")
 
 
 def test_a_name_it_does_not_have_is_said(tmp_path, monkeypatch):
@@ -161,7 +161,7 @@ def test_the_agent_asks_then_writes_the_report_again(tmp_path, monkeypatch) -> N
             browser.close()
     finally:
         session.server.shutdown()
-    assert asked == ("Write the report again from this study's records, keeping the report "
+    assert asked == ("Write the report again from this study's records, saving the report "
                      "there now in previous/?")
     assert ran == [{"phases": ["report"], "analyses": None}]
     assert f"fastmdx report --output {root.resolve()} --rerun" in started

@@ -383,6 +383,8 @@
             report.terminal);
         return;
       }
+      var asked = ask.querySelector(".fix-said");
+      if (asked && report && report.replaces === false) asked.textContent = question(false);
       if (yes) {
         yes.disabled = false;
         // The keyboard on Yes once it can be pressed, as before it was held.
@@ -391,16 +393,22 @@
     }).catch(function () { say("Could not ask the server whether it would write it again."); });
   }
 
+  /* The question; what is saved in previous/ said only where there is a
+   * report to replace (``replaces`` false where the server says none). */
+  function question(replaces) {
+    return "Write " + (several ? "each run's report" : "the report") + " again from " +
+      "this study's records? The report, its slides, PDF, dashboard.html and " +
+      "bundle are written again as the study's report settings ask. " +
+      (replaces === false ? "" : "The report there now is saved in previous/, in place " +
+        "of what was saved there before. ") +
+      "Nothing is simulated or analysed.";
+  }
+
   function askNow() {
     var ask = el("report-write-ask");
     if (!ask) return null;
     ask.innerHTML = "";
-    ask.appendChild(node("span", "fix-said",
-      "Write " + (several ? "each run's report" : "the report") + " again from " +
-      "this study's records? The report, its slides, PDF, dashboard.html and " +
-      "bundle are written again as the study's report settings ask. The report " +
-      "there now is saved in previous/, in place of what was saved there before. " +
-      "Nothing is simulated or analysed."));
+    ask.appendChild(node("span", "fix-said", question()));
     var yes = node("button", "primary-btn fix-confirm", "Yes, write it");
     yes.type = "button";
     yes.addEventListener("click", startWriting);

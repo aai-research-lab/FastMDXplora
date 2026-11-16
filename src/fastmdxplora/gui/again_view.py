@@ -88,13 +88,13 @@ def again_fix(root: Any, action: str, arguments: dict[str, Any] | None) -> dict[
     replaces = again.replaces_something(planned)
     if planned.phases == ("report",):
         question = ("Write the report again from this study's records"
-                    + (", keeping the report there now in previous/" if replaces else ""))
+                    + (", saving the report there now in previous/" if replaces else ""))
     else:
         chosen = planned.analyses or tuple(again.recorded_analyses(study))
         listed = ", ".join(chosen) if chosen else "the analyses it ran last"
         question = (f"Analyze this study again with {listed}"
                     + (", writing its report again too" if planned.report_added else "")
-                    + (", keeping what they replace in previous/" if replaces else ""))
+                    + (", saving what they replace in previous/" if replaces else ""))
     return {"fix": {"action": action, "route": "/api/again", "fix": question,
                     "command": " ".join(["fastmdx", *planned.command()]),
                     "request": {"phases": list(planned.phases),

@@ -1008,6 +1008,9 @@ def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
                         code=found.code) from None
     _may_start(ctx, None, folder)
     shown = ctx.workspace.shown(folder)
+    # Where it is said that what it replaced is in previous/: only where
+    # there is something to replace (`again.replaces_something`).
+    replaces = again.replaces_something(planned)
     message = f"Run {' and '.join(planned.phases)} again on {shown}? " + planned.said()
     bound = f"run_phases_again:{folder}:{','.join(planned.phases)}:" + ",".join(
         planned.analyses or ())
@@ -1044,8 +1047,9 @@ def _run_phases_again(ctx: Context, args: dict[str, Any]) -> str:
         raise ToolError(f"Running it again on {shown} failed. The end of its log:\n"
                         + ("\n".join(lines[-12:]) or "It wrote nothing to its log."))
     return (f"Done on {shown}: {' and '.join(planned.phases)} run again. "
-            f"What it replaced is in {ctx.workspace.shown(folder / again.PREVIOUS)}. "
-            "read_study says what the analyses found now.")
+            + (f"What it replaced is in {ctx.workspace.shown(folder / again.PREVIOUS)}. "
+               if replaces else "")
+            + "read_study says what the analyses found now.")
 
 
 def _ended_within(process: Any, seconds: float) -> int | None:

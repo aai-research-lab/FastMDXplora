@@ -176,6 +176,35 @@ def test_the_report_page_writes_it_again_after_asking(tmp_path) -> None:
     assert errors == []
 
 
+def test_a_study_with_no_report_is_not_told_of_previous(tmp_path) -> None:
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = _study(tmp_path / "study")
+    assert not (root / "report").exists()
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    errors: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.on("pageerror", lambda error: errors.append(str(error)))
+            page.goto(session.url + "#report", wait_until="domcontentloaded")
+            page.wait_for_selector("#report-write:not([hidden])")
+            page.click("#report-write")
+            page.wait_for_selector("#report-write-ask .fix-confirm:not([disabled])")
+            said = page.text_content("#report-write-ask .fix-said")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert said.startswith("Write the report again from this study's records?"), said
+    assert "previous" not in said and "Nothing is simulated or analysed." in said
+    assert errors == []
+
+
 def test_only_the_end_of_the_writing_started_here_is_said(tmp_path) -> None:
     """A state the server sent before the writing began says nothing runs;
     it was read as the writing having ended, and "Written again." was said
