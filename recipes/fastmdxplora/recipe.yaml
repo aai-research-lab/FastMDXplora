@@ -24,14 +24,24 @@ package:
   name: ${{ name|lower }}
   version: ${{ version }}
 
+# Two distributions in the one conda package. `fastmdxplora` requires
+# `fastmdxplora-membrane` (its bilayer analyses, a package of their own on
+# PyPI, found by entry point) and that package requires `fastmdxplora`, so
+# they are built together here and `conda install fastmdxplora` stays the
+# whole of it. Released from one tag, so one version.
 source:
-  url: https://pypi.org/packages/source/${{ name[0] }}/${{ name }}/${{ name }}-${{ version }}.tar.gz
-  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  - url: https://pypi.org/packages/source/${{ name[0] }}/${{ name }}/${{ name }}-${{ version }}.tar.gz
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  - url: https://pypi.org/packages/source/f/fastmdxplora-membrane/fastmdxplora_membrane-${{ version }}.tar.gz
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    target_directory: fastmdxplora-membrane
 
 build:
   noarch: python
   number: 0
-  script: ${{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  script:
+    - ${{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+    - ${{ PYTHON }} -m pip install ./fastmdxplora-membrane -vv --no-deps --no-build-isolation
   python:
     entry_points:
       - fastmdx = fastmdxplora.cli.main:main
@@ -102,6 +112,7 @@ tests:
         - fastmdxplora.analysis
         - fastmdxplora.report
         - fastmdxplora.gui
+        - fastmdxplora_membrane
         # If these fail the recipe has not delivered what it promises.
         - openmm
         - pdbfixer

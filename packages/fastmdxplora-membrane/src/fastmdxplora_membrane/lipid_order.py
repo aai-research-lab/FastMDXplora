@@ -25,15 +25,6 @@ import numpy as np
 import pandas as pd
 
 from fastmdxplora.analysis.base import Analysis
-from fastmdxplora.analysis.bilayer import (
-    _BOND_TOLERANCE_NM,
-    _COVALENT_NM,
-    _symbol,
-    box_vectors,
-    find_bilayer,
-    leaflets,
-)
-from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.lipids import (
     BUILT_LIPIDS,
     SPLIT_HEADS,
@@ -42,6 +33,14 @@ from fastmdxplora.lipids import (
     is_sterol,
 )
 from fastmdxplora.refusals import StudyError
+from fastmdxplora_membrane.bilayer import (
+    _BOND_TOLERANCE_NM,
+    _COVALENT_NM,
+    _symbol,
+    box_vectors,
+    find_bilayer,
+    leaflets,
+)
 
 __all__ = ["LipidOrder"]
 
@@ -363,5 +362,3 @@ class LipidOrder(Analysis):
     def default_ylabel(self) -> str | None:
         return "-S_CD"
 
-
-register_analysis(LipidOrder.name, LipidOrder)

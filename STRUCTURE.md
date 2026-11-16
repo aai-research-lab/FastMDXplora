@@ -36,6 +36,7 @@ FastMDXplora/
 │       ├── cost.py                # How long a study will take, on this machine
 │       ├── naming.py              # One rule for the name of a study's output folder
 │       ├── refusals.py            # What a refusal is, in a word a program can read
+│       ├── plugins.py             # What separately installed packages add, read from their entry points
 │       ├── record_access.py       # Request-local admission of actual record reads; records saved through a new temporary file
 │       ├── image_note.py          # How a mean's image note is said, read from its record, by every page and the Agent
 │       ├── remedies.py            # What would fix a refusal, and what the fix costs here
@@ -127,8 +128,6 @@ FastMDXplora/
 │       │   ├── contacts.py ligand_rmsd.py ligand_rmsf.py pl_hbonds.py   # protein-ligand
 │       │   ├── pl_interactions.py interactions.py ligand_chemistry.py   # what holds the ligand
 │       │   ├── pmf.py metad_surface.py steered_work.py   # the result of a biased run
-│       │   ├── bilayer.py         # Where a bilayer is: its lipids, centre and leaflets
-│       │   ├── area_per_lipid.py bilayer_thickness.py lipid_order.py   # the bilayer itself
 │       │   ├── reweight.py         # Weights that undo a known bias
 │       │   ├── reweighted_averages.py  # Those weights applied to the analyses
 │       │   └── describe.py        # What each analysis is, for the GUI and the docs
@@ -320,6 +319,12 @@ FastMDXplora/
 ├── container/                     # Apptainer definition, and Docker made from it
 ├── preregistration/               # Validation plans written before their results
 ├── shim-package/                  # `fastmdx` alias on PyPI
+├── packages/                      # FastMDXplora's own plug-ins, each a package with its own pyproject.toml and tests
+│   └── fastmdxplora-membrane/     # The bilayer analyses (`fastmdxplora_membrane`), found by entry point
+│       ├── src/fastmdxplora_membrane/
+│       │   ├── bilayer.py         # Where a bilayer is: its lipids, centre and leaflets
+│       │   └── area_per_lipid.py bilayer_thickness.py lipid_order.py   # the bilayer itself
+│       └── tests/
 │   ├── pyproject.toml
 │   ├── README.md
 │   └── src/fastmdx/__init__.py

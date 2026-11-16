@@ -28,6 +28,22 @@ jobs:
       - name: Build the fastmdx alias
         run: cd shim-package && python -m build
 
+      # The bilayer analyses, which fastmdxplora requires: released with it,
+      # from the same tag.
+      - name: Build fastmdxplora-membrane
+        run: cd packages/fastmdxplora-membrane && python -m build
+
+      - name: Verify fastmdxplora-membrane's version matches the release tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(ls packages/fastmdxplora-membrane/dist/fastmdxplora_membrane-*.whl \
+                | head -1 | sed -E 's|.*/fastmdxplora_membrane-([^-]+)-.*|\1|')
+          echo "fastmdxplora-membrane version: $VER (tag: $TAG)"
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::fastmdxplora-membrane version ($VER) does not match release tag ($TAG). It takes its version from the tag through setuptools-scm -- check that the checkout used fetch-depth: 0 and that the tag is on the commit being built."
+            exit 1
+          fi
+
       - name: Verify fastmdx alias version matches the release tag
         run: |
           TAG="${GITHUB_REF_NAME#v}"
@@ -55,9 +71,34 @@ jobs:
           name: dist-fastmdx
           path: shim-package/dist/
 
+      - name: Upload fastmdxplora-membrane artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: dist-fastmdxplora-membrane
+          path: packages/fastmdxplora-membrane/dist/
+
+  # Before fastmdxplora, which requires it: a `pip install fastmdxplora` in
+  # the minutes between the two would otherwise find no fastmdxplora-membrane
+  # to install.
+  publish-fastmdxplora-membrane:
+    name: Publish fastmdxplora-membrane to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: dist-fastmdxplora-membrane
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
   publish-fastmdxplora:
     name: Publish fastmdxplora to PyPI
-    needs: build
+    needs: publish-fastmdxplora-membrane
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

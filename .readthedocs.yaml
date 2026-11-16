@@ -19,10 +19,11 @@ sphinx:
 
 python:
   install:
-    - method: pip
-      path: .
-      extra_requirements:
-        - docs
+    # FastMDXplora and the package of its own that it requires
+    # (packages/fastmdxplora-membrane), from this checkout, in one `pip`
+    # command: each requires the other, so neither installs alone from a
+    # clone, and the pages document the modules of both.
+    - requirements: docs/install-this-checkout.txt
 
 formats:
   - htmlzip

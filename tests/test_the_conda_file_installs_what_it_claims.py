@@ -42,7 +42,13 @@ CLAIMED = ("pdf", "md", "ligand", "amber", "umap")
 #: Requirements that reach the environment under another name, or not at all.
 #: Kept deliberately short: a long table here would mean the two files have
 #: drifted into different vocabularies.
-ELSEWHERE: dict[str, str | None] = {}
+ELSEWHERE: dict[str, str | None] = {
+    # FastMDXplora's own code, in this repository (packages/), and installed
+    # with it by the `pip install` the file's first lines give: not part of
+    # the stack the file is for. `TestItsOwnPackagesAreInstalledWithIt`
+    # holds the file to saying so.
+    "fastmdxplora-membrane": None,
+}
 
 
 def load_pyproject() -> dict:
@@ -201,3 +207,16 @@ class TestTheClaimIsStillTrue:
         assert "validation" in text, (
             "environment.yml should say that the validation extra is left "
             "out on purpose, so the omission reads as a decision.")
+
+
+class TestItsOwnPackagesAreInstalledWithIt:
+    """A requirement left out of the file as FastMDXplora's own code is one
+    the file's own instructions install, from this clone."""
+
+    @pytest.mark.parametrize("package", sorted(
+        name for name, elsewhere in ELSEWHERE.items() if elsewhere is None))
+    def test_the_install_command_names_it(self, package) -> None:
+        assert (ROOT / "packages" / package / "pyproject.toml").is_file()
+        said = ENVIRONMENT.read_text(encoding="utf-8")
+        assert f"pip install . ./packages/{package}" in said
+        assert f"-e packages/{package}" in said

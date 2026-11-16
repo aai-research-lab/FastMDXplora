@@ -15,8 +15,10 @@ cd FastMDXplora
 python -m venv .venv
 source .venv/bin/activate
 
-# Install in editable mode with development dependencies
-pip install -e ".[dev]"
+# Install in editable mode with development dependencies. Two packages in
+# one command: FastMDXplora, and the bilayer analyses it requires, which
+# live in this repository as a package of their own.
+pip install -e ".[dev]" -e packages/fastmdxplora-membrane
 
 # Verify the install
 fastmdx --version
@@ -59,7 +61,7 @@ this once already.
 so. To get back:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]" -e packages/fastmdxplora-membrane
 ```
 
 To compare against a release without disturbing the checkout, use a separate

@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastmdxplora-membrane"
+# From the git tag, like the package it extends: the two are released
+# together, from one tag.
+dynamic = ["version"]
+description = "Lipid bilayer analyses for FastMDXplora: area per lipid, thickness and chain order"
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+license = "MIT"
+authors = [
+    { name = "Adekunle Aina" },
+    { name = "Derrick Kwan" },
+]
+maintainers = [
+    { name = "Adekunle Aina" },
+]
+keywords = [
+    "molecular-dynamics",
+    "trajectory-analysis",
+    "lipid-bilayer",
+    "membrane",
+    "fastmdxplora",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    # The first FastMDXplora that reads entry points for its analyses is the
+    # release after 2.6.0, whichever number it takes; a development build of
+    # it is 2.6.1.devN.
+    "fastmdxplora>=2.6.1.dev0",
+    # Imported directly by these modules. FastMDXplora requires each of them
+    # too, with the same floors, but relying on another package's dependency
+    # is how a working install becomes a broken one.
+    "numpy>=2.0",
+    "mdtraj>=1.9.7",
+    "matplotlib>=3.5",
+    "pandas>=1.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/aai-research-lab/FastMDXplora"
+Documentation = "https://fastmdxplora.readthedocs.io/en/stable/membranes.html"
+Repository = "https://github.com/aai-research-lab/FastMDXplora"
+Issues = "https://github.com/aai-research-lab/FastMDXplora/issues"
+
+# What FastMDXplora reads (fastmdxplora/plugins.py). The name of each analysis
+# is the name a study's `analysis.include` gives it.
+[project.entry-points."fastmdxplora.analyses"]
+area_per_lipid = "fastmdxplora_membrane.area_per_lipid:AreaPerLipid"
+bilayer_thickness = "fastmdxplora_membrane.bilayer_thickness:BilayerThickness"
+lipid_order = "fastmdxplora_membrane.lipid_order:LipidOrder"
+
+# Where these modules were until they moved here, so a script that imports
+# one from its old path still runs.
+[project.entry-points."fastmdxplora.moved_modules"]
+"fastmdxplora.analysis.bilayer" = "fastmdxplora_membrane.bilayer"
+"fastmdxplora.analysis.area_per_lipid" = "fastmdxplora_membrane.area_per_lipid"
+"fastmdxplora.analysis.bilayer_thickness" = "fastmdxplora_membrane.bilayer_thickness"
+"fastmdxplora.analysis.lipid_order" = "fastmdxplora_membrane.lipid_order"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+# The tag lives in the repository two directories above this one.
+root = "../.."
+fallback_version = "0.0.0+unknown-version"

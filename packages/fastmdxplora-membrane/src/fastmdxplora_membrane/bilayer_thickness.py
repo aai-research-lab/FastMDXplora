@@ -20,15 +20,6 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
-from fastmdxplora.analysis.bilayer import (
-    PROFILE_BIN_NM,
-    PROFILE_COMPONENTS,
-    BilayerSeries,
-    density_profile,
-    find_bilayer,
-    leaflets,
-)
-from fastmdxplora.analysis.orchestrator import register_analysis
 from fastmdxplora.analysis.plotting import (
     closes_what_it_opens,
     drawn_in,
@@ -37,6 +28,14 @@ from fastmdxplora.analysis.plotting import (
     sized_for,
 )
 from fastmdxplora.refusals import StudyError
+from fastmdxplora_membrane.bilayer import (
+    PROFILE_BIN_NM,
+    PROFILE_COMPONENTS,
+    BilayerSeries,
+    density_profile,
+    find_bilayer,
+    leaflets,
+)
 
 __all__ = ["BilayerThickness"]
 
@@ -52,7 +51,7 @@ class BilayerThickness(BilayerSeries):
 
     Beside it, the mass density of each part of the system along the
     normal, centred on the bilayer centre every frame and averaged over the
-    frames analysed (:func:`~fastmdxplora.analysis.bilayer.density_profile`):
+    frames analysed (:func:`~fastmdxplora_membrane.bilayer.density_profile`):
     the lipids' heads and their hydrocarbon chains, water, protein (anything
     else of more than one atom) and ions. The heads' two peaks are the
     phosphate planes D_PP is taken between, and where water's density falls
@@ -139,5 +138,3 @@ class BilayerThickness(BilayerSeries):
         self._write_options_manifest()
         return result
 
-
-register_analysis(BilayerThickness.name, BilayerThickness)

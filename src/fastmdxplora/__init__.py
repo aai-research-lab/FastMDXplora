@@ -101,6 +101,12 @@ from fastmdxplora.own_programs import put_own_programs_on_path
 
 put_own_programs_on_path()
 
+# The modules that moved to separately installed packages, found at the
+# paths they had: see plugins.
+from fastmdxplora.plugins import find_moved_modules
+
+find_moved_modules()
+
 from fastmdxplora.orchestrator import FastMDXplora
 
 # Expose the analysis-level orchestrator for users who want it directly.

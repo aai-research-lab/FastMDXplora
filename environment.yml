@@ -9,7 +9,14 @@
 #
 #     mamba env create -f environment.yml || conda env create -f environment.yml
 #     conda activate fastmdxplora
-#     pip install .            # or `pip install -e ".[test]"` for development
+#     pip install . ./packages/fastmdxplora-membrane
+#
+# (or `pip install -e ".[test]" -e packages/fastmdxplora-membrane` for
+# development). Two packages in one command: FastMDXplora requires its
+# bilayer analyses, which are a package of their own in this repository
+# (`fastmdxplora-membrane`), and each of the two requires the other. They
+# are FastMDXplora's own code, not part of the stack below, so they are
+# installed by that command and not listed here.
 #
 # The OpenMM/PDBFixer packages are what make conda the recommended route;
 # the rest of the stack is pip-installable, so analysis + report also work
