@@ -364,9 +364,17 @@ class EndToEndDistance(Analysis):
             # did with a column of numbers.
             import pandas as pd
 
-            result = pd.DataFrame({
-                f"chain {getattr(sub.topology.chain(i), 'chain_id', None) or i}": column
-                for i, column in enumerate(columns)})
+            from fastmdxplora.analysis.residues import chain_name
+
+            table = {}
+            for i, column in enumerate(columns):
+                chain = sub.topology.chain(i)
+                residues = list(chain.residues)
+                label = f"chain {chain_name(residues[0]) if residues else chain.index}"
+                while label in table:
+                    label = f"{label} ({chain.index})"
+                table[label] = column
+            result = pd.DataFrame(table)
         self.findings["ends"] = {
             "atom": self.atom,
             "chains": len(columns),
