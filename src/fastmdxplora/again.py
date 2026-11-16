@@ -33,8 +33,9 @@ from typing import Any, Iterable
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.replaced import PREVIOUS
 
-__all__ = ["PHASES", "PREVIOUS", "Again", "analyses_named", "frames_of", "offered",
-           "phases_named", "plan", "recorded_analyses", "saved_said"]
+__all__ = ["PHASES", "PREVIOUS", "Again", "analyses_named", "done_said", "frames_of",
+           "offered", "phases_named", "plan", "recorded_analyses", "replaces_something",
+           "saved_said", "saves_something"]
 
 #: The phases offered to run again on a study, in the order they run.
 PHASES = ("analysis", "report")
@@ -90,11 +91,11 @@ class Again:
             lines.append("The report is written again too, as the study has one: one "
                          "from the analyses before would contradict them.")
         if replaces_something(self):
-            lines.append(saved_said(self.phases))
+            lines.append(saved_said(self))
         if self.campaign is not None and "analysis" in self.phases:
             lines.append("The comparison of the runs is built again after.")
         for name, why in self.left_out:
-            lines.append(f"{name} {why}")
+            lines.append(f"Run {name} is left out: {why}")
         return " ".join(lines)
 
     def as_dict(self) -> dict[str, Any]:
@@ -107,27 +108,76 @@ class Again:
                 "said": self.said(), "command": ["fastmdx", *self.command()]}
 
 
-def saved_said(phases: Iterable[str]) -> str:
-    """What a run again of ``phases`` does with what they wrote before, as
-    `replaced.make_way` does it: the one wording of `Again.said` and the
-    GUI's Analyze again."""
-    phases = tuple(phases)
-    folders = " and ".join(f"{phase}/" for phase in phases)
-    said = (f"The {folders} there now {'are' if len(phases) > 1 else 'is'} saved in "
-            f"{PREVIOUS}/, in place of what was saved there before.")
-    if "analysis" in phases:
-        said += (" An analysis/ that did not finish is removed instead"
-                 + (", with its report/" if "report" in phases else "")
-                 + f", and what {PREVIOUS}/ holds is left as it is.")
-    return said
+def _fates(planned: "Again") -> tuple[list[str], list[str]]:
+    """The phases ``planned`` saves in `previous/` and those it removes
+    unsaved, in any of its runs, as `replaced.make_way` will (`--rerun`:
+    an analysis that did not finish is removed with its report)."""
+    from fastmdxplora.replaced import ORDER, fates
+
+    saved: set[str] = set()
+    removed: set[str] = set()
+    for run in planned.runs:
+        for phase, fate in fates(run, planned.phases, keep=True):
+            (saved if fate == "saved" else removed).add(phase)
+    return ([phase for phase in ORDER if phase in saved],
+            [phase for phase in ORDER if phase in removed])
+
+
+def saved_said(planned: "Again") -> str:
+    """What the run again ``planned`` does with what its phases wrote
+    before, as `replaced.make_way` does it, naming only what is there: the
+    one wording of `Again.said`, the GUI's Analyze again and Write it again.
+    Empty where it replaces nothing."""
+    saved, removed = _fates(planned)
+    said = []
+    if saved:
+        folders = " and ".join(f"{phase}/" for phase in saved)
+        said.append(f"The {folders} there now {'are' if len(saved) > 1 else 'is'} saved in "
+                    f"{PREVIOUS}/, in place of what was saved there before.")
+    if removed:
+        report = ", with its report/" if "report" in removed else ""
+        # Said only where it holds them, as `make_way` says it.
+        held = any((run / PREVIOUS / phase).exists()
+                   for run in planned.runs for phase in removed)
+        if saved:
+            said.append(f"An analysis/ that did not finish is removed instead{report}"
+                        + (f", and what {PREVIOUS}/ holds of it is left as it is"
+                           if held else "") + ".")
+        else:
+            said.append(f"The analysis/ there now did not finish, so it is removed{report}, "
+                        f"not saved in {PREVIOUS}/"
+                        + (f"; what {PREVIOUS}/ holds of it is left as it is" if held else "")
+                        + ".")
+    return " ".join(said)
+
+
+def done_said(planned: "Again", where: str = f"{PREVIOUS}/") -> str:
+    """What the run again ``planned`` replaced, once done, said as
+    `saved_said` says it before: in ``where`` (the study's `previous/`, as
+    the page or app names it) only what was saved there. Empty where it
+    replaced nothing."""
+    saved, removed = _fates(planned)
+    if saved and removed:
+        return (f"What it replaced is in {where}, but for an analysis that did not "
+                "finish, which is removed.")
+    if saved:
+        return f"What it replaced is in {where}."
+    if removed:
+        return (f"What it replaced is removed, not saved in {where}, as its analysis "
+                "did not finish.")
+    return ""
 
 
 def replaces_something(planned: "Again") -> bool:
-    """Whether the run again ``planned`` replaces anything: whether any of
-    its runs holds what its phases wrote (`replaced.outputs_of`)."""
-    from fastmdxplora.replaced import outputs_of
+    """Whether the run again ``planned`` replaces anything, saved in
+    `previous/` or removed (`saved_said`)."""
+    return any(_fates(planned))
 
-    return any(outputs_of(run, phase) for run in planned.runs for phase in planned.phases)
+
+def saves_something(planned: "Again") -> bool:
+    """Whether the run again ``planned`` saves anything in `previous/`:
+    what an analysis that did not finish wrote is removed, not saved."""
+    return bool(_fates(planned)[0])
 
 
 def phases_named(given: Iterable[Any]) -> tuple[str, ...]:
@@ -289,7 +339,7 @@ def plan(study: str | Path, phases: Iterable[Any], analyses: Iterable[Any] | Non
 
     left_out: list[tuple[str, str]] = []
     if "analysis" in asked:
-        left_out = [(run.name, "has no trajectory, so it has nothing to analyse.")
+        left_out = [(run.name, "it has no trajectory to analyse.")
                     for run in runs if frames_of(run) is None]
         if len(left_out) == len(runs):
             where = root / "simulation" / "production.dcd"
@@ -405,12 +455,14 @@ def offered(study: str | Path) -> dict[str, Any]:
             out[phase] = {"can": False, "why": why, "code": refusal_of(exc).code,
                           **({"terminal": _command_said(why)} if _command_said(why) else {})}
             continue
-        # What is saved in previous/ is said only where there is something
-        # to replace: a study with no analysis/ has none made.
-        replaces = replaces_something(found)
+        # What is saved in previous/ is said only where something is saved
+        # there: a study with no analysis/ or report/ has none made, and
+        # an analysis that did not finish is removed, not saved.
         out[phase] = {"can": True, "runs": len(found.runs),
                       "report_too": found.report_added, "said": found.said(),
-                      "replaces": replaces,
-                      "saved_said": saved_said(found.phases) if replaces else "",
+                      "replaces": replaces_something(found),
+                      "saves": saves_something(found),
+                      "saved_said": saved_said(found),
+                      "done_said": done_said(found),
                       "left_out": [{"run": name, "why": why} for name, why in found.left_out]}
     return out

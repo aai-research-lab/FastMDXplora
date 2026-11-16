@@ -142,3 +142,13 @@ def test_a_cancelled_call_runs_nothing(workspace, monkeypatch):
     said = _run_phases_again(Context(workspace, call=Call()),
                              {"study": "study", "phases": ["report"]})
     assert said == "Not run: the call was cancelled."
+
+
+def test_an_analysis_that_did_not_finish_is_not_said_saved_once_done(workspace):
+    root = workspace.root / "study"
+    (root / "analysis" / "analysis_manifest.json").unlink()
+    said = _run_phases_again(Context(workspace), {"study": "study", "phases": ["analysis"],
+                                                  "analyses": ["rmsd"]})
+    assert said.startswith("Done on study: analysis and report run again."), said
+    assert "What it replaced is removed, not saved in study/previous" in said, said
+    assert not (root / "previous").exists()

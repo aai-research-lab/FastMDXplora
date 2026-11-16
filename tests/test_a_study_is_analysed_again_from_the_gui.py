@@ -434,9 +434,10 @@ def test_the_panel_says_an_unfinished_analysis_is_removed(tmp_path) -> None:
     # It said "The analysis/ and report/ there now are kept in previous/, in
     # place of what was kept there before": the unfinished analysis put over
     # the one saved there, where it is removed and the saved one stays.
-    assert "kept" not in said and "did not finish is removed" in said, said
+    assert "kept" not in said and "did not finish, so it is removed" in said, said
+    assert "saved in previous/" not in said.replace("not saved in previous/", ""), said
     # One wording with what `fastmdx mcp` and the Agent are told.
-    rule = again.saved_said(("analysis", "report"))
+    rule = again.saved_said(again.plan(root, ["analysis"]))
     assert rule in said and rule in again.plan(root, ["analysis"]).said()
 
 
@@ -617,3 +618,34 @@ def test_a_study_with_no_analysis_is_not_told_of_previous_once_analysed(tmp_path
     assert "previous" not in asked, asked
     assert said == "Analyzed again.", said
     assert errors == []
+
+
+@pytest.mark.parametrize("seed", ["0", "1", "2", "3", "4", "5", "6", "7"])
+def test_the_planning_failure_strips_the_longer_folder_first(tmp_path, seed) -> None:
+    """The study's folder, and the path it resolves to, are stripped from a
+    planning failure longest first: in a set's order, the one inside the
+    other was stripped first under some hash seeds, leaving part of a path."""
+    import os
+    import subprocess
+
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "link").symlink_to(real, target_is_directory=True)
+    script = f"""
+from pathlib import Path
+from unittest import mock
+from fastmdxplora.gui import server
+from fastmdxplora.refusals import StudyError
+
+root = Path({str(real / "link")!r})
+def planned(inside):
+    raise StudyError("Could not open file: " + str(root) + "/simulation/production.dcd",
+                     code="environment.path.not_found")
+with mock.patch("fastmdxplora.gui.again_view.automatic_analyses", planned), \\
+        mock.patch.object(server, "_confined", lambda where, read: read(where.resolve())):
+    print(server._again_defaults(root, {{"analysis": {{"can": True}}}})["analysis"]["defaults_why"])
+"""
+    env = {**os.environ, "PYTHONHASHSEED": seed}
+    said = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True,
+                          text=True, check=True).stdout.strip()
+    assert said == "Could not open file: simulation/production.dcd", said

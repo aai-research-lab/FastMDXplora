@@ -878,9 +878,10 @@ def _again_defaults(root: Path, answer: dict[str, Any]) -> dict[str, Any]:
             return {"defaults": automatic_analyses(inside)}
         except Exception as exc:  # noqa: BLE001 - said, and nothing is ticked
             # A file of the study named from its folder, not by the
-            # server's path to it.
+            # server's path to it: the longer prefix first, so one inside
+            # the other is stripped whole.
             why = refusal_of(exc).message
-            for folder in {str(inside), str(Path(root))}:
+            for folder in sorted({str(inside), str(Path(root))}, key=len, reverse=True):
                 why = why.replace(folder.rstrip(os.sep) + os.sep, "")
             return {"defaults": None, "defaults_why": why}
 

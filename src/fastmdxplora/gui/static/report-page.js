@@ -384,7 +384,7 @@
         return;
       }
       var asked = ask.querySelector(".fix-said");
-      if (asked && report && report.replaces === false) asked.textContent = question(false);
+      if (asked && report && report.saves === false) asked.textContent = question(false);
       if (yes) {
         yes.disabled = false;
         // The keyboard on Yes once it can be pressed, as before it was held.
@@ -394,7 +394,7 @@
   }
 
   /* The question; what is saved in previous/ said only where there is a
-   * report to replace (``replaces`` false where the server says none). */
+   * report to save there (``saves`` false where the server says none). */
   function question(replaces) {
     return "Write " + (several ? "each run's report" : "the report") + " again from " +
       "this study's records? The report, its slides, PDF, dashboard.html and " +

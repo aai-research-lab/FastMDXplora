@@ -96,7 +96,7 @@ def test_a_study_of_several_says_each_run_and_any_left_out(tmp_path):
     said = planned.said()
     assert planned.campaign == root.resolve()
     assert "The comparison of the runs is built again after." in said
-    assert "b has no trajectory, so it has nothing to analyse." in said
+    assert "Run b is left out: it has no trajectory to analyse." in said
     assert again.recorded_analyses(root) == ["rmsd"]
     alone = again.plan(root / "runs" / "a", ["report"])
     assert alone.campaign == root.resolve() and "this study" in alone.said()
@@ -119,3 +119,59 @@ def test_frames_from_outside_the_study_are_its_frames(tmp_path):
     assert again.frames_of(root) == source / "simulation" / "production.dcd"
     (root / "resolved_config.yml").write_text("systems: [", encoding="utf-8")
     assert again.frames_of(root) is None
+
+
+def _unfinished(root: Path, how: str) -> None:
+    """An analysis stopped part-way (some of its outputs, no manifest), or
+    one whose manifest is damaged: `--rerun` removes it with its report."""
+    manifest = root / "analysis" / "analysis_manifest.json"
+    if how == "part-way":
+        manifest.unlink()
+    else:
+        manifest.write_text("{not json", encoding="utf-8")
+
+
+@pytest.mark.parametrize("how", ["part-way", "damaged"])
+def test_an_analysis_that_did_not_finish_is_said_removed_not_saved(tmp_path, how):
+    from fastmdxplora.gui.again_view import again_fix
+
+    root = _analysed(tmp_path / "study")
+    _unfinished(root, how)
+    planned = again.plan(root, ["analysis"])
+    said = again.saved_said(planned)
+    assert said == ("The analysis/ there now did not finish, so it is removed, with its "
+                    "report/, not saved in previous/."), said
+    assert said in planned.said()
+    assert again.replaces_something(planned) and not again.saves_something(planned)
+    assert again.done_said(planned) == ("What it replaced is removed, not saved in "
+                                        "previous/, as its analysis did not finish.")
+    fix = again_fix(root, "analyze again", {"analyses": ["rmsd"]})["fix"]["fix"]
+    assert "previous/" not in fix and "removing the analysis there now" in fix, fix
+    offered = again.offered(root)["analysis"]
+    assert offered["replaces"] is True and offered["saves"] is False
+    # As `make_way` does it: removed, nothing saved in previous/.
+    assert main(planned.command()) == 0
+    assert not (root / "previous").exists()
+    # What previous/ holds of an analysis is named only where it holds one.
+    _unfinished(root, how)
+    assert again.saved_said(again.plan(root, ["analysis"])) == (
+        "The analysis/ there now did not finish, so it is removed, with its report/, not "
+        "saved in previous/.")
+    (root / "previous" / "analysis").mkdir(parents=True)
+    assert again.saved_said(again.plan(root, ["analysis"])).endswith(
+        "not saved in previous/; what previous/ holds of it is left as it is.")
+
+
+def test_only_what_the_study_holds_is_named_saved(tmp_path):
+    root = _analysed(tmp_path / "study")
+    shutil.rmtree(root / "analysis")
+    planned = again.plan(root, ["analysis"])
+    assert planned.phases == ("analysis", "report")
+    assert again.saved_said(planned) == (
+        "The report/ there now is saved in previous/, in place of what was saved there "
+        "before.")
+    assert again.done_said(planned) == "What it replaced is in previous/."
+    both = again.plan(_analysed(tmp_path / "both"), ["analysis"])
+    assert again.saved_said(both) == (
+        "The analysis/ and report/ there now are saved in previous/, in place of what was "
+        "saved there before.")

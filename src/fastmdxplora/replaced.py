@@ -68,6 +68,33 @@ def analysis_finished(folder: Path) -> dict[str, Any] | None:
     return record if isinstance(record, dict) else None
 
 
+def fates(root: Path, plan: Iterable[str], *, keep: bool) -> list[tuple[str, str]]:
+    """What `make_way` does with each phase it clears, in order, read before
+    it does it: ``"saved"`` in ``previous/<phase>``, ``"unfinished"``
+    (removed with ``keep``, as the analysis did not finish), or
+    ``"removed"`` (without ``keep``). A phase that holds nothing is not
+    cleared and not named."""
+    root = Path(root)
+    planned = [phase for phase in ORDER if phase in set(plan)]
+    if not planned:
+        return []
+    following = ORDER[ORDER.index(planned[0]):]
+    unfinished = (keep and "analysis" in following
+                  and bool(outputs_of(root, "analysis"))
+                  and analysis_finished(root / "analysis") is None)
+    found: list[tuple[str, str]] = []
+    for phase in following:
+        if not outputs_of(root, phase):
+            continue
+        if unfinished and phase in ("analysis", "report"):
+            # Only the analysis and its report: a setup or simulation run
+            # again is saved whatever its analysis did.
+            found.append((phase, "unfinished"))
+        else:
+            found.append((phase, "saved" if keep else "removed"))
+    return found
+
+
 def make_way(root: Path, plan: Iterable[str], *, keep: bool,
              say: Callable[[str], Any] = print) -> list[str]:
     """Clear what ``plan`` will write and what it leaves stale; the phases
@@ -75,33 +102,14 @@ def make_way(root: Path, plan: Iterable[str], *, keep: bool,
     analysis only where it finished: one stopped part-way is removed with
     its report, and what `previous/` holds of them is left as it is, so the
     two saved there stay one analysis and its report. A setup or simulation
-    is saved whatever its analysis did."""
+    is saved whatever its analysis did (`fates`)."""
     root = Path(root)
     planned = [phase for phase in ORDER if phase in set(plan)]
-    if not planned:
-        return []
     cleared: list[str] = []
-    unfinished = (keep and "analysis" in ORDER[ORDER.index(planned[0]):]
-                  and bool(outputs_of(root, "analysis"))
-                  and analysis_finished(root / "analysis") is None)
-    for phase in ORDER[ORDER.index(planned[0]):]:
+    for phase, fate in fates(root, planned, keep=keep):
         found = outputs_of(root, phase)
-        if not found:
-            continue
         record = _drop_from_the_manifest(root, phase)
-        if unfinished and phase in ("analysis", "report"):
-            # Only the analysis and its report: a setup or simulation run
-            # again is saved whatever its analysis did.
-            for path in found:
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
-                    path.unlink()
-            saved = (root / PREVIOUS / phase).exists()
-            done = ("removed, as " + ("it" if phase == "analysis" else "the analysis")
-                    + " did not finish"
-                    + (f"; what {PREVIOUS}/{phase} holds is left as it is" if saved else ""))
-        elif keep:
+        if fate == "saved":
             where = root / PREVIOUS / phase
             if where.exists():
                 shutil.rmtree(where)
@@ -125,6 +133,12 @@ def make_way(root: Path, plan: Iterable[str], *, keep: bool,
                 else:
                     path.unlink()
             done = "removed"
+            if fate == "unfinished":
+                saved = (root / PREVIOUS / phase).exists()
+                done += (", as " + ("it" if phase == "analysis" else "the analysis")
+                         + " did not finish"
+                         + (f"; what {PREVIOUS}/{phase} holds is left as it is"
+                            if saved else ""))
         if phase in planned:
             say(f"{phase}: what it wrote before is {done}.")
         else:
