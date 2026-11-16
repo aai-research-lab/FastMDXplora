@@ -43,6 +43,8 @@ from typing import Any
 
 import numpy as np
 
+from fastmdxplora.analysis.residues import resname_selection
+
 logger = logging.getLogger(__name__)
 
 #: Directions tried on each sphere. Two thousand resolve an open share to
@@ -218,7 +220,7 @@ def _is_ion(residue: Any) -> bool:
 
 
 def _groups(topology: Any, ligand_resname: str, site_selection: str) -> dict[str, np.ndarray]:
-    ligand = topology.select(f"resname {ligand_resname}")
+    ligand = topology.select(resname_selection(ligand_resname))
     heavy_ligand = np.array([i for i in ligand
                              if topology.atom(int(i)).element is not None
                              and topology.atom(int(i)).element.symbol != "H"], dtype=int)
@@ -579,7 +581,7 @@ def check_the_reference(
     # ---- 3 and 4. the path and the orientation --------------------------
     # Only the protein's heavy atoms and the ligand: enough to superpose on
     # and to find backbone, and a tenth of a membrane system's atoms.
-    wanted = (f"(protein and not element H) or resname {ligand_resname}")
+    wanted = (f"(protein and not element H) or {resname_selection(ligand_resname)}")
     bound_index = min(order, key=lambda i: abs(centres[i] - bound_at_nm))
     reference = _load(Path(directories[bound_index]), frames=GEOMETRY_FRAMES,
                       skip=skip, selection=wanted)

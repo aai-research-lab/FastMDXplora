@@ -34,6 +34,23 @@ from typing import Any
 import numpy as np
 
 
+def resname_selection(names: str) -> str:
+    """Build an MDTraj selection for whitespace-separated residue names.
+
+    Parameters
+    ----------
+    names : str
+        One or more residue names, optionally already quoted.
+
+    Returns
+    -------
+    str
+        A selection with each name quoted so MDTraj reads 3GR as a name.
+    """
+    bare = (name.strip("\"'") for name in names.split())
+    return "resname " + " ".join(f'"{name}"' for name in bare)
+
+
 def chain_name(residue: Any) -> str:
     """The chain's deposited ID, or its place among the polymer chains.
 

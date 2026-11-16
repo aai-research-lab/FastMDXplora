@@ -35,13 +35,13 @@ class TestResolveScope:
         assert _resolve_scope("solute", None) == "protein"
 
     def test_solute_with_ligand(self):
-        assert _resolve_scope("solute", "LIG") == "protein or resname LIG"
+        assert _resolve_scope("solute", "LIG") == 'protein or resname "LIG"'
 
     def test_protein(self):
         assert _resolve_scope("protein", "LIG") == "protein"
 
     def test_ligand(self):
-        assert _resolve_scope("ligand", "DRG") == "resname DRG"
+        assert _resolve_scope("ligand", "DRG") == 'resname "DRG"'
 
     def test_all_is_none(self):
         assert _resolve_scope("all", None) is None
@@ -133,6 +133,22 @@ def tiny_traj(tmp_path):
     return str(pdb)
 
 
+@pytest.mark.parametrize("names", ["3GR", '"3GR"', "'3GR'", "LIG 3GR", '"LIG" "3GR"'])
+def test_digit_leading_names_select_every_named_ligand(names):
+    import mdtraj as md
+
+    top = md.Topology()
+    chain = top.add_chain()
+    for name in ("ALA", "LIG", "3GR", "HOH"):
+        top.add_atom("CA", md.element.carbon, top.add_residue(name, chain))
+    wanted = [1, 2] if "LIG" in names else [2]
+    assert top.select(_resolve_scope("ligand", names)).tolist() == wanted
+    assert top.select(_resolve_scope("solute", names)).tolist() == [0, *wanted]
+    from fastmdxplora.analysis.residues import resname_selection
+
+    assert top.select(resname_selection(names)).tolist() == wanted
+
+
 class TestScopeAssignment:
     def _run(self, tiny_traj, tmp_path, **kwargs):
         ao = AnalysisOrchestrator(
@@ -150,7 +166,7 @@ class TestScopeAssignment:
 
     def test_ligand_scope_uses_resname(self, tiny_traj, tmp_path):
         cap = self._run(tiny_traj, tmp_path, scope="solute", ligand_resname="LIG")
-        assert cap["probe_nodefault"] == "protein or resname LIG"
+        assert cap["probe_nodefault"] == 'protein or resname "LIG"'
 
     def test_protein_scope(self, tiny_traj, tmp_path):
         cap = self._run(tiny_traj, tmp_path, scope="protein")

@@ -33,6 +33,7 @@ from typing import Any
 
 import mdtraj as md
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.analysis.base import Analysis, AnalysisResult, carry_wholeness
 from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
 from fastmdxplora.config.schema import ANALYSIS
@@ -87,10 +88,10 @@ def _resolve_scope(scope: str, ligand_resname: str | None) -> str | None:
                 "scope='ligand' requires a ligand to be present, but no "
                 "ligand residue name is known for this run."
             , code="analysis.option.missing_companion")
-        return f"resname {ligand_resname}"
+        return resname_selection(ligand_resname)
     # solute: protein + ligand if present, else protein.
     if ligand_resname:
-        return f"protein or resname {ligand_resname}"
+        return f"protein or {resname_selection(ligand_resname)}"
     return "protein"
 
 

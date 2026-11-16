@@ -26,6 +26,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
@@ -98,7 +99,7 @@ class ProteinLigandHBonds(Analysis):
             Columns ``frame, n_hbonds`` (one row per frame).
         """
         ligand_idx = set(
-            int(i) for i in traj.topology.select(f"resname {self.ligand_resname}")
+            int(i) for i in traj.topology.select(resname_selection(self.ligand_resname))
         )
         if not ligand_idx:
             raise StudyError(

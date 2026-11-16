@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.refusals import StudyError
 from fastmdxplora.refusals import BackendUnavailable
 from fastmdxplora.refusals import MissingResultError
@@ -202,7 +203,7 @@ def the_two_groups(topology: Any, ligand_resname: str,
             "measure from. Give the umbrella block `ligand_name` (or "
             "`ligand_resname`), for example `ligand_name: BEN`."
         , code="simulation.cv.selection_empty")
-    ligand = topology.select(f"resname {ligand_resname}")
+    ligand = topology.select(resname_selection(ligand_resname))
     site = topology.select(site_selection)
     if ligand.size == 0:
         raise StudyError(

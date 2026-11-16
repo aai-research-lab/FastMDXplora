@@ -30,6 +30,8 @@ from typing import Any
 
 import numpy as np
 
+from fastmdxplora.analysis.residues import resname_selection
+
 __all__ = ["BULK_WATER", "GRID_ANGSTROM", "MOST_WATER_FRAMES", "occupancy", "occupancy_file",
            "water_sites_placed"]
 
@@ -131,7 +133,7 @@ def _ligand_map(out: Path, index: dict[str, Any], ligand: str, cutoff: float) ->
     frames, _, fitted = _fitted_frames(out, ligand, cutoff)
     if frames is None:
         return {"ok": False, "reason": f"The map could not be made: {fitted}"}
-    heavy = frames.topology.select(f"resname {ligand} and not element H")
+    heavy = frames.topology.select(f"{resname_selection(ligand)} and not element H")
     if len(heavy) == 0:
         return {"ok": False, "reason": f"There is no {ligand} in the frames."}
     points = [frames.xyz[k, heavy] * 10.0 for k in range(frames.n_frames)]
@@ -158,7 +160,7 @@ def _water_map(out: Path, index: dict[str, Any], ligand: str, cutoff: float) -> 
     frames, pocket, fitted = _fitted_frames(out, ligand, cutoff)
     if frames is None:
         return {"ok": False, "reason": f"The map could not be made: {fitted}"}
-    heavy = frames.topology.select(f"resname {ligand} and not element H")
+    heavy = frames.topology.select(f"{resname_selection(ligand)} and not element H")
     whole = topology_quietly(source["topology"])
     waters = np.array([atom.index for atom in whole.atoms
                        if atom.residue.name.upper() in WATER_RESIDUES
