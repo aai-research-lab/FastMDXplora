@@ -348,6 +348,7 @@ A few you are likely to meet, and what each means.
 | `environment.budget.exhausted` | An [Agent](agent.md) study was priced above its `--budget-hours` |
 | `analysis.unknown` | An analysis name that does not exist. The message names the nearest match and the full list |
 | `analysis.option.inapplicable` | A per-analysis option that analysis does not take |
+| `analysis.selection.atoms_differ` | `dimred.comparison` was given a target whose selected atoms are not the reference's: another atom, element, residue, residue number or chain, another order, or two atoms of one name. The ensemble is named; a mutation is compared with a selection that leaves the changed residues out (see [Analyses](analyses.md#compare-ensembles-on-one-pca-basis)) |
 | `analysis.data.absent` | The trajectory or prepared system named is not there. Every candidate path is listed |
 | `simulation.resume.segment_named_twice` | Two segment folders of one study read as the same number (`segment-1` and `segment-001`). Both are named |
 | `analysis.data.not_this_system` | The prepared system where a run's record points is not the one it simulated (its `system.xml` differs). Both paths are named |

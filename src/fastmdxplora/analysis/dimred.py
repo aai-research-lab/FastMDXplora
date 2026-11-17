@@ -102,8 +102,9 @@ class DimRed(Analysis):
         many frames were projected, from where, and whether the equilibration
         is among them is recorded under ``findings.frames`` either way.
     comparison : dict or None, default None
-        Optional one-to-three-target comparison on the loaded trajectory's
-        reference PCA basis; it reports empirical occupancy, not free energy.
+        One to three target trajectories projected onto the PCA basis fitted
+        on the loaded trajectory, its reference, and histogrammed with it on
+        one grid as -ln P in kT (:mod:`fastmdxplora.analysis.common_landscapes`).
     selection : str, optional
         MDTraj atom selection used to flatten coordinates. Defaults to
         ``"protein and name CA"`` (CA-only is a standard featurization for protein

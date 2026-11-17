@@ -807,6 +807,12 @@ CODES: tuple[Code, ...] = (
          "A selection matched a number of atoms the analysis cannot use.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("expression", "expected", "found")),
+    Code("analysis.selection.atoms_differ",
+         "The atoms one selection picks in two systems are not the same atoms, "
+         "named and ordered alike, or two of them carry the same name, so their "
+         "coordinates cannot be matched onto one basis.",
+         Kind.SEMANTIC, Disclosure.FIELD_ONLY, since="2.6.2",
+         detail_keys=("expression", "ensemble")),
     Code("analysis.trajectory.unreadable",
          "The trajectory or topology could not be loaded.",
          Kind.ENVIRONMENTAL, Disclosure.ACTION,

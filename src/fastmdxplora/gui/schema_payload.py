@@ -325,6 +325,10 @@ def _analysis_options() -> dict[str, Any]:
         # than offering none: it looks as though it worked.
         if not getattr(get_analysis_class(name), "honours_selection", True):
             options = tuple(o for o in options if o.name != "selection")
+        # A mapping of other files (`dimred`'s `comparison`) is written in
+        # the Config, where the checks on the files it names read it; one
+        # box cannot hold it.
+        options = tuple(o for o in options if not config_only(o))
         explanations[name] = explain_analysis(name)
         categories[name] = of_group.get(name, "Other")
         cls = get_analysis_class(name)
@@ -402,6 +406,11 @@ def _checks() -> list[str]:
     from fastmdxplora.report.convergence import CHECKS
 
     return [said for _key, said, _short in CHECKS]
+
+
+def config_only(option: Any) -> bool:
+    """Whether an analysis option is a mapping, set in the Config alone."""
+    return str(option.type_text or "").startswith("dict")
 
 
 def schema_payload(defaults: Any = None) -> dict[str, Any]:

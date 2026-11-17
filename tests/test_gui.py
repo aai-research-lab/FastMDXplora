@@ -2302,12 +2302,16 @@ class TestASettingShowsWhatItWillDo:
             # `image_check.cutoff_nm` is the run's own real-space cutoff,
             # read from its setup record, as `r_max` is the box's: no
             # literal can state it.
+            # `dimred.comparison` names other trajectories to compare with:
+            # files of other studies, which no literal can name, and off
+            # unless a study names them.
             and o.name not in {"ligand_resname", "ligand_net_charge",
                                "ligand_chemistry", "structure", "state_csv",
                                "r_max", "reference", "reference_exclude"}
             and f"{name}.{o.name}" not in {"pair_distance.selection_a",
                                            "pair_distance.selection_b",
-                                           "image_check.cutoff_nm"}
+                                           "image_check.cutoff_nm",
+                                           "dimred.comparison"}
         }
         assert not silent, f"these cannot say what they would do: {sorted(silent)}"
 

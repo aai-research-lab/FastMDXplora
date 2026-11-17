@@ -77,13 +77,9 @@ analysis:
             temperature_K: 300
             sampling: unknown
 """, encoding="utf-8")
-    executable = Path(sys.executable).with_name("fastmdx.exe")
-    completed = subprocess.run([str(executable), "analyze", "--config", str(config)],
-                               cwd=tmp_path, text=True, capture_output=True, check=False,
-                               env=os.environ.copy())
-    if os.name == "nt" and completed.returncode and "os.fchmod" in completed.stderr:
-        pytest.skip("native Windows os.fchmod crash precedes analysis; "
-                    "diagnostic route is recorded separately")
+    completed = subprocess.run(
+        [sys.executable, "-m", "fastmdxplora.cli.main", "analyze", "--config", str(config)],
+        cwd=tmp_path, text=True, capture_output=True, check=False, env=os.environ.copy())
     assert completed.returncode == 0, completed.stdout + completed.stderr
     root = tmp_path / "common-study"
     comparison = root / "analysis" / "dimred" / "common_pca_landscapes.png"
@@ -139,3 +135,13 @@ def test_nested_comparison_paths_keep_existing_confinement_and_gathering():
                 gather_inputs(config, root)
         finally:
             outside.unlink(missing_ok=True)
+
+
+def test_the_gui_form_offers_no_box_for_the_comparison_mapping():
+    """A mapping of other files is set in the Config, where the checks on
+    the files it names read it; the form offers dimred's other options."""
+    from fastmdxplora.gui.schema_payload import _analysis_options
+
+    shown = {option["name"] for option in _analysis_options()["analyses"]["dimred"]}
+    assert "comparison" not in shown
+    assert {"methods", "landscape_bins"} <= shown

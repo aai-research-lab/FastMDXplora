@@ -138,7 +138,11 @@ def test_rigidly_aligned_shift_and_union_edges_are_written(tmp_path, monkeypatch
         assert np.allclose(grids["probability"].sum(axis=(1, 2)), 1)
         area = np.outer(np.diff(grids["edges_pc1"]), np.diff(grids["edges_pc2"]))
         assert np.allclose((grids["density"] * area).sum(axis=(1, 2)), 1)
-        assert grids["unit"] == "dimensionless"
+        assert grids["unit"] == "kT"
+        assert grids["bins"] == 12
+        occupied = grids["counts"] > 0
+        assert np.isnan(grids["minus_ln_p"][~occupied]).all()
+        assert np.isfinite(grids["minus_ln_p"][occupied]).all()
         assert all(grids[name].dtype.kind != "O" for name in grids.files)
         for points, counts in zip(analysis.result["projections"], grids["counts"]):
             histogram, _, _ = np.histogram2d(
@@ -151,8 +155,9 @@ def test_rigidly_aligned_shift_and_union_edges_are_written(tmp_path, monkeypatch
     assert "different user-declared temperatures" in str(
         analysis.findings["comparison"]["qualifications"])
     assert "biased occupancy" in str(analysis.findings["comparison"]["qualifications"]).lower()
-    assert any("Reduced empirical occupancy landscape (dimensionless)" in text
-               for text in figure_text)
+    assert "-ln P (kT), each panel's lowest bin at 0" in figure_text
+    ratio = analysis.findings["comparison"]["variance_explained"]
+    assert f"PC 1 ({ratio[0] * 100:.1f}% of reference variance), nm" in figure_text
     assert any("equilibrium and convergence are not established" in text.lower()
                for text in figure_text)
     assert analysis.findings["comparison"]["histogrammed_frames"] == [14, 14]
@@ -223,8 +228,9 @@ def test_selected_atom_identity_mismatches_are_refused(tmp_path, change):
         short = md.Trajectory(loaded.xyz[:, 1:].copy(), md.load_topology(str(changed_top)))
         trajectory = folder / "short.dcd"
         short.save_dcd(str(trajectory))
-    with pytest.raises(StudyError, match="identit"):
+    with pytest.raises(StudyError, match="identit") as refused:
         _analysis(trajectory, changed_top).compute(reference)
+    assert refused.value.code == "analysis.selection.atoms_differ"
 
 
 def test_a_mutated_residue_can_be_excluded_by_the_shared_selection(tmp_path):
@@ -315,7 +321,7 @@ def test_low_room_refuses_before_the_target_trajectory_is_loaded(tmp_path, monke
     monkeypatch.setattr(common, "load_trajectory",
                         lambda *args, **kwargs: pytest.fail("target allocated before refusal"))
 
-    with pytest.raises(StudyError, match="above the 1-byte"):
+    with pytest.raises(StudyError, match="takes about"):
         _analysis(trajectory, topology).compute(reference)
     monkeypatch.setattr(cluster, "memory_available", lambda: (10**9, "test"))
     monkeypatch.setattr(cluster, "resident_room", lambda *_: (10**9, "test"))
@@ -347,11 +353,16 @@ def test_memory_estimate_includes_previously_retained_projections(tmp_path, monk
     monkeypatch.setattr(cluster, "address_room", lambda *_: (10**9, "test"))
     estimate = common._memory_preflight(reference, 1, 8, 8, 12, "target", analysis,
                                         retained_frames=reference.n_frames)
-    monkeypatch.setattr(cluster, "resident_room",
-                        lambda *_: (estimate["estimate_bytes"] + 5000, "test"))
-    with pytest.raises(StudyError, match="above the"):
+    # Planned on in three quarters of the resident room, as dimred's are.
+    room = int(estimate["bytes_needed"] / cluster.MEMORY_SHARE) + 1000
+    monkeypatch.setattr(cluster, "resident_room", lambda *_: (room, "test"))
+    common._memory_preflight(reference, 1, 8, 8, 12, "target", analysis,
+                             retained_frames=reference.n_frames)
+    with pytest.raises(StudyError, match="takes about") as refused:
         common._memory_preflight(reference, 1, 8, 8, 12, "target", analysis,
                                  retained_frames=1000)
+    assert refused.value.code == "analysis.memory.matrix_too_large"
+    assert refused.value.refusal.details["bytes_available"] == room
 
 
 @pytest.mark.parametrize("extension", ["dcd", "xtc"])
@@ -418,17 +429,17 @@ def test_sliced_target_refuses_low_room_before_any_full_load(tmp_path, monkeypat
     }])
     monkeypatch.setattr(cluster, "memory_available", lambda: (10**9, "test"))
     monkeypatch.setattr(cluster, "resident_room", lambda *_: (10**9, "test"))
-    monkeypatch.setattr(cluster, "address_room", lambda *_: (10**9, "test"))
+    monkeypatch.setattr(cluster, "address_room", lambda *_: (None, "test"))
     preflight = common._memory_preflight
-    ref_need = preflight(reference, 14, 8, 8, 12, "reference", analysis)["estimate_bytes"]
+    ref_need = preflight(reference, 14, 8, 8, 12, "reference", analysis)["bytes_needed"]
     old_need = preflight(reference, 5, 8, 8, 12, "bound", analysis,
-                         retained_frames=19)["estimate_bytes"]
+                         retained_frames=19)["bytes_needed"]
     full_need = preflight(reference, 1000, 8, 8, 12, "bound", analysis,
-                          retained_frames=19)["estimate_bytes"]
-    room = max(ref_need, old_need) + 1
-    assert ref_need < room and old_need < room < full_need
+                          retained_frames=19)["bytes_needed"]
+    room = int(max(ref_need, old_need) / cluster.MEMORY_SHARE) + 2
+    planned = cluster.MEMORY_SHARE * room
+    assert ref_need < planned and old_need < planned < full_need
     monkeypatch.setattr(cluster, "resident_room", lambda *_: (room, "test"))
-    monkeypatch.setattr(cluster, "address_room", lambda *_: (room, "test"))
     passed, loads = [], []
     load = md.load
 
@@ -443,7 +454,7 @@ def test_sliced_target_refuses_low_room_before_any_full_load(tmp_path, monkeypat
 
     monkeypatch.setattr(common, "_memory_preflight", inspect_preflight)
     monkeypatch.setattr(md, "load", inspect_load)
-    with pytest.raises(StudyError, match="target 'bound'.*above the"):
+    with pytest.raises(StudyError, match="'bound' loaded .1,000 frames. takes about"):
         analysis.compute(reference)
     print(f"{extension}: reference={ref_need}, old={old_need}, room={room}, "
           f"full={full_need}, passed={passed}, md.load calls={loads}")
@@ -617,7 +628,7 @@ def test_a_late_write_failure_after_a_good_run_leaves_no_comparison_outputs(
     assert "comparison" not in record["findings"]
 
 
-def test_a_figure_failure_keeps_complete_numbers_and_no_old_figure(tmp_path, monkeypatch):
+def test_a_figure_failure_saves_complete_numbers_and_no_old_figure(tmp_path, monkeypatch):
     import fastmdxplora.analysis.common_landscapes as common
 
     reference, trajectory, topology = _files(tmp_path)

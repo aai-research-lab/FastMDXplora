@@ -303,13 +303,13 @@ biased ensemble, and the record says that too.
 
 ### Compare ensembles on one PCA basis
 
-For an explicit conformational comparison, add `comparison` under
-`analysis.options.dimred` and include only `dimred` in the analysis plan. The
-reference is the trajectory already named by `analysis.trajectory`; `targets`
-names one to three additional single-file trajectories and their topologies.
-A target must be in a format whose frames can be counted without loading it,
-such as XTC, TRR, DCD or NetCDF; GRO and LAMMPSTRJ targets are refused before
-loading, so convert them first.
+To compare the shapes several simulations sample, add `comparison` under
+`analysis.options.dimred`, with `methods: [pca]`, `n_components: 2` and `start`
+left at 0. The reference is the trajectory `analysis.trajectory` names;
+`targets` names one to three more, each one trajectory file and its topology,
+with an optional `first`, `last` and `stride`, and each ensemble an optional
+`temperature_K` and `sampling`. The other `dimred` figures are not made in a
+comparison run.
 For example:
 
 ```yaml
@@ -330,32 +330,59 @@ analysis:
              first: 0, stride: 1, temperature_K: 300, sampling: unknown}
 ```
 
-Run it with `fastmdx analyze --config common.yml`. The selected atoms must have
-at least three unique, exactly matching ordered identities in every topology;
-atom reordering, chain mapping and residue-number mapping are refused. A
-mutation can be compared only when the shared selection excludes changed
-residues and all remaining identities match. Each frame is aligned to the
-reference's first retained frame. PCA is fitted once to the reference, and
-target coordinates are projected with that same training mean and basis.
-Every retained frame is kept, and all ensembles use histogram edges spanning
-their combined projected ranges.
+Run it with `fastmdx analyze --config common.yml`.
 
-The figure and `common_pca_landscapes.npz` show **reduced empirical occupancy**
-on the displayed reference PC1/PC2 subspace. They are not free energies,
-convergence or significance tests, equilibrium probabilities, kinetics, or
-binding results. Each panel is -ln of its own density (its counts over its own
-frames times bin area), shifted so that its own lowest occupied bin is zero:
-the panels share a grid and a colour range, not an absolute zero, and the
-record says so under `landscape_convention`. Target motion outside the first
-two reference components is not displayed. Temperature and sampling labels are user-supplied; different
-temperatures are identified, biased occupancy is not reweighted, and every
-comparison says equilibrium and convergence were not established. Model,
-projection and grid provenance are saved as `common_pca_model.npz`,
+**The same atoms.** The selection must pick at least three atoms, and the
+same atoms in every topology: the same chain, residue, residue number, atom
+name and element, in the same order. A target whose selected atoms differ is
+refused (`analysis.selection.atoms_differ`): atoms are not reordered, and
+chains and residue numbers are not mapped. A mutant is compared with a
+selection that leaves the changed residues out.
+
+**One alignment and one basis.** Every frame of every ensemble is superposed
+on the reference's first frame, on those atoms. PCA is fitted on the reference
+alone, mean-centred on the reference's mean, and each target is projected
+with that mean and those two components. The reference, not the pooled
+frames, sets the basis so that a target's coordinates do not depend on which
+other targets, or how many of their frames, are compared beside it. The
+record (`findings.comparison`) says so under `basis`, with the share of the
+reference's variance each component holds (`variance_explained`, also on the
+figure's axes), each ensemble's variance on PC 1 and PC 2
+(`variance_on_pcs_nm2`) and the share of its own variance those two hold
+(`share_of_own_variance_on_pcs`): a target whose motion lies off the
+reference's two components has a small share, and the figure does not show
+that motion.
+
+**One grid.** Every retained frame is projected, and the histogram's
+`landscape_bins` x `landscape_bins` edges span the projections of every
+ensemble. Each panel is -ln P of its own ensemble in kT, at that ensemble's own
+temperature: its counts over its own frames times the bin area, shifted so its
+own lowest occupied bin is 0. Panels share the grid and the colour range, not
+a common zero. A bin no frame visited has no value (NaN, left blank), never a
+finite one. The counts, densities and -ln P of each ensemble, the edges, and
+how many bins each occupies are saved; it is the landscape of each ensemble as
+sampled, and a free energy only where that sampling is at equilibrium. The
+temperature and `sampling` (unknown, unbiased or biased) of each ensemble are
+what the config says; different temperatures are named, a biased ensemble is
+not reweighted, and every comparison says equilibrium and convergence were
+not established.
+
+**Memory.** Before each target is loaded its frame count is read from the
+file, and the comparison with every frame of it loaded (at its `stride`, the
+frames before `first` included) is planned on as the other projections are:
+in three quarters of the memory this process can take, and under `ulimit -v`
+in the address space left once the libraries are mapped. Where it does not
+fit it is refused (`analysis.memory.matrix_too_large`) before the target is
+loaded. A target in a format whose frames cannot be counted without loading
+it (GRO, LAMMPSTRJ) is refused; convert it to XTC, TRR, DCD or NetCDF.
+
+The model, the projections and the grids are saved as `common_pca_model.npz`,
 `common_pca_projections.dat` and `common_pca_landscapes.npz` in
-`analysis/dimred/`. Target source-frame indices follow their recorded
-`first`/`last`/`stride`; reference retained-frame indices are available, but
-their original indices are marked unknown because the orchestrator does not
-pass its load selection into DimRed before writing the comparison.
+`analysis/dimred/`, with the figure `common_pca_landscapes.png`. A target's
+source frames follow its `first`, `last` (both counted in frames read at its
+`stride`) and `stride`; the reference's frames are numbered as retained, and
+their source frames are recorded as unknown, as the analysis is not told how
+the reference was loaded.
 
 The equivalent Python API takes an already loaded reference trajectory:
 

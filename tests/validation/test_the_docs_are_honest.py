@@ -233,15 +233,19 @@ class TestTheGuiPageCountsWhatThereIs:
         options than the analyses declare."""
         from fastmdxplora.analysis.describe import describe_analysis
         from fastmdxplora.analysis.orchestrator import get_analysis_class
+        from fastmdxplora.gui.schema_payload import config_only
 
         total = sum(len(describe_analysis(name)) for name in _REGISTRY)
         ignored = sum(
             1 for name in _REGISTRY
             if not getattr(get_analysis_class(name), "honours_selection", True)
             and any(o.name == "selection" for o in describe_analysis(name)))
+        mappings = sum(config_only(o) for name in _REGISTRY for o in describe_analysis(name))
+        assert mappings == 1
         page = " ".join(self._page().split())
-        assert (f"the `selection` that {ignored} of them ignore, "
-                f"so {total - ignored} shown") in page
+        assert (f"the `selection` that {ignored} of them ignore and `dimred`'s "
+                f"`comparison`, a mapping of other trajectories set in the Config, "
+                f"so {total - ignored - mappings} shown") in page
 
     def test_the_settings_count_is_the_real_one(self) -> None:
         """Every setting the form carries: the four phases, the top-level
