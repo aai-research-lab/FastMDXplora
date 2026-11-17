@@ -93,17 +93,43 @@ def test_a_study_made_to_run_no_simulation_adds_no_barostat(tmp_path: Path, sele
                      options={"setup": {"nonbonded_method": "NoCutoff"}})
 
 
-def test_a_simulation_on_a_system_with_no_box_is_still_refused(tmp_path: Path) -> None:
+def _prepared(folder: Path, method: str) -> Path:
+    import json
+
+    folder.mkdir(parents=True, exist_ok=True)
+    for name in ("system.xml", "state.xml", "topology.pdb"):
+        (folder / name).write_text("", encoding="utf-8")
+    (folder / "setup_parameters.json").write_text(
+        json.dumps({"parameters": {"nonbonded_method": method}}), encoding="utf-8")
+    return folder
+
+
+def test_a_simulation_is_judged_by_the_system_it_runs(tmp_path: Path) -> None:
+    """`simulate()` takes its own keywords, not the study's options: it was
+    checked against `options["setup"]` whatever system setup had prepared."""
     from fastmdxplora import FastMDXplora
 
     study = FastMDXplora("1UBQ", output_dir=str(tmp_path / "study"),
                          options={"setup": {"nonbonded_method": "NoCutoff"},
                                   "simulation": {"ensemble": "nvt", "npt_duration_ns": 0}})
+    # Nothing prepared yet: the setup this study was given.
     with pytest.raises(ConfigError, match="no periodic box"):
         study._validated("simulation", {"npt_duration_ns": 1})
     with pytest.raises(ConfigError, match="no periodic box"):
         study._validated("simulation", {})
     study._validated("simulation", {"ensemble": "nvt", "npt_duration_ns": 0})
+    # `.setup()` with PME prepared a periodic system.
+    _prepared(tmp_path / "study" / "setup", "PME")
+    assert study._validated("simulation", {}) == {}
+
+    other = FastMDXplora("1UBQ", output_dir=str(tmp_path / "other"))
+    _prepared(tmp_path / "other" / "setup", "NoCutoff")
+    with pytest.raises(ConfigError, match="no periodic box"):
+        other._validated("simulation", {})
+    other._validated("simulation", {"ensemble": "nvt", "npt_duration_ns": 0})
+    # And where `setup_from` points, not this study's own.
+    with pytest.raises(ConfigError, match="no periodic box"):
+        study._validated("simulation", {"setup_from": str(tmp_path / "other")})
 
 
 def test_the_cli_still_refuses_a_study_with_no_box_and_a_barostat(tmp_path: Path, capsys) -> None:

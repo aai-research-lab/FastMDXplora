@@ -951,10 +951,12 @@ class FastMDXplora:
 
         Checked as a study that runs this phase alone, so what holds between
         phases is asked only of the phases that run: setup on its own adds no
-        barostat. A simulation is checked with the setup settings this study
-        was given, which built the system it runs.
+        barostat. A simulation is checked against the system it will run: the
+        nonbonded method its setup recorded, in this study's ``setup/`` or
+        where ``setup_from`` points, and only where nothing is prepared yet,
+        the setup settings this study was given.
         """
-        setup = self.options.get("setup") if phase == "simulation" else None
+        setup = self._setup_simulated(settings) if phase == "simulation" else None
         if settings or setup:
             from fastmdxplora.config.loader import validate_config
 
@@ -964,6 +966,32 @@ class FastMDXplora:
                 data["setup"] = dict(setup)
             validate_config(data, require_systems=True)
         return settings
+
+    def _setup_simulated(self, settings: dict[str, Any]) -> dict[str, Any] | None:
+        """The setup settings that built the system a simulation would run.
+
+        `setup()` and `simulate()` each take their own keywords, not this
+        study's options: a system prepared with PME was refused a barostat
+        for an option that said NoCutoff, and one prepared with NoCutoff was
+        not. Read from the record setup wrote beside the system.
+        """
+        import json
+
+        from fastmdxplora.simulation.pipeline import _where_the_system_was_prepared
+
+        named = settings.get("setup_from") or settings.get("prepared_from")
+        if not named and getattr(self, "output_dir", None) is None:
+            return self.options.get("setup")
+        where, _ = _where_the_system_was_prepared(self, named)
+        try:
+            record = json.loads((where / "setup_parameters.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            record = None
+        parameters = record.get("parameters") if isinstance(record, dict) else None
+        method = parameters.get("nonbonded_method") if isinstance(parameters, dict) else None
+        if method:
+            return {"nonbonded_method": str(method)}
+        return self.options.get("setup")
 
     def compare(self, *, output_dir: str | os.PathLike | None = None) -> Path | None:
         """(Re)build the cross-run comparison report for a multi-run study.
