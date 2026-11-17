@@ -165,6 +165,8 @@ when asked exits 130, not 1; and a run whose named analysis failed exits 1.
 
 ### Behaviour changes
 
+- B-factor comparisons now use the first CA conformer record in the first PDB
+  model, matching the conformer MDTraj loads even when it is labelled B or C.
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried

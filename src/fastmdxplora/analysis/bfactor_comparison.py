@@ -59,22 +59,41 @@ def bfactors_from_pdb(path: str | Path) -> dict[tuple[str, int, str], float]:
     and keyed by number alone the second overwrote the first. The chain ID
     is part of it because it names the chain: setup writes the IDs it read,
     and a run of chain B alone is compared with chain B.
+
+    MDTraj loads the first CA record for a residue, whatever its alternate-
+    location label or occupancy. Only the first PDB model defines that
+    topology, so later models do not replace its B-factors.
     """
     out: dict[tuple[str, int, str], float] = {}
+    seen: set[tuple[str, int, str]] = set()
+    saw_model = False
     for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("MODEL "):
+            if saw_model:
+                break
+            saw_model = True
+            out.clear()
+            seen.clear()
+            continue
+        if line.startswith("ENDMDL") and saw_model:
+            break
         if not line.startswith("ATOM"):
             continue
         if line[12:16].strip() != "CA":
             continue
-        altloc = line[16]
-        if altloc not in (" ", "A"):
-            continue
         try:
             resseq = int(line[22:26])
+        except ValueError:
+            continue
+        key = (line[21:22].strip(), resseq, line[26:27].strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
             value = float(line[60:66])
         except ValueError:
             continue
-        out[(line[21:22].strip(), resseq, line[26:27].strip())] = value
+        out[key] = value
     return out
 
 
