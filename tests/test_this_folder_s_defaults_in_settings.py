@@ -69,6 +69,16 @@ def test_the_route_reads_and_writes_the_workspace_s_file(tmp_path):
     assert said["values"] == {"simulation.temperature_K": 310}
 
 
+@pytest.mark.parametrize("body", [{}, {"unset": 7}, {"unset": ["simulation.temperature_K"]},
+                                  {"why": {"simulation.temperature_K": "warm"}}])
+def test_a_change_of_nothing_writes_no_file(tmp_path, body):
+    """`{"unset": 7}` or an empty body wrote `{}` into a file that was not there."""
+    study = _study(tmp_path / "person" / "study")
+    status, said = _ask(study, None, "POST", body)
+    assert status == 200 and said["ok"] is not False and not said["exists"]
+    assert not (study.parent / "fastmdx-defaults.yml").exists()
+
+
 def test_a_service_s_guests_neither_read_nor_write_it(tmp_path):
     from fastmdxplora.gui.hosting import Hosting
 

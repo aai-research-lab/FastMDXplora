@@ -154,6 +154,10 @@ def defaults_changed(root: str | Path, body: Any) -> dict[str, Any]:
     whys = asked.get("why") if isinstance(asked.get("why"), dict) else {}
     path = _where(Path(root))
     with _WRITING:
+        # Nothing to change: no file is written, nor created empty. Without a
+        # file, a setting taken back or a reason for one is in none.
+        if not given and (not (unset or whys) or not path.is_file()):
+            return defaults_said(root)
         try:
             if path.is_file() and has_comments(path.read_text(encoding="utf-8")):
                 said = defaults_said(root)
