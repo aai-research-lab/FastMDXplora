@@ -113,7 +113,7 @@
   function told(analysis, chosen) {
     var several = offered.several && analysis.runs > 1;
     var where = several ? "each of this study's " + analysis.runs + " runs" : "this study";
-    var lines = ["Analyse " + where + " again from its records, with the " +
+    var lines = ["Analyze " + where + " again from its records, with the " +
                  (chosen === 1 ? "analysis" : chosen + " analyses") + " ticked. " +
                  "Nothing is simulated."];
     if (analysis.report_too) {
@@ -157,7 +157,7 @@
     if (!box || !analysis) return;
     askedFrom = document.activeElement;
     if (!analysis.can) {
-      say(analysis.why || "This study cannot be analysed again here.", analysis.terminal);
+      say(analysis.why || "This study cannot be analyzed again here.", analysis.terminal);
       return;
     }
     box.innerHTML = "";
@@ -246,7 +246,7 @@
     }).then(function (res) { return res.json(); }).then(function (d) {
       if (d && d.ok) {
         started = (d.state && d.state.started_at) || "";
-        say("Analysing again. Its log is in the side panel, and the analyses appear " +
+        say("Analyzing again. Its log is in the side panel, and the analyses appear " +
             "here as they are written.");
       } else {
         say((d && d.error) || "Could not start it.");
@@ -279,7 +279,7 @@
       offered = data;
       var only = queued || named;
       queued = null;
-      if (!data || !data.available) { say((data && data.why) || "Nothing is open to analyse."); return; }
+      if (!data || !data.available) { say((data && data.why) || "Nothing is open to analyze."); return; }
       ask(only);
     });
   }
@@ -299,8 +299,8 @@
     button.hidden = !app.active_run || document.body.dataset.beyondLoopback === "true";
     button.disabled = running;
     button.title = running
-      ? "A run is going. The study can be analysed again once it ends."
-      : "Analyse this study's frames again, with the analyses you choose, simulating nothing";
+      ? "A run is going. The study can be analyzed again once it ends."
+      : "Analyze this study's frames again, with the analyses you choose, simulating nothing";
     // Each analysis's own (analysis-cells.js), on the same state.
     Array.prototype.forEach.call(document.querySelectorAll(".cell-again"), function (cell) {
       cell.hidden = button.hidden;
@@ -313,7 +313,7 @@
     if (app.again_round) {
       // Done over a round left unfinished: said so, with that round and
       // the command that carries it on, as the terminal says it.
-      say("Analysed again. " + app.again_round.said, app.again_round.terminal);
+      say("Analyzed again. " + app.again_round.said, app.again_round.terminal);
       return;
     }
     if (app.returncode !== 0 || app.error) {
@@ -326,7 +326,7 @@
     // previous/ only what is saved there, an analysis that did not finish
     // said removed.
     var done = (offered && offered.analysis && offered.analysis.done_said) || "";
-    say("Analysed again." + (done ? " " + done : ""));
+    say("Analyzed again." + (done ? " " + done : ""));
   }
 
   document.addEventListener("DOMContentLoaded", function () {

@@ -135,8 +135,7 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
   with its report and not saved, is said removed, in the dialog, its end,
   the Agent's question and an AI app's `run_phases_again`. A run of a study
   of several left out reads "Run b is left out: it has no trajectory to
-  analyse.", and the dialog's prose says "analyse" as the rest of the GUI
-  does. A plan that fails names its file from the study's folder, not by
+  analyse." A plan that fails names its file from the study's folder, not by
   the server's path to it, the longer of the two stripped first.
 
 ### Added
