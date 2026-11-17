@@ -546,7 +546,9 @@ def continuation_of(parent: str | Path, *, total_ns: float | None = None,
         # continued" here sent the Agent to offer a fresh run of the same
         # molecule instead of the hundred picoseconds that were asked for.
         asked = total_ns is not None or more_ns is not None
-        if (not asked and from_segment is None and done_ns <= 0
+        # The study's own checkpoint, named or not: the Agent asks from the
+        # last segment, which is the study itself until it is extended.
+        if (not asked and source == root and done_ns <= 0
                 and _ran_no_production(root)):
             # Not offered an extension, which `extension_of` refuses.
             return Continuation(parent=str(root), checkpoint=str(checkpoint),

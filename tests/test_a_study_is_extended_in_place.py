@@ -580,3 +580,16 @@ def test_the_agent_is_not_offered_an_extension_that_would_be_refused() -> None:
     assert "--simulate-resume-from" not in said
     finished = continuation_of(_study()).refusal
     assert "it can still be extended past it" in finished
+
+
+def test_the_agent_s_summary_offers_no_extension_that_would_be_refused() -> None:
+    """The Agent's summary asks from the last segment, the study itself
+    here, and was still offered the extension past the plan."""
+    from fastmdxplora.gui.agent_panel import _continuation_summary
+
+    root = _study(done_steps=0, duration=0.0)
+    (root / "simulation" / "production.dcd").unlink()
+    said = _continuation_summary(root)
+    assert "ran no production of its own" in said
+    assert "--simulate-resume-from" not in said
+    assert "it can still be extended past it" in _continuation_summary(_study())
