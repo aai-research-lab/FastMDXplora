@@ -363,11 +363,16 @@ class Hosting:
 
 #: Where a path ends after the workspace's name: at `/`, the end of the
 #: text or of a line, a mark that closes or punctuates a sentence (`.`, `,`,
-#: `;`, `:`, `!` and `?` only where no name goes on after them), or a space
-#: not followed by a word that goes on as a path. Anything else (a letter, a
-#: digit, `-`, `.bak`, `(1)`, ` copy/x`) goes on to name another folder.
-_WHERE_A_PATH_ENDS = (r"(?=/|$|[\r\n]|[.,;:!?](?![\w\-])|[\"'`)\]}<>*]"
-                      r"|[^\S\r\n](?!\w\S*/))")
+#: `;`, `:`, `!` and `?` only where no name goes on after them; a closing
+#: quote, curly or not, `\u2026`, `\u3002`, `|` and `&` wherever), or a
+#: space not followed by a folder name that goes on as a path. Anything else
+#: (a letter, a digit, `-`, `.bak`, `(1)`, ` copy/x`) goes on to name
+#: another folder, as do the words a copy of a folder is named with before
+#: its `/`: ` (1)/x`, ` copy 2/x`, ` - Copy/x`.
+_WHERE_A_PATH_ENDS = (r"(?=/|$|[\r\n]|[.,;:!?](?![\w\-])"
+                      "|[\"'`)\\]}<>*\u2019\u201d\u00bb\u2026\u3002|&]"
+                      r"|[^\S\r\n](?!(?:(?:-|\d+|\(\d+\)|(?i:copy))[^\S\r\n])*"
+                      r"(?:\w|\(\d+\))\S*/))")
 
 #: Where a path to the workspace begins: not inside a longer name or path
 #: (`/other/srv/ws` is a folder of `/other`).
@@ -413,15 +418,16 @@ class StreamedScrub:
         end = self._word_end(cut)
         if end is None:
             return ""
-        # What decides the last path before the cut: whether the word after
-        # it goes on as a path, once scrubbed as the whole text is. That word
-        # is whole; whether it is rewritten may still turn on the word after
-        # it, so it is scrubbed both ways, and sent only if both agree.
+        # What decides the last path before the cut: whether the words after
+        # it go on as a path, once scrubbed as the whole text is. The word at
+        # the cut is whole; what comes after it may still go on as a path or
+        # not (`- Copy/x`), so it is scrubbed both ways, and sent only if both
+        # agree.
         scrub = self._hosting._scrub_text
         word = self._raw[cut:end]
         gap = self._raw[end]
         agreed = {scrub(self._raw[:end] + gap + after)[:-len(scrub(word + gap + after))]
-                  for after in ("-", "a/")}
+                  for after in (".", "a/")}
         if len(agreed) != 1:
             return ""
         return self._new(agreed.pop())

@@ -280,6 +280,7 @@ class TestNoPathOnTheServerIsShown:
     def test_a_folder_beside_the_workspace_is_not_read_as_in_it(self, hosting) -> None:
         root = str(hosting.workspace)
         assert hosting.scrub(f"{root} is not a study.") == "~ is not a study."
+        assert hosting.scrub(f"\u201c{root}\u201d") == "\u201c~\u201d"
         assert hosting.scrub(f"see {root}.") == "see ~."
         assert hosting.scrub({f"{root}/a": 1}) == {"~/a": 1}
         for beside in (f"{root}2/x", f"{root}.yml", f"{root}-old"):
@@ -289,6 +290,9 @@ class TestNoPathOnTheServerIsShown:
         ("", True), ("/", True), ("/x", True), (" is not a study.", True), (".", True),
         (": no such file", True), (" copy", True), ("`", True), ("\nnext/line", True),
         (" copy/x", False), ("-old", False), (".bak", False), ("2", False), ("(1)", False),
+        ("\u201d", True), ("\u2019s", True), ("\u00bb", True), ("\u2026", True),
+        ("\u3002", True), ("|x", True), ("&x", True), (" (1)", True), (" copy 2", True),
+        (" (1)/x", False), (" copy 2/x", False), (" - Copy/x", False),
     ])
     def test_a_path_ends_where_no_folder_name_goes_on(self, hosting, after, rewritten) -> None:
         """`/srv/ws copy/x` was rewritten as `~ copy/x`: a space let the
@@ -392,7 +396,8 @@ class TestNoPathOnTheServerIsShown:
         spellings = hosting._prefixes()
         assert len(spellings) == 2
         tokens = [sys.executable, *spellings, *(s + "/a.md" for s in spellings),
-                  *(s + " copy/x" for s in spellings), "v", "x/y", "copy/x", " ", " ",
+                  *(s + " copy/x" for s in spellings), " (1)/x", " copy 2/x", " - Copy/x",
+                  "\u201d", "\u2026", "v", "x/y", "copy/x", " ", " ",
                   "\n", ".", ",", "(1)", "\u201d", "then", "+", "`", "-"]
         rng = random.Random(7)
         for _ in range(1500):
