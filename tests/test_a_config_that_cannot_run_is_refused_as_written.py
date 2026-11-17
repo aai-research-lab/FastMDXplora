@@ -57,6 +57,16 @@ def test_constant_volume_throughout_runs() -> None:
                      "simulation": {"ensemble": "nvt", "npt_duration_ns": 0}})
 
 
+def test_the_advice_names_the_npt_length_the_config_sets() -> None:
+    """With `npt_steps: 5000`, the advice said `npt_duration_ns: 0`, which
+    the steps go before: followed, it was refused again."""
+    data = {"systems": [{"system": "1UBQ"}], "setup": {"nonbonded_method": "NoCutoff"},
+            "simulation": {"npt_steps": 5000}}
+    with pytest.raises(ConfigError, match=r"ensemble: nvt and npt_steps: 0\)"):
+        validate_config(data)
+    validate_config({**data, "simulation": {"ensemble": "nvt", "npt_steps": 0}})
+
+
 def test_a_swept_method_names_its_run() -> None:
     with pytest.raises(ConfigError, match="its own settings"):
         validate_config({"systems": [{"system": "1UBQ"}],
