@@ -3113,16 +3113,21 @@
     writingState(true);
     var shown = steps.writing;
     var raw = "";
+    /* Where the text since the last other event begins: a hosted GUI may
+     * send that text again whole, to be written over what it sent. */
+    var since = 0;
     var answer = null;
     function handle(line) {
       if (!line.trim()) return;
       var event;
       try { event = JSON.parse(line); } catch (e) { return; }
+      if (event.type !== "text") since = raw.length;
       if (event.type === "begin") {
         raw = "";
+        since = 0;
         shown.textContent = "";
       } else if (event.type === "text") {
-        raw += event.text || "";
+        raw = (event.replace ? raw.slice(0, since) : raw) + (event.text || "");
         shown.textContent = writtenSoFar(raw);
         scrollToEnd();
       } else if (event.type === "looking") {

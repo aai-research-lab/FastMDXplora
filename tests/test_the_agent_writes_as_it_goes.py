@@ -251,3 +251,46 @@ def test_the_page_shows_it_and_stops_it(tmp_path, monkeypatch) -> None:
         time.sleep(0.2)
     assert asked[0].get("stopped")
     assert errors == []
+
+
+def test_the_page_writes_a_sent_again_text_over_what_it_replaces(tmp_path, monkeypatch) -> None:
+    """A hosted GUI sends the text since the last event again whole, with
+    `replace`, should its scrub have stopped extending what it sent."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    monkeypatch.setenv("FASTMDXPLORA_CONFIG_DIR", str(tmp_path / "settings"))
+    events = [{"type": "begin"}, {"type": "text", "text": "SAY: Before. "},
+              {"type": "looking", "label": "Looking"},
+              {"type": "text", "text": "wrong "},
+              {"type": "text", "text": "Fixed after.", "replace": True}]
+    body = "".join(json.dumps(e) + "\n" for e in events)
+    session = start_dashboard_session(output=str(tmp_path), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 900})
+            page.set_default_timeout(60000)
+            page.route("**/api/agent/propose-stream", lambda route: route.fulfill(
+                status=200, content_type="application/x-ndjson", body=body))
+            page.goto(session.url + "#agent", wait_until="domcontentloaded")
+            ready(page)
+            page.evaluate("""() => {
+              window.seen = [];
+              new MutationObserver(() => {
+                var box = document.querySelector('#agent-thread .agent-writing');
+                if (box) window.seen.push(box.textContent);
+              }).observe(document.getElementById('agent-thread'),
+                         {subtree: true, childList: true, characterData: true});
+            }""")
+            page.fill("#agent-request", "Hello.")
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "() => window.seen.some(text => text.includes('Fixed after.'))")
+            seen = page.evaluate("() => window.seen")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert [text for text in seen if "Fixed" in text] == ["Before. Fixed after."]

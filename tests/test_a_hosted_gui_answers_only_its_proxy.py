@@ -373,6 +373,58 @@ class TestNoPathOnTheServerIsShown:
                         + streamed.add(reply[second:]) + streamed.flush())
                 assert said == whole, (cut, second)
 
+    def test_the_interpreter_after_the_workspace_is_judged_as_rewritten(self, hosting) -> None:
+        """The word after the held path was judged as written, though the
+        whole scrub first writes the interpreter as `python`: the workspace
+        went out as it is, and nothing after it."""
+        root = str(hosting.workspace)
+        reply = f"Open {root} v{sys.executable} then more words here."
+        streamed = hosting.scrubbed_as_it_goes()
+        said = "".join(streamed.add(c) for c in reply) + streamed.flush()
+        assert said == hosting.scrub(reply) == "Open ~ vpython then more words here."
+
+    def test_any_split_says_what_the_whole_scrub_says(self, tmp_path, workspace) -> None:
+        import random
+
+        link = tmp_path / "linked"
+        link.symlink_to(workspace)
+        hosting = Hosting(workspace=link, allowed_hosts=frozenset({NAME}), secret=SECRET)
+        spellings = hosting._prefixes()
+        assert len(spellings) == 2
+        tokens = [sys.executable, *spellings, *(s + "/a.md" for s in spellings),
+                  *(s + " copy/x" for s in spellings), "v", "x/y", "copy/x", " ", " ",
+                  "\n", ".", ",", "(1)", "\u201d", "then", "+", "`", "-"]
+        rng = random.Random(7)
+        for _ in range(1500):
+            reply = "".join(rng.choice(tokens) for _ in range(rng.randint(1, 12)))
+            whole = hosting.scrub(reply)
+            cuts = sorted(rng.sample(range(1, len(reply)), min(len(reply) - 1, rng.randint(0, 6))))
+            streamed = hosting.scrubbed_as_it_goes()
+            said, start = "", 0
+            for end in [*cuts, len(reply)]:
+                said += streamed.add(reply[start:end])
+                start = end
+                assert whole.startswith(said), (reply, cuts)
+                if not any(s in whole for s in spellings):
+                    assert not any(s in said for s in spellings), (reply, cuts)
+            said += streamed.flush()
+            assert not streamed.replaces
+            assert said == whole, (reply, cuts)
+
+    def test_a_scrub_that_stops_extending_what_was_sent_sends_it_again_whole(
+        self, hosting, monkeypatch
+    ) -> None:
+        streamed = hosting.scrubbed_as_it_goes()
+        assert streamed.add("First words then ") == "First words "
+        rewritten = Hosting._scrub_text
+        monkeypatch.setattr(Hosting, "_scrub_text",
+                            lambda self, text: rewritten(self, text).replace("First", "1st"))
+        assert streamed.add("more and more ") == ""
+        assert streamed.add("words ") == ""
+        assert streamed.flush() == "1st words then more and more words "
+        assert streamed.replaces
+        assert streamed.add("Next ") == "" and not streamed.replaces
+
     def test_the_state_names_the_workspace_as_home(self, hosting) -> None:
         with _serving(hosting) as (address, _):
             _ask(address, "/api/explore/switch", body={"folder": "~/first-study"})

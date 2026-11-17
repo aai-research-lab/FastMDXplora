@@ -3442,7 +3442,10 @@ def make_handler(
                     return
                 rest = streamed.flush()
                 if rest:
-                    send({"type": "text", "text": rest})
+                    # In place of what was sent since the last event, should
+                    # the text scrubbed so far have stopped extending it.
+                    send({"type": "text", "text": rest,
+                          **({"replace": True} if streamed.replaces else {})})
                 send(hosting.scrub(event))
 
             self.send_response(200)

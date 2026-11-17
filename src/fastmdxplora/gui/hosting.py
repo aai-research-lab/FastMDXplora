@@ -381,40 +381,70 @@ class StreamedScrub:
     whole: "Read /srv/w" then "s/notes.md". The text so far is scrubbed
     instead, and only what no later piece can change is sent: up to the
     start of its last complete word, with the rest held until the next
-    piece or `flush`. A spelling of the workspace with a space in it is
-    never cut.
+    piece or `flush`. A spelling of the workspace, or of the interpreter,
+    with a space in it is never cut.
+
+    What is sent is always a prefix of the whole text scrubbed. Should the
+    text scrubbed so far ever stop extending what was sent, nothing more is
+    sent until `flush`, which then gives the whole of it scrubbed, with
+    `replaces` set: the page writes it over what it was sent since the last
+    `flush`. Each piece scrubs the text so far again, which is quadratic in
+    the reply's length; a reply is a few thousand characters.
     """
 
     def __init__(self, hosting: Hosting) -> None:
         self._hosting = hosting
         self._raw = ""
         self._sent = ""
+        self._lost = False
+        #: Whether the last `flush` gave the text whole, in place of what
+        #: was sent since the one before.
+        self.replaces = False
 
     def add(self, piece: str) -> str:
         """The scrubbed text that `piece` lets go, maybe empty."""
+        self.replaces = False
         self._raw += piece
+        if self._lost:
+            return ""
         cut = self._safe_cut()
         if cut <= 0:
             return ""
-        word = re.match(r"\S*", self._raw[cut:]).group(0)
+        end = self._word_end(cut)
+        if end is None:
+            return ""
         # What decides the last path before the cut: whether the word after
-        # it goes on as a path. Said by a stand-in no scrub changes.
-        stand_in = "a/" if re.match(r"\w\S*/", word) else "-"
-        scrubbed = self._hosting._scrub_text(self._raw[:cut] + stand_in)[:-len(stand_in)]
-        return self._new(scrubbed)
+        # it goes on as a path, once scrubbed as the whole text is. That word
+        # is whole; whether it is rewritten may still turn on the word after
+        # it, so it is scrubbed both ways, and sent only if both agree.
+        scrub = self._hosting._scrub_text
+        word = self._raw[cut:end]
+        gap = self._raw[end]
+        agreed = {scrub(self._raw[:end] + gap + after)[:-len(scrub(word + gap + after))]
+                  for after in ("-", "a/")}
+        if len(agreed) != 1:
+            return ""
+        return self._new(agreed.pop())
 
     def flush(self) -> str:
-        """The rest, at the end of the text."""
-        tail = self._new(self._hosting._scrub_text(self._raw))
+        """The rest, at the end of the text, or all of it if `replaces`."""
+        whole = self._hosting._scrub_text(self._raw)
+        self.replaces = self._lost or not whole.startswith(self._sent)
+        tail = whole if self.replaces else whole[len(self._sent):]
         self._raw = self._sent = ""
+        self._lost = False
         return tail
 
     def _new(self, scrubbed: str) -> str:
-        if not scrubbed.startswith(self._sent) or len(scrubbed) <= len(self._sent):
+        if not scrubbed.startswith(self._sent):
+            self._lost = True
             return ""
         tail = scrubbed[len(self._sent):]
         self._sent = scrubbed
         return tail
+
+    def _spellings(self) -> tuple[str, ...]:
+        return (sys.executable, *self._hosting._prefixes())
 
     def _safe_cut(self) -> int:
         raw = self._raw
@@ -425,11 +455,10 @@ class StreamedScrub:
         if not whole:
             return 0
         cut = whole[-1]
-        whole_ones = (sys.executable, *self._hosting._prefixes())
         moved = True
         while moved and cut > 0:
             moved = False
-            for spelling in whole_ones:
+            for spelling in self._spellings():
                 for start in range(max(0, cut - len(spelling) + 1), cut):
                     seen = raw[start:start + len(spelling)]
                     if spelling.startswith(seen) and start + len(seen) > cut:
@@ -441,6 +470,31 @@ class StreamedScrub:
                 while cut > 0 and not raw[cut - 1].isspace():
                     cut -= 1
         return cut
+
+    def _word_end(self, cut: int) -> int | None:
+        """Where the word at `cut` ends, taking in a spelling with a space
+        that goes on past it; None while that is not yet known."""
+        raw = self._raw
+        found = re.compile(r"\s").search(raw, cut)
+        if found is None:
+            return None
+        end = found.start()
+        moved = True
+        while moved:
+            moved = False
+            for spelling in self._spellings():
+                for start in range(max(cut, end - len(spelling) + 1), end):
+                    seen = raw[start:start + len(spelling)]
+                    if spelling.startswith(seen) and start + len(seen) > end:
+                        if len(seen) < len(spelling):
+                            return None
+                        found = re.compile(r"\s").search(raw, start + len(spelling))
+                        if found is None:
+                            return None
+                        end = found.start()
+                        moved = True
+                        break
+        return end
 
 
 def memory_kept(memory_dir: str = "", memory_store: str = "", *,
