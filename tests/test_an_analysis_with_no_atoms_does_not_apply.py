@@ -138,3 +138,40 @@ def test_a_plan_asked_for_is_not_said_to_be_empty_for_want_of_atoms() -> None:
     assert _nothing_applies([], ["rg"], None) is None
     assert _nothing_applies([], None, list(_REGISTRY)) is None
     assert _nothing_applies(_plan(_dna()), None, None)
+
+
+def test_leaving_out_every_analysis_but_the_image_check_is_asked_for() -> None:
+    """Named one by one, every analysis of the molecule but the image check
+    was still said to be left out for what the system does not have."""
+    from fastmdxplora.analysis.orchestrator import _REGISTRY, _nothing_applies
+
+    named = [name for name in _REGISTRY if name != "image_check"]
+    assert _nothing_applies(["image_check"], None, named) is None
+    assert _nothing_applies(["image_check"], None, named[1:])
+
+
+def test_an_image_check_that_ran_is_not_said_as_nothing(tmp_path) -> None:
+    import json
+
+    from fastmdxplora.orchestrator import PhaseResult, _how_it_ended
+
+    (tmp_path / "analysis_manifest.json").write_text(json.dumps(
+        {"plan": ["image_check"], "nothing_applies": "None applies."}))
+    ended = _how_it_ended(PhaseResult(name="analysis", status="ok", output_dir=tmp_path))
+    assert ended["status"] == "warning"
+    assert "ran nothing" not in ended["message"]
+    assert "no analysis applies to this study but the image check" in ended["message"]
+
+
+def test_the_command_line_says_it_once(tmp_path, capfd) -> None:
+    """`fastmdx analyze` on DNA said it twice: a log line and a plain one."""
+    from fastmdxplora.analysis.orchestrator import NOTHING_APPLIES
+    from fastmdxplora.cli.main import main
+
+    traj = _dna()
+    traj[0].save_pdb(str(tmp_path / "top.pdb"))
+    traj.save_dcd(str(tmp_path / "traj.dcd"))
+    main(["analyze", "-s", str(tmp_path / "top.pdb"), "--trajectory", str(tmp_path / "traj.dcd"),
+          "--topology", str(tmp_path / "top.pdb"), "--output", str(tmp_path / "out")])
+    printed = capfd.readouterr()
+    assert (printed.out + printed.err).count(NOTHING_APPLIES) == 1

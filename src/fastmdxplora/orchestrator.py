@@ -89,22 +89,30 @@ def _how_it_ended(result: "PhaseResult") -> dict[str, Any]:
             and not result.taken_from and "system.xml" not in result.artifacts):
         return {"status": "warning",
                 "message": "setup finished without preparing a system (see above)"}
-    if result.name == "analysis" and result.status == "ok" and _nothing_applied(result):
-        return {"status": "warning",
-                "message": "analysis ran nothing: no analysis applies to this study (see above)"}
+    if result.name == "analysis" and result.status == "ok":
+        planned = _nothing_applied(result)
+        if planned is not None:
+            return {"status": "warning", "message": (
+                "analysis: no analysis applies to this study but the image check (see above)"
+                if "image_check" in planned else
+                "analysis ran nothing: no analysis applies to this study (see above)")}
     return {"status": result.status}
 
 
-def _nothing_applied(result: "PhaseResult") -> bool:
-    """Whether an analysis phase's record says no analysis applied."""
+def _nothing_applied(result: "PhaseResult") -> list[str] | None:
+    """What an analysis phase ran, where its record says no analysis of
+    the molecule applied (the image check may still have run), else None."""
     if result.output_dir is None:
-        return False
+        return None
     try:
         manifest = json.loads((Path(result.output_dir) / "analysis_manifest.json")
                               .read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
-    return isinstance(manifest, dict) and bool(manifest.get("nothing_applies"))
+        return None
+    if not (isinstance(manifest, dict) and manifest.get("nothing_applies")):
+        return None
+    plan = manifest.get("plan")
+    return [str(name) for name in plan] if isinstance(plan, list) else []
 
 
 @dataclass

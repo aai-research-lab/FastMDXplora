@@ -249,9 +249,8 @@ def run(
             f"{ao.traj.n_atoms} atoms, {ao.traj.n_residues} residues"
         )
 
+    # Where no analysis applies, the orchestrator's own log line says so.
     results = ao.run(include=include, exclude=exclude, options=options)
-    if presenter and getattr(ao, "nothing_applies", None):
-        presenter.info(ao.nothing_applies)
     if (not trajectory and joined_trajectory is not None
             and stride is None and first is None and last is None
             and all(r.status != "error" for r in results.values())):

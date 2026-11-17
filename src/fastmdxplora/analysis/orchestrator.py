@@ -1114,7 +1114,9 @@ def _nothing_applies(plan: list[str], include: list[str] | None,
     """
     if include is not None or any(name != _IMAGE_CHECK for name in plan):
         return None
-    if exclude is not None and not set(_REGISTRY) - set(exclude):
+    # Every analysis of the molecule left out by name; the image check is
+    # not one, and runs unless it is left out too.
+    if exclude is not None and not set(_REGISTRY) - {_IMAGE_CHECK} - set(exclude):
         return None
     return NOTHING_APPLIES
 
