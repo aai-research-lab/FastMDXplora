@@ -231,6 +231,15 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- `dimred.comparison` projects one to three other trajectories onto the PCA
+  basis fitted on the analysed one, every frame superposed on its first frame
+  on the same atoms, and histograms each on one grid as -ln P in kT, empty
+  bins left blank. The record gives the share of the reference's variance
+  each PC holds and the share of each ensemble's own variance on them. A
+  target whose selected atoms differ is refused
+  (`analysis.selection.atoms_differ`), and one that does not fit in memory is
+  refused before it is loaded. Set in the Config; the GUI form offers no box
+  for it (Prince Otegbulu, #93).
 - New study's code card has a Copy button for the config, the command or
   the script shown, named for the pane shown and ticking when copied; it is
   off while the pane is empty, the study cannot start, or the config is
