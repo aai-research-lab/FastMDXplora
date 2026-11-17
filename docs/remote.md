@@ -206,12 +206,12 @@ folder that exists, relative to the Config's own folder, is copied under
 `inputs/` and the copy of the Config names it there: the structure, a ligand's
 SDF, force field XMLs, a trajectory, a prepared study to continue from. A
 structure given by PDB ID is fetched by the machine, which is refused where the
-machine has no internet. A `system` value made only of letters is recognized
-as a sequence and refused because this software does not carry a structure
-predictor. A PDB ID (four letters and digits, with no `.pdb`, `.cif` or
-`.pdbx`), and a setting whose values are words (a phase under `include_phase`,
-an analysis, a force field's name), never travel as a file or folder of that
-name beside the Config.
+machine has no internet. Four-character alphanumeric `system` values are
+treated as PDB IDs; other alphabetic values are recognized as sequences and
+refused because this software does not carry a structure predictor. A PDB ID
+(with no `.pdb`, `.cif` or `.pdbx`), and a setting whose values are words (a
+phase under `include_phase`, an analysis, a force field's name), never travel
+as a file or folder of that name beside the Config.
 
 **Only files in the study's own folder travel,** the folder holding the
 Config. A file named outside it is refused (`remote.input.outside`) and nothing
