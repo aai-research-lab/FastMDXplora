@@ -9,10 +9,6 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
-- On Windows, `analyze`, `explore`, `setup`, `simulate` and `report` no longer
-  stop at startup because `os.fchmod` is unavailable. Windows remains
-  unsupported; this removes the initial crash so protein-only studies and the
-  GUI can be used by people developing there.
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried
@@ -737,6 +733,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- On Windows, `analyze`, `explore`, `setup`, `simulate` and `report` no longer
+  stop at startup because `os.fchmod` is unavailable. Windows remains
+  unsupported; this removes the initial crash so protein-only studies and the
+  GUI can be used by people developing there.
 - Docs: the counts, flags and settings say what the code has: 31 analyses
   (28 of the system and 3 readers of a biased run), 364 of the 381 analysis
   options shown in the GUI and its 131 settings, each count held by a test,
