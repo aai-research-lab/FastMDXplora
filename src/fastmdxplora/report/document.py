@@ -50,7 +50,10 @@ def _one_line(value: object, *, limit: int = 1000) -> str:
 
 
 def _md_text(value: object, *, limit: int = 1000) -> str:
-    text = _one_line(value, limit=limit)
+    return _md_escaped(_one_line(value, limit=limit))
+
+
+def _md_escaped(text: str) -> str:
     for char in "\\`*_{}[]()#+-.!|<>":
         text = text.replace(char, f"\\{char}")
     return text
@@ -66,9 +69,11 @@ def _md_with_code(value: object, *, limit: int = 1000) -> str:
     read "\\`exclude: \\[image\\_check\\]\\`"."""
     import re
 
+    # Each piece escaped as it is, not made one line again: that took the
+    # spaces at its ends, and the code spans ran into the words beside them.
     parts = re.split(r"(`[^`]+`)", _one_line(value, limit=limit))
     return "".join(f"`{_code_text(part[1:-1])}`" if part.startswith("`") and part.endswith("`")
-                   and len(part) > 1 else _md_text(part) for part in parts)
+                   and len(part) > 1 else _md_escaped(part) for part in parts)
 
 
 def _link_target(path: str) -> str:

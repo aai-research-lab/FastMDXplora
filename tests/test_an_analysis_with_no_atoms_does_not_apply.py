@@ -175,3 +175,22 @@ def test_the_command_line_says_it_once(tmp_path, capfd) -> None:
           "--topology", str(tmp_path / "top.pdb"), "--output", str(tmp_path / "out")])
     printed = capfd.readouterr()
     assert (printed.out + printed.err).count(NOTHING_APPLIES) == 1
+
+
+def test_the_report_keeps_the_spaces_around_its_code() -> None:
+    """Read "name them with`include`\\(`--analyses`on the command line\\)",
+    shown as "withinclude(--analyseson": each piece around a code span lost
+    the spaces at its ends."""
+    import re
+
+    import pytest
+    pytest.importorskip("markdown")
+    from fastmdxplora.analysis.orchestrator import NOTHING_APPLIES
+    from fastmdxplora.report.document import _md_with_code
+    from fastmdxplora.report.markdown_html import markdown_as_html
+
+    written = _md_with_code(NOTHING_APPLIES)
+    assert "name them with `include` \\(`--analyses` on the command line\\)" in written
+    shown = re.sub(r"<[^>]+>", "", markdown_as_html(written))
+    assert "name them with include (--analyses on the command line), or give the atoms " \
+        "they read with select_atoms (--select-atoms) or scope: all (--scope all)." in shown
