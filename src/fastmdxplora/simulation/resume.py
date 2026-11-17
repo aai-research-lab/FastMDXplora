@@ -838,6 +838,14 @@ NO_PRODUCTION_OF_ITS_OWN = ("the study ran no production of its own, so a segmen
                             "production length")
 
 
+def _missing_trajectory(study: str | Path, done_ns: float) -> str:
+    """Why a study whose production trajectory is gone cannot be extended."""
+    trajectory = Path(study) / "simulation" / "production.dcd"
+    return (f"the study ran {done_ns:.3f} ns of production, but its trajectory "
+            f"{trajectory} is missing, so a segment would have nothing to be joined "
+            "to; put the file back from a copy, or run the study again")
+
+
 def _ran_no_production(study: str | Path) -> bool:
     """Whether ``study`` holds no segment of production, its own first one."""
     from fastmdxplora.analysis.joining import survey_segments
@@ -879,10 +887,15 @@ def extension_of(study: str | Path, *, total_ns: float | None = None,
         # production checkpoint, at step zero. Its segment was simulated and
         # then refused by the join as "segments [0] are missing", which was
         # true of nothing it had lost: there was never a trajectory to go on.
+        # One whose checkpoint is past zero ran production, and lost its
+        # trajectory since: said as that, not as a study with none.
+        own = continuation_of(study).production_done_ns
         return Continuation(parent=plan.parent, checkpoint=plan.checkpoint,
                             production_done_ns=done,
                             production_planned_ns=plan.production_planned_ns,
-                            config={}, refusal=NO_PRODUCTION_OF_ITS_OWN)
+                            config={}, refusal=(
+                                NO_PRODUCTION_OF_ITS_OWN if own <= 0
+                                else _missing_trajectory(study, own)))
     index = next_segment_index(study)
     config = dict(plan.config)
     config["output"] = str(Path(study) / f"segment-{index:03d}")

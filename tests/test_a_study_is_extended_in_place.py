@@ -91,6 +91,20 @@ class TestTheExtensionIsPlannedInsideTheStudy(unittest.TestCase):
         self.assertEqual((said["ok"], said["stage"]), (False, "planning"))
         self.assertFalse((root / "segment-001").exists())
 
+    def test_a_study_whose_trajectory_was_deleted_is_said_as_that(self):
+        """Refused as a study that "ran no production of its own", though
+        its checkpoint said 0.5 ns had run."""
+        from fastmdxplora.simulation.resume import extension_of
+
+        root = _study()
+        (root / "simulation" / "production.dcd").unlink()
+        plan = extension_of(root, more_ns=0.02)
+        self.assertFalse(plan.possible)
+        self.assertNotIn("ran no production of its own", plan.refusal)
+        self.assertIn("ran 0.500 ns of production", plan.refusal)
+        self.assertIn(str(root / "simulation" / "production.dcd") + " is missing",
+                      plan.refusal)
+
     def test_it_lands_in_the_study_and_simulates_only(self):
         from fastmdxplora.simulation.resume import extension_of
 
