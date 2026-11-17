@@ -79,6 +79,20 @@ def test_setup_run_alone_adds_no_barostat(tmp_path: Path) -> None:
         "nonbonded_method": "NoCutoff"}
 
 
+@pytest.mark.parametrize("selection", [{"include_phase": ["setup"]}, {"include": ["setup"]},
+                                       {"exclude_phase": ["simulation"]}])
+def test_a_study_made_to_run_no_simulation_adds_no_barostat(tmp_path: Path, selection) -> None:
+    """The constructor checked its options without the phases it was told
+    to run, and refused a setup with no box as if the default NPT followed."""
+    from fastmdxplora import FastMDXplora
+
+    FastMDXplora("1UBQ", output_dir=str(tmp_path / "study"),
+                 options={"setup": {"nonbonded_method": "NoCutoff"}}, **selection)
+    with pytest.raises(ConfigError, match="no periodic box"):
+        FastMDXplora("1UBQ", output_dir=str(tmp_path / "other"),
+                     options={"setup": {"nonbonded_method": "NoCutoff"}})
+
+
 def test_a_simulation_on_a_system_with_no_box_is_still_refused(tmp_path: Path) -> None:
     from fastmdxplora import FastMDXplora
 

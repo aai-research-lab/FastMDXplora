@@ -445,8 +445,12 @@ class FastMDXplora:
         if (options or study_options) and not _expanded_from_a_validated_study:
             from fastmdxplora.config.loader import validate_config
 
+            # With the phases this study runs: a setup with no periodic box
+            # is refused only where a simulation with a barostat follows it.
             validate_config({"systems": [{"system": self.system}],
-                             **dict(study_options or {}), **dict(options or {})},
+                             **dict(study_options or {}), **dict(options or {}),
+                             **({"include_phase": list(include)} if include is not None else {}),
+                             **({"exclude_phase": list(exclude)} if exclude is not None else {})},
                             require_systems=True)
 
         # Phase selection (the batch layer passes the config's include/exclude)
