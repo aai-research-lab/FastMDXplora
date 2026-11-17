@@ -1953,6 +1953,13 @@ class DashboardRuntime:
         refused = _fix_refused(study, None)
         if refused is not None:
             return refused
+        # A study running first: one just started has no resolved config
+        # yet, and was answered as a study that cannot be extended.
+        from fastmdxplora.runs_here import writing_there
+
+        refused = writing_there(self._rule_folders(), study)
+        if refused is not None:
+            return refused
         # Refused as `fastmdx explore` refuses it, before anything is written
         # or started: an extension of a study with no production started a
         # process that stopped at once and left a config in the workspace.

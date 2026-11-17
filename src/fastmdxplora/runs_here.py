@@ -287,6 +287,35 @@ class Start:
         return gpu_record(self.choice) if self.choice is not None else None
 
 
+def writing_there(folders: list[Path], target: Path, *, walk: bool = False,
+                  then: str = "stop it, or wait for it to finish.") -> dict[str, Any] | None:
+    """The refusal for a start in ``target`` where a run going in ``folders``
+    writes (in it, inside it or around it), or None. :func:`may_start`'s
+    first check, alone: asked before what a start reads of the folder."""
+    roots = [Path(f).resolve() for f in folders]
+    return _writing_there(roots, _runs_going(roots, walk=walk), (target,), then=then)
+
+
+def _runs_going(roots: list[Path], *, walk: bool) -> list[dict[str, Any]]:
+    going: dict[str, dict[str, Any]] = {}
+    for root in roots:
+        for run in going_in(root, walk=walk):
+            going.setdefault(run["folder"], run)
+    return list(going.values())
+
+
+def _writing_there(roots: list[Path], runs: list[dict[str, Any]], targets: Any, *,
+                   then: str) -> dict[str, Any] | None:
+    targets = [Path(t).resolve() for t in targets if t is not None]
+    same = [(Path(r["folder"]), r["by"]) for r in runs
+            if any(here == Path(r["folder"]) or here.is_relative_to(Path(r["folder"]))
+                   or Path(r["folder"]).is_relative_to(here) for here in targets)]
+    if not same:
+        return None
+    return {"ok": False, "error": said_same(roots, same, then=then),
+            "code": "environment.workspace.run_going"}
+
+
 def may_start(folders: list[Path], config: dict[str, Any] | None,
               config_folder: Path | None = None, *, walk: bool = False,
               target: Path | None = None,
@@ -304,20 +333,11 @@ def may_start(folders: list[Path], config: dict[str, Any] | None,
     from fastmdxplora.remote.send import simulates_on_gpu
 
     roots = [Path(f).resolve() for f in folders]
-    going: dict[str, dict[str, Any]] = {}
-    for root in roots:
-        for run in going_in(root, walk=walk):
-            going.setdefault(run["folder"], run)
-    runs = list(going.values())
-    targets = [Path(t).resolve() for t in (target, *_continued(config, config_folder))
-               if t is not None]
-    if targets:
-        same = [(Path(r["folder"]), r["by"]) for r in runs
-                if any(here == Path(r["folder"]) or here.is_relative_to(Path(r["folder"]))
-                       or Path(r["folder"]).is_relative_to(here) for here in targets)]
-        if same:
-            return Start(refused={"ok": False, "error": said_same(roots, same, then=then),
-                                  "code": "environment.workspace.run_going"})
+    runs = _runs_going(roots, walk=walk)
+    refused = _writing_there(roots, runs, (target, *_continued(config, config_folder)),
+                             then=then)
+    if refused is not None:
+        return Start(refused=refused)
     on_gpu = config is not None and simulates_on_gpu(config, os.cpu_count())
     room = room_here() if on_gpu else None
     choice, notes = None, []
