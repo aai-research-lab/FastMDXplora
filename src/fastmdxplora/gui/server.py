@@ -4604,6 +4604,9 @@ def _results_payload(root: Path) -> dict[str, Any]:
                                           production_not_read=production_not_read),
         "phases": _phase_records(manifest),
         "analyses": _analysis_records(analysis_manifest, figures, plots, root),
+        # Why a finished study has no analysis of its molecule, where none
+        # applies to it (DNA alone): said on the Analysis page.
+        "nothing_applies": str(analysis_manifest.get("nothing_applies") or ""),
         "dashboard": dashboard,
         "plots": plots,
         "key_plots": [plot for plot in plots if plot["title"] in KEY_PLOT_TITLES][:6],

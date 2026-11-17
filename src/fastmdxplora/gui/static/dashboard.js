@@ -810,6 +810,7 @@
     state.times = {};
     state.results = {};
     state.analysisCount = 0;
+    state.nothingApplies = "";
     state.structureInfo = null;
     state.setupManifest = {};
     state.simManifest = {};
@@ -2378,6 +2379,9 @@
           ? `, ${fromReport} of them the report's` : fromReport ? ", the report's" : "");
     }
     state.analysisCount = analyses.length || plots.length;
+    // Why there is none, where no analysis applies to the study (DNA alone):
+    // "not available yet" said of a study that had finished.
+    state.nothingApplies = String(payload.nothing_applies || "").replace(/`/g, "");
     renderAnalysisMeta();
     if (cards.length) empty.setAttribute("hidden", "");
     else empty.removeAttribute("hidden");
@@ -2388,13 +2392,19 @@
     const title = empty.querySelector(".empty-title");
     const detail = empty.querySelector(".empty-detail");
     if (title && !title.dataset.plain) title.dataset.plain = title.textContent;
+    if (detail && !detail.dataset.plain) detail.dataset.plain = detail.textContent;
+    const none = !out.length && state.nothingApplies;
     if (title) {
       title.textContent = out.length
         ? out.map((name) => `${name} is a link out of the study, so its records are not read here.`)
           .join(" ")
+        : none ? "No analysis applies to this study"
         : title.dataset.plain;
     }
-    if (detail) detail.hidden = out.length > 0;
+    if (detail) {
+      detail.hidden = out.length > 0;
+      detail.textContent = none ? state.nothingApplies : detail.dataset.plain;
+    }
     if (out.length && !cards.length) setText("analysis-meta", `${out.join(", ")} not read`);
   }
 
@@ -2409,6 +2419,7 @@
       "analysis-meta",
       count ? `${count} analysis output${count === 1 ? "" : "s"}`
         : runs && runs.length ? `the analyses of ${runs.length} run${runs.length === 1 ? "" : "s"}, compared below`
+        : state.nothingApplies ? "no analysis applies"
         : "no analyses yet"
     );
   }

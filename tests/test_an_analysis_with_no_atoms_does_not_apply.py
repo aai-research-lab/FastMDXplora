@@ -194,3 +194,45 @@ def test_the_report_keeps_the_spaces_around_its_code() -> None:
     shown = re.sub(r"<[^>]+>", "", markdown_as_html(written))
     assert "name them with include (--analyses on the command line), or give the atoms " \
         "they read with select_atoms (--select-atoms) or scope: all (--scope all)." in shown
+
+
+def test_the_gui_s_analysis_page_says_none_applies(tmp_path) -> None:
+    """A finished study of DNA said "no analyses yet" and "Analysis outputs
+    not available yet" while its Overview sent the reader there."""
+    import json
+
+    import pytest
+
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.analysis.orchestrator import NOTHING_APPLIES
+    from fastmdxplora.gui.server import start_dashboard_session
+
+    root = tmp_path / "dna"
+    (root / "analysis").mkdir(parents=True)
+    (root / "manifest.json").write_text(json.dumps({
+        "output": str(root), "status": "completed",
+        "phases": {"analysis": {"status": "ok"}}}), encoding="utf-8")
+    (root / "analysis" / "analysis_manifest.json").write_text(json.dumps(
+        {"plan": [], "analyses": {}, "nothing_applies": NOTHING_APPLIES}), encoding="utf-8")
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page(viewport={"width": 1400, "height": 1000})
+            page.set_default_timeout(60000)
+            page.goto(session.url + "#analysis", wait_until="domcontentloaded")
+            page.wait_for_function(
+                "() => /^no anal/.test((document.getElementById('analysis-meta') || {})"
+                ".textContent || '')")
+            page.wait_for_timeout(1500)
+            meta = page.text_content("#analysis-meta")
+            title = page.text_content("#analysis-empty .empty-title")
+            detail = page.text_content("#analysis-empty .empty-detail")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert meta == "no analysis applies"
+    assert title == "No analysis applies to this study"
+    assert detail == NOTHING_APPLIES.replace("`", "")
