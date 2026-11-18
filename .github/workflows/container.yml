@@ -27,7 +27,11 @@ on:
 jobs:
   build:
     name: Build the Apptainer image
-    runs-on: ubuntu-latest
+    # Pinned, as the Apptainer release is: its plain .deb needs libfuse3-3,
+    # which ubuntu-latest, now 26.04, replaces with libfuse3-4. Moving to
+    # 26.04 means its -trixie+ .deb, tried there first. Move both jobs on
+    # together, deliberately.
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     # The default token in this repository is read-only, which publish.yml
     # already knew -- its jobs request id-token for trusted publishing. This
@@ -173,7 +177,8 @@ jobs:
     # installation and its checks are the Apptainer image's own, and after
     # the Apptainer build, so a definition that fails there is not built twice.
     needs: build
-    runs-on: ubuntu-latest
+    # The same runner as the Apptainer image it is built after.
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
