@@ -2594,18 +2594,6 @@ def delete_conversation(runtime: Any, cid: Any, study: Any = None, *,
     return {"ok": True, "on_screen": made == str(cid)}
 
 
-def clear_conversation(runtime: Any) -> dict[str, Any]:
-    """The old endpoint: delete the current conversation in scope."""
-    workspace, study = _scope(runtime)
-    store = _store_for(workspace, study)
-    cid = _current_in(store)
-    if cid is None:
-        return {"ok": True, "entries": []}
-    answer = delete_conversation(runtime, cid, str(study) if study else None)
-    answer["entries"] = []
-    return answer
-
-
 # ---------------------------------------------------------------------------
 # Attaching a file to a message.
 #
