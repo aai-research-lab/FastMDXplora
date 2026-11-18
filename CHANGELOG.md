@@ -9,6 +9,10 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
+  now 26.04, where the pinned Apptainer package cannot be installed (it
+  needs `libfuse3-3`, which 26.04 replaces with `libfuse3-4`), so 2.6.1's
+  image was not built.
 - A test of the refusal to share a copied study no longer fails where a
   temporary folder's name holds the record's concept ("c7"), as macOS's
   `/var/folders/<two characters>/` can.
