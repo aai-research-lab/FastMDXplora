@@ -111,7 +111,7 @@
     if (page && page.toast) page.toast(said, ok ? "ok" : "warning");
     made._fmxFlash = setTimeout(function () {
       made.innerHTML = made._fmxShape;
-      made.setAttribute("aria-label", label);
+      made.setAttribute("aria-label", made.dataset.label || label);
       delete made.dataset.label;
     }, 1800);
   }
