@@ -62,6 +62,12 @@ def _serve(root: Path, look, *, width: int = 1440, hosted: bool = False):
     return said
 
 
+def _stub_remote_jobs(page, jobs):
+    answer = {"ok": True, "machines": [], "jobs": jobs}
+    page.route("**/api/remote/machines", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=json.dumps(answer)))
+
+
 def _running(root: Path) -> Path:
     (root / "simulation").mkdir(parents=True, exist_ok=True)
     (root / "simulation" / "live_status.json").write_text(json.dumps({
@@ -183,6 +189,51 @@ def test_the_machine_s_gpus_and_the_agent_s_mode_are_said_never_its_model(tmp_pa
     assert "claude-test-model" not in seen["strip"] and "claude-test-model" not in seen["ranger"][1]
     # No Intel item on a person's own install, and never the model in its place.
     assert "Intel" not in seen["strip"]
+
+
+def test_the_machine_item_stays_informational_when_no_remote_jobs_are_recorded(tmp_path):
+    study = _study(tmp_path / "ubiquitin")
+
+    def look(page, url):
+        _stub_remote_jobs(page, [])
+        page.goto(url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_function("() => document.querySelector('#sb-machine:not([hidden])')")
+        page.wait_for_function("() => document.getElementById('sb-remote').dataset.key === '[]'")
+        title = page.get_attribute("#sb-machine", "title")
+        page.click("#sb-machine")
+        page.wait_for_timeout(400)
+        return {"title": title, "page": page.evaluate(
+            "() => [document.documentElement.dataset.page, location.hash]")}
+
+    said = _serve(study, look)
+    assert all(not line.startswith("Open ") for line in said["title"].splitlines())
+    assert said["page"] == ["analysis", "#analysis"]
+
+
+def test_the_machine_item_opens_recorded_remote_jobs_and_job_buttons_still_open_them(tmp_path):
+    study = _study(tmp_path / "ubiquitin")
+    jobs = [{"name": "study", "machine": "box", "state": "running",
+             "detail": "Running", "results": "study"}]
+
+    def look(page, url):
+        _stub_remote_jobs(page, jobs)
+        page.goto(url + "#analysis", wait_until="domcontentloaded")
+        page.wait_for_function("() => document.querySelector('#sb-machine:not([hidden])')")
+        page.wait_for_function("() => document.getElementById('sb-machine').title"
+                               ".endsWith('Open Remote jobs')")
+        title = page.get_attribute("#sb-machine", "title")
+        page.click("#sb-machine")
+        page.wait_for_function("() => document.documentElement.dataset.page === 'studies'")
+        page.wait_for_selector("#remote-jobs:not([hidden]) .remote-job")
+        page.evaluate("() => window.FastMDXDashboard.navigate('analysis')")
+        page.wait_for_function("() => document.documentElement.dataset.page === 'analysis'")
+        page.click("#sb-remote .sb-job")
+        page.wait_for_function("() => document.documentElement.dataset.page === 'studies'")
+        page.wait_for_selector("#remote-jobs:not([hidden]) .remote-job")
+        return title
+
+    title = _serve(study, look)
+    assert title.splitlines()[-1] == "Open Remote jobs"
 
 
 def test_the_open_study_s_problems_are_counted_and_open_their_tab(tmp_path):

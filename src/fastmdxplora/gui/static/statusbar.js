@@ -24,6 +24,8 @@
   var MACHINE_EVERY_MS = 60000;
   var JOBS_EVERY_MS = 30000;
   var app = null;
+  var machineInfo = null;
+  var hasRecordedJobs = false;
 
   function byId(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -78,7 +80,7 @@
       lines.push(m.gpus_read ? "No NVIDIA GPU read here." : "No nvidia-smi here, so no GPU read.");
     }
     if (m.platform) lines.push("A study here runs on OpenMM's " + m.platform + " platform.");
-    lines.push("Open Remote jobs and the machines");
+    if (hasRecordedJobs) lines.push("Open Remote jobs");
     return lines.join("\n");
   }
 
@@ -86,14 +88,17 @@
     getJSON("/api/status-bar").then(function (data) {
       var machine = byId("sb-machine");
       if (!data || !data.ok) {
+        machineInfo = null;
         if (machine) machine.hidden = true;
         return;
       }
       if (machine && data.machine) {
+        machineInfo = data.machine;
         setItem(machine, "machine", machineSaid(data.machine), machineTitle(data.machine));
         machine.hidden = false;
       }
     }).catch(function () {
+      machineInfo = null;
       var machine = byId("sb-machine");
       if (machine) machine.hidden = true;
     });
@@ -123,9 +128,15 @@
 
   function loadJobs() {
     getJSON("/api/remote/machines").then(function (data) {
+      var allJobs = data && data.ok ? (data.jobs || []) : [];
+      hasRecordedJobs = allJobs.length > 0;
+      if (machineInfo) {
+        var machine = byId("sb-machine");
+        setItem(machine, "machine", machineSaid(machineInfo), machineTitle(machineInfo));
+      }
       var host = byId("sb-remote");
       if (!host) return;
-      var jobs = data && data.ok ? (data.jobs || []).filter(function (j) { return GOING[j.state]; }) : [];
+      var jobs = allJobs.filter(function (j) { return GOING[j.state]; });
       var key = JSON.stringify(jobs.map(function (j) { return [j.name, j.machine, j.state, j.detail]; }));
       if (host.dataset.key === key) return;
       host.dataset.key = key;
@@ -144,7 +155,7 @@
   }
 
   function openRemote() {
-    if (!window.FastMDXDashboard) return;
+    if (!hasRecordedJobs || !window.FastMDXDashboard) return;
     window.FastMDXDashboard.navigate("studies");
     setTimeout(function () {
       var jobs = byId("remote-jobs");
