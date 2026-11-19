@@ -7,9 +7,11 @@ Q ≈ 1 means the fold is intact; Q ≈ 0 means it is fully unfolded.
 
 Both the contacts and the measure follow Best, Hummer, & Eaton (PNAS 2013).
 The set S is over *pairs of heavy atoms* whose residues lie at least
-``min_seq_separation`` apart in sequence (default 4, which excludes
+``min_seq_separation`` apart within a chain (default 4, which excludes
 covalent and local contacts that do not probe the tertiary fold) and which
 are within a cutoff (default 0.45 nm) in the reference frame.
+Pairs on different topology chains have no sequence-separation exclusion,
+even when the chains share a deposited chain ID.
 
 That S is over atom pairs, not residue pairs, is the whole of the
 definition and not a detail. Counting one closest-heavy distance per
@@ -85,17 +87,6 @@ def native_contact_pairs(
     directly and the enumeration never happens.
     """
     top = traj.topology
-    # A separation no pair of residues in this chain can satisfy is a
-    # configuration error, not an unfolded reference, and the two have to
-    # be told apart: returning nothing for both would answer "there is no
-    # fold here" to a question that was never asked properly.
-    if traj.n_residues <= min_seq_separation:
-        raise StudyError(
-            f"No residue pairs satisfy min_seq_separation="
-            f"{min_seq_separation} in a trajectory with "
-            f"{traj.n_residues} residues."
-        , code="analysis.sampling.too_few_frames")
-
     eligible = (set(int(i) for i in atom_indices)
                 if atom_indices is not None else None)
     heavy = np.array(
@@ -104,6 +95,16 @@ def native_contact_pairs(
          and (eligible is None or a.index in eligible)],
         dtype=int,
     )
+    chain_of = np.array(
+        [top.atom(int(i)).residue.chain.index for i in heavy], dtype=int)
+    # A short single chain cannot satisfy the separation, but an interface
+    # can. Count only chains represented by the selected heavy atoms.
+    if traj.n_residues <= min_seq_separation and len(np.unique(chain_of)) < 2:
+        raise StudyError(
+            f"No residue pairs satisfy min_seq_separation="
+            f"{min_seq_separation} in a trajectory with "
+            f"{traj.n_residues} residues."
+        , code="analysis.sampling.too_few_frames")
     if len(heavy) < 2:
         return np.empty((0, 2), dtype=int), np.empty(0)
 
@@ -119,8 +120,9 @@ def native_contact_pairs(
         if len(candidates) == 0:
             break
         far_enough = (
-            np.abs(residue_of[pos + 1:] - residue_of[pos])
-            >= min_seq_separation
+            (chain_of[pos + 1:] != chain_of[pos])
+            | (np.abs(residue_of[pos + 1:] - residue_of[pos])
+               >= min_seq_separation)
         )
         candidates = candidates[far_enough]
         if len(candidates) == 0:
@@ -163,7 +165,8 @@ class QValue(Analysis):
         How far a contact may stretch relative to its own native distance
         before it stops counting. The paper's value.
     min_seq_separation : int, default 4
-        Minimum ``|i - j|`` in sequence for a pair to be considered. The
+        Minimum ``|i - j|`` within one topology chain. Interchain pairs
+        are eligible regardless of chain order or deposited chain ID. The
         default 4 excludes local contacts (i±1, i±2, i±3) that don't
         probe the global fold.
     selection : str, default "protein"
@@ -298,30 +301,26 @@ class QValue(Analysis):
             "said": (f"The native contacts are those of frame {ref} of the "
                      f"{n_frames} frames analysed, as given (after any `first` "
                      "or stride), not of the deposited structure.")}
+        pair_idx, r0 = self._native_atom_pairs(traj, ref)
+        if len(pair_idx) == 0:
+            return np.full(n_frames, np.nan)
         if self.scheme == "heavy-atom-pairs":
-            pair_idx, r0 = self._native_atom_pairs(traj, ref)
-            if len(pair_idx) == 0:
-                return np.full(n_frames, np.nan)
             native_distances = md.compute_distances(traj, pair_idx)
             n_native = len(pair_idx)
         else:
-            n_res = traj.n_residues
-            ii, jj = np.triu_indices(n_res, k=self.min_seq_separation)
-            if len(ii) == 0:
-                raise StudyError(
-                    f"No residue pairs satisfy "
-                    f"min_seq_separation={self.min_seq_separation} in a "
-                    f"trajectory with {n_res} residues."
-                , code="analysis.sampling.too_few_frames")
+            # A residue contact exists exactly when at least one heavy-atom
+            # contact does. Collapse the shared set before measuring it.
+            residue_pairs = np.unique([
+                [traj.topology.atom(int(i)).residue.index,
+                 traj.topology.atom(int(j)).residue.index]
+                for i, j in pair_idx
+            ], axis=0)
             distances, _ = md.compute_contacts(
-                traj, contacts=np.column_stack([ii, jj]),
+                traj, contacts=residue_pairs,
                 scheme="closest-heavy")
-            native_mask = distances[ref] < self.cutoff
-            n_native = int(native_mask.sum())
-            if n_native == 0:
-                return np.full(n_frames, np.nan)
-            native_distances = distances[:, native_mask]
-            r0 = distances[ref][native_mask]
+            n_native = len(residue_pairs)
+            native_distances = distances
+            r0 = distances[ref]
 
         # Each native contact is measured against the distance it had in the
         # reference, through the paper's switching function. Counting instead

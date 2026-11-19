@@ -169,6 +169,13 @@ when asked exits 130, not 1; and a run whose named analysis failed exits 1.
 
 ### Behaviour changes
 
+- Native contacts in both Q schemes and the native-contact CV use topology
+  chains regardless of chain order. A chain break represented as two topology
+  chains can now contribute contacts across the break, even when the chains
+  share a deposited chain ID. Sequence separation applies within each
+  topology chain, so small interfaces are allowed while short single chains
+  are still refused.
+
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried
