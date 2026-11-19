@@ -677,13 +677,14 @@ class TestQValueFollowsThePaperItCites:
     """
 
     @staticmethod
-    def _multichain(order, repeated_ids, small):
+    def _multichain(order, repeated_ids, n_residues):
         top = md.Topology()
         xyz = []
         for label in order:
             chain = top.add_chain("A" if repeated_ids else label)
-            positions = ([4.0 if label == "A" else 4.1] if small else
-                         {"A": [0, 2, 4], "B": [4.1, 7, 9]}[label])
+            # A's last two residues are close enough to test exclusion of
+            # local contacts. Only the two residues at the interface touch.
+            positions = [0, 3.6, 4][-n_residues:] if label == "A" else [4.1, 7, 9][:n_residues]
             for i, x in enumerate(positions):
                 residue = top.add_residue("ALA", chain, resSeq=i + 1)
                 for name, element, y in (("CA", md.element.carbon, 0),
@@ -701,15 +702,15 @@ class TestQValueFollowsThePaperItCites:
     @pytest.mark.parametrize("scheme", ["heavy-atom-pairs", "residue-closest-heavy"])
     @pytest.mark.parametrize("order", [("A", "B"), ("B", "A")])
     @pytest.mark.parametrize("repeated_ids", [False, True])
-    @pytest.mark.parametrize("small", [False, True])
+    @pytest.mark.parametrize("n_residues", [3, 2])
     def test_interchain_contacts_do_not_depend_on_chain_order(
-        self, scheme, order, repeated_ids, small,
+        self, tmp_path, scheme, order, repeated_ids, n_residues,
     ):
         from itertools import combinations
 
         from fastmdxplora.analysis.qvalue import QValue, native_contact_pairs
 
-        traj = self._multichain(order, repeated_ids, small)
+        traj = self._multichain(order, repeated_ids, n_residues)
         top = traj.topology
         # Enumerate physical contacts independently of the neighbour search.
         expected = []
@@ -728,25 +729,30 @@ class TestQValueFollowsThePaperItCites:
         if scheme == "residue-closest-heavy":
             distances = distances.min(axis=1, keepdims=True)
         expected_q = (1 / (1 + np.exp(50 * (distances - 1.8 * distances[0])))).mean(1)
-        analysis = QValue(scheme=scheme)
-        np.testing.assert_allclose(analysis.compute(traj), expected_q, atol=1e-6)
+        analysis = QValue(scheme=scheme, output_dir=tmp_path / "interface")
+        result = analysis.run(traj)
+        assert result.status == "ok", result.message
+        np.testing.assert_allclose(result.data, expected_q, atol=1e-6)
         assert analysis._n_native == (4 if scheme == "heavy-atom-pairs" else 1)
         pairs, r0 = native_contact_pairs(traj)
         np.testing.assert_array_equal(pairs, expected)
         np.testing.assert_allclose(r0, atom_distances[0], atol=1e-7)
 
+        single_chain = QValue(scheme=scheme, selection="chainid 0",
+                              output_dir=tmp_path / "single-chain").run(traj)
+        assert single_chain.status == "error"
+        assert "No residue pairs satisfy" in single_chain.message
+
     @pytest.mark.parametrize("scheme", ["heavy-atom-pairs", "residue-closest-heavy"])
     def test_local_contacts_stay_excluded_and_selection_can_remove_a_chain(self, scheme):
         from fastmdxplora.analysis.qvalue import QValue, native_contact_pairs
 
-        traj = self._multichain(("A", "B"), True, False)
+        traj = self._multichain(("A", "B"), True, 3)
         traj.xyz[:, :9, 0] = np.repeat([0, 0.1, 0.2], 3)
         assert len(native_contact_pairs(traj)[0]) == 0
         assert np.isnan(QValue(scheme=scheme).compute(traj)).all()
 
-        small = self._multichain(("A", "B"), True, True)
-        with pytest.raises(ValueError, match="No residue pairs satisfy"):
-            QValue(scheme=scheme, selection="chainid 0").compute(small)
+        small = self._multichain(("A", "B"), True, 1)
         with pytest.raises(ValueError, match="No residue pairs satisfy"):
             native_contact_pairs(small, atom_indices=[0, 1, 2])
         # Selecting only alpha carbons retains the interface but drops CB and H.

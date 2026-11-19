@@ -9,10 +9,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Behaviour changes
 
-- Native contacts between topology chains are retained regardless of chain
-  order or repeated chain IDs, in both Q schemes and the native-contact CV.
-  Sequence separation excludes only contacts within the same chain; small
-  interfaces are allowed while short single chains are still refused.
+- Native contacts in both Q schemes and the native-contact CV use topology
+  chains regardless of chain order. A chain break represented as two topology
+  chains can now contribute contacts across the break, even when the chains
+  share a deposited chain ID. Sequence separation applies within each
+  topology chain, so small interfaces are allowed while short single chains
+  are still refused.
 
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
