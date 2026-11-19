@@ -1484,7 +1484,7 @@ def test_data_files_are_summarised_without_plotting(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         _summarise_data_file(bad, "scatter")
 
-def test_analysis_view_hosts_sections_and_quick_actions(tmp_path: Path) -> None:
+def test_analysis_view_hosts_sections(tmp_path: Path) -> None:
     run = tmp_path / "run"
     run.mkdir()
     server, base_url = start_test_server(run)
@@ -1495,7 +1495,6 @@ def test_analysis_view_hosts_sections_and_quick_actions(tmp_path: Path) -> None:
         server.server_close()
 
     assert 'id="analysis-sections"' in html
-    assert 'id="analysis-quick-actions"' in html
 
     import fastmdxplora.gui as gui_pkg
 

@@ -1496,14 +1496,6 @@ def analysis_sections_for(project_root: Path) -> list[DashboardSection]:
     )
 
 
-def quick_actions_for(project_root: Path, sections: list[DashboardSection]) -> list[DashboardLink]:
-    """The report's quick-action links, relative to the run directory."""
-    links = _artifact_links(
-        project_root, project_root, sections=sections, include_bundle_link=True
-    )
-    return _quick_action_links(links)
-
-
 def _theme_tokens() -> str:
     """Return the shared design tokens for inlining into a static report.
 
@@ -2402,21 +2394,6 @@ def _render_metric_row(row: MetricRow) -> str:
         f'<td class="muted"{why}>{escape(row.status)}{noted}</td>'
         "</tr>"
     )
-
-
-def _quick_action_links(links: list[DashboardLink]) -> list[DashboardLink]:
-    by_label = {link.label: link for link in links}
-    actions: list[DashboardLink] = []
-    for label, display in (
-        ("Markdown report", "Open Markdown Report"),
-        ("Slide deck", "Open Slides"),
-        ("Project bundle", "Open Bundle"),
-        ("Analysis manifest", "Open Analysis Manifest"),
-    ):
-        link = by_label.get(label)
-        if link:
-            actions.append(DashboardLink(display, link.href, link.detail))
-    return actions
 
 
 def _anchor(value: str) -> str:

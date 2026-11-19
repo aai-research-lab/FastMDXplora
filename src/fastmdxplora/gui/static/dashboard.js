@@ -1985,20 +1985,9 @@
   }
 
   function renderAnalysisSections(payload) {
-    // Categorised panels and quick actions, matching the generated report.
+    // Categorised panels, matching the generated report.
     // When the report phase has produced its curated charts these panels use
     // them; otherwise they fall back to each analysis's own figure.
-    // No report links here. The markdown report, the slides, the bundle and
-    // the analysis manifest are all deliverables of the report phase, and the
-    // Report tab lists every one of them with its size and date. Repeating
-    // four of them on this tab made this the place people looked, and the
-    // Report tab the place they did not.
-    const actionHost = byId("analysis-quick-actions");
-    if (actionHost) {
-      actionHost.innerHTML = "";
-      actionHost.hidden = true;
-    }
-
     const sections = withUnfinished(
       Array.isArray(payload.analysis_sections) ? payload.analysis_sections : [],
       Array.isArray(payload.analyses) ? payload.analyses : []);
