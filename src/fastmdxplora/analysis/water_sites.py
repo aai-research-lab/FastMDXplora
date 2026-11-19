@@ -41,6 +41,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
@@ -164,7 +165,7 @@ class WaterSites(Analysis):
         if self.site_selection and self.site_selection != "auto":
             expression = str(self.site_selection)
         elif self.ligand_resname:
-            expression = f"resname {self.ligand_resname}"
+            expression = resname_selection(self.ligand_resname)
         else:
             expression = "protein"
 

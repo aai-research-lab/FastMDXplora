@@ -15,10 +15,38 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import mdtraj as md
+
+from fastmdxplora.agent.context import named_in
 from fastmdxplora.agent.propose import propose_config
 from fastmdxplora.agent.receipt import digest_of
 from fastmdxplora.agent.tools import Toolbox, current_view_tool
 from fastmdxplora.agent.turns import ToolCall, Turn, Usage
+
+
+def test_negative_mentions_need_the_topology_index(tmp_path):
+    pdb = tmp_path / "numbering.pdb"
+    pdb.write_text(
+        "ATOM      1  CA  ALA A  -5       0.000   0.000   0.000  1.00  0.00           C\n"
+        "ATOM      2  CA  ALA A   5       2.000   0.000   0.000  1.00  0.00           C\n"
+        "TER\n"
+        "ATOM      3  CA  ALA B  -5       4.000   0.000   0.000  1.00  0.00           C\n"
+        "END\n",
+        encoding="ascii",
+    )
+    top = md.load_topology(str(pdb))
+    assert [(r.chain.chain_id, r.resSeq) for r in top.residues] == [("A", -5), ("A", 5), ("B", -5)]
+    said = named_in("Compare @ALA-5 with @A:-5 and @ALA5 and @A:5.", study=tmp_path)
+    mentions = dict(line[2:].split(": ", 1) for line in said.splitlines() if line.startswith("- @"))
+    for mention in ("@ALA-5", "@A:-5"):
+        note = mentions[mention]
+        assert "inspect_structure" in note and "check_selection" in note
+        assert "topology index" in note and "chain" in note
+        assert "`res" not in note
+    assert "ALA -5" in mentions["@ALA-5"]
+    assert "-5 of chain A" in mentions["@A:-5"]
+    for mention in ("@ALA5", "@A:5"):
+        assert top.select(mentions[mention].split("`")[1]).tolist() == [1]
 
 
 def _model(*replies):

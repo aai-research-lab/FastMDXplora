@@ -169,6 +169,11 @@ when asked exits 130, not 1; and a run whose named analysis failed exits 1.
 
 ### Behaviour changes
 
+- Ligand names beginning with a digit, such as 3GR, now select their atoms
+  in analyses, Viewer tools and simulation collective variables, including
+  when several ligand names are given. Clicked residues numbered below zero
+  and atom names such as 1HB now give checked selections.
+
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried

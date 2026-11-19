@@ -33,6 +33,32 @@ def _topology_with(residues):
     return topology, xyz
 
 
+@pytest.mark.parametrize("analysis_name", ["contacts", "ligand_rmsf"])
+def test_a_digit_leading_ligand_has_the_same_analysis_numbers(tmp_path, analysis_name):
+    from fastmdxplora.analysis.ligand_rmsf import LigandRMSF
+
+    topology, xyz = _topology_with([
+        ("ALA", [("CA", "C", (0.3, 0, 0))], 1),
+        ("GLY", [("CA", "C", (0, 0.3, 0))], 2),
+        ("SER", [("CA", "C", (0, 0, 0.3))], 3),
+        ("LIG", [("C1", "C", (0, 0, 0)), ("O1", "O", (0.1, 0, 0))], 4),
+    ])
+    coordinates = np.repeat(np.array([xyz]), 20, axis=0)
+    coordinates[:, -1, 0] += np.linspace(0, 0.05, 20)
+    values = []
+    for name in ("LIG", "3GR"):
+        top = topology.copy()
+        top.residue(3).name = name
+        traj = md.Trajectory(coordinates.copy(), top)
+        cls = Contacts if analysis_name == "contacts" else LigandRMSF
+        options = {} if analysis_name == "contacts" else {"start": 0}
+        result = cls(ligand_resname=name, output_dir=str(tmp_path / name),
+                     **options).compute(traj)
+        values.append(result["n_contacts"] if analysis_name == "contacts" else result)
+    assert np.isfinite(values[1]).all()
+    np.testing.assert_allclose(values[0], values[1])
+
+
 def test_hydrogens_do_not_make_a_contact(tmp_path) -> None:
     topology, xyz = _topology_with([
         ("LEU", [("CD1", "C", (0.48, 0, 0)), ("HD11", "H", (0.371, 0, 0)),

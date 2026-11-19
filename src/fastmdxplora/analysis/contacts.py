@@ -32,6 +32,7 @@ import mdtraj as md
 import numpy as np
 import pandas as pd
 
+from fastmdxplora.analysis.residues import resname_selection
 from fastmdxplora.analysis.plotting import colour
 from fastmdxplora.analysis.base import Analysis
 from fastmdxplora.analysis.orchestrator import register_analysis
@@ -112,7 +113,7 @@ class Contacts(Analysis):
             Columns ``frame, n_contacts`` (one row per frame).
         """
         ligand_idx = traj.topology.select(
-            f"resname {self.ligand_resname} and not element H")
+            f"{resname_selection(self.ligand_resname)} and not element H")
         if len(ligand_idx) == 0:
             raise StudyError(
                 f"No heavy atoms matched ligand resname {self.ligand_resname!r}; "

@@ -20,6 +20,15 @@ import pytest
 from fastmdxplora.cli.main import main
 
 
+@pytest.mark.parametrize("names", ["", " \t\n", '""', "''", '\"\" \'\''])
+def test_an_empty_residue_name_selection_is_refused(names):
+    from fastmdxplora.analysis.residues import resname_selection
+    from fastmdxplora.refusals import StudyError
+
+    with pytest.raises(StudyError, match="residue name"):
+        resname_selection(names)
+
+
 @pytest.fixture
 def gapped(tmp_path: Path) -> Path:
     """A structure numbered as a deposited entry is: from 16, with gaps.
