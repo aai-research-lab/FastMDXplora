@@ -203,7 +203,7 @@ class Rg(Analysis):
                 continue
             residues = list(chain.residues)
             label = f"chain {chain_name(residues[0]) if residues else chain.index}"
-            if label in table:
+            while label in table:
                 label = f"{label} ({chain.index})"
             table[label] = self._rg(sub.atom_slice(chain_atoms), weights[chain_atoms])
 

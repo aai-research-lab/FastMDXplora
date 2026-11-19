@@ -11,6 +11,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 - End-to-end distance keeps a column for every measured chain when chain IDs
   repeat or are blank, using the same chain labels as radius of gyration.
+  For chains without IDs, `end_to_end` columns change from numeric `chain 0`,
+  `chain 1` to lettered `chain A`, `chain B`. Batch and Compare results matched
+  by column name can stop matching between old and new analyses, especially
+  with MDTraj <1.11, whose atom slicing loses chain IDs. Rg also keeps every
+  chain when an existing ID collides with a generated label suffix.
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The
   round before judged them against A's, so every departure carried
