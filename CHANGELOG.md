@@ -12,7 +12,9 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 - `dimred.comparison` compares one to three named target ensembles with the
   loaded reference on a shared, reference-fitted PCA basis and joint histogram
   grid. It reports empirical occupancy only and refuses nonmatching ordered
-  selected-atom identities.
+  selected-atom identities. Relative target filenames in YAML are read from
+  the config folder. Rerunning `dimred` in the same folder replaces the
+  previous mode's outputs.
 
 - Along a distance a barrier's rises on W(r) are judged against W's
   resamples, A's moved onto W bin by bin (`summary.resamples_on`). The

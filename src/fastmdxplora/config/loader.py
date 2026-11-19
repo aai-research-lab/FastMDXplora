@@ -50,7 +50,7 @@ class ConfigError(CodedError, ValueError):
 # Loading
 # ---------------------------------------------------------------------------
 def load_config_file(path: str | Path) -> dict[str, Any]:
-    """Read and parse a YAML config file. Returns the raw dict.
+    """Read and normalize a YAML config file.
 
     Raises
     ------
@@ -93,7 +93,48 @@ def load_config_file(path: str | Path) -> dict[str, Any]:
     # lifts the block out of `simulation` as it expands, so a second pass is
     # a no-op -- which is what makes calling it twice safe rather than
     # merely convenient.
-    return normalise_config(data)
+    normalise_config(data)
+    anchor_comparison_targets(data, p.absolute().parent)
+    return data
+
+
+def anchor_comparison_targets(data: dict[str, Any], folder: Path) -> None:
+    """Settle target paths when reading a file or emitting a run's Config.
+
+    Other settings keep their own path conventions. Leave malformed
+    blocks for the existing validator to report.
+    """
+    _anchor_analysis_targets(data.get("analysis"), folder)
+    systems = data.get("systems")
+    if isinstance(systems, list):
+        for entry in systems:
+            if isinstance(entry, dict):
+                _anchor_analysis_targets(entry.get("analysis"), folder)
+    sweep = data.get("sweep")
+    if isinstance(sweep, dict):
+        given = sweep.get("analysis.options")
+        values = given if isinstance(given, (list, tuple)) else [given]
+        for options in values:
+            _anchor_analysis_targets({"options": options}, folder)
+
+
+def _anchor_analysis_targets(analysis: Any, folder: Path) -> None:
+    for key in ("options", "dimred", "comparison"):
+        if not isinstance(analysis, dict):
+            return
+        analysis = analysis.get(key)
+    if not isinstance(analysis, dict):
+        return
+    targets = analysis.get("targets")
+    if not isinstance(targets, list):
+        return
+    for target in targets:
+        if isinstance(target, dict):
+            for key in ("trajectory", "topology"):
+                value = target.get(key)
+                if isinstance(value, str) and value.strip():
+                    # Keep links and '..' intact for the workspace's path checks.
+                    target[key] = str(folder / Path(value).expanduser())
 
 
 # ---------------------------------------------------------------------------

@@ -113,8 +113,8 @@ def _atom_keys(topology: md.Topology, indices: np.ndarray) -> list[tuple[Any, ..
     for index in indices:
         atom = topology.atom(int(index))
         residue = atom.residue
-        chain = residue.chain
-        keys.append((chain.index, str(getattr(chain, "chain_id", "") or ""),
+        # Some MDTraj versions discard the deposited chain label on slicing.
+        keys.append((residue.chain.index,
                      residue.index, residue.resSeq, residue.name, atom.name,
                      atom.element.symbol if atom.element else ""))
     if len(set(keys)) != len(keys):
@@ -170,6 +170,7 @@ def _memory_preflight(reference: md.Trajectory, n_frames: int, n_atoms: int,
     need = (full_target + reference_storage
             + ref_flat + svd + retained + grids + canvas)
     findings = {"estimate_bytes": int(need), "available_bytes": available,
+                "reference_scope": "Comparison work after the caller loads the reference.",
                 "available_read_from": read_from, "resident_room_bytes": resident,
                 "resident_read_from": resident_from, "address_room_bytes": address,
                 "address_read_from": address_from, "estimate_known": available is not None}
@@ -252,7 +253,7 @@ def compute_comparison(analysis: Any, reference: md.Trajectory) -> dict[str, Any
             reference, loaded_frames, n_atoms, len(ref_idx),
             analysis.landscape_bins, label, analysis,
             retained_frames=sum(len(points) for points in projections) + len(selected_source)))
-        loaded = load_trajectory(traj_path, top_path, first=first,
+        loaded = load_trajectory(traj_path, top_path, first=first or None,
                                   last=target["last"], stride=stride)
         if getattr(loaded, IMAGING_FAILED, False):
             _refuse(f"Target {label!r} imaging failed for a periodic input.")
@@ -362,16 +363,12 @@ _OUTPUTS = ("common_pca_model.npz", "common_pca_projections.dat", "common_pca_la
 
 
 def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
-    """Write one comparative run without disturbing default PCA artifacts."""
+    """Write the comparison artifacts for a fresh DimRed run."""
     started = datetime.now(timezone.utc).isoformat()
     opened = figures_open()
-    analysis.output_dir.mkdir(parents=True, exist_ok=True)
-    for name in _OUTPUTS:
-        (analysis.output_dir / name).unlink(missing_ok=True)
-    for key in ("comparison", "memory", "made_whole", "refused", "figures_not_plotted"):
-        analysis.findings.pop(key, None)
-    options_path = analysis._write_options_manifest()
+    options_path = None
     try:
+        options_path = analysis._write_options_manifest()
         analysis.result = analysis.compute(traj)
         details = analysis.result
         model_path = analysis.output_dir / "common_pca_model.npz"
@@ -472,6 +469,7 @@ def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
                               finished_at=datetime.now(timezone.utc).isoformat())
     except Exception as exc:  # noqa: BLE001 - an analysis refusal is a recorded result
         close_figures_opened_since(opened)
+        analysis.result = None
         analysis.findings.pop("comparison", None)
         for name in _OUTPUTS:
             try:
@@ -481,6 +479,8 @@ def run_comparison(analysis: Any, traj: md.Trajectory) -> AnalysisResult:
         code = getattr(exc, "code", None)
         if code:
             analysis.findings["refused"] = {"code": code, "said": str(exc)}
+        else:
+            analysis.findings["error"] = str(exc)
         try:
             options_path = analysis._write_options_manifest()
         except Exception:  # noqa: BLE001

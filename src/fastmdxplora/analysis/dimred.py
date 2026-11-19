@@ -65,6 +65,11 @@ logger = get_logger("analysis.dimred")
 
 
 VALID_METHODS = ("pca", "mds", "tsne", "umap")
+_DEFAULT_OUTPUTS = (
+    *(f"dimred_{method}.{ext}" for method in VALID_METHODS for ext in ("dat", "png", "svg")),
+    "dimred_pca_modes.npz",
+    *(f"dimred_pca_landscape.{ext}" for ext in ("npz", "png", "svg")),
+)
 
 
 class DimRed(Analysis):
@@ -407,19 +412,29 @@ class DimRed(Analysis):
     # Override run() so each method gets its own output pair.
     # --------------------------------------------------------------
     def run(self, traj: md.Trajectory) -> AnalysisResult:
-        if self.comparison is not None:
-            from fastmdxplora.analysis.common_landscapes import run_comparison
-
-            return run_comparison(self, traj)
         from datetime import datetime, timezone
+
+        from fastmdxplora.analysis.common_landscapes import _OUTPUTS, run_comparison
+
+        self.findings.clear()
+        self.result = None
+        self._first_frame = 0
+        self._modes = self._explained_variance = None
+        self._refused_before_it_ran = False
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Both modes share options.json, and readers discover the outputs by filename.
+        for name in ("options.json", *_DEFAULT_OUTPUTS, *_OUTPUTS):
+            (self.output_dir / name).unlink(missing_ok=True)
+        if self.comparison is not None:
+            return run_comparison(self, traj)
 
         # Its figures are closed if it fails part-way, as base.run's are.
         opened = figures_open()
         started = datetime.now(timezone.utc).isoformat()
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        options_path = self._write_options_manifest()
+        options_path = None
 
         try:
+            options_path = self._write_options_manifest()
             self.result = self.compute(traj)
             # Written again, as the base class does, so what the projection
             # found out about its own run is kept beside what it was told.
@@ -493,18 +508,26 @@ class DimRed(Analysis):
             )
         except Exception as exc:  # noqa: BLE001
             close_figures_opened_since(opened)
+            self.result = None
+            for name in _DEFAULT_OUTPUTS:
+                try:
+                    (self.output_dir / name).unlink(missing_ok=True)
+                except OSError:  # the original error is what the result reports
+                    pass
             finished = datetime.now(timezone.utc).isoformat()
             code = getattr(exc, "code", None)
-            if code and self.findings:
+            if code:
                 # The memory it checked, and the refusal's numbers with it,
                 # as clustering keeps them, and whether it was refused before
                 # it ran.
                 self.findings["refused"] = {"code": code, "said": str(exc),
                                             "before_it_ran": self._refused_before_it_ran}
-                try:
-                    options_path = self._write_options_manifest()
-                except Exception:  # noqa: BLE001 -- the refusal matters more
-                    pass
+            else:
+                self.findings["error"] = str(exc)
+            try:
+                options_path = self._write_options_manifest()
+            except Exception:  # noqa: BLE001 -- the original error matters more
+                pass
             return AnalysisResult(
                 name=self.name,
                 status="error",

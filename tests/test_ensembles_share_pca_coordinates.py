@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import mdtraj as md
 import numpy as np
 import pytest
 
 from fastmdxplora.analysis.dimred import DimRed
+from fastmdxplora.analysis.loading import load_trajectory
 from fastmdxplora.refusals import StudyError
 
 
@@ -63,6 +66,28 @@ def _analysis(trajectory, topology, *, output_dir=None, targets=None,
     )
 
 
+@pytest.mark.parametrize(("selection", "frames"), [
+    ({}, list(range(14))),
+    ({"first": 0, "last": None, "stride": 1}, list(range(14))),
+    ({"first": 2, "last": 10}, list(range(2, 10))),
+    ({"first": 1, "last": 4, "stride": 2}, [2, 4, 6]),
+    ({"stride": 2}, list(range(0, 14, 2))),
+])
+def test_identical_trajectory_files_share_coordinates_after_target_slicing(
+        tmp_path, selection, frames):
+    original, trajectory, topology = _files(tmp_path)
+    original.save_dcd(str(trajectory))
+    reference = load_trajectory(trajectory, topology)
+    targets = [{"label": "identical", "trajectory": str(trajectory),
+                "topology": str(topology), **selection}]
+
+    details = _analysis(trajectory, topology, targets=targets).compute(reference)
+
+    assert details["source_frames"][1].tolist() == frames
+    left, right = details["projections"]
+    np.testing.assert_allclose(right, left[frames], atol=2e-6)
+
+
 def test_the_shift_survives_projection_on_the_reference_mean(tmp_path):
     reference, trajectory, topology = _files(tmp_path, 1.0)
     analysis = _analysis(trajectory, topology)
@@ -82,8 +107,8 @@ def test_rigidly_aligned_shift_and_union_edges_are_written(tmp_path, monkeypatch
     reference, trajectory, topology = _files(tmp_path, 4.0)
     analysis = _analysis(trajectory, topology, output_dir=tmp_path / "out")
     analysis.output_dir.mkdir(parents=True)
-    old_default = analysis.output_dir / "dimred_pca_landscape.png"
-    old_default.write_bytes(b"standalone PCA output")
+    sentinel = analysis.output_dir / "dimred_pca_landscape_notes.png"
+    sentinel.write_bytes(b"unrelated file")
     box = np.repeat((np.eye(3, dtype=np.float32) * 4.0)[None, :, :],
                     reference.n_frames, axis=0)
     reference.unitcell_vectors = box.copy()
@@ -99,6 +124,8 @@ def test_rigidly_aligned_shift_and_union_edges_are_written(tmp_path, monkeypatch
         figure_text.extend(text.get_text() for axis in fig.axes for text in axis.texts)
         figure_text.extend([text.get_text() for text in fig.texts])
         assert np.asarray(fig.canvas.buffer_rgba()).std() > 0
+        limits = [ax.collections[0].get_clim() for ax in fig.axes[:2]]
+        assert limits[0] == limits[1] and np.isfinite(limits).all()
         return save_figure(fig, path)
 
     monkeypatch.setattr(common, "save_figure", inspect_figure)
@@ -108,7 +135,7 @@ def test_rigidly_aligned_shift_and_union_edges_are_written(tmp_path, monkeypatch
     assert result.status == "ok", result.message
     assert np.array_equal(reference.xyz, original_xyz)
     assert np.array_equal(reference.unitcell_vectors, box)
-    assert old_default.read_bytes() == b"standalone PCA output"
+    assert sentinel.read_bytes() == b"unrelated file"
     folder = tmp_path / "out" / "dimred"
     assert result.figure_path == folder / "common_pca_landscapes.png"
     assert {path.name for path in result.artifacts} == {
@@ -129,8 +156,15 @@ def test_rigidly_aligned_shift_and_union_edges_are_written(tmp_path, monkeypatch
         aligned = common.superposed(reference, reference=alignment,
                                     atom_indices=selected, ref_atom_indices=selected)
         coordinates = aligned.xyz[:, selected].astype(np.float64).reshape(reference.n_frames, -1)
+        mean = coordinates.mean(axis=0)
+        _, singular, basis = np.linalg.svd(coordinates - mean, full_matrices=False)
+        components = model["components"].reshape(2, -1)
+        np.testing.assert_allclose(model["mean"].ravel(), mean, atol=2e-5)
+        np.testing.assert_allclose(model["variance"], singular[:2] ** 2 / (len(coordinates) - 1),
+                                   atol=2e-5)
+        np.testing.assert_allclose(abs(components @ basis[:2].T), np.eye(2), atol=2e-5)
         reconstructed = ((coordinates - model["mean"].ravel())
-                         @ model["components"].reshape(2, -1).T)
+                         @ components.T)
         assert np.allclose(reconstructed, analysis.result["projections"][0], atol=2e-5)
     with np.load(folder / "common_pca_landscapes.npz", allow_pickle=False) as grids:
         assert grids["counts"].shape == (2, 12, 12)
@@ -336,6 +370,42 @@ def test_low_room_refuses_before_the_target_trajectory_is_loaded(tmp_path, monke
     assert analysis.findings["comparison"]["figure_status"] == "unavailable: memory refusal"
 
 
+def test_reference_memory_refusal_precedes_comparison_copies(tmp_path, monkeypatch):
+    import fastmdxplora.analysis.cluster as cluster
+    import fastmdxplora.analysis.common_landscapes as common
+    import fastmdxplora.analysis.orchestrator as orchestrator
+
+    original, trajectory, topology = _files(tmp_path)
+    original.save_dcd(str(trajectory))
+    events = []
+    preflight = common._memory_preflight
+
+    def load_reference(*args, **kwargs):
+        events.append("reference loaded")
+        return load_trajectory(*args, **kwargs)
+
+    def check_room(*args, **kwargs):
+        events.append("comparison memory checked")
+        return preflight(*args, **kwargs)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("comparison allocated copies or loaded a target before the memory guard")
+
+    monkeypatch.setattr(orchestrator, "load_trajectory", load_reference)
+    monkeypatch.setattr(common, "load_trajectory", unexpected)
+    monkeypatch.setattr(common, "_whole_if_broken", unexpected)
+    monkeypatch.setattr(common, "superposed", unexpected)
+    monkeypatch.setattr(common, "_memory_preflight", check_room)
+    monkeypatch.setattr(cluster, "resident_room", lambda *_: (1, "test low room"))
+    study = orchestrator.AnalysisOrchestrator(trajectory, topology, output_dir=tmp_path / "out")
+    assert study.traj.n_frames == original.n_frames and events == ["reference loaded"]
+    failed = _analysis(trajectory, topology, output_dir=study.output_dir).run(study.traj)
+    assert failed.status == "error" and "above the 1-byte" in failed.message
+    assert events == ["reference loaded", "comparison memory checked"]
+    findings = json.loads(failed.options_path.read_text(encoding="utf-8"))["findings"]
+    assert findings["memory"]["reference_scope"]
+
+
 def test_memory_estimate_includes_previously_retained_projections(tmp_path, monkeypatch):
     import fastmdxplora.analysis.cluster as cluster
     import fastmdxplora.analysis.common_landscapes as common
@@ -495,6 +565,109 @@ def test_a_failed_rerun_does_not_advertise_an_old_comparison_figure(tmp_path):
     assert "comparison" not in record["findings"]
 
 
+def test_switching_dimred_modes_replaces_the_artifacts_seen_by_readers(tmp_path):
+    from fastmdxplora.gui.figure_data import _landscape, _projection
+    from fastmdxplora.gui.motion import modes_of
+    from fastmdxplora.gui.report_dashboard import build_dashboard
+
+    reference, trajectory, topology = _files(tmp_path)
+    simulation = tmp_path / "simulation"
+    simulation.mkdir()
+    production = simulation / "production.dcd"
+    reference.save_dcd(str(production))
+    reference[0].save_pdb(str(simulation / "topology.pdb"))
+    ordinary = DimRed(output_dir=tmp_path / "analysis")
+    comparison = _analysis(trajectory, topology, output_dir=tmp_path / "analysis")
+    ordinary.output_dir.mkdir(parents=True)
+    (ordinary.output_dir.parent / "analysis_manifest.json").write_text(
+        json.dumps({"trajectory_input": str(production)}), encoding="utf-8")
+    sentinel = ordinary.output_dir / "common_pca_landscapes_notes.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    def dashboard():
+        report = tmp_path / "report"
+        build_dashboard(orchestrator=SimpleNamespace(output_dir=tmp_path, system="fixture"),
+                        output_dir=report, title="Mode switch")
+        return (report / "dashboard.html").read_text(encoding="utf-8")
+
+    for analysis, is_comparison in ((ordinary, False), (comparison, True), (ordinary, False)):
+        result = analysis.run(reference)
+        assert result.status == "ok", result.message
+        assert set(ordinary.output_dir.iterdir()) == {*result.artifacts, sentinel}
+        assert (_projection(tmp_path, "pca") is None) == is_comparison
+        assert (_landscape(tmp_path, "pca") is None) == is_comparison
+        assert (modes_of(tmp_path).get("from") == "analysis") != is_comparison
+        assert ("analysis/dimred/common_pca_landscapes.png" in dashboard()) == is_comparison
+        options = json.loads(result.options_path.read_text(encoding="utf-8"))
+        assert ("comparison" in options["options"]) == is_comparison
+
+    for analysis, prior in ((comparison, ordinary), (ordinary, comparison)):
+        assert prior.run(reference).status == "ok"
+        failed = analysis.run(reference[:1])
+        assert failed.status == "error"
+        assert set(ordinary.output_dir.iterdir()) == {failed.options_path, sentinel}
+        assert _projection(tmp_path, "pca") is None
+        assert not modes_of(tmp_path)["ok"]
+        assert "analysis/dimred/common_pca_landscapes.png" not in dashboard()
+        findings = json.loads(failed.options_path.read_text(encoding="utf-8"))["findings"]
+        assert "refused" in findings
+        assert "comparison" not in findings and "landscape" not in findings
+        assert analysis.result is None
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.parametrize("attempt_comparison", [False, True])
+def test_switching_modes_records_an_initial_manifest_failure(
+        tmp_path, monkeypatch, attempt_comparison):
+    reference, trajectory, topology = _files(tmp_path)
+    ordinary = DimRed(output_dir=tmp_path / "out")
+    comparison = _analysis(trajectory, topology, output_dir=tmp_path / "out")
+    prior, upcoming = (ordinary, comparison) if attempt_comparison else (comparison, ordinary)
+    assert prior.run(reference).status == "ok"
+    sentinel = prior.output_dir / "unrelated.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    write = upcoming._write_options_manifest
+    attempts = []
+
+    def fail_once():
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise OSError("injected initial manifest failure")
+        return write()
+
+    monkeypatch.setattr(upcoming, "_write_options_manifest", fail_once)
+    failed = upcoming.run(reference)
+
+    assert failed.status == "error"
+    assert "injected initial manifest failure" in failed.message
+    assert len(attempts) == 2 and upcoming.result is None
+    recorded = json.loads(failed.options_path.read_text(encoding="utf-8"))
+    assert ("comparison" in recorded["options"]) == attempt_comparison
+    assert recorded["findings"] == {"error": "injected initial manifest failure"}
+    assert set(upcoming.output_dir.iterdir()) == {failed.options_path, sentinel}
+
+
+def test_default_write_failure_after_comparison_removes_partial_outputs(tmp_path, monkeypatch):
+    import fastmdxplora.analysis.dimred as dimred
+
+    reference, trajectory, topology = _files(tmp_path)
+    comparison = _analysis(trajectory, topology, output_dir=tmp_path / "out")
+    assert comparison.run(reference).status == "ok"
+
+    def fail_after_writing(path, **arrays):
+        path.write_bytes(b"partial archive")
+        raise OSError("injected default archive failure")
+
+    monkeypatch.setattr(dimred.np, "savez", fail_after_writing)
+    ordinary = DimRed(output_dir=tmp_path / "out")
+    failed = ordinary.run(reference)
+    assert failed.status == "error"
+    assert set(ordinary.output_dir.iterdir()) == {failed.options_path}
+    findings = json.loads(failed.options_path.read_text(encoding="utf-8"))["findings"]
+    assert findings["error"] == "injected default archive failure"
+    assert ordinary.result is None
+
+
 def test_comparison_schema_rejects_wrong_method_and_unknown_fields(tmp_path):
     with pytest.raises(StudyError, match="requires methods"):
         DimRed(methods=["mds"], comparison={"reference": {"label": "WT"}, "targets": []})
@@ -579,16 +752,14 @@ def test_the_saved_table_rebins_to_the_saved_counts_with_a_literal_label(
 @pytest.mark.parametrize("late", ("model", "grid", "table"))
 def test_a_late_write_failure_after_a_good_run_leaves_no_comparison_outputs(
         tmp_path, monkeypatch, late):
-    import json
-
     import fastmdxplora.analysis.common_landscapes as common
 
     reference, trajectory, topology = _files(tmp_path)
     analysis = _analysis(trajectory, topology, output_dir=tmp_path / "out")
     folder = tmp_path / "out" / "dimred"
     folder.mkdir(parents=True)
-    unrelated = folder / "dimred_pca_landscape.png"
-    unrelated.write_bytes(b"standalone PCA output")
+    unrelated = folder / "dimred_pca_landscape_notes.png"
+    unrelated.write_bytes(b"unrelated file")
     assert analysis.run(reference).status == "ok"
     if late == "table":
         def failing_writer(*args, **kwargs):
@@ -611,10 +782,12 @@ def test_a_late_write_failure_after_a_good_run_leaves_no_comparison_outputs(
     assert result.status == "error" and result.figure_path is None
     assert f"injected {late} failure" in result.message
     assert sorted(path.name for path in folder.iterdir()) == [
-        "dimred_pca_landscape.png", "options.json"]
-    assert unrelated.read_bytes() == b"standalone PCA output"
+        "dimred_pca_landscape_notes.png", "options.json"]
+    assert unrelated.read_bytes() == b"unrelated file"
     record = json.loads(result.options_path.read_text(encoding="utf-8"))
     assert "comparison" not in record["findings"]
+    assert record["findings"]["error"] == f"injected {late} failure"
+    assert analysis.result is None
 
 
 def test_a_figure_failure_keeps_complete_numbers_and_no_old_figure(tmp_path, monkeypatch):

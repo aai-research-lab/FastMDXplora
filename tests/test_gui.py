@@ -2260,6 +2260,17 @@ class TestASettingShowsWhatItWillDo:
         assert option.default == ("pca",)
         assert DimRed().methods == ["pca"]
 
+    def test_common_pca_comparison_is_off_until_targets_are_given(self) -> None:
+        from fastmdxplora.analysis.dimred import DimRed
+        from fastmdxplora.gui.schema_payload import schema_payload
+
+        options = schema_payload()["analysis_options"]["analyses"]["dimred"]
+        comparison = next(option for option in options if option["name"] == "comparison")
+        assert comparison["default"] is None
+        assert "target" in comparison["help"]
+        analysis = DimRed()
+        assert analysis.comparison is None and "comparison" not in analysis.options
+
     def test_only_the_genuinely_undecidable_have_no_default(self) -> None:
         """A ligand's residue name depends on the structure, so it has none
         until one is read. Everything else should be able to say."""
@@ -2287,6 +2298,8 @@ class TestASettingShowsWhatItWillDo:
             # to nothing, because a residue set silently applied is the
             # thing that makes such a comparison unreadable. Both belong to
             # a comparison that is off unless a study asks for it.
+            # `dimred.comparison` is also opt-in because the study supplies
+            # the target trajectories. With none given, standalone PCA runs.
             # `pair_distance` measures between two groups somebody chose to
             # compare, and there is no pair a literal could name: unlike
             # every other selection in this package, its subject is not in
@@ -2302,6 +2315,7 @@ class TestASettingShowsWhatItWillDo:
                                "r_max", "reference", "reference_exclude"}
             and f"{name}.{o.name}" not in {"pair_distance.selection_a",
                                            "pair_distance.selection_b",
+                                           "dimred.comparison",
                                            "image_check.cutoff_nm"}
         }
         assert not silent, f"these cannot say what they would do: {sorted(silent)}"

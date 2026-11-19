@@ -117,6 +117,7 @@ FastMDXplora/
 │       │   ├── plotting.py        # Shared figure style
 │       │   ├── rmsd.py rmsf.py rg.py qvalue.py sasa.py ss.py
 │       │   ├── hbonds.py dihedrals.py cluster.py dimred.py water_sites.py
+│       │   ├── common_landscapes.py  # Ensemble occupancy on one reference-fitted PCA basis
 │       │   ├── pair_distance.py end_to_end.py moments_of_inertia.py rdf.py
 │       │   ├── coordination_number.py order_parameters.py bfactor_comparison.py
 │       │   ├── thermodynamics.py  # Density, energy and temperature, from the run's own record

@@ -179,8 +179,9 @@ atoms a distance is measured between (`pair_distance.selection_a`,
 one protein's measured order parameters and the residues left out of
 their comparison (`order_parameters.reference`,
 `order_parameters.reference_exclude`), one structure's deposited file
-(`bfactor_comparison.structure`) and one study's state record
-(`thermodynamics.state_csv`). Position restraints on a selection, and the
+(`bfactor_comparison.structure`), one study's state record
+(`thermodynamics.state_csv`) and the target ensembles in `dimred.comparison`.
+Position restraints on a selection, and the
 selections every structure has (`protein`, `name CA`, `water and name O`,
 as `rdf`, `coordination_number` and the ligand analyses' `protein_selection`
 take them), are a lab's.

@@ -147,6 +147,10 @@ def _config_from(ctx: Context, given: str) -> tuple[dict[str, Any], Path | None]
         raise ToolError(f"That is not YAML a config can be read from: {exc}") from None
     if not isinstance(config, dict) or not config:
         raise ToolError("A config is a mapping of settings, as written to a file.")
+    if file is not None:
+        from fastmdxplora.config.loader import anchor_comparison_targets
+
+        anchor_comparison_targets(config, file.parent)
     return config, file
 
 

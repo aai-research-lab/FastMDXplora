@@ -310,6 +310,13 @@ names one to three additional single-file trajectories and their topologies.
 A target must be in a format whose frames can be counted without loading it,
 such as XTC, TRR, DCD or NetCDF; GRO and LAMMPSTRJ targets are refused before
 loading, so convert them first.
+In a config file, target `trajectory` and `topology` paths are relative to the
+config file's folder. This also applies to per-system comparison settings.
+The reference paths `analysis.trajectory` and `analysis.topology` still use the
+launch directory when relative. Use absolute reference paths when launching
+from another directory. In the Python API and in config dictionaries supplied
+directly, relative target paths use the working directory.
+
 For example:
 
 ```yaml
@@ -331,9 +338,11 @@ analysis:
 ```
 
 Run it with `fastmdx analyze --config common.yml`. The selected atoms must have
-at least three unique, exactly matching ordered identities in every topology;
-atom reordering, chain mapping and residue-number mapping are refused. A
-mutation can be compared only when the shared selection excludes changed
+at least three unique, exactly matching ordered identities in every topology.
+Identity uses the topology chain index, residue index, number and name, and
+atom name and element. Deposited chain labels may be lost when a trajectory is
+sliced. Atom reordering, chain-index changes and residue-number mapping are
+refused. A mutation can be compared only when the shared selection excludes changed
 residues and all remaining identities match. Each frame is aligned to the
 reference's first retained frame. PCA is fitted once to the reference, and
 target coordinates are projected with that same training mean and basis.
@@ -356,6 +365,12 @@ projection and grid provenance are saved as `common_pca_model.npz`,
 `first`/`last`/`stride`; reference retained-frame indices are available, but
 their original indices are marked unknown because the orchestrator does not
 pass its load selection into DimRed before writing the comparison.
+
+The reference memory check runs after the caller loads the reference and
+budgets the additional comparison work, including imaging, alignment and PCA.
+The caller is responsible for fitting the initial reference load in memory.
+Target checks run before trajectory loading and count all strided frames,
+including those later discarded by `first` or `last`.
 
 The equivalent Python API takes an already loaded reference trajectory:
 
