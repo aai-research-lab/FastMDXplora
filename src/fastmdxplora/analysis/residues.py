@@ -33,6 +33,8 @@ from typing import Any
 
 import numpy as np
 
+from fastmdxplora.refusals import StudyError
+
 
 def resname_selection(names: str) -> str:
     """Build an MDTraj selection for whitespace-separated residue names.
@@ -46,9 +48,17 @@ def resname_selection(names: str) -> str:
     -------
     str
         A selection with each name quoted so MDTraj reads 3GR as a name.
+    Raises
+    ------
+    StudyError
+        If there are no residue names.
     """
-    bare = (name.strip("\"'") for name in names.split())
-    return "resname " + " ".join(f'"{name}"' for name in bare)
+    bare = [name.strip("\"'") for name in names.split()]
+    quoted = [f'"{name}"' for name in bare if name]
+    if not quoted:
+        raise StudyError("Give at least one residue name for the selection.",
+                         code="analysis.selection.empty", role="residue name")
+    return "resname " + " ".join(quoted)
 
 
 def chain_name(residue: Any) -> str:

@@ -147,6 +147,11 @@ def _one(said: str, tools: Any, study: Path | None, listed: dict[str, list[Path]
                                                   if residue.group("icode") else "")
             selection = f"resname {name} and resSeq {number}"
             note = ""
+        if number.startswith("-"):
+            return (f"{what}. Use inspect_structure to identify the structure and chain. "
+                    "Find the residue's exact zero-based topology index on that chain, "
+                    "using the Viewer's Selection tab if available, and verify the "
+                    "selection with check_selection against the same topology.")
         return (f"{what}; as an MDTraj selection, `{selection}`. Check it with "
                 "check_selection on the study's structure before you rely on it." + note)
     analyses = _analyses_of(study)
