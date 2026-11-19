@@ -28,11 +28,13 @@ different questions.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastmdxplora.config.loader import (
     STUDY_LEVEL_KEYS,
     ConfigError,
+    anchor_comparison_targets,
     validate_config,
 )
 from fastmdxplora.config.schema import PHASE_SCHEMAS, TOP_LEVEL
@@ -458,7 +460,7 @@ def _system_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def config_yaml(state: dict[str, Any], *, full: bool = False,
-                defaults: Any = None) -> dict[str, Any]:
+                defaults: Any = None, comparison_base: Path | None = None) -> dict[str, Any]:
     """The config as text, from the builder's form state. A sweep row that
     cannot be read is said under the form rather than failing the request.
     ``defaults``: your fastmdx-defaults.yml that applies where the study
@@ -474,7 +476,8 @@ def config_yaml(state: dict[str, Any], *, full: bool = False,
         # A row that cannot be read, or the phase lists given in both
         # spellings and differing: said under the form, not a failed request.
         return {"ok": False, "error": str(exc), "yaml": "", **refused(exc)}
-    answer = render_config(config, full=full, short=short, defaults=defaults)
+    answer = render_config(config, full=full, short=short, defaults=defaults,
+                           comparison_base=comparison_base)
     if answer.get("ok"):
         from fastmdxplora.gui.applicable import not_applicable
 
@@ -562,7 +565,7 @@ def _without_yours_reasons(config: dict[str, Any]) -> dict[str, Any]:
 def render_config(config: dict[str, Any], *, full: bool = False,
                   short: dict[str, Any] | None = None,
                   keep_choices: bool = False,
-                  defaults: Any = None) -> dict[str, Any]:
+                  defaults: Any = None, comparison_base: Path | None = None) -> dict[str, Any]:
     """The config as text, validated, from a config -- the one source.
 
     Everything that renders a config to YAML goes through here: the form,
@@ -597,6 +600,12 @@ def render_config(config: dict[str, Any], *, full: bool = False,
         }
 
     try:
+        if comparison_base is not None:
+            config = copy.deepcopy(config)
+            anchor_comparison_targets(config, comparison_base)
+            if short is not None:
+                short = copy.deepcopy(short)
+                anchor_comparison_targets(short, comparison_base)
         validate_config(config)
     except ConfigError as exc:
         return refusal(exc)
@@ -720,33 +729,46 @@ def check_config_file(path: str, *, to_run: bool = False,
     form, which may have no systems yet. ``base``: the folder the run starts
     in, which a relative structure path is read from.
     """
+    target = Path(path).expanduser()
+    try:
+        data = _read_config_file(target)
+    except ConfigError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    return {**check_config(data, to_run=to_run, defaults=defaults, base=base),
+            "path": str(target)}
+
+
+def _read_config_file(target: Path) -> dict[str, Any]:
+    """Read the form's file before validation expands any umbrella windows."""
     import yaml
 
-    from pathlib import Path
-
-    target = Path(path).expanduser()
     if not target.exists():
-        return {"ok": False, "error": f"No such file: {target}"}
+        raise ConfigError(f"No such file: {target}",
+                          code="config.file.missing", path=str(target))
     if target.is_dir():
-        return {"ok": False, "error": f"That is a folder, not a config: {target}"}
-
+        raise ConfigError(f"That is a folder, not a config: {target}",
+                          code="config.file.missing", path=str(target))
     try:
         raw = target.read_text(encoding="utf-8")
     except OSError as exc:
-        return {"ok": False, "error": f"Could not read it: {exc}"}
+        raise ConfigError(f"Could not read it: {exc}",
+                          code="config.file.missing", path=str(target)) from exc
 
     try:
         data = yaml.safe_load(raw)
     except yaml.YAMLError as exc:
         # A syntax error, which is the most common thing to come back with
         # after somebody has edited a file by hand.
-        return {"ok": False, "error": f"That is not valid YAML: {exc}"}
+        raise ConfigError(f"That is not valid YAML: {exc}",
+                          code="config.file.unparseable", path=str(target)) from exc
 
     if not isinstance(data, dict):
-        return {"ok": False, "error": "A config is a mapping of settings."}
-
-    return {**check_config(data, to_run=to_run, defaults=defaults, base=base),
-            "path": str(target)}
+        raise ConfigError("A config is a mapping of settings.",
+                          code="config.file.not_a_mapping", path=str(target),
+                          found_type=type(data).__name__)
+    anchor_comparison_targets(data, target.absolute().parent)
+    return data
 
 
 def _lists_as_lists(data: dict[str, Any]) -> dict[str, Any]:
@@ -885,16 +907,16 @@ def load_config_into_state(path: str) -> dict[str, Any]:
     new file, because the one on disk may be committed beside a paper, shared
     with somebody, or the record of a run that already happened.
     """
-    import yaml
-
-    from pathlib import Path
-
-    checked = check_config_file(path)
-    if not checked["ok"]:
-        return checked
-
-    data = yaml.safe_load(Path(path).expanduser().read_text(encoding="utf-8"))
-    return state_from_config(data, checked)
+    target = Path(path).expanduser()
+    try:
+        opened = state_from_config(_read_config_file(target))
+    except ConfigError as exc:
+        return {"ok": False, "error": str(exc)}
+    if opened["ok"]:
+        opened["summary"]["path"] = str(target)
+    else:
+        opened["path"] = str(target)
+    return opened
 
 
 def state_from_config(

@@ -115,6 +115,8 @@ _ONE_STUDY_S = tuple(_ONE_STUDY_SAID)
 _LIGAND_OPTION = ("names one study's ligand, so every new study made here would look for "
                   "that residue in its own")
 _ONE_STUDY_OPTIONS = {
+    "dimred.comparison": ("names trajectories and topologies of particular ensembles, "
+                          "so every new study made here would compare with them"),
     "pair_distance.selection_a": ("names atoms of one structure, so every new study made "
                                   "here would measure that distance in its own"),
     "pair_distance.selection_b": ("names atoms of one structure, so every new study made "

@@ -33,7 +33,7 @@ CONFIG_FILENAME = "exploration.yml"
 
 def prepare_run(state: dict[str, Any] | None, output_dir: str | Path, *,
                 config: dict[str, Any] | None = None,
-                defaults: Any = None) -> dict[str, Any]:
+                defaults: Any = None, cwd: Path | None = None) -> dict[str, Any]:
     """Write the config for a run and give back the command that runs it.
 
     Nothing is launched here. Writing the file and starting the process are
@@ -42,16 +42,21 @@ def prepare_run(state: dict[str, Any] | None, output_dir: str | Path, *,
 
     ``defaults`` is your fastmdx-defaults.yml that the run will find, so the
     file written is the one the Builder showed with them.
+    ``cwd`` is the child process's working directory. Target paths supplied
+    without a file origin keep that directory when the Config is emitted.
     """
     # A config, or the form state to build one from. Never both, and the
     # config wins: it is the thing itself, not a description of it.
     full = bool((state or {}).get("full"))
+    comparison_base = cwd or Path.cwd()
     if config is not None:
-        built = render_config(dict(config), full=full, defaults=defaults)
+        built = render_config(dict(config), full=full, defaults=defaults,
+                              comparison_base=comparison_base)
     else:
         # Full when the form asked for it, as its preview was: the short file
         # was written whatever was ticked.
-        built = config_yaml(state or {}, full=full, defaults=defaults)
+        built = config_yaml(state or {}, full=full, defaults=defaults,
+                            comparison_base=comparison_base)
     if not built["ok"]:
         return {
             "ok": False,

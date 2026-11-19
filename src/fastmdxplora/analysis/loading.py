@@ -346,15 +346,19 @@ def _with_one_clock(trajectory: md.Trajectory, n_files: int) -> md.Trajectory:
     return trajectory
 
 
-def _frames_in(path: Path, top: Path | None) -> int | None:
-    """How many frames one trajectory file holds, or None where it cannot say."""
+def _frames_in(path: Path, top: Path | None, *, load: bool = True) -> int | None:
+    """How many frames one trajectory file holds, or None where it cannot say.
+
+    A format whose reader has no length is loaded whole to count it, unless
+    ``load`` is False, for a caller that must not allocate it first."""
     from fastmdxplora.utils import suppress_native_output
 
     try:
         with suppress_native_output(), md.open(str(path)) as handle:
             return int(len(handle))
     except Exception:  # noqa: BLE001 - a format without a length; count instead
-        pass
+        if not load:
+            return None
     try:
         with suppress_native_output():
             loaded = (md.load(str(path), top=str(top)) if top is not None

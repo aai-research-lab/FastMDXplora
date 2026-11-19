@@ -1827,7 +1827,8 @@ class DashboardRuntime:
         made = _made_by(output_dir)
         prepared = prepare_run(dict(state) if state else None, output_dir,
                                config=dict(config) if config is not None else None,
-                               defaults=_defaults_found_from(output_dir))
+                               defaults=_defaults_found_from(output_dir),
+                               cwd=self.exploration_root)
         if not prepared["ok"]:
             return prepared
         # Refused here, before a process is spawned, when the chemistry
@@ -1905,7 +1906,8 @@ class DashboardRuntime:
         kept = self.workspace_root / "continuations" / f"{study.name}-{stamp}"
         made = _made_by(kept)
         prepared = prepare_run(dict(state) if state else None, kept,
-                               config=dict(config) if config is not None else None)
+                               config=dict(config) if config is not None else None,
+                               cwd=self.exploration_root)
         if not prepared["ok"]:
             return prepared
         self.data_stale = False

@@ -313,9 +313,6 @@ def expand_runs(
         sweep_points = [{}]  # a single empty point => one run per system
 
     runs: list[RunSpec] = []
-    multi_system = len(sys_entries) > 1
-    multi_point = len(sweep_points) > 1
-
     for sys_entry in sys_entries:
         sid = sys_entry["id"]
         sys_options = sys_entry.get("options", {})
@@ -328,7 +325,7 @@ def expand_runs(
                 sweep_opts.setdefault(phase, {})[option] = value
             opts = _deep_merge_options(opts, sweep_opts)
 
-            run_id = _make_run_id(sid, point, multi_system, multi_point)
+            run_id = _make_run_id(sid, point, sweep)
             runs.append(RunSpec(
                 run_id=run_id,
                 system=sys_entry["system"],
@@ -345,8 +342,7 @@ def expand_runs(
 def _make_run_id(
     system_id: str,
     point: dict[str, Any],
-    multi_system: bool,
-    multi_point: bool,
+    sweep: dict[str, list[Any]] | None,
 ) -> str:
     """Build a human-readable, filesystem-safe run id.
 
@@ -359,6 +355,12 @@ def _make_run_id(
         # collisions across phases are vanishingly unlikely and the full
         # mapping is in the manifest anyway.
         _phase, option = _split_dotted(dotted)
+        if dotted == "analysis.options" and isinstance(value, dict) and sweep:
+            dimred = value.get("dimred")
+            if isinstance(dimred, dict) and dimred.get("comparison") is not None:
+                # This mapping includes paths anchored to the config's folder.
+                # Keep them in sweep_values and identify the point by its position.
+                value = f"comparison-{sweep[dotted].index(value) + 1}"
         parts.append(f"{_slug(option)}-{_slug(value)}")
     return "__".join(parts)
 

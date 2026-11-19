@@ -301,6 +301,90 @@ where none is recorded, as for a trajectory brought from elsewhere, it is
 -ln P in units of kT and says so. On a biased run it is the landscape of the
 biased ensemble, and the record says that too.
 
+### Compare ensembles on one PCA basis
+
+For an explicit conformational comparison, add `comparison` under
+`analysis.options.dimred` and include only `dimred` in the analysis plan. The
+reference is the trajectory already named by `analysis.trajectory`; `targets`
+names one to three additional single-file trajectories and their topologies.
+A target must be in a format whose frames can be counted without loading it,
+such as XTC, TRR, DCD or NetCDF; GRO and LAMMPSTRJ targets are refused before
+loading, so convert them first.
+In a config file, target `trajectory` and `topology` paths are relative to the
+config file's folder. This also applies to per-system comparison settings.
+The reference paths `analysis.trajectory` and `analysis.topology` still use the
+launch directory when relative. Use absolute reference paths when launching
+from another directory. In the Python API and in config dictionaries supplied
+directly, relative target paths use the working directory.
+
+For example:
+
+```yaml
+analysis:
+  trajectory: wt.xtc
+  topology: wt.pdb
+  include: [dimred]
+  options:
+    dimred:
+      methods: [pca]
+      n_components: 2
+      selection: protein and name CA
+      landscape_bins: 40
+      comparison:
+        reference: {label: WT, temperature_K: 300, sampling: unknown}
+        targets:
+          - {label: ligand, trajectory: ligand.xtc, topology: ligand.pdb,
+             first: 0, stride: 1, temperature_K: 300, sampling: unknown}
+```
+
+Run it with `fastmdx analyze --config common.yml`. The selected atoms must have
+at least three unique, exactly matching ordered identities in every topology.
+Identity uses the topology chain index, residue index, number and name, and
+atom name and element. Deposited chain labels may be lost when a trajectory is
+sliced. Atom reordering, chain-index changes and residue-number mapping are
+refused. A mutation can be compared only when the shared selection excludes changed
+residues and all remaining identities match. Each frame is aligned to the
+reference's first retained frame. PCA is fitted once to the reference, and
+target coordinates are projected with that same training mean and basis.
+Every retained frame is kept, and all ensembles use histogram edges spanning
+their combined projected ranges.
+
+The figure and `common_pca_landscapes.npz` show **reduced empirical occupancy**
+on the displayed reference PC1/PC2 subspace. They are not free energies,
+convergence or significance tests, equilibrium probabilities, kinetics, or
+binding results. Each panel is -ln of its own density (its counts over its own
+frames times bin area), shifted so that its own lowest occupied bin is zero:
+the panels share a grid and a colour range, not an absolute zero, and the
+record says so under `landscape_convention`. Target motion outside the first
+two reference components is not displayed. Temperature and sampling labels are user-supplied; different
+temperatures are identified, biased occupancy is not reweighted, and every
+comparison says equilibrium and convergence were not established. Model,
+projection and grid provenance are saved as `common_pca_model.npz`,
+`common_pca_projections.dat` and `common_pca_landscapes.npz` in
+`analysis/dimred/`. Target source-frame indices follow their recorded
+`first`/`last`/`stride`; reference retained-frame indices are available, but
+their original indices are marked unknown because the orchestrator does not
+pass its load selection into DimRed before writing the comparison.
+
+The reference memory check runs after the caller loads the reference and
+budgets the additional comparison work, including imaging, alignment and PCA.
+The caller is responsible for fitting the initial reference load in memory.
+Target checks run before trajectory loading and count all strided frames,
+including those later discarded by `first` or `last`.
+
+The equivalent Python API takes an already loaded reference trajectory:
+
+```python
+from fastmdxplora.analysis.dimred import DimRed
+from fastmdxplora.analysis.loading import load_trajectory
+reference = load_trajectory("wt.xtc", "wt.pdb")
+result = DimRed(methods=["pca"], n_components=2,
+                selection="protein and name CA",
+                comparison={"reference": {"label": "WT"}, "targets": [
+                    {"label": "ligand", "trajectory": "ligand.xtc",
+                     "topology": "ligand.pdb"}]}).run(reference)
+```
+
 ### Folding
 
 | | |

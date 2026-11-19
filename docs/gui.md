@@ -8,8 +8,8 @@ A browser tab opens, and everything FastMDXplora does is in it: designing a
 study, starting it, watching it happen, and reading the results.
 
 The GUI is not a cut-down version of the command line. It offers **every
-setting the software has** (all 381 analysis options across 31 analyses, but
-for the `selection` that 17 of them ignore, so 364 shown; and all 131 phase,
+setting the software has** (all 382 analysis options across 31 analyses, but
+for the `selection` that 17 of them ignore, so 365 shown; and all 131 phase,
 top-level and execution settings), because the form is generated from the
 same declaration the CLI and the [Config](config.md) are built from rather than
 written by hand. Adding a setting to the schema puts a control in the GUI;
