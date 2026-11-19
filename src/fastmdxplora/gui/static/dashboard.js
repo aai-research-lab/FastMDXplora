@@ -1408,7 +1408,24 @@
     }
   }
 
+  function renderOverviewReportLink() {
+    const link = byId("overview-report-link");
+    if (!link) return;
+    const runs = state.appState?.runs;
+    const phases = Array.isArray(state.results?.phases) ? state.results.phases : [];
+    const reports = Array.isArray(state.results?.reports) ? state.results.reports : [];
+    const artifacts = Array.isArray(state.results?.artifacts) ? state.results.artifacts : [];
+    const hasReport = Array.isArray(runs)
+      ? artifacts.some((artifact) => artifact.path === "comparison/comparison_report.md")
+        || runs.some((run) => run.state === "completed" || run.so_far)
+      : phases.some((phase) => String(phase.name || "").toLowerCase() === "report"
+        && phaseVisualState(phase.status) === "completed")
+        && reports.some((report) => report.path === "report/report.md");
+    link.hidden = !state.appState?.active_run || !hasReport;
+  }
+
   function renderTopBar(status, health) {
+    renderOverviewReportLink();
     if (!state.appState?.active_run) {
       setClassName("topbar-status-dot", "status-dot status-dot-waiting");
       setText("topbar-status-text", "Ready");
