@@ -298,7 +298,60 @@ class TestRg:
         out = Rg(by_chain=True).compute(backbone_traj)
         # The synthetic trajectory has 1 chain → 1 column (just total)
         assert out.ndim == 2
-        assert out.shape[0] == backbone_traj.n_frames
+        assert out.shape == (backbone_traj.n_frames, 1)
+        np.testing.assert_allclose(out[:, 0], Rg().compute(backbone_traj))
+
+    @pytest.mark.parametrize("mass_weighted", [True, False])
+    @pytest.mark.parametrize(("chain_ids", "labels"), [
+        (("A (2)", "A", "A"), ["chain A (2)", "chain A", "chain A (2) (2)"]),
+        (("A", "A", "A"), ["chain A", "chain A (1)", "chain A (2)"]),
+        ((" ", "", None), ["chain A", "chain B", "chain C"]),
+    ])
+    def test_by_chain_keeps_each_radius(
+        self, chain_ids, labels, mass_weighted
+    ):
+        from tests.test_end_to_end import _straight_chains
+
+        traj = _straight_chains(
+            chains=3, chain_ids=chain_ids, chain_spacings=(0.2, 0.3, 0.4))
+        traj.xyz *= np.arange(1, traj.n_frames + 1, dtype=np.float32)[:, None, None]
+        analysis = Rg(by_chain=True, mass_weighted=mass_weighted)
+
+        result = analysis.compute(traj)
+
+        assert list(result.columns) == ["total", *labels]
+        assert analysis._n_chains == 3
+        for label, atoms in [("total", list(range(traj.n_atoms))), *[
+            (label, [a.index for a in chain.atoms])
+            for label, chain in zip(labels, traj.topology.chains)
+        ]]:
+            part = traj.atom_slice(atoms)
+            if mass_weighted:
+                masses = np.array([a.element.mass for a in part.topology.atoms])
+                xyz = part.xyz.astype(np.float64)
+                centre = np.average(xyz, axis=1, weights=masses)
+                expected = np.sqrt(np.average(
+                    np.sum((xyz - centre[:, None, :]) ** 2, axis=2),
+                    axis=1, weights=masses))
+            else:
+                expected = md.compute_rg(part)
+            np.testing.assert_allclose(result[label], expected, rtol=1e-6)
+
+    def test_selected_chains_keep_colliding_labels(self, monkeypatch):
+        from fastmdxplora.analysis import residues
+        from tests.test_end_to_end import _straight_chains
+
+        traj = _straight_chains(chains=3, chain_spacings=(0.2, 0.3, 0.4))
+        # Deliberate labels also exercise MDTraj versions whose slicing loses IDs.
+        monkeypatch.setattr(residues, "chain_name", lambda r: ("A (2)", "A", "A")[r.chain.index])
+        result = Rg(by_chain=True, selection="name CA", mass_weighted=False).compute(traj)
+
+        assert list(result.columns) == ["total", "chain A (2)", "chain A", "chain A (2) (2)"]
+        selected = traj.atom_slice(traj.topology.select("name CA"))
+        np.testing.assert_allclose(result["total"], md.compute_rg(selected))
+        for label, chain in zip(result.columns[1:], selected.topology.chains):
+            part = selected.atom_slice([a.index for a in chain.atoms])
+            np.testing.assert_allclose(result[label], md.compute_rg(part))
 
     def test_run_writes_outputs(self, tmp_path: Path, backbone_traj):
         result = Rg(output_dir=tmp_path).run(backbone_traj)
