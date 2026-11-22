@@ -26,13 +26,13 @@ stored inter-chain lattice placement after bond repair. Common centering
 and ligand/ion nearest-copy placement still apply. The Viewer shows a
 warning when default imaging relocates whole polymers relative to one
 another; successful imaging does not establish the intended assembly.
-Playback, exact source frames, live snapshots and alternate runs use the
-study's recorded policy, and their caches refresh when it changes. The
-frame index records `polymer_placement`, including the policy and grouped
-relative lattice moves; live-coordinate responses also carry the warning.
-For snapshot histories the source frame identifiers are snapshot sequence
-numbers. Atom/chain indices describe the topology used for the displayed
-frames, which may exclude solvent.
+Playback, exact source frames, live snapshots and the other runs'
+trajectories use the study's recorded policy, and their caches refresh when
+it changes. The frame index records `polymer_placement`, including the
+policy and grouped relative lattice moves; live-coordinate responses also
+carry the warning. For snapshot histories the source frame identifiers are
+snapshot sequence numbers. Atom/chain indices describe the topology used for
+the displayed frames, which may exclude solvent.
 
 So any system FastMDXplora can study can be built here: a protein on its own, a
 protein with a ligand, a membrane protein, an umbrella or metadynamics or
