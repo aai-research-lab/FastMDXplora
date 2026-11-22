@@ -9,6 +9,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- `options.json` and `analysis_manifest.json` are strict JSON. A mean whose error
+  is withheld was written with that error as `NaN`, and an infinite load
+  argument as `Infinity`, which `JSON.parse`, `jq` and every reader but
+  Python's refuse, so the whole file could not be read. A number that is not
+  finite is now `null`, as the readers already take it, and the reason a mean
+  is withheld stays beside it.
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
   now 26.04, where the pinned Apptainer package cannot be installed (it
   needs `libfuse3-3`, which 26.04 replaces with `libfuse3-4`), so 2.6.1's
