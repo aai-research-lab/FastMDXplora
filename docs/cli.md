@@ -319,6 +319,18 @@ place for one.
 
 ## `analyze`
 
+Imaging still reassembles polymer molecules into nearby periodic copies by
+default. If your trajectory deliberately stores a finite assembly across
+several lattice copies, keep that relative polymer placement with
+`fastmdx analyze --preserve-polymer-placement` (or
+`fastmdx explore --analyze-preserve-polymer-placement`). Molecules are still
+made whole along their bonds, the assembly is centered by one common
+translation, and ligand/ion copies are still placed nearest the polymers.
+The default warns when it changes relative polymer lattice placement;
+successful imaging does not establish the intended assembly. The chosen
+policy and relocation details are recorded in the analysis manifest, and
+its policy and summary in each analysis's findings. See [polymer placement](config.md#polymer-placement).
+
 ```bash
 --trajectory production.dcd
 --topology system.pdb
