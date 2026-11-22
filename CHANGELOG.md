@@ -9,6 +9,16 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A state saved at the end of a constant-pressure stage loads into a prepared
+  system, for constant-volume and constant-pressure production alike. It
+  carries the barostat's pressure and temperature, which the barostat-free
+  system has no name for, and OpenMM refused it before the first stage. They
+  are now left out, the run's notes and log say so, and the run adds the
+  barostat its own ensemble asks for, at its own pressure. Positions,
+  velocities, box, time and every other parameter are restored; a parameter
+  that is not the barostat's is still refused. This is a state, not a
+  checkpoint: random-number and integrator state are not carried, and
+  resuming from a checkpoint is unchanged.
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
   now 26.04, where the pinned Apptainer package cannot be installed (it
   needs `libfuse3-3`, which 26.04 replaces with `libfuse3-4`), so 2.6.1's

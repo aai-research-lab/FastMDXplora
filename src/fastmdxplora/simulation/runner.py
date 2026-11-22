@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from xml.etree import ElementTree
 
 from fastmdxplora import record_access as _records
 from fastmdxplora.utils.logging import get_logger
@@ -602,6 +603,49 @@ def _add_barostat(omm: dict, system: Any, *, temperature_K: float,
             int(frequency),
         )
     return system.addForce(barostat)
+
+
+#: What an isotropic Monte Carlo barostat puts in a context. A State saved at
+#: the end of an NPT stage carries them, and the System it is loaded into was
+#: prepared before any barostat was added.
+_ISOTROPIC_BAROSTAT_PARAMETERS = frozenset({"MonteCarloPressure", "MonteCarloTemperature"})
+
+
+def _set_state(omm: dict, context: Any, state: Any) -> str | None:
+    """Load a saved State into a context; say what it left out, if anything.
+
+    OpenMM refuses a State that names a parameter the context does not have. The
+    barostat's pressure and temperature are the one case that is no mismatch:
+    the prepared System is barostat-free and the run adds the barostat its own
+    ensemble needs, at its own pressure, after this. Those two are left out; the
+    State's positions, velocities, box, time and every other parameter are
+    restored. Any other absent name means this is not the System the State was
+    saved from, and is refused rather than dropped.
+    """
+    openmm = omm["openmm"]
+    saved = state.getParameters() if state.getDataTypes() & openmm.State.Parameters else {}
+    absent = sorted(set(saved) - set(context.getParameters()))
+    if not absent:
+        context.setState(state)
+        return None
+    foreign = [name for name in absent if name not in _ISOTROPIC_BAROSTAT_PARAMETERS]
+    if foreign:
+        raise StudyError(
+            f"The saved state sets {', '.join(foreign)}, which the prepared "
+            "system has no parameter for, so it was not saved from this system. "
+            "Only a Monte Carlo barostat's pressure and temperature are set "
+            "aside when a state is loaded; nothing else is dropped.",
+            code="simulation.state.unmatched", parameters=foreign)
+    tree = ElementTree.fromstring(openmm.XmlSerializer.serialize(state))
+    for name in absent:
+        del tree.find("Parameters").attrib[name]
+    context.setState(openmm.XmlSerializer.deserialize(
+        ElementTree.tostring(tree, encoding="unicode")))
+    return (f"The saved state came from a constant-pressure stage and carries the "
+            f"barostat's {' and '.join(absent)}; the prepared system has no barostat, "
+            "so they were left out. Its positions, velocities, box, time and every "
+            "other parameter were restored, and the run adds the barostat its own "
+            "ensemble needs.")
 
 
 def _remove_force(system: Any, force_index: int) -> None:
@@ -3352,7 +3396,7 @@ def run_simulation(
     simulation = omm["Simulation"](
         topology, system, integrator, platform_obj, platform_props
     )
-    simulation.context.setState(state)
+    state_note = _set_state(omm, simulation.context, state)
     _validate_state_finite(omm, simulation, stage="loading state.xml")
 
     if resume_from is not None:
@@ -3463,6 +3507,15 @@ def run_simulation(
         if on_progress:
             on_progress(msg)
 
+    def _note(said: str, *, level: str = "warning") -> None:
+        """Say it once, everywhere the run speaks: terminal, run log, live events, record."""
+        getattr(logger, level)(said)
+        log_fh.write(said + "\n")
+        log_fh.flush()
+        if telemetry is not None:
+            telemetry.event(said, level=level)
+        run_notes.append(said)
+
     bias_is_attached: list[int] = []
 
     def _attach_the_bias(*, resolved_name: str = "plumed.dat") -> None:
@@ -3547,21 +3600,16 @@ def run_simulation(
         if plumed and plumed.get("hold_from_the_start"):
             _attach_the_bias(resolved_name="plumed_equilibration.dat")
 
+        if state_note:
+            _note(state_note, level="info")
+
         if not minimize and resume_from is None:
             assigned = _velocities_assigned_at(state_xml_path)
             if assigned is not None and abs(assigned - float(temperature_K)) > 1e-6:
-                said = (f"Starting from the prepared system's velocities, assigned "
-                        f"at {assigned:.1f} K, for a run at {float(temperature_K):.1f} K: "
-                        "minimization is off, so they are not reassigned. With "
-                        "`minimize: true` they are assigned at the run's own.")
-                # Printed once, by the logger; the log file, the live
-                # events (as a warning) and the run's record carry it too.
-                logger.warning(said)
-                log_fh.write(said + "\n")
-                log_fh.flush()
-                if telemetry is not None:
-                    telemetry.event(said, level="warning")
-                run_notes.append(said)
+                _note(f"Starting from the prepared system's velocities, assigned "
+                      f"at {assigned:.1f} K, for a run at {float(temperature_K):.1f} K: "
+                      "minimization is off, so they are not reassigned. With "
+                      "`minimize: true` they are assigned at the run's own.")
 
         # ---- Stage 1: Minimize ----------------------------------------
         if minimize:

@@ -698,6 +698,11 @@ CODES: tuple[Code, ...] = (
          "A seeded window's starting state is not one a run can begin from.",
          Kind.SEMANTIC, Disclosure.FIELD_ONLY,
          detail_keys=("window", "potential", "measured")),
+    Code("simulation.state.unmatched",
+         "A saved state sets parameters the prepared system does not have, so "
+         "it was not saved from that system.",
+         Kind.SEMANTIC, Disclosure.NOTHING,
+         detail_keys=("parameters",)),
     Code("simulation.reference.unusable",
          "A reference structure was given and does not support the "
          "analysis.",
