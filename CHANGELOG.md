@@ -9,6 +9,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- The end-to-end distance's `periodic` finding is a record whether or not the
+  trajectory carries a unit cell. Without one it was the explanation as bare
+  text, where with one it was a record of measurements, so a reader of
+  `options.json` met two types; the same sentence is now under `said`, and no
+  measurement is added or changed.
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
   now 26.04, where the pinned Apptainer package cannot be installed (it
   needs `libfuse3-3`, which 26.04 replaces with `libfuse3-4`), so 2.6.1's
