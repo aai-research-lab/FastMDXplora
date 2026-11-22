@@ -26,14 +26,18 @@ standalone class (see :class:`fastmdxplora.AnalysisOrchestrator`).
 from __future__ import annotations
 
 import inspect
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import mdtraj as md
 
-from fastmdxplora.analysis.base import Analysis, AnalysisResult, carry_wholeness
+from fastmdxplora.analysis.base import (
+    Analysis,
+    AnalysisResult,
+    carry_wholeness,
+    write_strict_json,
+)
 from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
 from fastmdxplora.config.schema import ANALYSIS
 from fastmdxplora.analysis.loading import (
@@ -1010,8 +1014,7 @@ class AnalysisOrchestrator:
             "results": {name: r.to_dict() for name, r in self.results.items()},
         }
         path = self.output_dir / "analysis_manifest.json"
-        with path.open("w", encoding="utf-8") as fh:
-            json.dump(manifest, fh, indent=2)
+        write_strict_json(path, manifest)
         logger.debug("Wrote analysis manifest: %s", path)
 
 

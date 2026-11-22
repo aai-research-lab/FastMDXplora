@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fastmdxplora.analysis.base import write_strict_json
 from fastmdxplora.analysis.orchestrator import (
     AnalysisOrchestrator,
     available_analyses,
@@ -134,8 +135,6 @@ def run(
     and partial-pipeline workflows runnable while clearly recording the
     missing input.
     """
-    import json
-
     # One word for a selection expression, whichever phase is asking. The
     # collective-variable blocks take `select_atoms`; an analysis taking a
     # different word for the same string would put the general name back
@@ -176,9 +175,8 @@ def run(
         reason = ("the study equilibrated only, with no production, so there "
                   "is no trajectory to analyse")
         manifest_path = output_dir / "analysis_manifest.json"
-        with manifest_path.open("w", encoding="utf-8") as fh:
-            json.dump({"phase": "analysis", "status": "skipped", "note": reason},
-                      fh, indent=2)
+        write_strict_json(manifest_path,
+                          {"phase": "analysis", "status": "skipped", "note": reason})
         raise PhaseSkipped(reason, ["analysis_manifest.json"])
 
     # Graceful degradation when the simulation phase hasn't produced
@@ -197,8 +195,7 @@ def run(
             "expected_topology": str(top_path),
         }
         manifest_path = output_dir / "analysis_manifest.json"
-        with manifest_path.open("w", encoding="utf-8") as fh:
-            json.dump(deferred, fh, indent=2)
+        write_strict_json(manifest_path, deferred)
         logger.debug("analysis: trajectory not found, deferring (wrote %s)", manifest_path)
         if presenter:
             presenter.info("(no trajectory available — analysis deferred)")

@@ -86,6 +86,34 @@ def _frame_interval_ns(traj: Any) -> float | None:
     return float(np.median(steps)) / 1000.0
 
 
+def _with_none_for_what_is_not_a_finite_number(value: Any) -> Any:
+    """``value`` with ``None`` for every NaN and infinity in it, through the
+    dicts, lists and tuples of a record, and numpy scalars as plain ones."""
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _with_none_for_what_is_not_a_finite_number(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_with_none_for_what_is_not_a_finite_number(v) for v in value]
+    return value
+
+
+def write_strict_json(path: Path, record: Any) -> None:
+    """Write ``record`` as JSON that any reader parses.
+
+    ``json.dump`` writes NaN and infinity as the bare words ``NaN`` and
+    ``Infinity``, which are not JSON, so a withheld error written as NaN made
+    the whole file unreadable to ``JSON.parse`` and ``jq``. They are written
+    as ``null``, which the readers of these records already take as
+    "not given".
+    """
+    with Path(path).open("w", encoding="utf-8") as fh:
+        json.dump(_with_none_for_what_is_not_a_finite_number(record), fh, indent=2,
+                  allow_nan=False)
+
+
 # ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
@@ -1019,8 +1047,7 @@ class Analysis(ABC):
         if data_format:
             manifest["data_format"] = data_format
         path = self.output_dir / "options.json"
-        with path.open("w", encoding="utf-8") as fh:
-            json.dump(manifest, fh, indent=2)
+        write_strict_json(path, manifest)
         return path
 
 
