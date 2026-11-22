@@ -7,19 +7,15 @@ from pathlib import Path
 
 import pytest
 
+from fastmdxplora.advisories import advise
+from fastmdxplora.structure_info import count_structure, ligand_atom_counts
+
 # The mmCIF parser uses OpenMM's PdbxReader, which is only installed by the
 # optional [md] extra. Keep the PDB-only cases below runnable in base installs.
-try:
-    _OPENMM_AVAILABLE = importlib.util.find_spec("openmm.app") is not None
-except ModuleNotFoundError:
-    _OPENMM_AVAILABLE = False
-
 _requires_openmm = pytest.mark.skipif(
-    not _OPENMM_AVAILABLE, reason="mmCIF parsing requires OpenMM's PdbxReader"
+    importlib.util.find_spec("openmm") is None,
+    reason="mmCIF parsing requires OpenMM's PdbxReader",
 )
-
-from fastmdxplora.advisories import advise  # noqa: E402
-from fastmdxplora.structure_info import count_structure, ligand_atom_counts  # noqa: E402
 
 _COLUMNS = (
     "group_PDB", "id", "type_symbol", "label_atom_id", "label_alt_id",
@@ -156,9 +152,7 @@ def test_mmcif_metadata_keeps_long_chain_and_residue_ids(tmp_path) -> None:
 
 
 @_requires_openmm
-def test_invalid_or_unavailable_mmcif_metadata_is_explicit(tmp_path, monkeypatch) -> None:
-    from fastmdxplora.setup import mmcif
-
+def test_invalid_mmcif_metadata_is_explicit(tmp_path) -> None:
     invalid = tmp_path / "invalid.cif"
     invalid.write_text("data_invalid\n_entry.id 1\n", encoding="utf-8")
     got = count_structure(invalid)
@@ -170,6 +164,10 @@ def test_invalid_or_unavailable_mmcif_metadata_is_explicit(tmp_path, monkeypatch
     got = count_structure(empty)
     assert got["valid"] is False
     assert got["reason"].startswith("parse-error:")
+
+
+def test_unavailable_mmcif_metadata_is_explicit(tmp_path, monkeypatch) -> None:
+    from fastmdxplora.setup import mmcif
 
     cif = _write_cif(
         tmp_path / "missing-dependency.cif",
