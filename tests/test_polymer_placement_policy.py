@@ -303,3 +303,60 @@ def test_chromium_observes_the_warning_and_policy_change(tmp_path):
             browser.close()
     finally:
         session.server.shutdown()
+
+
+def test_chromium_says_a_live_warning_once(tmp_path):
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    from fastmdxplora.gui import live_frames as lf
+    from fastmdxplora.gui.server import start_dashboard_session
+    from tests import viewer_hooks as hooks
+
+    root = tmp_path / "study"
+    simulation = root / "simulation"
+    simulation.mkdir(parents=True)
+    (simulation / "live_status.json").write_text(
+        '{"status":"running","stage":"production","current_step":1000}', encoding="utf-8")
+
+    def write(step):
+        frame = _stored()[0]
+        if step == 3:  # the second chain stored beside the first: nothing to say
+            frame.xyz[0, 2:, 0] -= 9.3
+        frame.save_pdb(str(tmp_path / "frame.pdb"))
+        lf.write_live_frame(simulation, pdb_text=(tmp_path / "frame.pdb").read_text(),
+                            frame_index=step, stage="production", simulation_time_ns=step * 1e-6)
+
+    write(1)
+    session = start_dashboard_session(output=str(root), host="127.0.0.1", port=0)
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--enable-unsafe-swiftshader"])
+            page = browser.new_page()
+            page.set_default_timeout(60000)
+            page.add_init_script("""
+                window.toasts = [];
+                let dashboard;
+                Object.defineProperty(window, "FastMDXDashboard", {
+                    configurable: true, get: () => dashboard,
+                    set: (value) => {
+                        const toast = value.toast;
+                        value.toast = (said, kind, action) => {
+                            window.toasts.push(said);
+                            return toast(said, kind, action);
+                        };
+                        dashboard = value;
+                    }});
+            """)
+            page.goto(session.url.rstrip("/") + "/#viewer", wait_until="domcontentloaded")
+            page.wait_for_function(f"() => {hooks.VIEWER}.STATE.liveFrameIndex === 1")
+            # Frames that relocate a chain and a frame that does not.
+            for step in (2, 3, 4):
+                write(step)
+                page.evaluate(f"() => {hooks.VIEWER}.pollLiveFrame()")
+                page.wait_for_function(f"() => {hooks.VIEWER}.STATE.liveFrameIndex === {step}")
+            toasts = page.evaluate("() => window.toasts")
+            browser.close()
+    finally:
+        session.server.shutdown()
+    assert len([said for said in toasts if "Polymer assembly placement changed" in said]) == 1

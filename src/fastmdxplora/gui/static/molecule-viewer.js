@@ -4151,8 +4151,10 @@
   }
 
   function sayPolymerPlacementWarning(warning) {
-    if (warning && warning !== STATE.polymerPlacementWarning) refuse(warning);
-    STATE.polymerPlacementWarning = warning || null;
+    // Once: a frame that relocates nothing carries no warning and does not unsay it.
+    if (!warning || warning === STATE.polymerPlacementWarning) return;
+    STATE.polymerPlacementWarning = warning;
+    refuse(warning);
   }
 
   function setText(id, value) {
