@@ -200,6 +200,7 @@
     pausePlayback();
     STATE.liveUpdates = true;
     STATE.liveFrameIndex = null;
+    STATE.livePlacement = null;
     STATE.polymerPlacementWarning = null;
     STATE.liveOverlay = null;
     STATE.liveTopology = null;
@@ -631,8 +632,10 @@
         sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
         return;
       }
-      const frameIdentity = `${index.live_frame_index}:${!!index.preserve_polymer_placement}`;
-      if (String(STATE.liveFrameIndex) === frameIdentity) {
+      // The same frame is drawn again when the study's polymer placement changes.
+      const placement = !!index.preserve_polymer_placement;
+      if (String(STATE.liveFrameIndex) === String(index.live_frame_index)
+          && STATE.livePlacement === placement) {
         sayLive(true, {
           stage: index.simulation_stage || STATE.mode,
           age: liveFrameAge(index),
@@ -647,7 +650,8 @@
       if (needsFullTopology()) {
         // The frame has no solvent in it; replacing the solvated system with
         // it would empty the view the reader just asked for.
-        STATE.liveFrameIndex = frameIdentity;
+        STATE.liveFrameIndex = index.live_frame_index;
+        STATE.livePlacement = placement;
         return;
       }
       const overlay = {
@@ -662,7 +666,8 @@
       if (coordinates && STATE.liveTopology && STATE.currentPdb === STATE.liveTopology
           && coordinates.atoms === STATE.liveTopologyAtoms) {
         STATE.liveCoordinates = coordinates;
-        STATE.liveFrameIndex = frameIdentity;
+        STATE.liveFrameIndex = index.live_frame_index;
+        STATE.livePlacement = placement;
         if (await moveTheLiveAtoms(coordinates)) {
           sayLive(true, overlay);
           return;
@@ -675,7 +680,8 @@
       const pdb = await frameResponse.text();
       if (!isViewerGenerationCurrent(generation)) return;
       if (!pdb.includes("ATOM") && !pdb.includes("HETATM")) return;
-      STATE.liveFrameIndex = frameIdentity;
+      STATE.liveFrameIndex = index.live_frame_index;
+      STATE.livePlacement = placement;
       const atoms = (pdb.match(/^(?:ATOM  |HETATM)/gm) || []).length;
       STATE.liveTopology = pdb;
       STATE.liveTopologyAtoms = atoms;
@@ -3510,7 +3516,7 @@
     if (!model) return "";
     const source = model.of === "frames" ? STATE.playbackSignature
       : (model.of === "structure" ? `${STATE.structureUrl}|${needsFullTopology()}`
-        : STATE.liveFrameIndex);
+        : `${STATE.liveFrameIndex}|${STATE.livePlacement}`);
     return `${model.of}|${model.atoms}|${source}`;
   }
 
