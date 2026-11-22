@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
 
-from fastmdxplora.advisories import advise
-from fastmdxplora.structure_info import count_structure, ligand_atom_counts
+# The mmCIF parser uses OpenMM's PdbxReader, which is only installed by the
+# optional [md] extra. Keep the PDB-only cases below runnable in base installs.
+try:
+    _OPENMM_AVAILABLE = importlib.util.find_spec("openmm.app") is not None
+except ModuleNotFoundError:
+    _OPENMM_AVAILABLE = False
+
+_requires_openmm = pytest.mark.skipif(
+    not _OPENMM_AVAILABLE, reason="mmCIF parsing requires OpenMM's PdbxReader"
+)
+
+from fastmdxplora.advisories import advise  # noqa: E402
+from fastmdxplora.structure_info import count_structure, ligand_atom_counts  # noqa: E402
 
 _COLUMNS = (
     "group_PDB", "id", "type_symbol", "label_atom_id", "label_alt_id",
@@ -65,6 +77,7 @@ def _counters(info: dict) -> dict:
     return {key: info[key] for key in keys}
 
 
+@_requires_openmm
 def test_protein_only_mmcif_does_not_turn_atom_names_into_ligands_or_metals(tmp_path) -> None:
     atoms = [
         _atom("ATOM", "C", "CA", "ALA", "A", "1"),
@@ -87,6 +100,7 @@ def test_protein_only_mmcif_does_not_turn_atom_names_into_ligands_or_metals(tmp_
     assert not {item.setting for item in advise(info) if item.setting in {"ligand", "forcefield"}}
 
 
+@_requires_openmm
 def test_genuine_ligand_ion_and_water_match_pdb_counters(tmp_path) -> None:
     atoms = [
         _atom("ATOM", "C", "CA", "ALA", "A", "1"),
@@ -108,6 +122,7 @@ def test_genuine_ligand_ion_and_water_match_pdb_counters(tmp_path) -> None:
     assert {"ligand", "forcefield"} <= settings
 
 
+@_requires_openmm
 def test_mmcif_model_count_covers_all_models_but_metadata_uses_the_first(tmp_path) -> None:
     atoms = [
         _atom("ATOM", "C", "CA", "ALA", "A", "1", "1"),
@@ -125,6 +140,7 @@ def test_mmcif_model_count_covers_all_models_but_metadata_uses_the_first(tmp_pat
     assert _counters(info) == _counters(count_structure(pdb))
 
 
+@_requires_openmm
 def test_mmcif_metadata_keeps_long_chain_and_residue_ids(tmp_path) -> None:
     cif = _write_cif(
         tmp_path / "long-ids.cif",
@@ -139,6 +155,7 @@ def test_mmcif_metadata_keeps_long_chain_and_residue_ids(tmp_path) -> None:
     assert ligand_atom_counts(cif) == {"LONG_LIGAND": 1}
 
 
+@_requires_openmm
 def test_invalid_or_unavailable_mmcif_metadata_is_explicit(tmp_path, monkeypatch) -> None:
     from fastmdxplora.setup import mmcif
 
@@ -191,6 +208,7 @@ def test_mmcif_size_limit_is_reported_without_parsing(tmp_path) -> None:
     {"Cartn_x": "nan"},
     {"Cartn_y": "inf"},
 ])
+@_requires_openmm
 def test_incomplete_atom_site_is_unavailable(tmp_path, changes) -> None:
     fields = dict(zip(_COLUMNS, _atom("HETATM", "C", "C1", "BNZ", "A", "101")))
     fields.update(changes)
@@ -208,6 +226,7 @@ def test_incomplete_atom_site_is_unavailable(tmp_path, changes) -> None:
 
 
 @pytest.mark.parametrize("source", ["auth", "label"])
+@_requires_openmm
 def test_mmcif_identity_fallbacks_need_no_unconsumed_fields(tmp_path, source) -> None:
     fields = dict(zip(_COLUMNS, _atom("HETATM", "C", "C1", "BNZ", "A", "101")))
     keep = {f"{source}_{field}" for field in ("asym_id", "comp_id", "seq_id")}
@@ -226,6 +245,7 @@ def test_mmcif_identity_fallbacks_need_no_unconsumed_fields(tmp_path, source) ->
     assert ligand_atom_counts(path) == {"BNZ": 1}
 
 
+@_requires_openmm
 def test_interleaved_first_model_ligand_count(tmp_path) -> None:
     from fastmdxplora.setup.mmcif import to_pdb_lines
 
