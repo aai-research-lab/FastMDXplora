@@ -178,8 +178,7 @@ def _resolve_topology(
     )
 
 
-def image_whole(trajectory: md.Trajectory, *, inplace: bool,
-                preserve_polymer_placement: bool | None = None) -> md.Trajectory:
+def image_whole(trajectory: md.Trajectory, *, inplace: bool) -> md.Trajectory:
     """Molecules made whole across the periodic boundary, anchored as MDTraj
     would choose -- or, where its heuristic finds nothing, on the largest.
 
@@ -189,14 +188,6 @@ def image_whole(trajectory: md.Trajectory, *, inplace: bool,
     anchors it would have guessed is the call it makes without them, so a
     solvated system is imaged exactly as before.
     """
-    from fastmdxplora.analysis.base import carry_wholeness
-
-    result = trajectory if inplace else carry_wholeness(trajectory, trajectory[:])
-    if preserve_polymer_placement is None:
-        preserve_polymer_placement = getattr(trajectory, POLYMER_PLACEMENT, {}).get(
-            "preserve_polymer_placement", False)
-    if preserve_polymer_placement:
-        return _made_whole(result, preserve_polymer_placement=True)
     try:
         anchors = trajectory.topology.guess_anchor_molecules()
     except ValueError:
@@ -204,6 +195,7 @@ def image_whole(trajectory: md.Trajectory, *, inplace: bool,
         anchors = [max(molecules, key=len)] if molecules else []
     from fastmdxplora.analysis.imaging import image_trajectory
 
+    result = trajectory if inplace else trajectory[:]
     image_trajectory(result, anchors)
     return result
 

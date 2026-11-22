@@ -345,8 +345,7 @@ or recover placement already changed in a previously imaged input file.
 The CLI spellings are `analyze --preserve-polymer-placement` and
 `explore --analyze-preserve-polymer-placement`. Python callers can pass
 `preserve_polymer_placement=True` to `load_trajectory` or
-`AnalysisOrchestrator`; `image_whole` accepts the same keyword and inherits
-it from a marked trajectory when omitted.
+`AnalysisOrchestrator`.
 
 The analysis manifest records the choice in `load_kwargs` and `resolved`.
 Its `polymer_placement` record (each analysis's findings carry its policy

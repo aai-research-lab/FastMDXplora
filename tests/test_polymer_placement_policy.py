@@ -116,8 +116,8 @@ def _policy(root, preserve):
         f"analysis:\n  preserve_polymer_placement: {str(preserve).lower()}\n", encoding="utf-8")
 
 
-def test_loading_trimming_copies_subsets_and_reference_keep_the_policy(tmp_path):
-    from fastmdxplora.analysis.base import carry_wholeness
+def test_loading_trimming_and_analysis_copies_keep_the_policy(tmp_path):
+    from fastmdxplora.analysis.base import _whole_if_broken, carry_wholeness
 
     root = _study(tmp_path / "study")
     result = loading.load_trajectory(
@@ -126,10 +126,13 @@ def test_loading_trimming_copies_subsets_and_reference_keep_the_policy(tmp_path)
     assert result.n_frames == 1
     assert _placement(result)["preserve_polymer_placement"] is True
     subset = carry_wholeness(result, result.atom_slice([0, 1, 2, 3]))
-    reference = loading.image_whole(subset, inplace=False)
-    assert _placement(reference)["preserve_polymer_placement"] is True
-    np.testing.assert_allclose(reference.xyz[:, 2] - reference.xyz[:, 0], [[9.8, .01, 0]],
+    assert _placement(subset)["preserve_polymer_placement"] is True
+    # What an analysis does with a trajectory handed to it split.
+    whole, said = _whole_if_broken(carry_wholeness(result, _stored(split=True)))
+    assert said
+    np.testing.assert_allclose(whole.xyz[:, 2] - whole.xyz[:, 0], [[9.8, .01, 0]] * 3,
                                atol=2e-6)
+    assert np.linalg.norm(whole.xyz[1, 3] - whole.xyz[1, 2]) == pytest.approx(0.1, abs=2e-6)
 
 
 def test_playback_exact_frames_and_alternate_runs_invalidate_on_policy_change(tmp_path):
