@@ -261,7 +261,11 @@ def read_live_frame_index(output_dir: str | Path) -> dict[str, Any]:
         said = json.loads(record_access.read_text(idx_path, encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"live_frame_available": False}
-    return said if isinstance(said, dict) else {"live_frame_available": False}
+    if not isinstance(said, dict):
+        return {"live_frame_available": False}
+    from fastmdxplora.gui.trajectory_frames import preserve_polymer_placement
+
+    return dict(said, preserve_polymer_placement=preserve_polymer_placement(out.parent))
 
 
 def live_frame_pdb_path(output_dir: str | Path) -> Path:
@@ -277,12 +281,12 @@ def live_frame_exists(output_dir: str | Path) -> bool:
 #: The live frames last made whole, by file, time written and size: a
 #: running study's frame is read by the Viewer, its coordinates and its
 #: secondary structure, each of which would otherwise image it again.
-_WHOLE: OrderedDict[tuple[str, int, int], str] = OrderedDict()
+_WHOLE: OrderedDict[tuple, tuple[str, dict]] = OrderedDict()
 _WHOLE_GUARD = threading.Lock()
 _WHOLE_KEPT = 8
 
 
-def live_frame_text(output_dir: str | Path) -> str | None:
+def live_frame_text(output_dir: str | Path, *, placement: dict | None = None) -> str | None:
     """The live frame as every reader is sent it: made whole across the
     periodic boundary and centred on the protein (:func:`made_whole_pdb`).
     ``None`` where there is none.
@@ -300,31 +304,43 @@ def live_frame_text(output_dir: str | Path) -> str | None:
 
     out = Path(output_dir)
     path = live_frame_pdb_path(out)
+    from fastmdxplora.gui.trajectory_frames import preserve_polymer_placement
+
+    preserve = preserve_polymer_placement(out.parent)
     recorded = read_live_frame_index(out).get("cell")
     trajectory = out / "production.dcd"
     try:
         stat = record_access.stat(path)
-        key = (str(record_access.resolved(path)), int(stat.st_mtime_ns), int(stat.st_size))
+        key = (str(record_access.resolved(path)), int(stat.st_mtime_ns),
+               int(stat.st_size), preserve)
         if not recorded and record_access.is_file(trajectory):
             moved = record_access.stat(trajectory)
             key += (int(moved.st_mtime_ns), int(moved.st_size))
         with _WHOLE_GUARD:
             if key in _WHOLE:
                 _WHOLE.move_to_end(key)
-                return _WHOLE[key]
+                text, record = _WHOLE[key]
+                if placement is not None:
+                    placement.update(record)
+                return text
         text = record_access.read_text(path, encoding="utf-8", errors="replace")
     except OSError:
         return None
     cell = None if recorded else _last_cell(trajectory)
-    whole = made_whole_pdb(with_cell(text, cell) if cell is not None else text)
+    record = {"preserve_polymer_placement": preserve}
+    whole = made_whole_pdb(with_cell(text, cell) if cell is not None else text,
+                           preserve_polymer_placement=preserve, placement=record)
+    if placement is not None:
+        placement.update(record)
     with _WHOLE_GUARD:
-        _WHOLE[key] = whole
+        _WHOLE[key] = (whole, record)
         while len(_WHOLE) > _WHOLE_KEPT:
             _WHOLE.popitem(last=False)
     return whole
 
 
-def made_whole_pdb(pdb_text: str) -> str:
+def made_whole_pdb(pdb_text: str, *, preserve_polymer_placement: bool = False,
+                   placement: dict | None = None) -> str:
     """A snapshot's PDB with its molecules made whole and a ligand in the
     copy of the box nearest the protein, as the analyses image the
     trajectory (``analysis/loading._made_whole``).
@@ -344,7 +360,9 @@ def made_whole_pdb(pdb_text: str) -> str:
     try:
         xyz = np.array([[(float(lines[i][30:38]), float(lines[i][38:46]),
                           float(lines[i][46:54])) for i in atoms]], dtype=np.float32)
-        whole = made_whole_frames(pdb_text, xyz, [cell])
+        whole = made_whole_frames(pdb_text, xyz, [cell],
+                                  preserve_polymer_placement=preserve_polymer_placement,
+                                  placement=placement)
     except Exception:  # noqa: BLE001 - shown as written rather than not at all
         return pdb_text
     if whole is None:
@@ -355,14 +373,16 @@ def made_whole_pdb(pdb_text: str) -> str:
     return "\n".join(lines) + ("\n" if str(pdb_text).endswith("\n") else "")
 
 
-def made_whole_frames(pdb_text: str, xyz: Any, cells: list[Any]) -> Any:
+def made_whole_frames(pdb_text: str, xyz: Any, cells: list[Any], *,
+                       preserve_polymer_placement: bool = False,
+                       placement: dict | None = None, source_frames=None) -> Any:
     """Frames of the atoms of ``pdb_text``, in angstroms (frames, atoms, 3),
     made whole and placed about the protein in each frame's box (``cells``:
     a, b, c in angstroms and the three angles), as a new array; ``None``
     where the atoms are not the ones the PDB names or a frame has no box."""
     import mdtraj as md
 
-    from fastmdxplora.analysis.loading import _made_whole
+    from fastmdxplora.analysis.loading import POLYMER_PLACEMENT, _made_whole
 
     xyz = np.asarray(xyz, dtype=np.float32)
     if not cells or len(cells) != len(xyz) or any(cell is None for cell in cells):
@@ -373,7 +393,11 @@ def made_whole_frames(pdb_text: str, xyz: Any, cells: list[Any]) -> Any:
     boxes = np.asarray(cells, dtype=np.float32)
     frames = md.Trajectory(xyz / 10.0, topology, unitcell_lengths=boxes[:, :3] / 10.0,
                            unitcell_angles=boxes[:, 3:6])
-    return np.asarray(_made_whole(frames).xyz, dtype=np.float32) * 10.0
+    frames = _made_whole(frames, preserve_polymer_placement=preserve_polymer_placement,
+                          source_frames=source_frames)
+    if placement is not None:
+        placement.update(getattr(frames, POLYMER_PLACEMENT, {}))
+    return np.asarray(frames.xyz, dtype=np.float32) * 10.0
 
 
 def _bonded_topology(pdb_text: str) -> Any:
@@ -481,7 +505,8 @@ def live_frame_coordinates(output_dir: str | Path) -> dict[str, Any] | None:
     as every reader of it is (:func:`live_frame_text`). ``None``
     where there is no live frame or it holds no atoms.
     """
-    text = live_frame_text(output_dir)
+    placement = {}
+    text = live_frame_text(output_dir, placement=placement)
     if text is None:
         return None
     atoms = [line for line in text.splitlines() if line[:6] in ("ATOM  ", "HETATM")]
@@ -502,7 +527,8 @@ def live_frame_coordinates(output_dir: str | Path) -> dict[str, Any] | None:
         path = Path(folder) / "live_frame.dcd"
         md.Trajectory(xyz[None] / 10.0, topology).save_dcd(str(path))
         data = path.read_bytes()
-    return {"data": data, "atoms": len(atoms), "fingerprint": atoms[0][30:54]}
+    return {"data": data, "atoms": len(atoms), "fingerprint": atoms[0][30:54],
+            "polymer_placement": placement}
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:

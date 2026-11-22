@@ -200,6 +200,7 @@
     pausePlayback();
     STATE.liveUpdates = true;
     STATE.liveFrameIndex = null;
+    STATE.polymerPlacementWarning = null;
     STATE.liveOverlay = null;
     STATE.liveTopology = null;
     STATE.liveTopologyAtoms = 0;
@@ -630,7 +631,8 @@
         sayLive(false, {stage: index.simulation_stage || stageWithoutAFrame(), age: "\u2014"});
         return;
       }
-      if (String(STATE.liveFrameIndex) === String(index.live_frame_index)) {
+      const frameIdentity = `${index.live_frame_index}:${!!index.preserve_polymer_placement}`;
+      if (String(STATE.liveFrameIndex) === frameIdentity) {
         sayLive(true, {
           stage: index.simulation_stage || STATE.mode,
           age: liveFrameAge(index),
@@ -645,7 +647,7 @@
       if (needsFullTopology()) {
         // The frame has no solvent in it; replacing the solvated system with
         // it would empty the view the reader just asked for.
-        STATE.liveFrameIndex = index.live_frame_index;
+        STATE.liveFrameIndex = frameIdentity;
         return;
       }
       const overlay = {
@@ -660,7 +662,7 @@
       if (coordinates && STATE.liveTopology && STATE.currentPdb === STATE.liveTopology
           && coordinates.atoms === STATE.liveTopologyAtoms) {
         STATE.liveCoordinates = coordinates;
-        STATE.liveFrameIndex = index.live_frame_index;
+        STATE.liveFrameIndex = frameIdentity;
         if (await moveTheLiveAtoms(coordinates)) {
           sayLive(true, overlay);
           return;
@@ -673,7 +675,7 @@
       const pdb = await frameResponse.text();
       if (!isViewerGenerationCurrent(generation)) return;
       if (!pdb.includes("ATOM") && !pdb.includes("HETATM")) return;
-      STATE.liveFrameIndex = index.live_frame_index;
+      STATE.liveFrameIndex = frameIdentity;
       const atoms = (pdb.match(/^(?:ATOM  |HETATM)/gm) || []).length;
       STATE.liveTopology = pdb;
       STATE.liveTopologyAtoms = atoms;
@@ -703,6 +705,8 @@
       if (!response.ok) return null;
       const atoms = Number(response.headers.get("X-FastMDX-Atoms"));
       const fingerprint = decodeURIComponent(response.headers.get("X-FastMDX-Fingerprint") || "");
+      sayPolymerPlacementWarning(decodeURIComponent(
+        response.headers.get("X-FastMDX-Polymer-Warning") || ""));
       const bytes = new Uint8Array(await response.arrayBuffer());
       return Number.isFinite(atoms) && atoms > 0 && bytes.length ? {bytes, atoms, fingerprint} : null;
     } catch (error) {
@@ -2134,10 +2138,13 @@
     const signature = payload?.source_signature || payload?.compiled_at || null;
     const changed = !!(STATE.playbackSignature && signature && STATE.playbackSignature !== signature);
     const previousPayload = STATE.playbackPayload;
+    sayPolymerPlacementWarning(payload?.polymer_placement?.warning);
     const sameLiveHistorySource = changed
       && STATE.playbackLoaded
       && previousPayload?.source_kind === "live-history"
-      && payload?.source_kind === "live-history";
+      && payload?.source_kind === "live-history"
+      && previousPayload?.polymer_placement?.preserve_polymer_placement
+        === payload?.polymer_placement?.preserve_polymer_placement;
     STATE.playbackPayload = payload || null;
     sayTheRuns(payload);
     if (!payload?.playback_available && STATE.mode !== "playback" && !STATE.liveOverlay?.on) {
@@ -4135,6 +4142,11 @@
     // again (it is a status of its own, until the next notice).
     document.querySelector("#dashboard-toast .dashboard-toast-said")
       ?.setAttribute("aria-hidden", "true");
+  }
+
+  function sayPolymerPlacementWarning(warning) {
+    if (warning && warning !== STATE.polymerPlacementWarning) refuse(warning);
+    STATE.polymerPlacementWarning = warning || null;
   }
 
   function setText(id, value) {

@@ -244,6 +244,7 @@ def _one_run(base: Path, source: dict[str, Any], context: dict[str, Any], index:
     """One other run's frames fitted beside the run played and written, as
     its entry; or why it is left out."""
     from fastmdxplora.analysis.base import superposed
+    from fastmdxplora.analysis.loading import POLYMER_PLACEMENT
     from fastmdxplora.gui.trajectory_frames import _write_dcd, _write_text
 
     from fastmdxplora.gui.trajectory_frames import _linked_out
@@ -265,7 +266,8 @@ def _one_run(base: Path, source: dict[str, Any], context: dict[str, Any], index:
             frames = superposed(frames, atom_indices=backbone, reference=first,
                                 ref_atom_indices=backbone)
         _write_dcd(frames, target)
-        return {"entry": {"frames": int(frames.n_frames), "running": False},
+        return {"entry": {"frames": int(frames.n_frames), "running": False,
+                           "polymer_placement": getattr(frames, POLYMER_PLACEMENT, {})},
                 "fitted_on": context["fitted"]}
     try:
         frames, lines, why = _snapshots_of(source, context)
@@ -276,6 +278,7 @@ def _one_run(base: Path, source: dict[str, Any], context: dict[str, Any], index:
     _write_dcd(frames, target)
     _write_text(target.with_suffix(".pdb"), "\n".join(lines) + "\nEND\n")
     return {"entry": {"frames": int(frames.n_frames), "running": True,
+                      "polymer_placement": getattr(frames, POLYMER_PLACEMENT, {}),
                       "topology": f"/structure/frames-topology.pdb?run={index}"},
             "fitted_on": context["fitted"]}
 
@@ -288,6 +291,8 @@ def _snapshots_of(source: dict[str, Any], context: dict[str, Any]
     snapshots' own atoms, or why there are none."""
     import mdtraj as md
 
+    from fastmdxplora.analysis.loading import POLYMER_PLACEMENT
+    from fastmdxplora.gui.live_frames import cell_of, made_whole_frames
     from fastmdxplora.gui.trajectory_frames import _atom_lines, _read
 
     times = context["times"]
@@ -314,20 +319,31 @@ def _snapshots_of(source: dict[str, Any], context: dict[str, Any]
             break
         before = [k for k, w in enumerate(written) if w <= float(t) + 1e-9]
         taken.append(before[-1] if before else 0)
-    xyz = []
+    xyz, cells = [], []
     for k in taken:
-        atoms = _atom_lines(_read(simulation / str(records[k].get("path") or "")))
+        text = _read(simulation / str(records[k].get("path") or ""))
+        atoms = _atom_lines(text)
+        cells.append(cell_of(text))
         if len(atoms) != len(lines):
             return None, None, "Its snapshots do not all hold the same atoms."
         xyz.append([(float(a[30:38]), float(a[38:46]), float(a[46:54])) for a in atoms])
     if not xyz:
         return None, None, "It has written no snapshot yet."
+    placement = {}
+    coordinates = np.asarray(xyz, dtype=np.float32)
+    whole = made_whole_frames(
+        text, coordinates, cells,
+        preserve_polymer_placement=source["preserve_polymer_placement"],
+        placement=placement, source_frames=[records[k].get("sequence", k) for k in taken])
+    if whole is not None:
+        coordinates = whole
     topology = md.Topology()
     chain = topology.add_chain()
     residue = topology.add_residue("UNK", chain)
     for _ in lines:
         topology.add_atom("X", md.element.carbon, residue)
-    frames = md.Trajectory(np.asarray(xyz, dtype=np.float32) / 10.0, topology)
+    frames = md.Trajectory(coordinates / 10.0, topology)
+    setattr(frames, POLYMER_PLACEMENT, placement)
     ours_at = np.array([a for a, _ in pairs])
     theirs_at = np.array([b for _, b in pairs])
     reference = md.Trajectory(context["first"].xyz[:, ours_at], topology.subset(theirs_at))
@@ -390,7 +406,9 @@ def _frames_of(source: dict[str, Any], ours: list[str], indices: list[int]
         unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
         unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None)
     if boxed:
-        frames = _made_whole(frames)
+        frames = _made_whole(
+            frames, preserve_polymer_placement=source["preserve_polymer_placement"],
+            source_frames=wanted)
     return frames, None
 
 
