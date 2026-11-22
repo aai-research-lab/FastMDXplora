@@ -634,7 +634,8 @@ def _set_state(omm: dict, context: Any, state: Any) -> str | None:
             f"The saved state sets {', '.join(foreign)}, which the prepared "
             "system has no parameter for, so it was not saved from this system. "
             "Only a Monte Carlo barostat's pressure and temperature are set "
-            "aside when a state is loaded; nothing else is dropped.")
+            "aside when a state is loaded; nothing else is dropped.",
+            code="simulation.state.unmatched", parameters=foreign)
     tree = ElementTree.fromstring(openmm.XmlSerializer.serialize(state))
     for name in absent:
         del tree.find("Parameters").attrib[name]

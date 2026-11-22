@@ -161,8 +161,9 @@ def test_a_state_without_parameters_still_loads_and_says_nothing(tmp_path, monke
 
 @pytest.mark.parametrize("ensemble", ["nvt", "npt"])
 def test_a_parameter_that_is_not_the_barostats_is_refused(tmp_path, monkeypatch, ensemble):
-    with pytest.raises(ValueError, match="sets no_such_parameter, which"):
+    with pytest.raises(ValueError, match="sets no_such_parameter, which") as refused:
         _run(tmp_path, {}, monkeypatch, ensemble=ensemble, extra={"no_such_parameter": 1.0})
+    assert refused.value.code == "simulation.state.unmatched"
 
 
 @pytest.mark.skipif(not hasattr(os, "fchmod"), reason="a study writes its records with os.fchmod")
