@@ -330,8 +330,9 @@ multi-node dispatch; see [Running FastMDXplora elsewhere](clusters.md).
 before `analysis.stride`. Set it for a trajectory format with no usable
 timestamps (DCD, for example); a format's genuine timestamps take precedence.
 The interval is a user assertion about the file's saved frames, not an estimate
-from its duration. It cannot describe a study whose own simulation record says
-it used a variable-step integrator.
+from its duration. It cannot describe a study's own simulation when its record
+says it used a variable-step integrator; a trajectory from elsewhere is not that
+simulation.
 
 The setting is optional. Existing interval provenance can also be read from
 `<trajectory>.join.json` (for example, `production.dcd.join.json`) or from

@@ -26,6 +26,13 @@ def _trajectory(where, *, suffix="dcd", frames=8):
     return path, topology
 
 
+def _recorded_interval(root):
+    import yaml
+
+    recorded = yaml.safe_load((root / "resolved_config.yml").read_text(encoding="utf-8"))
+    return recorded["analysis"].get("saving_interval_ps")
+
+
 def _run_cli(monkeypatch, argv):
     import logging
     import os
@@ -49,6 +56,7 @@ def _run_cli(monkeypatch, argv):
         # Windows has no os.fchmod; these analysis-only runs do not use the
         # process-record lock whose writer needs it.
         monkeypatch.setattr(project_orchestrator, "_write_run_process", lambda *_a, **_k: None)
+        monkeypatch.setattr(os, "fchmod", lambda *_a: None, raising=False)
     logger = logging.getLogger("fastmdx")
     kept = (logger.propagate, logger.level, list(logger.handlers),
             fastmdx_logging._console_handler)
@@ -94,7 +102,7 @@ def test_explicit_interval_flows_through_each_cli_to_trimmed_strided_dcd(
     manifest = json.loads((root / "analysis" / "analysis_manifest.json").read_text(
         encoding="utf-8"))
     assert manifest["load_kwargs"]["saving_interval_ps"] == 12.0
-    assert manifest["resolved"]["saving_interval_ps"] == 12.0
+    assert _recorded_interval(root) == 12.0
 
 
 def test_absent_setting_uses_trajectory_sidecar(tmp_path, monkeypatch):
@@ -111,6 +119,32 @@ def test_absent_setting_uses_trajectory_sidecar(tmp_path, monkeypatch):
 
     assert seen["load_kwargs"]["saving_interval_ps"] == 8.0
     assert seen["time"] == pytest.approx(np.arange(1, 9) * 8.0)
+    assert _recorded_interval(tmp_path / "study") is None
+
+
+def test_an_inferred_interval_is_not_replayed_by_a_rerun(tmp_path, monkeypatch):
+    root = tmp_path / "study"
+    path, topology = _trajectory(root / "simulation")
+    record = root / "simulation" / "simulation_parameters.json"
+
+    def simulated(steps):
+        record.write_text(json.dumps({
+            "parameters": {"integrator": "langevin_middle",
+                           "trajectory_interval_steps": steps, "timestep_fs": 2.0},
+        }), encoding="utf-8")
+
+    argv = ["analyze", "--system", str(topology), "--output", str(root),
+            "--trajectory", str(path), "--topology", str(topology),
+            "--analyses", "rmsd", "--scope", "all"]
+    simulated(5000)
+    assert _run_cli(monkeypatch, argv)["load_kwargs"]["saving_interval_ps"] == 10.0
+    assert _recorded_interval(root) is None
+
+    simulated(2500)
+    rerun = _run_cli(monkeypatch, ["analyze", "--output", str(root), "--rerun",
+                                   "--trajectory", str(path), "--topology", str(topology),
+                                   "--analyses", "rmsd", "--scope", "all"])
+    assert rerun["load_kwargs"]["saving_interval_ps"] == 5.0
 
 
 def test_explicit_setting_overrides_fixed_run_record_and_sidecar(tmp_path, monkeypatch):
@@ -160,7 +194,7 @@ def test_nonpositive_or_nonfinite_intervals_are_refused_by_config(interval):
     assert refused.value.code == "config.option.out_of_range"
 
 
-@pytest.mark.parametrize("interval", [0, -1, float("nan"), float("inf")])
+@pytest.mark.parametrize("interval", [0, -1, float("nan"), float("inf"), True, "12"])
 def test_nonpositive_or_nonfinite_intervals_are_refused_by_loader(tmp_path, interval):
     from fastmdxplora.analysis.loading import TrajectoryLoadError, load_trajectory
 
@@ -168,6 +202,15 @@ def test_nonpositive_or_nonfinite_intervals_are_refused_by_loader(tmp_path, inte
     with pytest.raises(TrajectoryLoadError) as refused:
         load_trajectory(path, topology, saving_interval_ps=interval)
     assert refused.value.code == "analysis.time.interval_invalid"
+
+
+@pytest.mark.parametrize("interval", [np.float32(12.0), np.int64(12), 12])
+def test_numpy_and_python_numbers_are_accepted_by_loader(tmp_path, interval):
+    from fastmdxplora.analysis.loading import load_trajectory
+
+    path, topology = _trajectory(tmp_path / "input")
+    loaded = load_trajectory(path, topology, saving_interval_ps=interval)
+    assert loaded.time == pytest.approx(np.arange(1, 9) * 12.0)
 
 
 def test_unknown_interval_stays_a_frame_axis(tmp_path):
@@ -201,21 +244,51 @@ def test_native_timestamp_clock_wins_over_explicit_interval(tmp_path):
     assert loaded.time == pytest.approx(np.arange(8) * 4.0, abs=0.01)
 
 
-def test_variable_step_study_refuses_explicit_interval(tmp_path):
-    from types import SimpleNamespace
-
-    from fastmdxplora.analysis.analyze import run
-    from fastmdxplora.refusals import CodedError
-
-    path, topology = _trajectory(tmp_path / "input")
+def _variable_step_study(tmp_path):
     simulation = tmp_path / "study" / "simulation"
-    simulation.mkdir(parents=True)
+    own, topology = _trajectory(simulation)
+    own = own.replace(simulation / "production.dcd")
     (simulation / "simulation_parameters.json").write_text(json.dumps({
         "parameters": {"integrator": "variable_langevin"},
     }), encoding="utf-8")
+    return own, topology
 
-    with pytest.raises(CodedError, match="variable-step") as refused:
-        run(orchestrator=SimpleNamespace(output_dir=tmp_path / "study", _presenter=None),
-            output_dir=tmp_path / "study" / "analysis", trajectory=str(path),
-            topology=str(topology), saving_interval_ps=12.0)
-    assert refused.value.code == "analysis.time.interval_unavailable"
+
+def _analyse(tmp_path, topology, **kwargs):
+    from types import SimpleNamespace
+
+    from fastmdxplora.analysis.analyze import run
+
+    root = tmp_path / "study"
+    return run(orchestrator=SimpleNamespace(output_dir=root, _presenter=None),
+               output_dir=root / "analysis", topology=str(topology),
+               saving_interval_ps=12.0, scope="all", include=["rmsd"], **kwargs)
+
+
+def test_variable_step_study_refuses_explicit_interval_for_its_own_run(tmp_path):
+    from fastmdxplora.refusals import CodedError
+
+    own, topology = _variable_step_study(tmp_path)
+    for kwargs in ({}, {"trajectory": str(own)}):
+        with pytest.raises(CodedError, match="variable-step") as refused:
+            _analyse(tmp_path, topology, **kwargs)
+        assert refused.value.code == "analysis.time.interval_unavailable"
+
+
+def test_variable_step_study_honors_explicit_interval_for_a_foreign_trajectory(
+        tmp_path, monkeypatch):
+    from fastmdxplora.analysis import analyze
+
+    _, topology = _variable_step_study(tmp_path)
+    foreign, foreign_top = _trajectory(tmp_path / "elsewhere")
+    seen = {}
+    original = analyze.AnalysisOrchestrator
+
+    class RecordingOrchestrator(original):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            seen["time"] = np.asarray(self.traj.time).copy()
+
+    monkeypatch.setattr(analyze, "AnalysisOrchestrator", RecordingOrchestrator)
+    _analyse(tmp_path, foreign_top, trajectory=str(foreign))
+    assert seen["time"] == pytest.approx(np.arange(1, 9) * 12.0)

@@ -212,7 +212,8 @@ def run(
         ligand_resname or _detect_ligand_resname(project_root)
     )
 
-    if saving_interval_ps is not None and _is_variable_step_run(project_root):
+    own_run = Path(traj_path).resolve().is_relative_to(project_root.resolve())
+    if saving_interval_ps is not None and own_run and _is_variable_step_run(project_root):
         from fastmdxplora.refusals import StudyError
 
         raise StudyError(

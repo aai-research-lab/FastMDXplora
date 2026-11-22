@@ -559,23 +559,17 @@ def load_trajectory(
 
         traj = load_trajectory("run*.dcd", top="topology.pdb", stride=10)
     """
-    invalid_interval = isinstance(saving_interval_ps, bool) or (
-        saving_interval_ps is not None
-        and not isinstance(saving_interval_ps, (int, float))
-    )
-    if saving_interval_ps is not None and not invalid_interval:
+    if saving_interval_ps is not None:
         try:
             interval = float(saving_interval_ps)
         except (OverflowError, TypeError, ValueError):
-            invalid_interval = True
-        else:
-            invalid_interval = not math.isfinite(interval) or interval <= 0
-    if saving_interval_ps is not None and invalid_interval:
-        raise TrajectoryLoadError(
-            "saving_interval_ps must be a positive, finite number of picoseconds.",
-            code="analysis.time.interval_invalid",
-            option="saving_interval_ps", given=saving_interval_ps,
-        )
+            interval = math.nan
+        if isinstance(saving_interval_ps, (bool, str)) or not 0 < interval < math.inf:
+            raise TrajectoryLoadError(
+                "saving_interval_ps must be a positive, finite number of picoseconds.",
+                code="analysis.time.interval_invalid",
+                option="saving_interval_ps", given=saving_interval_ps,
+            )
 
     traj_paths = _resolve_paths(traj)
     for p in traj_paths:

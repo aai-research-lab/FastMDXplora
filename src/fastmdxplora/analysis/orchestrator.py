@@ -1001,7 +1001,6 @@ class AnalysisOrchestrator:
                 # refused by `report` and `analyze --rerun`.
                 "include": [name for name in self.results if name in _REGISTRY],
                 "stride": self._load_kwargs.get("stride"),
-                "saving_interval_ps": self._load_kwargs.get("saving_interval_ps"),
                 "first": self._load_kwargs.get("first"),
                 "last": self._load_kwargs.get("last"),
                 "selection": self.default_selection,
