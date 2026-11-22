@@ -226,11 +226,11 @@ class EndToEndDistance(Analysis):
         check found it: handed to this analysis with the frames, or, run on
         its own, found here by the same check of the chain measured."""
         if traj.unitcell_vectors is None:
-            self.findings["periodic"] = (
+            self.findings["periodic"] = {"said": (
                 "This trajectory carries no unit cell, so distances are taken "
                 "as written. A chain wrapped across a periodic boundary in a "
                 "run whose box was stripped would read as fully extended."
-            )
+            )}
             return
         box = np.asarray(traj.unitcell_vectors, dtype=np.float64)
         narrowest = float(np.min(narrowest_width(traj)))

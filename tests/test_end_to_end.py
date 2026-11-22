@@ -149,8 +149,19 @@ class TestThePeriodicBoundary:
         analysis = EndToEndDistance()
         analysis.compute(_straight_chains(box=None))
 
-        assert "periodic" in analysis.findings
-        assert "no unit cell" in analysis.findings["periodic"]
+        assert "no unit cell" in analysis.findings["periodic"]["said"]
+
+    def test_the_periodic_finding_is_a_record_with_or_without_a_box(self):
+        """One shape for readers: the explanation under ``said`` where there
+        is no cell, the measurements where there is, and no invented numbers."""
+        boxless = EndToEndDistance()
+        boxless.compute(_straight_chains(box=None))
+        boxed = EndToEndDistance()
+        boxed.compute(_straight_chains(box=8.0))
+
+        assert set(boxless.findings["periodic"]) == {"said"}
+        assert "said" not in boxed.findings["periodic"]
+        assert boxed.findings["periodic"]["narrowest_width_nm"] == pytest.approx(8.0)
 
 
 class TestWhatItRefuses:
