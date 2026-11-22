@@ -10,11 +10,10 @@ interval was t's has no `delta_g_confidence_level`, and reads as it did.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from fastmdxplora.batch.explorer import _finite_or_null, _what_the_binding_says
+from fastmdxplora.analysis.base import write_strict_json
+from fastmdxplora.batch.explorer import _what_the_binding_says
 from fastmdxplora.gui import records_answer
 from fastmdxplora.simulation.binding import _what_the_resamples_said
 
@@ -46,9 +45,7 @@ NO_SPREAD = record(3.6e-15, 40, low=0.0, high=0.0)
 
 
 def gui(tmp_path, binding):
-    (tmp_path / "pmf.json").write_text(
-        json.dumps(_finite_or_null({"pmf": {}, "binding": binding})),
-        encoding="utf-8")
+    write_strict_json(tmp_path / "pmf.json", {"pmf": {}, "binding": binding})
     return records_answer._free_energy(tmp_path)
 
 

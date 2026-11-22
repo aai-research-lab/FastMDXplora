@@ -1059,18 +1059,6 @@ def _what_the_binding_says(binding: "dict[str, Any] | None") -> list[str]:
     return lines
 
 
-def _finite_or_null(value: Any) -> Any:
-    """`value` with every NaN or infinite float replaced by None, through
-    dicts, lists and tuples, so that it can be written as strict JSON."""
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, dict):
-        return {key: _finite_or_null(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_finite_or_null(item) for item in value]
-    return value
-
-
 def _a_prepared_system_is_there(setup_dir: Path) -> bool:
     """Whether the three files a simulation starts from are on disk.
 
@@ -3426,8 +3414,6 @@ class BatchExplorer:
         directory name. `None` takes the study's own count, which its
         umbrella block sets as `bootstrap_resamples`.
         """
-        import json
-
         from fastmdxplora.simulation.umbrella import (
             as_a_config_block,
             collect_samples,
@@ -3623,9 +3609,9 @@ class BatchExplorer:
         destination = Path(self.output_dir) / "pmf.json"
         # Strict JSON: a NaN or an infinity is saved as null, which jq and a
         # browser's JSON.parse read, where the bare tokens refuse the file.
-        destination.write_text(
-            json.dumps(_finite_or_null(payload), indent=2, allow_nan=False),
-            encoding="utf-8")
+        from fastmdxplora.analysis.base import write_strict_json
+
+        write_strict_json(destination, payload)
 
         # Cleared before anything is drawn, so a refusal cannot leave the
         # previous run's figure in place. `--force` clears the run
