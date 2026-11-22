@@ -237,6 +237,7 @@ def test_an_analysis_records_the_policy_and_the_manifest_the_relocations(tmp_pat
 
 
 def test_chromium_observes_the_warning_and_policy_change(tmp_path):
+    pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
 
     from fastmdxplora.gui.server import start_dashboard_session
