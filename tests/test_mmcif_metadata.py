@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from fastmdxplora.advisories import advise
 from fastmdxplora.structure_info import count_structure, ligand_atom_counts
 
@@ -173,3 +175,90 @@ def test_mmcif_size_limit_is_reported_without_parsing(tmp_path) -> None:
     assert got["valid"] is False
     assert got["reason"] == "too-large"
     assert got["max_inline_bytes"] == 1
+
+
+@pytest.mark.parametrize("changes", [
+    dict.fromkeys(set(_COLUMNS) - {"label_comp_id"}),
+    dict.fromkeys(set(_COLUMNS) - {"id"}),
+    {"auth_asym_id": None, "label_asym_id": None},
+    {"auth_comp_id": "?", "label_comp_id": "."},
+    {"auth_seq_id": None, "label_seq_id": None},
+    {"group_PDB": None},
+    {"group_PDB": "?"},
+    {"Cartn_x": None},
+    {"Cartn_y": "?"},
+    {"Cartn_z": "invalid"},
+    {"Cartn_x": "nan"},
+    {"Cartn_y": "inf"},
+])
+def test_incomplete_atom_site_is_unavailable(tmp_path, changes) -> None:
+    fields = dict(zip(_COLUMNS, _atom("HETATM", "C", "C1", "BNZ", "A", "101")))
+    fields.update(changes)
+    fields = {name: value for name, value in fields.items() if value is not None}
+    path = tmp_path / "incomplete.cif"
+    path.write_text("data_bad\nloop_\n"
+                    + "".join(f"_atom_site.{name}\n" for name in fields)
+                    + " ".join(fields.values()) + "\n#\n", encoding="utf-8")
+
+    info = count_structure(path)
+    assert info["valid"] is False
+    assert info["reason"].startswith("parse-error:")
+    assert ligand_atom_counts(path) == {}
+    assert advise(info) == []
+
+
+@pytest.mark.parametrize("source", ["auth", "label"])
+def test_mmcif_identity_fallbacks_need_no_unconsumed_fields(tmp_path, source) -> None:
+    fields = dict(zip(_COLUMNS, _atom("HETATM", "C", "C1", "BNZ", "A", "101")))
+    keep = {f"{source}_{field}" for field in ("asym_id", "comp_id", "seq_id")}
+    keep.update(("group_PDB", "Cartn_x", "Cartn_y", "Cartn_z"))
+    fields = {name: value for name, value in fields.items() if name in keep}
+    path = tmp_path / "fallback.cif"
+    path.write_text("data_fallback\nloop_\n"
+                    + "".join(f"_atom_site.{name}\n" for name in fields)
+                    + " ".join(fields.values()) + "\n#\n", encoding="utf-8")
+
+    info = count_structure(path)
+    assert info["valid"] is True
+    assert info["all_chains"] == ["A"]
+    assert info["ligand_instances"][0]["resi"] == "101"
+    assert info["centroid_angstrom"] == [0.0, 0.0, 0.0]
+    assert ligand_atom_counts(path) == {"BNZ": 1}
+
+
+def test_interleaved_first_model_ligand_count(tmp_path) -> None:
+    from fastmdxplora.setup.mmcif import to_pdb_lines
+
+    path = _write_cif(tmp_path / "interleaved.cif", [
+        _atom("HETATM", "C", "C1", "BNZ", "A", "101", "1"),
+        _atom("HETATM", "C", "C1", "BNZ", "A", "101", "2"),
+        _atom("HETATM", "C", "C2", "BNZ", "A", "101", "1"),
+    ])
+    info = count_structure(path)
+    assert info["models"] == 2
+    assert info["atoms"] == len([line for line in to_pdb_lines(path)
+                                 if line.startswith(("ATOM", "HETATM"))]) == 2
+    assert ligand_atom_counts(path) == {"BNZ": 2}
+
+
+@pytest.mark.parametrize("prefix,suffix,models,atoms", [
+    ("", "", 1, 2),
+    ("MODEL        1\n", "ENDMDL\nMODEL        2\n{body}ENDMDL\n", 2, 2),
+    ("MODEL        1\n", "ENDMDL\n{body}", 1, 2),
+    ("MODEL        1\n", "ENDMDL\nMODEL        2\nENDMDL\n", 2, 2),
+    ("MODEL        1\nENDMDL\nMODEL        2\n", "ENDMDL\n", 2, 0),
+    ("MODEL        1\nMODEL        1\n", "ENDMDL\n", 2, 2),
+])
+def test_pdb_endmdl_boundary_matches_main(tmp_path, prefix, suffix, models, atoms) -> None:
+    rows = [_atom("ATOM", "C", "CA", "ALA", "A", "1"),
+            _atom("HETATM", "C", "C1", "BNZ", "A", "101")]
+    reference = _write_pdb(tmp_path / "reference.pdb", rows if atoms else [])
+    body = _write_pdb(tmp_path / "body.pdb", rows).read_text().removesuffix("END\n")
+    path = tmp_path / "boundary.pdb"
+    path.write_text(prefix + body + suffix.format(body=body) + "END\n", encoding="utf-8")
+    expected = count_structure(reference)
+    expected.update(path=path.resolve().as_posix(), size=path.stat().st_size, models=models)
+
+    assert count_structure(path) == expected
+    assert count_structure(path)["atoms"] == atoms
+    assert ligand_atom_counts(path) == ({"BNZ": 1} if atoms else {})

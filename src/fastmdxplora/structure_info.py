@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterator
 from functools import lru_cache
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +37,10 @@ _MAX_PDB_BYTES_FOR_SYSTEM_SCAN = 256 * 1024 * 1024
 _COORD_SANITY_LIMIT = 1_000_000.0  # angstrom
 
 
-def _metadata_records(path: Path) -> Iterator[
-    tuple[str, bool, str, str, str, tuple[str, str, str] | None]
+def _metadata_records(path: Path, *, model_ids: set[str] | None = None) -> Iterator[
+    tuple[bool, str, str, str, tuple[str, str, str]]
 ]:
-    """Yield atom fields from the first-model source format, retaining model IDs."""
+    """Yield first-model atoms, optionally collecting all model declarations."""
     if path.suffix.lower() in {".cif", ".mmcif"}:
         from fastmdxplora.refusals import StudyError
         from fastmdxplora.setup.mmcif import _given, _read_first_block, _rows
@@ -51,44 +52,53 @@ def _metadata_records(path: Path) -> Iterator[
                 code="setup.structure.unreadable",
                 path=str(path),
             )
+        first_model = _given(rows[0].get("pdbx_PDB_model_num")) or "1"
         for row in rows:
+            model = _given(row.get("pdbx_PDB_model_num")) or "1"
+            if model_ids is not None:
+                model_ids.add(model)
+            if model != first_model:
+                continue
+            chain = _given(row.get("auth_asym_id")) or _given(row.get("label_asym_id"))
+            resname = _given(row.get("auth_comp_id")) or _given(row.get("label_comp_id"))
+            resi = _given(row.get("auth_seq_id")) or _given(row.get("label_seq_id"))
+            group = _given(row.get("group_PDB")).upper()
             coordinates = tuple(row.get(f"Cartn_{axis}", "") for axis in "xyz")
+            if (not all((chain, resname, resi)) or group not in {"ATOM", "HETATM"}
+                    or not all(isfinite(float(value)) for value in coordinates)):
+                raise StudyError(
+                    "mmCIF atom_site lacks usable residue identity or coordinates.",
+                    code="setup.structure.unreadable", path=str(path),
+                )
             yield (
-                _given(row.get("pdbx_PDB_model_num")) or "1",
-                _given(row.get("group_PDB")).upper() == "HETATM",
-                _given(row.get("auth_asym_id")) or _given(row.get("label_asym_id")) or "A",
-                (_given(row.get("auth_comp_id")) or _given(row.get("label_comp_id"))).upper(),
-                (_given(row.get("auth_seq_id")) or _given(row.get("label_seq_id")) or "0")
-                + _given(row.get("pdbx_PDB_ins_code")),
+                group == "HETATM", chain, resname.upper(),
+                resi + _given(row.get("pdbx_PDB_ins_code")),
                 coordinates,
             )
         return
 
     model = 0
-    saw_model = False
+    past_the_first = False
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         for line in handle:
             if line.startswith("MODEL"):
-                if saw_model:
-                    model += 1
-                else:
-                    model = max(model, 1)
-                    saw_model = True
+                model += 1
+                if model_ids is not None:
+                    model_ids.add(str(model))
                 continue
-            if not line.startswith(("ATOM", "HETATM")):
+            if line.startswith("ENDMDL"):
+                if model_ids is None:
+                    return
+                past_the_first = True
                 continue
-            model = max(model, 1)
-            try:
-                coordinates = (line[30:38], line[38:46], line[46:54])
-            except IndexError:
-                coordinates = None
+            if past_the_first or not line.startswith(("ATOM", "HETATM")):
+                continue
             yield (
-                str(model),
                 line.startswith("HETATM"),
                 line[21:22].strip() or "A",
                 line[17:20].strip().upper(),
                 line[22:27].strip(),
-                coordinates,
+                (line[30:38], line[38:46], line[46:54]),
             )
 
 
@@ -152,15 +162,10 @@ def _count_structure_cached(
     # 20-model file showed twenty times its atoms. Setup reads the first
     # model, and this describes what setup will read.
     model_ids: set[str] = set()
-    first_model: str | None = None
     try:
-        for model, is_hetatm, chain_id, resname, resi, coordinates in _metadata_records(p):
-            model_ids.add(model)
-            if first_model is None:
-                first_model = model
-            if model != first_model:
-                continue
-
+        for is_hetatm, chain_id, resname, resi, coordinates in _metadata_records(
+            p, model_ids=model_ids
+        ):
             atoms += 1
             if is_hetatm:
                 hetatm_atoms += 1
@@ -170,7 +175,7 @@ def _count_structure_cached(
             # Parse coordinates before classifying so the overall extent
             # remains meaningful even for solvated structures.
             try:
-                x, y, z = (float(value) for value in coordinates or ())
+                x, y, z = (float(value) for value in coordinates)
                 if all(-_COORD_SANITY_LIMIT <= value <= _COORD_SANITY_LIMIT
                        for value in (x, y, z)):
                     for idx, value in enumerate((x, y, z)):
@@ -253,14 +258,10 @@ def ligand_atom_counts(path: str | Path) -> dict[str, int]:
         return {}
     counts: Counter[str] = Counter()
     try:
-        first_model: str | None = None
-        for model, _is_hetatm, _chain, resname, _resi, _coordinates in _metadata_records(p):
-            if first_model is None:
-                first_model = model
-            elif model != first_model:
-                break
-            if resname not in WATER_RESNAMES | ION_RESNAMES | POLYMER_RESNAMES:
-                counts[resname] += 1
+        for _is_hetatm, _chain, resname, _resi, _coordinates in _metadata_records(p):
+            if resname in WATER_RESNAMES or resname in ION_RESNAMES or resname in POLYMER_RESNAMES:
+                continue
+            counts[resname] += 1
     except Exception:
         return {}
     return dict(counts)
