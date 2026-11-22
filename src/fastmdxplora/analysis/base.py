@@ -443,6 +443,15 @@ class Analysis(ABC):
             # an instance run again does not carry it.
             self.findings.pop("made_whole", None)
             traj, made_whole = _whole_if_broken(traj)
+            from fastmdxplora.analysis.loading import POLYMER_PLACEMENT
+
+            # The policy and its summary; the molecules and frames affected
+            # are recorded once, in the phase manifest.
+            self.findings.pop("polymer_placement", None)
+            placement = getattr(traj, POLYMER_PLACEMENT, None)
+            if placement is not None:
+                self.findings["polymer_placement"] = {
+                    k: placement[k] for k in ("preserve_polymer_placement", "summary")}
             if made_whole:
                 self.findings["made_whole"] = made_whole
             self.result = self.compute(traj)
@@ -491,7 +500,7 @@ class Analysis(ABC):
             # earlier and said only that something failed.
             logger.error("Analysis '%s' failed", self.name, exc_info=True,
                          extra={"to_console": False})
-            if self.findings.get("made_whole"):
+            if self.findings.get("made_whole") or self.findings.get("polymer_placement"):
                 try:
                     options_path = self._write_options_manifest()
                 except Exception:  # noqa: BLE001 -- the failure being reported matters more
@@ -1066,7 +1075,11 @@ def _checked_whole(traj) -> bool:
 def carry_wholeness(source, copy):
     """``copy`` with what is known of ``source``'s wholeness: an MDTraj
     slice is a new object and keeps none of it."""
-    from fastmdxplora.analysis.loading import SEGMENT_JOINS
+    from fastmdxplora.analysis.loading import POLYMER_PLACEMENT, SEGMENT_JOINS
+
+    placement = getattr(source, POLYMER_PLACEMENT, None)
+    if placement is not None:
+        _mark(copy, POLYMER_PLACEMENT, placement)
 
     if getattr(source, "n_frames", None) == getattr(copy, "n_frames", None):
         joins = getattr(source, SEGMENT_JOINS, None)

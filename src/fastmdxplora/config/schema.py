@@ -1041,6 +1041,11 @@ ANALYSIS = PhaseSchema(
               "Load every Nth frame from the trajectory.",
               example=1,
               minimum=1),
+        Field("preserve_polymer_placement", bool, False,
+              "Keep stored relative polymer lattice placement after bond repair. "
+              "Default: reassemble polymers in nearby periodic copies. Common "
+              "centering and ligand/ion nearest-copy placement still apply.",
+              example=True),
         Field("first", int, None,
               "First frame index to include.",
               example=0,
@@ -1299,7 +1304,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          ("include", "exclude", "options")),
         ("What to analyse it on",
          "The trajectory, and which atoms count.",
-         ("trajectory", "topology", "select_atoms", "selection", "scope")),
+         ("trajectory", "topology", "select_atoms", "selection", "scope",
+          "preserve_polymer_placement")),
         ("Which frames",
          "Trimming and thinning before anything is analysed.",
          ("first", "last", "stride")),

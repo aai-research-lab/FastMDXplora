@@ -66,6 +66,15 @@ TrajectoryInput = Union[PathLike, Sequence[PathLike]]
 # The loaded frame indices where recorded segments start, carried through
 # copies that preserve all frames. Spatial selections do not change them.
 SEGMENT_JOINS = "_fastmdxplora_segment_joins"
+POLYMER_PLACEMENT = "_fastmdxplora_polymer_placement"
+POLYMER_PLACEMENT_WARNING = (
+    "Polymer assembly placement changed: whole polymer molecules were moved "
+    "to different periodic lattice copies relative to one another. This is "
+    "separate from bond repair and common centering, and does not establish "
+    "the intended assembly. To retain stored polymer placement, use "
+    "analysis.preserve_polymer_placement: true (analyze --preserve-polymer-placement; "
+    "explore --analyze-preserve-polymer-placement)."
+)
 
 
 def _loaded_joins(paths: list[Path], top: Path | None, stride: int | None,
@@ -169,7 +178,8 @@ def _resolve_topology(
     )
 
 
-def image_whole(trajectory: md.Trajectory, *, inplace: bool) -> md.Trajectory:
+def image_whole(trajectory: md.Trajectory, *, inplace: bool,
+                preserve_polymer_placement: bool | None = None) -> md.Trajectory:
     """Molecules made whole across the periodic boundary, anchored as MDTraj
     would choose -- or, where its heuristic finds nothing, on the largest.
 
@@ -179,6 +189,14 @@ def image_whole(trajectory: md.Trajectory, *, inplace: bool) -> md.Trajectory:
     anchors it would have guessed is the call it makes without them, so a
     solvated system is imaged exactly as before.
     """
+    from fastmdxplora.analysis.base import carry_wholeness
+
+    result = trajectory if inplace else carry_wholeness(trajectory, trajectory[:])
+    if preserve_polymer_placement is None:
+        preserve_polymer_placement = getattr(trajectory, POLYMER_PLACEMENT, {}).get(
+            "preserve_polymer_placement", False)
+    if preserve_polymer_placement:
+        return _made_whole(result, preserve_polymer_placement=True)
     try:
         anchors = trajectory.topology.guess_anchor_molecules()
     except ValueError:
@@ -186,12 +204,13 @@ def image_whole(trajectory: md.Trajectory, *, inplace: bool) -> md.Trajectory:
         anchors = [max(molecules, key=len)] if molecules else []
     from fastmdxplora.analysis.imaging import image_trajectory
 
-    result = trajectory if inplace else trajectory[:]
     image_trajectory(result, anchors)
     return result
 
 
-def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
+def _made_whole(trajectory: md.Trajectory, *,
+                preserve_polymer_placement: bool | None = None,
+                source_frames=None) -> md.Trajectory:
     """Molecules put back together across the periodic boundary, once.
 
     A trajectory written by another engine -- a GROMACS ``.xtc``, an AMBER
@@ -226,6 +245,12 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
     logged rather than swallowed, so a silently unimaged run can be
     recognised afterwards.
     """
+    previous = getattr(trajectory, POLYMER_PLACEMENT, {})
+    if preserve_polymer_placement is None:
+        preserve_polymer_placement = previous.get("preserve_polymer_placement", False)
+    setattr(trajectory, POLYMER_PLACEMENT, {
+        "relocations": [], "summary": "No relative polymer lattice relocations recorded.",
+        **previous, "preserve_polymer_placement": bool(preserve_polymer_placement)})
     if trajectory.unitcell_vectors is None:
         return trajectory
     from fastmdxplora.analysis.residues import _is_polymer
@@ -248,7 +273,10 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
                 anchors = [max(molecules, key=len)] if molecules else []
         from fastmdxplora.analysis.imaging import image_trajectory
 
-        image_trajectory(trajectory, anchors, [m for m in molecules if m not in anchors])
+        moves = image_trajectory(
+            trajectory, anchors, [m for m in molecules if m not in anchors],
+            preserve_anchor_placement=bool(large and preserve_polymer_placement))
+        _record_polymer_placement(trajectory, large, moves, source_frames)
     except Exception as exc:  # MDTraj raises a variety of types
         logger.warning(
             "Could not image molecules across the periodic boundary (%s); "
@@ -272,6 +300,42 @@ def _made_whole(trajectory: md.Trajectory) -> md.Trajectory:
                 "in a periodic copy up to a box length away.", _named(exc),
             )
     return trajectory
+
+
+def _record_polymer_placement(trajectory, large, moves, source_frames=None) -> None:
+    """Record relative lattice moves, separately from bond repair and centering."""
+    if len(large) < 2:
+        return
+    record = dict(getattr(trajectory, POLYMER_PLACEMENT))
+    # Integer lattice vectors group repeated moves compactly. Roots
+    # stay fixed during bond repair; the first anchor removes the
+    # common translation. These are relative assembly moves only.
+    lattice = np.rint(np.einsum(
+        "fmi,fij->fmj", moves, np.linalg.inv(trajectory.unitcell_vectors)
+    )).astype(np.int64)
+    frames = (list(range(trajectory.n_frames)) if source_frames is None
+              else list(source_frames))
+    relocations = []
+    for index, molecule in enumerate(large):
+        for shift in np.unique(lattice[:, index], axis=0):
+            if not np.any(shift):
+                continue
+            selected = np.flatnonzero(np.all(lattice[:, index] == shift, axis=1))
+            relocations.append({
+                "molecule_root_atom": min(a.index for a in molecule),
+                "chains": sorted({a.residue.chain.index for a in molecule}),
+                "source_frames": [int(frames[f]) for f in selected],
+                "relative_lattice_shift": shift.tolist(),
+            })
+    if relocations:
+        record.update(
+            relocations=relocations,
+            relative_to_root_atom=min(a.index for a in large[0]),
+            summary=f"{len(relocations)} polymer molecule/lattice-shift groups relocated.",
+            warning=POLYMER_PLACEMENT_WARNING)
+        if not getattr(trajectory, POLYMER_PLACEMENT).get("warning"):
+            logger.warning(POLYMER_PLACEMENT_WARNING)
+    setattr(trajectory, POLYMER_PLACEMENT, record)
 
 
 def _named(exc: Exception) -> str:
@@ -502,6 +566,7 @@ def load_trajectory(
     first: int | None = None,
     last: int | None = None,
     saving_interval_ps: float | None = None,
+    preserve_polymer_placement: bool = False,
 ) -> md.Trajectory:
     """Load one or more trajectory files into a single MDTraj trajectory.
 
@@ -525,6 +590,10 @@ def load_trajectory(
         above all -- on a real time axis; without it such a trajectory is
         given a NaN clock and every time series is drawn against frame
         number. Ignored for formats that carry the clock themselves.
+    preserve_polymer_placement : bool, optional
+        Keep stored relative polymer lattice placement after bond repair.
+        Default False reassembles polymers as before. Common centering and
+        ligand/ion nearest-copy placement apply in either mode.
 
     Returns
     -------
@@ -601,13 +670,11 @@ def load_trajectory(
     if isinstance(trajectory, list):
         trajectory = md.join(trajectory)
 
-    trajectory = _made_whole(trajectory)
+    written = written_frames(traj_paths, top_path, stride, trajectory.n_frames)
     trajectory = _with_one_clock(trajectory, len(traj_paths))
     # Last, so it wins: where the interval is known it supersedes both what
     # the file said and what the seam-mender inferred, and where it is not
     # known the clock is marked absent rather than left as a frame index.
-    written = (written_frames(traj_paths, top_path, stride, trajectory.n_frames)
-               if saving_interval_ps else None)
     trajectory = _with_a_real_clock(
         trajectory, traj_paths, saving_interval_ps, stride, written)
 
@@ -622,8 +689,13 @@ def load_trajectory(
                 f"Invalid frame slice [{f}:{l}] for trajectory with {n} frames."
             , code="analysis.option.out_of_range")
         trajectory = trajectory[f:l]
+        written = written[f:l]
         joins = tuple(j - f for j in joins if f < j < l)
 
+    trajectory = _made_whole(
+        trajectory, preserve_polymer_placement=preserve_polymer_placement,
+        source_frames=written)
+    getattr(trajectory, POLYMER_PLACEMENT)["source_files"] = [str(p) for p in traj_paths]
     setattr(trajectory, SEGMENT_JOINS, joins)
 
     # Measured once here, on what is handed on, so the analyses need not.

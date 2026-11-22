@@ -37,6 +37,7 @@ from fastmdxplora.analysis.base import Analysis, AnalysisResult, carry_wholeness
 from fastmdxplora.analysis.plotting import settle_figure_colours, settle_figure_width
 from fastmdxplora.config.schema import ANALYSIS
 from fastmdxplora.analysis.loading import (
+    POLYMER_PLACEMENT,
     PathLike,
     TrajectoryInput,
     load_trajectory,
@@ -216,6 +217,7 @@ class AnalysisOrchestrator:
         first: int | None = None,
         last: int | None = None,
         saving_interval_ps: float | None = None,
+        preserve_polymer_placement: bool = False,
         figure_colours: str | None = None,
         figure_width: str | None = None,
     ) -> None:
@@ -252,12 +254,14 @@ class AnalysisOrchestrator:
         self._load_kwargs = {
             "stride": stride, "first": first, "last": last,
             "saving_interval_ps": saving_interval_ps,
+            "preserve_polymer_placement": preserve_polymer_placement,
         }
 
         logger.debug("AnalysisOrchestrator: loading trajectory...")
         self.traj: md.Trajectory = load_trajectory(
             trajectory, topology, stride=stride, first=first, last=last,
             saving_interval_ps=saving_interval_ps,
+            preserve_polymer_placement=preserve_polymer_placement,
         )
         # The insertion codes read with this topology, put back when it is
         # run: the table holds the codes of the topology read last, so an
@@ -973,6 +977,7 @@ class AnalysisOrchestrator:
                 str(self._topology_input) if self._topology_input else None
             ),
             "load_kwargs": self._load_kwargs,
+            "polymer_placement": getattr(self.traj, POLYMER_PLACEMENT, {}),
             **self._frame_times_where_strided_across_files(),
             "figure_colours": self.figure_colours,
             "figure_width": self.figure_width,
@@ -1003,6 +1008,7 @@ class AnalysisOrchestrator:
                 "stride": self._load_kwargs.get("stride"),
                 "first": self._load_kwargs.get("first"),
                 "last": self._load_kwargs.get("last"),
+                "preserve_polymer_placement": self._load_kwargs["preserve_polymer_placement"],
                 "selection": self.default_selection,
                 "figure_colours": self.figure_colours,
                 "figure_width": self.figure_width,
