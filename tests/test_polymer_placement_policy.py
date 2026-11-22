@@ -196,6 +196,29 @@ def test_live_cache_and_history_use_the_current_policy(tmp_path):
     assert history["polymer_placement"]["preserve_polymer_placement"] is True
 
 
+def test_a_running_run_set_beside_the_played_one_keeps_its_stored_placement(tmp_path):
+    from fastmdxplora.gui import live_frames as lf
+    from fastmdxplora.gui import runs_together
+    from fastmdxplora.gui import trajectory_frames as tf
+
+    root = _study(tmp_path / "study")
+    simulation = root / "simulation"
+    topology = simulation / "trajectory_topology.pdb"
+    text = topology.read_text(encoding="utf-8")
+    for index in range(3):
+        lf.write_live_frame(simulation, pdb_text=text, archive=True, frame_index=index,
+                            simulation_time_ns=float(index))
+    source = dict(tf._source(root), kind="live-history",
+                  records=lf.read_live_frame_history(simulation)["frames"])
+    ours = [line[12:27] for line in text.splitlines() if line[:6] == "ATOM  "]
+    context = {"times": [0.0, 1.0, 2.0], "ours": ours, "backbone": list(range(len(ours))),
+               "first": md.load(str(topology))}
+    frames, _, why = runs_together._snapshots_of(source, context)
+    assert why is None
+    np.testing.assert_allclose(frames.xyz[:, 2] - frames.xyz[:, 0], [[9.8, .01, 0]] * 3,
+                               atol=1e-3)
+
+
 def test_schema_cli_options_reach_the_real_loader(tmp_path, monkeypatch):
     import importlib
     from types import SimpleNamespace
