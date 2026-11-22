@@ -9,6 +9,8 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Ligand and metal advisories from mmCIF files use their residue fields,
+  instead of treating atom names as PDB residue names.
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
   now 26.04, where the pinned Apptainer package cannot be installed (it
   needs `libfuse3-3`, which 26.04 replaces with `libfuse3-4`), so 2.6.1's

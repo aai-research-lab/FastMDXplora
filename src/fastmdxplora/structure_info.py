@@ -1,21 +1,23 @@
 """Structure metadata helpers for the live dashboard.
 
-The dashboard needs lightweight, failure-isolated metadata for whichever PDB
-is being displayed.  The helpers in this module deliberately avoid optional
-scientific dependencies: they parse fixed-width PDB records, cache the result
-by file modification time, and always return JSON-serialisable dictionaries.
+The dashboard needs lightweight, failure-isolated metadata for whichever
+structure is being displayed. PDB records are parsed as fixed-width text and
+mmCIF records with OpenMM's lazy reader. Results are cached by file version,
+and always returned as JSON-serialisable dictionaries.
 """
 
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterator
 from functools import lru_cache
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
 from fastmdxplora.ligand_detection import (
-    POLYMER_RESNAMES,
     ION_RESNAMES,
+    POLYMER_RESNAMES,
     WATER_RESNAMES,
     detect_ligands,
 )
@@ -35,8 +37,73 @@ _MAX_PDB_BYTES_FOR_SYSTEM_SCAN = 256 * 1024 * 1024
 _COORD_SANITY_LIMIT = 1_000_000.0  # angstrom
 
 
+def _metadata_records(path: Path, *, model_ids: set[str] | None = None) -> Iterator[
+    tuple[bool, str, str, str, tuple[str, str, str]]
+]:
+    """Yield first-model atoms, optionally collecting all model declarations."""
+    if path.suffix.lower() in {".cif", ".mmcif"}:
+        from fastmdxplora.refusals import StudyError
+        from fastmdxplora.setup.mmcif import _given, _read_first_block, _rows
+
+        rows = _rows(_read_first_block(path), "atom_site")
+        if not rows:
+            raise StudyError(
+                "mmCIF atom_site contains no atoms.",
+                code="setup.structure.unreadable",
+                path=str(path),
+            )
+        first_model = _given(rows[0].get("pdbx_PDB_model_num")) or "1"
+        for row in rows:
+            model = _given(row.get("pdbx_PDB_model_num")) or "1"
+            if model_ids is not None:
+                model_ids.add(model)
+            if model != first_model:
+                continue
+            chain = _given(row.get("auth_asym_id")) or _given(row.get("label_asym_id"))
+            resname = _given(row.get("auth_comp_id")) or _given(row.get("label_comp_id"))
+            resi = _given(row.get("auth_seq_id")) or _given(row.get("label_seq_id"))
+            group = _given(row.get("group_PDB")).upper()
+            coordinates = tuple(row.get(f"Cartn_{axis}", "") for axis in "xyz")
+            if (not all((chain, resname, resi)) or group not in {"ATOM", "HETATM"}
+                    or not all(isfinite(float(value)) for value in coordinates)):
+                raise StudyError(
+                    "mmCIF atom_site lacks usable residue identity or coordinates.",
+                    code="setup.structure.unreadable", path=str(path),
+                )
+            yield (
+                group == "HETATM", chain, resname.upper(),
+                resi + _given(row.get("pdbx_PDB_ins_code")),
+                coordinates,
+            )
+        return
+
+    model = 0
+    past_the_first = False
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if line.startswith("MODEL"):
+                model += 1
+                if model_ids is not None:
+                    model_ids.add(str(model))
+                continue
+            if line.startswith("ENDMDL"):
+                if model_ids is None:
+                    return
+                past_the_first = True
+                continue
+            if past_the_first or not line.startswith(("ATOM", "HETATM")):
+                continue
+            yield (
+                line.startswith("HETATM"),
+                line[21:22].strip() or "A",
+                line[17:20].strip().upper(),
+                line[22:27].strip(),
+                (line[30:38], line[38:46], line[46:54]),
+            )
+
+
 def count_structure(path: str | Path, *, max_bytes: int | None = None) -> dict[str, Any]:
-    """Return chain/residue/atom/ligand counters for a PDB file.
+    """Return chain/residue/atom/ligand counters for a PDB or mmCIF file.
 
     Results are cached by absolute path, file size, and nanosecond mtime.  A
     fresh dictionary is returned to callers so API code may safely enrich the
@@ -94,66 +161,52 @@ def _count_structure_cached(
     # The first model only. Every model of an NMR entry was counted, so a
     # 20-model file showed twenty times its atoms. Setup reads the first
     # model, and this describes what setup will read.
-    models = 0
-    past_the_first = False
+    model_ids: set[str] = set()
     try:
-        with p.open("r", encoding="utf-8", errors="ignore") as fh:
-            for line in fh:
-                if line.startswith("MODEL"):
-                    models += 1
-                    continue
-                if line.startswith("ENDMDL"):
-                    past_the_first = True
-                    continue
-                if past_the_first or not line.startswith(("ATOM", "HETATM")):
-                    continue
+        for is_hetatm, chain_id, resname, resi, coordinates in _metadata_records(
+            p, model_ids=model_ids
+        ):
+            atoms += 1
+            if is_hetatm:
+                hetatm_atoms += 1
+            key = (chain_id, resname, resi)
+            all_chains.add(chain_id)
 
-                atoms += 1
-                is_hetatm = line.startswith("HETATM")
-                if is_hetatm:
-                    hetatm_atoms += 1
+            # Parse coordinates before classifying so the overall extent
+            # remains meaningful even for solvated structures.
+            try:
+                x, y, z = (float(value) for value in coordinates)
+                if all(-_COORD_SANITY_LIMIT <= value <= _COORD_SANITY_LIMIT
+                       for value in (x, y, z)):
+                    for idx, value in enumerate((x, y, z)):
+                        min_coords[idx] = min(min_coords[idx], value)
+                        max_coords[idx] = max(max_coords[idx], value)
+            except (ValueError, TypeError):
+                pass
 
-                chain_id = line[21:22].strip() or "A"
-                resname = line[17:20].strip().upper()
-                resi = line[22:27].strip()
-                key = (chain_id, resname, resi)
-                all_chains.add(chain_id)
+            if resname in WATER_RESNAMES:
+                water_atoms += 1
+                water_residue_keys.add(key)
+                continue
+            if resname in ION_RESNAMES:
+                ion_atoms += 1
+                ion_residue_keys.add(key)
+                continue
+            if resname in POLYMER_RESNAMES:
+                protein_atoms += 1
+                protein_chains.add(chain_id)
+                protein_residue_keys.add(key)
+                continue
 
-                # Parse coordinates before classifying so the overall extent
-                # remains meaningful even for solvated structures.
-                try:
-                    x = float(line[30:38])
-                    y = float(line[38:46])
-                    z = float(line[46:54])
-                    if all(
-                        -_COORD_SANITY_LIMIT <= value <= _COORD_SANITY_LIMIT
-                        for value in (x, y, z)
-                    ):
-                        for idx, value in enumerate((x, y, z)):
-                            min_coords[idx] = min(min_coords[idx], value)
-                            max_coords[idx] = max(max_coords[idx], value)
-                except (ValueError, IndexError):
-                    pass
-
-                if resname in WATER_RESNAMES:
-                    water_atoms += 1
-                    water_residue_keys.add(key)
-                    continue
-                if resname in ION_RESNAMES:
-                    ion_atoms += 1
-                    ion_residue_keys.add(key)
-                    continue
-                if resname in POLYMER_RESNAMES:
-                    protein_atoms += 1
-                    protein_chains.add(chain_id)
-                    protein_residue_keys.add(key)
-                    continue
-
-                # Any remaining residue is a ligand/cofactor candidate.  The
-                # detector applies its own cofactor exclusions.
-                non_protein_residue_keys.add(key)
+            # Any remaining residue is a ligand/cofactor candidate. The
+            # detector applies its own cofactor exclusions.
+            non_protein_residue_keys.add(key)
+    except ImportError as exc:
+        return {"valid": False, "reason": f"dependency-unavailable: {exc}", "path": p.as_posix()}
     except OSError as exc:
         return {"valid": False, "reason": f"read-error: {exc}", "path": p.as_posix()}
+    except Exception as exc:
+        return {"valid": False, "reason": f"parse-error: {exc}", "path": p.as_posix()}
 
     ligand_info = detect_ligands(non_protein_residue_keys)
     if min_coords[0] == float("inf"):
@@ -167,7 +220,7 @@ def _count_structure_cached(
         "valid": True,
         "path": p.as_posix(),
         "size": file_size,
-        "models": max(models, 1),
+        "models": max(len(model_ids), 1),
         "atoms": atoms,
         "protein_atoms": protein_atoms,
         "hetatm_atoms": hetatm_atoms,
@@ -205,20 +258,10 @@ def ligand_atom_counts(path: str | Path) -> dict[str, int]:
         return {}
     counts: Counter[str] = Counter()
     try:
-        with p.open("r", encoding="utf-8", errors="ignore") as fh:
-            for line in fh:
-                if line.startswith("ENDMDL"):
-                    break  # the first model, as setup reads it
-                if not line.startswith(("ATOM", "HETATM")):
-                    continue
-                resname = line[17:20].strip().upper()
-                if (
-                    resname in WATER_RESNAMES
-                    or resname in ION_RESNAMES
-                    or resname in POLYMER_RESNAMES
-                ):
-                    continue
-                counts[resname] += 1
-    except OSError:
+        for _is_hetatm, _chain, resname, _resi, _coordinates in _metadata_records(p):
+            if resname in WATER_RESNAMES or resname in ION_RESNAMES or resname in POLYMER_RESNAMES:
+                continue
+            counts[resname] += 1
+    except Exception:
         return {}
     return dict(counts)
