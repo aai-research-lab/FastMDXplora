@@ -136,6 +136,7 @@ class AnalyzeSettings(TypedDict, total=False):
     select_atoms: str
     selection: str
     scope: Literal['solute', 'protein', 'ligand', 'all']
+    saving_interval_ps: float
     stride: int
     first: int
     last: int

@@ -17,6 +17,7 @@ single concatenated MDTraj trajectory with a topology attached).
 from __future__ import annotations
 
 import glob as _glob
+import math
 from pathlib import Path
 from typing import Sequence, Union
 
@@ -464,7 +465,7 @@ def _with_a_real_clock(
     if carries_its_own:
         return trajectory
 
-    if saving_interval_ps and float(saving_interval_ps) > 0:
+    if saving_interval_ps is not None:
         step = int(stride) if stride and int(stride) > 0 else 1
         interval = float(saving_interval_ps)
         if written is None or len(written) != n:
@@ -488,7 +489,9 @@ def _with_a_real_clock(
         "carry one, so there is no way to know how much simulated time a "
         "frame represents. Time-series figures will be plotted against frame "
         "number rather than against a nanosecond axis that would be invented. "
-        "Pass saving_interval_ps to label them in time.",
+        "Set analysis.saving_interval_ps in the Config, pass "
+        "--saving-interval-ps to analyze or --analyze-saving-interval-ps to "
+        "explore, or use load_trajectory(..., saving_interval_ps=...) in Python.",
         ", ".join(sorted(suffixes)) or "the format",
     )
     return trajectory
@@ -524,7 +527,8 @@ def load_trajectory(
         a trajectory in a format that does not carry its own clock -- DCD
         above all -- on a real time axis; without it such a trajectory is
         given a NaN clock and every time series is drawn against frame
-        number. Ignored for formats that carry the clock themselves.
+        number. Must be positive and finite. Ignored for formats that carry
+        the clock themselves.
 
     Returns
     -------
@@ -555,6 +559,24 @@ def load_trajectory(
 
         traj = load_trajectory("run*.dcd", top="topology.pdb", stride=10)
     """
+    invalid_interval = isinstance(saving_interval_ps, bool) or (
+        saving_interval_ps is not None
+        and not isinstance(saving_interval_ps, (int, float))
+    )
+    if saving_interval_ps is not None and not invalid_interval:
+        try:
+            interval = float(saving_interval_ps)
+        except (OverflowError, TypeError, ValueError):
+            invalid_interval = True
+        else:
+            invalid_interval = not math.isfinite(interval) or interval <= 0
+    if saving_interval_ps is not None and invalid_interval:
+        raise TrajectoryLoadError(
+            "saving_interval_ps must be a positive, finite number of picoseconds.",
+            code="analysis.time.interval_invalid",
+            option="saving_interval_ps", given=saving_interval_ps,
+        )
+
     traj_paths = _resolve_paths(traj)
     for p in traj_paths:
         if not p.exists():
@@ -607,7 +629,7 @@ def load_trajectory(
     # the file said and what the seam-mender inferred, and where it is not
     # known the clock is marked absent rather than left as a frame index.
     written = (written_frames(traj_paths, top_path, stride, trajectory.n_frames)
-               if saving_interval_ps else None)
+               if saving_interval_ps is not None else None)
     trajectory = _with_a_real_clock(
         trajectory, traj_paths, saving_interval_ps, stride, written)
 

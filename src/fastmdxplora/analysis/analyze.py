@@ -118,6 +118,7 @@ def run(
     figure_colours: str | None = None,
     figure_width: str | None = None,
     stride: int | None = None,
+    saving_interval_ps: float | None = None,
     first: int | None = None,
     last: int | None = None,
     **_extra: Any,
@@ -211,6 +212,21 @@ def run(
         ligand_resname or _detect_ligand_resname(project_root)
     )
 
+    if saving_interval_ps is not None and _is_variable_step_run(project_root):
+        from fastmdxplora.refusals import StudyError
+
+        raise StudyError(
+            "analysis.saving_interval_ps cannot describe this study's "
+            "variable-step simulation: no fixed interval represents the "
+            "time between its saved frames.",
+            code="analysis.time.interval_unavailable",
+            option="saving_interval_ps", integrator="variable-step",
+        )
+    resolved_saving_interval_ps = (
+        saving_interval_ps if saving_interval_ps is not None else
+        _saving_interval_ps(project_root, trajectory=traj_path)
+    )
+
     ao = AnalysisOrchestrator(
         trajectory=str(traj_path),
         topology=str(top_path),
@@ -221,7 +237,7 @@ def run(
         stride=stride,
         first=first,
         last=last,
-        saving_interval_ps=_saving_interval_ps(project_root, trajectory=traj_path),
+        saving_interval_ps=resolved_saving_interval_ps,
         figure_colours=figure_colours,
         figure_width=figure_width,
     )
@@ -290,6 +306,13 @@ def run(
     return artifacts
 
 
+def _is_variable_step_run(project_root: Path) -> bool:
+    """Whether the study's simulation record names a variable-step integrator."""
+    from fastmdxplora.simulation.runner import chose_its_own_step
+
+    return chose_its_own_step(project_root / "simulation")
+
+
 def _saving_interval_ps(project_root: Path, *, trajectory: str | Path | None = None) -> float | None:
     """Picoseconds between saved frames, from the run's own record.
 
@@ -312,9 +335,7 @@ def _saving_interval_ps(project_root: Path, *, trajectory: str | Path | None = N
     """
     import json
 
-    from fastmdxplora.simulation.runner import chose_its_own_step
-
-    if chose_its_own_step(project_root / "simulation"):
+    if _is_variable_step_run(project_root):
         return None
 
     # A joined trajectory says its own spacing, which is the one to use: its

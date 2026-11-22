@@ -1037,6 +1037,14 @@ ANALYSIS = PhaseSchema(
               "'all' is there for when the solvent is the point.",
               choices=("solute", "protein", "ligand", "all"),
               example="solute"),
+        Field("saving_interval_ps", float, None,
+              "Picoseconds between saved source frames, before analysis "
+              "stride. Used when the format has no usable timestamps; its "
+              "own timestamps take precedence, and a fixed interval cannot "
+              "represent a variable-step run.",
+              example=50.0,
+              minimum=0,
+              exclusive_minimum=True),
         Field("stride", int, None,
               "Load every Nth frame from the trajectory.",
               example=1,
@@ -1301,8 +1309,8 @@ SETTING_GROUPS: dict[str, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
          "The trajectory, and which atoms count.",
          ("trajectory", "topology", "select_atoms", "selection", "scope")),
         ("Which frames",
-         "Trimming and thinning before anything is analysed.",
-         ("first", "last", "stride")),
+         "Source-frame timing, trimming and thinning before anything is analysed.",
+         ("saving_interval_ps", "first", "last", "stride")),
         ("What the figures look like",
          "How every figure is plotted, for the screen or for print.",
          ("figure_colours", "figure_width")),
