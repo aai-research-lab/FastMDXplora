@@ -42,8 +42,8 @@ def _atom_name(name: str, element: str) -> str:
     return f" {name:<3s}"
 
 
-def to_pdb_lines(path: str | Path) -> list[str]:
-    """The records setup reads, from the first model of an mmCIF file."""
+def _read_first_block(path: str | Path) -> Any:
+    """Read the first mmCIF block with OpenMM's existing reader."""
     from openmm.app.internal.pdbx.reader.PdbxReader import PdbxReader
 
     from fastmdxplora.refusals import StudyError
@@ -54,7 +54,14 @@ def to_pdb_lines(path: str | Path) -> list[str]:
     if not blocks or blocks[0].getObj("atom_site") is None:
         raise StudyError(f"{path} holds no atoms mmCIF can name (no atom_site).",
                          code="setup.structure.unreadable", path=str(path))
-    block = blocks[0]
+    return blocks[0]
+
+
+def to_pdb_lines(path: str | Path) -> list[str]:
+    """The records setup reads, from the first model of an mmCIF file."""
+    from fastmdxplora.refusals import StudyError
+
+    block = _read_first_block(path)
     atoms = _rows(block, "atom_site")
     first_model = _given(atoms[0].get("pdbx_PDB_model_num")) or "1"
     atoms = [a for a in atoms if (_given(a.get("pdbx_PDB_model_num")) or "1") == first_model]
