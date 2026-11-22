@@ -42,7 +42,7 @@ def _placement(trajectory):
 
 
 @pytest.mark.parametrize("n", [2, 33])
-def test_default_relocates_ten_nm_and_records_only_the_lattice_move(n, caplog):
+def test_default_relocates_ten_nm_and_records_only_the_lattice_move(n):
     original = _stored(n)
     expected = original.image_molecules(
         inplace=False, anchor_molecules=original.topology.find_molecules(), other_molecules=[])
@@ -57,13 +57,12 @@ def test_default_relocates_ten_nm_and_records_only_the_lattice_move(n, caplog):
     assert record["relocations"][0]["source_frames"] == [4, 8, 12]
     assert record["relocations"][0]["relative_lattice_shift"] == [-1, 0, 0]
     assert record["relocations"][0]["chains"] == [1]
-    assert caplog.text.count("Polymer assembly placement changed") == 1
     assert "--preserve-polymer-placement" in record["warning"]
     assert "does not establish" in record["warning"]
 
 
 @pytest.mark.parametrize("n", [2, 33])
-def test_preservation_keeps_relative_roots_but_repairs_split_bonds(n, caplog):
+def test_preservation_keeps_relative_roots_but_repairs_split_bonds(n):
     original = _stored(n, split=True)
     result = loading._made_whole(original[:], preserve_polymer_placement=True)
     roots = np.arange(0, 2 * n, 2)
@@ -72,7 +71,7 @@ def test_preservation_keeps_relative_roots_but_repairs_split_bonds(n, caplog):
         original.xyz[:, roots] - original.xyz[:, :1], atol=2e-6)
     assert np.linalg.norm(result.xyz[1, 3] - result.xyz[1, 2]) == pytest.approx(0.1, abs=2e-6)
     assert _placement(result)["relocations"] == []
-    assert "assembly placement changed" not in caplog.text
+    assert "warning" not in _placement(result)
 
 
 @pytest.mark.parametrize("preserve", [False, True])
@@ -114,6 +113,22 @@ def _study(root):
 def _policy(root, preserve):
     (root / "resolved_config.yml").write_text(
         f"analysis:\n  preserve_polymer_placement: {str(preserve).lower()}\n", encoding="utf-8")
+
+
+def test_the_warning_is_logged_by_the_analysis_load_alone(tmp_path, caplog):
+    from fastmdxplora.gui import trajectory_frames as tf
+
+    root = _study(tmp_path / "study")
+    tf.frames_info(root)
+    for frame in (0, 1):
+        tf._source_frame(root, tf._source(root), frame)
+    assert "Polymer assembly placement changed" not in caplog.text
+    files = (root / "simulation/production.dcd", root / "simulation/trajectory_topology.pdb")
+    loading.load_trajectory(*files)
+    assert caplog.text.count("Polymer assembly placement changed") == 1
+    caplog.clear()
+    loading.load_trajectory(*files, preserve_polymer_placement=True)
+    assert "Polymer assembly placement changed" not in caplog.text
 
 
 def test_loading_trimming_and_analysis_copies_keep_the_policy(tmp_path):

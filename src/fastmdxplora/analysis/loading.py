@@ -325,8 +325,6 @@ def _record_polymer_placement(trajectory, large, moves, source_frames=None) -> N
             relative_to_root_atom=min(a.index for a in large[0]),
             summary=f"{len(relocations)} polymer molecule/lattice-shift groups relocated.",
             warning=POLYMER_PLACEMENT_WARNING)
-        if not getattr(trajectory, POLYMER_PLACEMENT).get("warning"):
-            logger.warning(POLYMER_PLACEMENT_WARNING)
     setattr(trajectory, POLYMER_PLACEMENT, record)
 
 
@@ -687,7 +685,8 @@ def load_trajectory(
     trajectory = _made_whole(
         trajectory, preserve_polymer_placement=preserve_polymer_placement,
         source_frames=written)
-    getattr(trajectory, POLYMER_PLACEMENT)["source_files"] = [str(p) for p in traj_paths]
+    if getattr(trajectory, POLYMER_PLACEMENT).get("warning"):
+        logger.warning(POLYMER_PLACEMENT_WARNING)
     setattr(trajectory, SEGMENT_JOINS, joins)
 
     # Measured once here, on what is handed on, so the analyses need not.
