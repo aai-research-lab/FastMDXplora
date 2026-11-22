@@ -298,7 +298,7 @@ class TestEveryAnalysisOfTheFramesReadsIt:
     def test_end_to_end_alone_withholds_its_error(self, analysed):
         folder, _ = analysed
         mean = self._found(folder, "end_to_end")["mean"]
-        assert not np.isfinite(mean["standard_error"])
+        assert mean["standard_error"] is None
         assert mean["error_withheld_because"] == "chain sees its periodic image"
         assert self._found(folder, "end_to_end")["solute_image"]["said"] in mean["not_a_measurement"]
 

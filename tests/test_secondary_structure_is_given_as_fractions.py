@@ -93,7 +93,9 @@ class TestTheMeansAreThoseOfEverySeries:
         for name, indicator in (("helix_fraction", helix), ("strand_fraction", strand)):
             expected = mean_record(indicator.mean(axis=1), frame_interval_ns=0.01)
             expected["unit"] = ""
-            assert written["findings"][name] == json.loads(json.dumps(expected, default=str))
+            # Written as strict JSON, where a NaN error is null.
+            assert written["findings"][name] == json.loads(
+                json.dumps(expected, default=str), parse_constant=lambda _word: None)
 
     def test_the_helper_counts_every_class_once(self) -> None:
         codes = np.array([["H", "G", "I", "E", "B", "T", "S", " ", "C"]])

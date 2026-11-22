@@ -240,7 +240,7 @@ class TestEveryReaderIsTold:
 
         assert "its own copy" in found["mean"]["not_a_measurement"]
         assert found["mean"]["mean"] == pytest.approx(9 * 0.38, abs=0.01)
-        assert not np.isfinite(found["mean"]["standard_error"])
+        assert found["mean"]["standard_error"] is None
 
     def test_the_report_says_it(self, tmp_path):
         import json
