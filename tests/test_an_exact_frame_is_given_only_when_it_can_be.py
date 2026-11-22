@@ -702,4 +702,5 @@ def test_frames_played_from_the_snapshots_are_signed_as_the_trajectory_s_are(
                         lambda *_args: {"available": True, "frame_indices": [0, 1]})
     said = trajectory_frames.frames_info(root, most_frames=3, force=True)
     assert said["source_kind"] == "live-history"
-    assert said["signature"] == "history:2:2:2:preserve_polymer_placement=0:most=3:payload=2"
+    assert said["signature"] == (
+        "history:2:2:2:preserve_polymer_placement=0:most=3:payload=2")
