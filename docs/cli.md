@@ -327,12 +327,16 @@ place for one.
 --selection "protein and name CA"
 --scope solute|protein|ligand|all
 --stride 2 --first 100 --last 5000
+--saving-interval-ps 50
 --figure-colours colour|greyscale|both
 --ligand-resname BNZ
 ```
 
 `--analyses` and `--exclude-analyses` are mutually exclusive. Unlike
 `--include`, a second use **replaces** rather than accumulates.
+`--saving-interval-ps` gives the picoseconds between saved source frames,
+before `--stride`, for a format without usable timestamps. On `explore`, the
+same setting is `--analyze-saving-interval-ps`.
 
 Six per-analysis settings have convenience flags of their own:
 

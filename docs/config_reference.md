@@ -346,7 +346,7 @@ Nothing leaves the machine: these are files in the run directory that the
 
 ---
 
-## `analysis`: 14 settings
+## `analysis`: 15 settings
 
 ### How this phase was written
 
@@ -394,6 +394,7 @@ what gates it.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
+| `saving_interval_ps` | float | none | Picoseconds between saved source frames, before analysis stride; native timestamps take precedence |
 | `first` | int | `0` | First frame |
 | `last` | int | end | Last frame, exclusive |
 | `stride` | int | `1` | Take every *n*th frame |

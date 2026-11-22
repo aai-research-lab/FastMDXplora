@@ -7,6 +7,12 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- `analysis.saving_interval_ps` sets the picoseconds between saved source
+  frames for formats without usable timestamps; native format clocks remain
+  authoritative, and the interval is applied before analysis stride.
+
 ### Fixed
 
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is

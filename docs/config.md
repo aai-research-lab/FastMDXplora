@@ -74,7 +74,7 @@ nearest match.
 |---|---|
 | `setup` | 48 settings: structure, ligand, membrane, solvent, force field, forces |
 | `simulation` | 45 settings: length, conditions, integrator, platform, enhanced sampling |
-| `analysis` | 14 settings: which analyses, over which atoms, over which frames |
+| `analysis` | 15 settings: which analyses, over which atoms, over which frames |
 | `report` | 11 settings: title, formats, highlighted regions |
 
 Every setting in each is in the [Config reference](config_reference.md).
@@ -324,6 +324,27 @@ multi-node dispatch; see [Running FastMDXplora elsewhere](clusters.md).
 
 ---
 
+## The source-frame interval
+
+`analysis.saving_interval_ps` is the picoseconds between saved source frames,
+before `analysis.stride`. Set it for a trajectory format with no usable
+timestamps (DCD, for example); a format's genuine timestamps take precedence.
+The interval is a user assertion about the file's saved frames, not an estimate
+from its duration. It cannot describe a study's own simulation when its record
+says it used a variable-step integrator; a trajectory from elsewhere is not that
+simulation.
+
+The setting is optional. Existing interval provenance can also be read from
+`<trajectory>.join.json` (for example, `production.dcd.join.json`) or from
+`joined.json` beside the trajectory. Both JSON sidecars use a
+`saving_interval_ps` number in picoseconds, and an explicit Config value takes
+precedence over either one.
+
+```yaml
+analysis:
+  saving_interval_ps: 50
+```
+
 ## Per-analysis settings
 
 An analysis's own settings go in a block under its name, inside
@@ -528,7 +549,7 @@ leaves a `resolved_config.yml` saying `ph: 6.0`, not the `7.0` the file said.
 **It carries every setting the run used, defaults included.** That is what the
 file is for: a study you can repeat from what the run left behind rather than
 from what somebody remembers typing. Every phase gets a block whether or not
-you touched it, and every option in that block is named: 118 settings for a
+you touched it, and every option in that block is named: 119 settings for a
 study that set two. The block is exactly the dictionary the phase was handed,
 not a reconstruction of it.
 
