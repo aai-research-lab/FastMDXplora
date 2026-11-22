@@ -10,6 +10,8 @@ constant-volume and constant-pressure production alike.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pytest
 
@@ -163,6 +165,7 @@ def test_a_parameter_that_is_not_the_barostats_is_refused(tmp_path, monkeypatch,
         _run(tmp_path, {}, monkeypatch, ensemble=ensemble, extra={"no_such_parameter": 1.0})
 
 
+@pytest.mark.skipif(not hasattr(os, "fchmod"), reason="a study writes its records with os.fchmod")
 def test_a_refused_simulation_phase_exits_nonzero(tmp_path, monkeypatch, capsys):
     """The study's exit code is its failed phase's, not zero because the command parsed."""
     from fastmdxplora.cli.main import main
