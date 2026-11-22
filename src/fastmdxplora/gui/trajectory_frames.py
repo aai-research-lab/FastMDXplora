@@ -406,8 +406,7 @@ def _source_frame(out: Path, source: dict[str, Any] | None, frame: int) -> Any:
         unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
         unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None,
     )
-    return _made_whole(result, preserve_polymer_placement=source["preserve_polymer_placement"],
-                       source_frames=[frame])
+    return _made_whole(result, preserve_polymer_placement=source["preserve_polymer_placement"])
 
 
 def _first_played(simulation: Path) -> Any:

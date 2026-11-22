@@ -360,8 +360,7 @@ def water_sites_placed(root: str | Path) -> dict[str, Any]:
                              unitcell_angles=angles)
     if lengths is not None:
         analysed = _made_whole(
-            analysed, preserve_polymer_placement=source["preserve_polymer_placement"],
-            source_frames=[first])
+            analysed, preserve_polymer_placement=source["preserve_polymer_placement"])
     played = _frame_xyz(out, 0)[within].astype(float)
     there = analysed.xyz[0, within].astype(float)
     turned = len(site) >= 3
