@@ -120,6 +120,7 @@ def run(
     stride: int | None = None,
     first: int | None = None,
     last: int | None = None,
+    preserve_polymer_placement: bool = False,
     **_extra: Any,
 ) -> list[str]:
     """Adapter from the project-level orchestrator to AnalysisOrchestrator.
@@ -222,6 +223,7 @@ def run(
         first=first,
         last=last,
         saving_interval_ps=_saving_interval_ps(project_root, trajectory=traj_path),
+        preserve_polymer_placement=preserve_polymer_placement,
         figure_colours=figure_colours,
         figure_width=figure_width,
     )

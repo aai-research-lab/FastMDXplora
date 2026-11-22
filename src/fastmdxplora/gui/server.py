@@ -3771,6 +3771,8 @@ def make_handler(
             # Percent-encoded: a header's leading spaces are not kept, and the
             # fingerprint is columns of a PDB line, spaces and all.
             self.send_header("X-FastMDX-Fingerprint", quote(said["fingerprint"]))
+            self.send_header("X-FastMDX-Polymer-Warning", quote(
+                (said.get("polymer_placement") or {}).get("warning", "")))
             self.end_headers()
             self.wfile.write(data)
 

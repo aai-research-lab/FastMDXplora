@@ -390,7 +390,8 @@ def _frames_of(source: dict[str, Any], ours: list[str], indices: list[int]
         unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
         unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None)
     if boxed:
-        frames = _made_whole(frames)
+        frames = _made_whole(
+            frames, preserve_polymer_placement=source["preserve_polymer_placement"])
     return frames, None
 
 

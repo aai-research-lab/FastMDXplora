@@ -74,7 +74,7 @@ nearest match.
 |---|---|
 | `setup` | 48 settings: structure, ligand, membrane, solvent, force field, forces |
 | `simulation` | 45 settings: length, conditions, integrator, platform, enhanced sampling |
-| `analysis` | 14 settings: which analyses, over which atoms, over which frames |
+| `analysis` | 15 settings: which analyses, over which atoms, over which frames |
 | `report` | 11 settings: title, formats, highlighted regions |
 
 Every setting in each is in the [Config reference](config_reference.md).
@@ -355,6 +355,40 @@ where it is refused, `cluster: {stride: 4}` clusters every fourth frame (the
 refusal names the stride that fits). The whole
 matrix is written only with `cluster: {save_full_matrix: true}`. See
 [Conformations](analyses.md#conformations).
+
+---
+
+## Polymer placement
+
+```yaml
+analysis:
+  preserve_polymer_placement: true  # default: false
+```
+
+By default, loading repairs split molecules and reassembles polymers in
+nearby periodic copies. Select preservation for a deliberately unwrapped
+finite assembly whose stored inter-chain lattice placement is intentional.
+Bond repair still walks from each molecule's lowest-indexed atom in its
+stored copy. A common translation still centers the polymers, preserving
+their relative positions, and ligands and ions still take their nearest
+copy to the polymers' center. This option does not infer assembly intent
+or recover placement already changed in a previously imaged input file.
+
+The CLI spellings are `analyze --preserve-polymer-placement` and
+`explore --analyze-preserve-polymer-placement`. Python callers can pass
+`preserve_polymer_placement=True` to `load_trajectory` or
+`AnalysisOrchestrator`.
+
+The analysis manifest records the choice in `load_kwargs` and `resolved`.
+Its `polymer_placement` record (each analysis's findings carry its policy
+and summary) separately describes relative lattice relocations: molecule
+root and chain indices in the loaded topology, zero-based source frames
+counted across the input files, and integer lattice shifts relative to the
+first polymer root's move. The shift times that frame's box vectors gives
+the relative displacement in nm. Bond repair and the common centering are
+excluded. The default logs an actionable warning when such shifts occur;
+imaging success alone is not evidence that the resulting finite assembly is
+the one intended for RMSD or geometry.
 
 ---
 

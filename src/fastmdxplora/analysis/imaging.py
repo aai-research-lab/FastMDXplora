@@ -44,6 +44,8 @@ def image_molecules(
     bonds: np.ndarray,
     anchors: Sequence[Iterable[int]],
     others: Sequence[Iterable[int]],
+    *,
+    preserve_anchor_placement: bool = False,
 ) -> None:
     """Image ``xyz`` (frames, atoms, 3) in place, as MDTraj's ``image_molecules``.
 
@@ -83,7 +85,8 @@ def image_molecules(
     other_atoms = [m for m in other_atoms if len(m)]
 
     _make_whole(xyz, box, n_atoms, bonds)
-    _place_anchors(xyz, box, anchor_atoms)
+    if not preserve_anchor_placement:
+        _place_anchors(xyz, box, anchor_atoms)
     centre = xyz[:, np.concatenate(anchor_atoms), :].mean(axis=1)        # (F, 3)
     _centre_and_wrap(xyz, box, centre, other_atoms)
 
@@ -270,12 +273,22 @@ chains, dearer for hundreds of small molecules anchored one by one.
 """
 
 
-def image_trajectory(trajectory, anchor_molecules, other_molecules=None) -> None:
-    """Image an MDTraj ``Trajectory`` in place; molecules as sets of its atoms."""
-    if len(anchor_molecules) > MOST_ANCHORS:
+def image_trajectory(trajectory, anchor_molecules, other_molecules=None, *,
+                     preserve_anchor_placement: bool = False) -> np.ndarray:
+    """Image in place and return anchor lattice moves relative to the first.
+
+    Moves have shape (frames, anchors, 3), in nm. Tracking each molecule's
+    lowest-indexed atom excludes bond repair (which keeps that root fixed);
+    subtracting the first root's move excludes the common centering.
+    Preservation skips only anchor placement, even above ``MOST_ANCHORS``.
+    """
+    roots = [min(a.index for a in m) for m in anchor_molecules]
+    before = trajectory.xyz[:, roots, :].copy()
+    if len(anchor_molecules) > MOST_ANCHORS and not preserve_anchor_placement:
         trajectory.image_molecules(inplace=True, anchor_molecules=anchor_molecules,
                                    other_molecules=other_molecules)
-        return
+        moves = trajectory.xyz[:, roots, :] - before
+        return moves - moves[:, :1, :]
     topology = trajectory.topology
     if other_molecules is None:
         # MDTraj's own list, in its order: each molecule's atoms are summed in
@@ -286,4 +299,6 @@ def image_trajectory(trajectory, anchor_molecules, other_molecules=None) -> None
     others = [[a.index for a in m] for m in other_molecules]
     xyz = trajectory.xyz
     image_molecules(xyz, trajectory.unitcell_vectors, topology.n_atoms, bonds,
-                    anchors, others)
+                    anchors, others, preserve_anchor_placement=preserve_anchor_placement)
+    moves = trajectory.xyz[:, roots, :] - before
+    return moves - moves[:, :1, :]

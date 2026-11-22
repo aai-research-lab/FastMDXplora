@@ -9,7 +9,7 @@ study, starting it, watching it happen, and reading the results.
 
 The GUI is not a cut-down version of the command line. It offers **every
 setting the software has** (all 381 analysis options across 31 analyses, but
-for the `selection` that 17 of them ignore, so 364 shown; and all 131 phase,
+for the `selection` that 17 of them ignore, so 364 shown; and all 132 phase,
 top-level and execution settings), because the form is generated from the
 same declaration the CLI and the [Config](config.md) are built from rather than
 written by hand. Adding a setting to the schema puts a control in the GUI;
@@ -19,6 +19,20 @@ Those counts are checked against the software on every release, because a
 count in a document nobody recomputes is a claim that decays, and this one is
 load-bearing: it is the sentence that says the GUI is not a cut-down command
 line.
+
+The analysis settings include **Preserve polymer placement**, off by
+default. Turn it on for a deliberately unwrapped finite assembly to keep
+stored inter-chain lattice placement after bond repair. Common centering
+and ligand/ion nearest-copy placement still apply. The Viewer shows a
+warning when default imaging relocates whole polymers relative to one
+another; successful imaging does not establish the intended assembly.
+Playback, exact source frames, live snapshots and the other runs'
+trajectories use the study's recorded policy, and their caches refresh when
+it changes. The frame index records `polymer_placement`, including the
+policy and grouped relative lattice moves; live-coordinate responses also
+carry the warning. For snapshot histories the source frame identifiers are
+snapshot sequence numbers. Atom/chain indices describe the topology used for
+the displayed frames, which may exclude solvent.
 
 So any system FastMDXplora can study can be built here: a protein on its own, a
 protein with a ligand, a membrane protein, an umbrella or metadynamics or

@@ -55,6 +55,21 @@ _LOCKS: dict[str, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
 
 
+def preserve_polymer_placement(root: Path | str) -> bool:
+    """The study's current polymer policy, shared by every coordinate reader."""
+    from fastmdxplora.gui.workspace import _read_yaml
+
+    root = Path(root)
+    for name in ("resolved_config.yml", "exploration.yml"):
+        config = _read_yaml(root / name)
+        if isinstance(config, dict):
+            analysis = config.get("analysis") or {}
+            if "preserve_polymer_placement" in analysis:
+                return analysis["preserve_polymer_placement"] is True
+    manifest = _load_json(root / "analysis" / "analysis_manifest.json")
+    return (manifest.get("load_kwargs") or {}).get("preserve_polymer_placement") is True
+
+
 def frames_for_binary(n_atoms: int, most: int = MOST_FRAMES) -> int:
     """How many frames of a system this size are sent: as many as fit in
     :data:`BINARY_ATOM_FRAMES`, at most ``most``, never fewer than two."""
@@ -391,7 +406,7 @@ def _source_frame(out: Path, source: dict[str, Any] | None, frame: int) -> Any:
         unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
         unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None,
     )
-    return _made_whole(result) if boxed else result
+    return _made_whole(result, preserve_polymer_placement=source["preserve_polymer_placement"])
 
 
 def _first_played(simulation: Path) -> Any:
@@ -498,24 +513,28 @@ def _source(out: Path) -> dict[str, Any] | None:
             record_access.is_file(named)
             return None
         finished = True
+    preserve = preserve_polymer_placement(out)
+    policy = {"preserve_polymer_placement": preserve}
+    policy_signature = f":preserve_polymer_placement={int(preserve)}"
     history = [record for record in read_live_frame_history(simulation).get("frames", [])
                if isinstance(record, dict)]
     if len(history) >= 2 and not finished:
-        return {"kind": "live-history", "records": history, "simulation": simulation,
+        return {"kind": "live-history", "records": history, "simulation": simulation, **policy,
                 "signature": f"history:{len(history)}:{history[-1].get('sequence')}:"
-                             f"{history[-1].get('mtime_ns')}"}
+                             f"{history[-1].get('mtime_ns')}{policy_signature}"}
     # Each looked at, so a trajectory linked out is refused, and named, with
     # no topology left to read it with.
     there = [record_access.is_file(topology), record_access.is_file(trajectory)]
     if all(there) and record_access.stat(trajectory).st_size > 0:
-        return {"kind": "trajectory", "trajectory": trajectory, "topology": topology,
+        return {"kind": "trajectory", "trajectory": trajectory, "topology": topology, **policy,
                 "records": history, "simulation": simulation,
                 "signature": f"{trajectory.parent.name}/{trajectory.name}:"
-                             f"{_stamp(trajectory)}:{topology.name}:{_stamp(topology)}"}
+                             f"{_stamp(trajectory)}:{topology.name}:{_stamp(topology)}"
+                             f"{policy_signature}"}
     if len(history) >= 2:
-        return {"kind": "live-history", "records": history, "simulation": simulation,
+        return {"kind": "live-history", "records": history, "simulation": simulation, **policy,
                 "signature": f"history:{len(history)}:{history[-1].get('sequence')}:"
-                             f"{history[-1].get('mtime_ns')}"}
+                             f"{history[-1].get('mtime_ns')}{policy_signature}"}
     return None
 
 
@@ -594,7 +613,8 @@ def _frames_info(out: Path, *, most_frames: int, simulation_time_ns_total: float
                 source = dict(source, kind="live-history",
                               signature=f"history:{len(source['records'])}:"
                                         f"{source['records'][-1].get('sequence')}:"
-                                        f"{source['records'][-1].get('mtime_ns')}")
+                                        f"{source['records'][-1].get('mtime_ns')}:"
+                                        f"preserve_polymer_placement={int(source['preserve_polymer_placement'])}")
                 signature = f"{source['signature']}:most={int(most_frames)}:payload=2"
                 said = _from_history(source, simulation, most_frames)
         else:
@@ -660,7 +680,7 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
                      total_ns: float | None) -> dict[str, Any]:
     import mdtraj as md
 
-    from fastmdxplora.analysis.loading import _made_whole
+    from fastmdxplora.analysis.loading import POLYMER_PLACEMENT, _made_whole
     from fastmdxplora.utils.native_output import suppress_native_output, topology_quietly
 
     topology_path: Path = source["topology"]
@@ -692,8 +712,8 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
         np.asarray(xyz, dtype=np.float32) / 10.0, topology,
         unitcell_lengths=np.asarray(lengths, dtype=np.float32) / 10.0 if boxed else None,
         unitcell_angles=np.asarray(angles, dtype=np.float32) if boxed else None)
-    if boxed:
-        frames = _made_whole(frames)
+    frames = _made_whole(frames, preserve_polymer_placement=source["preserve_polymer_placement"],
+                         source_frames=indices)
     _write_topology(topology_path, shown, simulation / FRAMES_TOPOLOGY)
     _write_dcd(frames, simulation / FRAMES_FILE)
     # Which atoms of which topology the frames are, so an atom clicked in
@@ -713,6 +733,7 @@ def _from_trajectory(source: dict[str, Any], simulation: Path, most_frames: int,
             "frame_times_ns": _times(indices, total, total_ns,
                                      _interval_ns(simulation.parent, source)),
             "made_whole": bool(boxed), "source_topology": source_topology, "shown": kept,
+            "polymer_placement": getattr(frames, POLYMER_PLACEMENT, {}),
             "cells": cells}
 
 
@@ -747,7 +768,12 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
     # whole about the protein as a trajectory's are.
     coordinates = np.asarray(xyz, dtype=np.float32)
     try:
-        whole = made_whole_frames(opened, coordinates, cells)
+        placement = {}
+        whole = made_whole_frames(
+            opened, coordinates, cells,
+            preserve_polymer_placement=source["preserve_polymer_placement"],
+            placement=placement,
+            source_frames=[r.get("sequence", p) for p, r in zip(source_positions, used)])
     except Exception:  # noqa: BLE001 - played as written rather than not at all
         whole = None
     if whole is not None:
@@ -775,7 +801,7 @@ def _from_history(source: dict[str, Any], simulation: Path, most_frames: int) ->
             # actual integrator clock, do not present that estimate as time.
             "frame_times_ns": ([None] * len(used) if chose_its_own_step(simulation)
                                else [record.get("simulation_time_ns") for record in used]),
-            "made_whole": whole is not None}
+            "made_whole": whole is not None, "polymer_placement": placement}
 
 
 #: What the frames can be superposed on, and how a pocket is chosen.

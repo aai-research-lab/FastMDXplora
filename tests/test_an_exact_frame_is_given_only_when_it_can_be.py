@@ -211,7 +211,7 @@ def test_a_source_frame_needs_a_trajectory_and_shows_a_water_only_system_whole(t
     water[0].save_pdb(str(tmp_path / "water.pdb"))
     water.save_dcd(str(tmp_path / "water.dcd"))
     source = {"kind": "trajectory", "topology": tmp_path / "water.pdb",
-              "trajectory": tmp_path / "water.dcd"}
+              "trajectory": tmp_path / "water.dcd", "preserve_polymer_placement": False}
     frame = _source_frame(tmp_path, source, 1)
     assert frame.n_atoms == 2 and frame.unitcell_lengths is None
     assert np.allclose(frame.xyz[0], water.xyz[1], atol=1e-4)
@@ -702,4 +702,5 @@ def test_frames_played_from_the_snapshots_are_signed_as_the_trajectory_s_are(
                         lambda *_args: {"available": True, "frame_indices": [0, 1]})
     said = trajectory_frames.frames_info(root, most_frames=3, force=True)
     assert said["source_kind"] == "live-history"
-    assert said["signature"] == "history:2:2:2:most=3:payload=2"
+    assert said["signature"] == (
+        "history:2:2:2:preserve_polymer_placement=0:most=3:payload=2")

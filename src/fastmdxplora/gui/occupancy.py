@@ -83,6 +83,11 @@ def occupancy(root: str | Path, of: str, *, ligand: str | None,
         return {"ok": False, "reason": reason}
     cutoff = float(cutoff_angstrom)
     index = _load_json(simulation / "frames_index.json")
+    from fastmdxplora.gui.trajectory_frames import frames_info, preserve_polymer_placement
+
+    if bool((index.get("polymer_placement") or {}).get("preserve_polymer_placement")) \
+            != preserve_polymer_placement(out):
+        index = frames_info(out)
     if not index.get("available") or not (simulation / "frames.dcd").is_file():
         return {"ok": False, "reason": "There are no frames to map yet."}
     signature = f"{index.get('signature')}|{GRID_ANGSTROM}|{RADIUS[of]}|{MOST_WATER_FRAMES}"
@@ -332,6 +337,11 @@ def water_sites_placed(root: str | Path) -> dict[str, Any]:
                                        "than the one played."}
     index = _load_json(out / "simulation" / "frames_index.json")
     source = _source(out)
+    if source is not None and bool((index.get("polymer_placement") or {}).get(
+            "preserve_polymer_placement")) != source["preserve_polymer_placement"]:
+        from fastmdxplora.gui.trajectory_frames import frames_info
+
+        index = frames_info(out)
     if not index.get("available") or source is None or source["kind"] != "trajectory":
         return {"ok": False, "reason": "There are no frames to place the sites on yet."}
     whole = topology_quietly(source["topology"])
@@ -349,7 +359,8 @@ def water_sites_placed(root: str | Path) -> dict[str, Any]:
                              unitcell_lengths=None if lengths is None else lengths / 10.0,
                              unitcell_angles=angles)
     if lengths is not None:
-        analysed = _made_whole(analysed)
+        analysed = _made_whole(
+            analysed, preserve_polymer_placement=source["preserve_polymer_placement"])
     played = _frame_xyz(out, 0)[within].astype(float)
     there = analysed.xyz[0, within].astype(float)
     turned = len(site) >= 3

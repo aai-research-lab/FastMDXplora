@@ -334,6 +334,14 @@ place for one.
 `--analyses` and `--exclude-analyses` are mutually exclusive. Unlike
 `--include`, a second use **replaces** rather than accumulates.
 
+`--preserve-polymer-placement` (`--analyze-preserve-polymer-placement` on
+`explore`) keeps the polymers where the trajectory stores them relative to
+one another, for a finite assembly deliberately kept across lattice copies.
+By default imaging reassembles them in nearby periodic copies and warns when
+that moves one relative to another; molecules are made whole either way, and
+ligands and ions still take the copy nearest the polymers. See
+[polymer placement](config.md#polymer-placement).
+
 Six per-analysis settings have convenience flags of their own:
 
 ```bash

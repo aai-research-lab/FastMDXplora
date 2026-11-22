@@ -7,6 +7,20 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- Polymer imaging keeps its existing default reassembly, but now warns when
+  whole polymers move to different lattice copies relative to one another.
+  Deliberately unwrapped finite assemblies can opt into
+  `analysis.preserve_polymer_placement: true` (`analyze
+  --preserve-polymer-placement`, or `explore
+  --analyze-preserve-polymer-placement`). This preserves stored polymer
+  placement after bond repair; common centering and ligand/ion nearest-copy
+  placement still apply. The policy and relative lattice relocations are
+  recorded in analysis provenance and GUI frame records, and playback and
+  live-frame caches refresh when the policy changes. Successful imaging
+  alone does not establish the intended assembly.
+
 ### Fixed
 
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
