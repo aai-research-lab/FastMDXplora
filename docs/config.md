@@ -74,7 +74,7 @@ nearest match.
 |---|---|
 | `setup` | 48 settings: structure, ligand, membrane, solvent, force field, forces |
 | `simulation` | 45 settings: length, conditions, integrator, platform, enhanced sampling |
-| `analysis` | 14 settings: which analyses, over which atoms, over which frames |
+| `analysis` | 15 settings: which analyses, over which atoms, over which frames |
 | `report` | 11 settings: title, formats, highlighted regions |
 
 Every setting in each is in the [Config reference](config_reference.md).

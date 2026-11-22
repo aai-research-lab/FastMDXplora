@@ -137,6 +137,7 @@ class AnalyzeSettings(TypedDict, total=False):
     selection: str
     scope: Literal['solute', 'protein', 'ligand', 'all']
     stride: int
+    preserve_polymer_placement: bool
     first: int
     last: int
     figure_colours: Literal['colour', 'greyscale', 'both']
