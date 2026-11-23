@@ -330,7 +330,10 @@ def _generated_options(phase: str, written: list[tuple]) -> list[tuple]:
             options["type"] = item
         else:
             options["type"] = _parser_for(field.type)
-            options["metavar"] = _METAVAR.get(options["type"], "VALUE")
+            if not field.choices:
+                # With accepted values, argparse's own {a,b,c} says more than
+                # TEXT does.
+                options["metavar"] = _METAVAR.get(options["type"], "VALUE")
         generated.append((flag, field.name, options))
     return list(written) + generated
 
@@ -654,7 +657,8 @@ def _study_level_args(p: argparse.ArgumentParser) -> None:
         if field.choices:
             options["choices"] = list(field.choices)
         options["type"] = _parser_for(field.type)
-        options["metavar"] = _METAVAR.get(options["type"], "VALUE")
+        if not field.choices:
+            options["metavar"] = _METAVAR.get(options["type"], "VALUE")
         study.add_argument("--" + name.replace("_", "-"), **options)
 
 

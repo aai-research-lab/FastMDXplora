@@ -9,6 +9,11 @@ Versioning: [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- `--help` lists the values a fixed-choice setting accepts, as in
+  `--agent {assisted,autonomous,unvalidated}` and `--ensemble {npt,nvt}`,
+  where it showed `--agent TEXT` and `--ensemble TEXT` and left the accepted
+  values to the error a wrong one raised. Only what help shows changes: the
+  accepted values, how they are read and their defaults are as before.
 - The Container workflow runs on Ubuntu 24.04, not `ubuntu-latest`, which is
   now 26.04, where the pinned Apptainer package cannot be installed (it
   needs `libfuse3-3`, which 26.04 replaces with `libfuse3-4`), so 2.6.1's
